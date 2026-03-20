@@ -18,8 +18,8 @@
 - [x] Implement inventory YAML loading with environment→host inheritance
 - [x] Implement config schema validation (Pydantic models)
 - [x] Implement audit logging to SQLite (AuditStore with write/query/count)
-- [ ] Implement SSH execution layer (asyncssh wrapper)
-- [ ] Implement OS detection via SSH
+- [x] Implement SSH execution layer (SSHConnectionManager with pooling + retry)
+- [x] Implement OS detection via SSH (parse /etc/os-release, df, docker, uptime)
 - [ ] Implement sandbox/dry-run execution wrapper
 - [ ] Implement file-based VM locking
 

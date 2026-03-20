@@ -17,7 +17,7 @@
 - [x] Implement Settings loading from env vars + YAML (settings.py, schema.py, inventory.py)
 - [x] Implement inventory YAML loading with environment→host inheritance
 - [x] Implement config schema validation (Pydantic models)
-- [ ] Implement audit logging to SQLite
+- [x] Implement audit logging to SQLite (AuditStore with write/query/count)
 - [ ] Implement SSH execution layer (asyncssh wrapper)
 - [ ] Implement OS detection via SSH
 - [ ] Implement sandbox/dry-run execution wrapper

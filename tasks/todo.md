@@ -21,7 +21,7 @@
 - [x] Implement SSH execution layer (SSHConnectionManager with pooling + retry)
 - [x] Implement OS detection via SSH (parse /etc/os-release, df, docker, uptime)
 - [x] Implement sandbox/dry-run execution wrapper (SandboxExecutor + CommandRecord)
-- [ ] Implement file-based VM locking
+- [x] Implement file-based VM locking (FileLocker with TTL + stale detection)
 
 ### 1.3 First Action: Disk Cleanup (lowest risk)
 - [ ] Implement disk_cleanup sub-graph (validate → snapshot → execute → verify)

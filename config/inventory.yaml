@@ -1,0 +1,41 @@
+environments:
+  production:
+    maintenance_window: "02:00-06:00 UTC"
+    maintenance_days: [saturday]
+    approval_policy: strict
+    ssh_user: automaint
+    ssh_key_path: ~/.ssh/automaint_prod
+    targets:
+      - host: 10.0.1.10
+        name: web-prod-01
+        os_family: ubuntu
+        tags: [web, frontend]
+      - host: 10.0.1.20
+        name: db-prod-01
+        os_family: rhel
+        tags: [database]
+        ssh_user: automaint-db      # overrides group-level
+
+  staging:
+    maintenance_window: "00:00-06:00 UTC"
+    maintenance_days: [daily]
+    approval_policy: moderate
+    ssh_user: automaint
+    ssh_key_path: ~/.ssh/automaint_staging
+    targets:
+      - host: 10.0.2.10
+        name: web-stg-01
+        os_family: ubuntu
+        tags: [web]
+
+  dev:
+    maintenance_window: null
+    maintenance_days: [daily]
+    approval_policy: relaxed
+    ssh_user: automaint
+    ssh_key_path: ~/.ssh/automaint_dev
+    targets:
+      - host: 10.0.3.10
+        name: web-dev-01
+        os_family: debian
+        tags: [web]

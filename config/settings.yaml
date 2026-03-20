@@ -1,0 +1,28 @@
+agent:
+  approval_timeout_seconds: 1800
+  ssh_command_timeout_seconds: 300
+  ssh_reconnect_attempts: 3
+  ssh_reconnect_backoff: [5, 15, 45]
+  fleet_failure_threshold: 0.5
+  vm_lock_ttl_seconds: 7200
+  graceful_shutdown_timeout_seconds: 120
+
+slack:
+  approvals_channel_env: AUTOMAINT_SLACK_CHANNEL_ID
+  status_channel: automaint-status
+  poll_interval_seconds: 30
+
+llm:
+  timeout_seconds: 30
+  max_retries: 2
+
+schedules:
+  production:
+    maintenance: "0 2 * * 6"
+    discovery: "0 6 * * *"
+  staging:
+    maintenance: "0 0 * * *"
+    discovery: "0 6 * * *"
+  dev:
+    maintenance: null
+    discovery: "0 6 * * *"

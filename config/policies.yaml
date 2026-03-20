@@ -1,0 +1,30 @@
+policies:
+  relaxed:
+    auto_approve: [low, medium, high]
+    disk_cleanup_threshold: 70
+    log_rotation_max_age_days: 3
+    log_max_file_size_mb: 500
+    docker_prune_all: true
+    tmp_cleanup_age_days: 3
+    journal_vacuum_days: 3
+
+  moderate:
+    auto_approve: [low]
+    human_approve: [medium, high]
+    disk_cleanup_threshold: 80
+    log_rotation_max_age_days: 7
+    log_max_file_size_mb: 1000
+    docker_prune_all: false
+    tmp_cleanup_age_days: 7
+    journal_vacuum_days: 7
+
+  strict:
+    auto_approve: [low]
+    human_approve: [medium, high]
+    blocked: [critical]
+    disk_cleanup_threshold: 85
+    log_rotation_max_age_days: 14
+    log_max_file_size_mb: 1000
+    docker_prune_all: false
+    tmp_cleanup_age_days: 14
+    journal_vacuum_days: 14

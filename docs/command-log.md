@@ -126,6 +126,37 @@ uv run pytest -v
 **What**: Full test suite run.
 **Why**: Ensure no regressions — 91 tests passing.
 
+```bash
+uv sync --extra dev
+```
+**What**: Re-synced dependencies after adding `aiosqlite>=0.20` to pyproject.toml.
+**Why**: Audit logging requires async SQLite access.
+**Result**: Installed `aiosqlite==0.22.1`.
+
+```bash
+uv run pytest tests/safety/test_audit.py -v
+```
+**What**: Ran audit store tests.
+**Why**: Verify SQLite audit logging — 20 tests, all passing.
+
+```bash
+uv run pytest tests/execution/ -v
+```
+**What**: Ran SSH + OS detection + sandbox tests.
+**Why**: Verify SSH connection manager, OS detection parsing, dry-run wrapper — 44 tests passing.
+
+```bash
+uv run pytest tests/safety/test_locking.py -v
+```
+**What**: Ran file locking tests.
+**Why**: Verify FileLocker TTL, stale detection, ownership — 22 tests passing.
+
+```bash
+uv run pytest -v
+```
+**What**: Full test suite.
+**Why**: Final regression check — 179 tests, all passing.
+
 ## vLLM / LLM
 
 *(No vLLM commands run yet.)*

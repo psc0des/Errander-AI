@@ -4,7 +4,7 @@
 2026-03-21
 
 ## Current Phase
-**Phase 1.2 — Core Infrastructure** (Settings loader complete, audit logging next)
+**Phase 1.2 — Core Infrastructure** (COMPLETE)
 
 ## Completed
 
@@ -12,61 +12,57 @@
 - Full project scaffold — Option C architecture (Parent Orchestrator + Fan-Out + Sub-Graphs)
 - `pyproject.toml` with all runtime + dev dependencies
 - Data models: VMTarget, VMInfo, Action, ActionResult, VMPlan, BatchPlan, AuditEvent
-- State dataclasses: BatchState, VMMaintenanceState, 5 per-action states (Patching, DockerPrune, LogRotation, DiskCleanup, BackupVerify)
+- State dataclasses: BatchState, VMMaintenanceState, 5 per-action states
 - Strategy pattern: PackageManager ABC with AptManager + DnfManager stubs
 - Policy system: relaxed/moderate/strict with risk tier auto-approval rules
-- Safety module stubs: validators, rollback, approval gate, VM locking, audit
-- Execution layer stubs: SSH, OS detection, sandbox/dry-run
-- Integration stubs: Slack client, LLM client (OpenAI SDK → vLLM), secrets (env vars)
-- Observability stubs: Prometheus metrics, action tracking, report generation
-- Config stubs: inventory loader, YAML schema validation, settings
-- Scheduling stubs: APScheduler, maintenance windows
-- Test structure: 28 test files mirroring src, 40 tests passing
-- Task tracking: tasks/todo.md (Phase 1-3 checklist), tasks/lessons.md
-- Documentation: command-log.md, learning/01-project-scaffold.md, STATUS.md
-- All modules import without errors
+- All module stubs created, test structure mirroring src
 
-### Phase 1.2: Core Infrastructure (in progress)
-- **Settings loader**: `load_settings()` loads from env vars (AUTOMAINT_ prefix) + optional settings.yaml
+### Phase 1.2: Core Infrastructure
+- **Settings loader**: `load_settings()` — env vars (AUTOMAINT_ prefix) + settings.yaml, layered precedence
 - **Schema validation**: Pydantic models for inventory.yaml, policies.yaml, settings.yaml
-- **Inventory loader**: `load_inventory()` with environment→host inheritance (ssh_user, ssh_key_path, policy)
-- **Config YAML files**: Example inventory.yaml, policies.yaml, settings.yaml in config/
-- **Tests**: 58 config tests (schema, settings, inventory, policies) — all passing
-- **Total tests**: 91 passing
+- **Inventory loader**: `load_inventory()` — environment→host inheritance for ssh_user, ssh_key_path, policy
+- **Audit logging**: `AuditStore` — async SQLite writer/reader with batch_id/vm_id/event_type filters
+- **SSH execution**: `SSHConnectionManager` — persistent connections, exponential backoff retry, command timeout
+- **OS detection**: Parse /etc/os-release, df -h, docker info, /proc/uptime with graceful degradation
+- **Sandbox/dry-run**: `SandboxExecutor` — wraps SSH, simulate_command or synthetic result, command logging
+- **File-based VM locking**: `FileLocker` — JSON lock files, TTL auto-expiry, stale lock cleanup, ownership checks
+- **Config files**: Example inventory.yaml, policies.yaml, settings.yaml in config/
+- **Tests**: 179 total, all passing
 
 ## In Progress
-- Audit logging to SQLite (next up)
+Nothing — Phase 1.2 complete.
 
 ## Next Up
-- SSH execution layer (asyncssh wrapper)
-- OS detection via SSH
-- Sandbox/dry-run execution wrapper
-- File-based VM locking
+- **Phase 1.3: First Action — Disk Cleanup** (lowest risk action, end-to-end)
+  - disk_cleanup sub-graph (validate → snapshot → execute → verify)
+  - Whitelist enforcement (/tmp, apt/yum cache, journal, orphaned deps)
+  - Dry-run simulation
+  - Tests
 
 ## Decisions Made
 - **Architecture**: Option C — Parent Orchestrator + Fan-Out with Sub-Graphs per Action Type
-- **Package manager**: uv (installed via pip, uses `[project.optional-dependencies]` not `[dependency-groups]`)
-- **State design**: Dataclasses with Annotated reducers for parallel result merging
-- **Command abstraction**: Strategy pattern — PackageManager generates command strings, SSH layer executes
-- **Policy system**: Three built-in tiers (relaxed/moderate/strict) controlling auto-approval thresholds
-- **Config inheritance**: Global defaults → Environment settings → Host overrides (matching spec)
+- **Package manager**: uv
+- **Config inheritance**: Global defaults → Environment settings → Host overrides
 - **VM ID format**: `{env_name}/{target_name}` (e.g., "production/web-prod-01")
-- **Settings layering**: Secrets from env vars, tuning from YAML, env vars override YAML for overlapping fields
+- **Settings layering**: Secrets from env vars, tuning from YAML, env vars override YAML
+- **Audit storage**: aiosqlite with ISO timestamps for PostgreSQL migration compatibility
+- **SSH pooling**: Per-VM persistent connections, reused within a batch run
+- **Lock format**: JSON files with TTL, auto-cleanup of stale/corrupt locks
 
 ## Blockers
 None.
 
 ## Files Changed (This Session)
 ### Modified
-- `automaint/config/settings.py` — Full implementation of `load_settings()` with env var + YAML loading
-- `automaint/config/schema.py` — Pydantic models for inventory, policies, settings YAML validation
-- `automaint/config/inventory.py` — Full implementation of `load_inventory()` with inheritance resolution
-- `tests/config/test_schema.py` — 21 tests for schema validation
-- `tests/config/test_inventory.py` — 17 tests for inventory loading + validation
-- `tasks/todo.md` — Marked settings loader complete
+- `automaint/config/settings.py`, `schema.py`, `inventory.py` — Full implementations
+- `automaint/safety/audit.py` — AuditStore with SQLite backend
+- `automaint/safety/locking.py` — FileLocker with TTL
+- `automaint/execution/ssh.py` — SSHConnectionManager
+- `automaint/execution/os_detection.py` — OS detection + parsing
+- `automaint/execution/sandbox.py` — SandboxExecutor
+- `pyproject.toml` — Added aiosqlite dependency
 
 ### Created
-- `tests/config/test_settings.py` — 12 tests for settings loading
-- `config/inventory.yaml` — Example inventory matching spec
-- `config/policies.yaml` — Example policies matching spec
-- `config/settings.yaml` — Example settings matching spec
+- `tests/config/test_settings.py` — 12 tests
+- `config/inventory.yaml`, `config/policies.yaml`, `config/settings.yaml`
+- `docs/learning/02-settings-loader.md`

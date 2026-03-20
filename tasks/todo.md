@@ -20,7 +20,7 @@
 - [x] Implement audit logging to SQLite (AuditStore with write/query/count)
 - [x] Implement SSH execution layer (SSHConnectionManager with pooling + retry)
 - [x] Implement OS detection via SSH (parse /etc/os-release, df, docker, uptime)
-- [ ] Implement sandbox/dry-run execution wrapper
+- [x] Implement sandbox/dry-run execution wrapper (SandboxExecutor + CommandRecord)
 - [ ] Implement file-based VM locking
 
 ### 1.3 First Action: Disk Cleanup (lowest risk)

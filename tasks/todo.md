@@ -24,10 +24,11 @@
 - [x] Implement file-based VM locking (FileLocker with TTL + stale detection)
 
 ### 1.3 First Action: Disk Cleanup (lowest risk)
-- [ ] Implement disk_cleanup sub-graph (validate → snapshot → execute → verify)
-- [ ] Implement whitelist enforcement (only /tmp, apt/yum cache, journal, orphaned deps)
-- [ ] Implement dry-run simulation for disk cleanup
-- [ ] Write tests for disk cleanup sub-graph
+- [x] Implement disk_cleanup sub-graph (validate → assess → execute → verify)
+- [x] Implement whitelist enforcement (hardcoded, never LLM-decided)
+- [x] Implement dry-run simulation for disk cleanup
+- [x] Implement AptManager + DnfManager command generation (clean_cache, autoremove, etc.)
+- [x] Write tests for disk cleanup sub-graph (31 tests)
 - [ ] Test against a real VM (dry-run mode)
 
 ### 1.4 Per-VM Graph

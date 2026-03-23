@@ -1,68 +1,57 @@
 # AutoMaint — Project Status
 
 ## Last Updated
-2026-03-21
+2026-03-23
 
 ## Current Phase
-**Phase 1.2 — Core Infrastructure** (COMPLETE)
+**Phase 1.3 — First Action: Disk Cleanup** (sub-graph complete, pending real VM test)
 
 ## Completed
 
 ### Phase 1.1: Project Foundation
 - Full project scaffold — Option C architecture (Parent Orchestrator + Fan-Out + Sub-Graphs)
-- `pyproject.toml` with all runtime + dev dependencies
-- Data models: VMTarget, VMInfo, Action, ActionResult, VMPlan, BatchPlan, AuditEvent
-- State dataclasses: BatchState, VMMaintenanceState, 5 per-action states
-- Strategy pattern: PackageManager ABC with AptManager + DnfManager stubs
-- Policy system: relaxed/moderate/strict with risk tier auto-approval rules
+- Data models, state dataclasses, strategy pattern stubs, policy system
 - All module stubs created, test structure mirroring src
 
 ### Phase 1.2: Core Infrastructure
-- **Settings loader**: `load_settings()` — env vars (AUTOMAINT_ prefix) + settings.yaml, layered precedence
-- **Schema validation**: Pydantic models for inventory.yaml, policies.yaml, settings.yaml
-- **Inventory loader**: `load_inventory()` — environment→host inheritance for ssh_user, ssh_key_path, policy
-- **Audit logging**: `AuditStore` — async SQLite writer/reader with batch_id/vm_id/event_type filters
-- **SSH execution**: `SSHConnectionManager` — persistent connections, exponential backoff retry, command timeout
-- **OS detection**: Parse /etc/os-release, df -h, docker info, /proc/uptime with graceful degradation
-- **Sandbox/dry-run**: `SandboxExecutor` — wraps SSH, simulate_command or synthetic result, command logging
-- **File-based VM locking**: `FileLocker` — JSON lock files, TTL auto-expiry, stale lock cleanup, ownership checks
-- **Config files**: Example inventory.yaml, policies.yaml, settings.yaml in config/
-- **Tests**: 179 total, all passing
+- Settings loader (env vars + YAML), schema validation, inventory loader with inheritance
+- Audit logging (async SQLite), SSH execution (connection pooling + retry)
+- OS detection, sandbox/dry-run wrapper, file-based VM locking
+
+### Phase 1.3: Disk Cleanup (in progress)
+- **Sub-graph**: LangGraph StateGraph with 4 nodes: validate → assess → execute → verify
+- **Whitelist enforcement**: Hardcoded `ALLOWED_CLEANUP_PATHS` — `/tmp`, `apt-cache`, `yum-cache`, `journal`, `orphaned-deps`. Non-whitelisted paths are BLOCKED immediately.
+- **Dry-run mode**: Uses simulate commands (e.g., `apt-get autoremove --simulate`) or synthetic `[DRY-RUN]` results
+- **Live mode**: Real cleanup commands — `find /tmp -delete`, `apt-get clean`, `journalctl --vacuum-time`, `autoremove`
+- **OS-aware**: AptManager for Ubuntu/Debian, DnfManager for RHEL — command generation fully implemented
+- **Verification**: Post-cleanup `df -h` comparison against pre-cleanup baseline
+- **Tests**: 31 tests covering whitelist, validation, routing, assess, execute, verify, sub-graph integration
+- **Total tests**: 209 passing
 
 ## In Progress
-Nothing — Phase 1.2 complete.
+Nothing — disk cleanup sub-graph complete, pending real VM dry-run test.
 
 ## Next Up
-- **Phase 1.3: First Action — Disk Cleanup** (lowest risk action, end-to-end)
-  - disk_cleanup sub-graph (validate → snapshot → execute → verify)
-  - Whitelist enforcement (/tmp, apt/yum cache, journal, orphaned deps)
-  - Dry-run simulation
-  - Tests
+- **Phase 1.4: Per-VM Graph** — vm_graph (lock → discover → plan → dispatch → audit → unlock)
+- **Phase 1.5: Batch Orchestrator** — fan-out to per-VM graphs
+- **Phase 1.6: Integrations** — LLM client, Slack client, approval gate
 
 ## Decisions Made
-- **Architecture**: Option C — Parent Orchestrator + Fan-Out with Sub-Graphs per Action Type
-- **Package manager**: uv
-- **Config inheritance**: Global defaults → Environment settings → Host overrides
-- **VM ID format**: `{env_name}/{target_name}` (e.g., "production/web-prod-01")
-- **Settings layering**: Secrets from env vars, tuning from YAML, env vars override YAML
-- **Audit storage**: aiosqlite with ISO timestamps for PostgreSQL migration compatibility
-- **SSH pooling**: Per-VM persistent connections, reused within a batch run
-- **Lock format**: JSON files with TTL, auto-cleanup of stale/corrupt locks
+- **LangGraph node wrapping**: Async nodes with injected dependencies must use `async def` wrappers, not lambdas (LangGraph requires awaitable functions)
+- **TypedDict for graph state**: LangGraph works better with TypedDict than dataclasses for state
+- **Assess before execute**: Added assessment step between validate and execute to collect space data before cleanup
+- **Command generation pattern**: PackageManager generates command strings, SandboxExecutor handles dry-run/live routing
+- **Whitelist is code, not config**: Cleanup whitelist is a frozen set in Python, never loaded from YAML or LLM decisions
 
 ## Blockers
 None.
 
 ## Files Changed (This Session)
 ### Modified
-- `automaint/config/settings.py`, `schema.py`, `inventory.py` — Full implementations
-- `automaint/safety/audit.py` — AuditStore with SQLite backend
-- `automaint/safety/locking.py` — FileLocker with TTL
-- `automaint/execution/ssh.py` — SSHConnectionManager
-- `automaint/execution/os_detection.py` — OS detection + parsing
-- `automaint/execution/sandbox.py` — SandboxExecutor
-- `pyproject.toml` — Added aiosqlite dependency
+- `automaint/agent/subgraphs/disk_cleanup.py` — Full sub-graph implementation
+- `automaint/execution/commands.py` — AptManager + DnfManager fully implemented
+- `tests/agent/subgraphs/test_disk_cleanup.py` — 31 tests
+- `tasks/todo.md` — Phase 1.3 items checked off
 
 ### Created
-- `tests/config/test_settings.py` — 12 tests
-- `config/inventory.yaml`, `config/policies.yaml`, `config/settings.yaml`
-- `docs/learning/02-settings-loader.md`
+- `docs/learning/04-disk-cleanup-subgraph.md` — Learning doc for LangGraph patterns

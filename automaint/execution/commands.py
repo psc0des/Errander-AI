@@ -64,44 +64,72 @@ class AptManager(PackageManager):
     """Package manager for Debian/Ubuntu systems (apt)."""
 
     def list_upgradable(self) -> str:
-        raise NotImplementedError
+        return "apt list --upgradable 2>/dev/null"
 
     def upgrade_all(self, exclude_patterns: list[str] | None = None) -> str:
-        raise NotImplementedError
+        if exclude_patterns:
+            holds = " && ".join(
+                f"apt-mark hold {p}" for p in exclude_patterns
+            )
+            return f"{holds} && apt-get upgrade -y && " + " && ".join(
+                f"apt-mark unhold {p}" for p in exclude_patterns
+            )
+        return "apt-get upgrade -y"
 
     def install_version(self, package: str, version: str) -> str:
-        raise NotImplementedError
+        return f"apt-get install -y --allow-downgrades {package}={version}"
 
     def list_installed_versions(self, packages: list[str]) -> str:
-        raise NotImplementedError
+        pkg_list = " ".join(packages)
+        return f"dpkg-query -W -f='${{Package}}=${{Version}}\\n' {pkg_list} 2>/dev/null"
 
     def clean_cache(self) -> str:
-        raise NotImplementedError
+        return "apt-get clean"
 
     def autoremove(self) -> str:
-        raise NotImplementedError
+        return "apt-get autoremove -y"
+
+    def simulate_upgrade(self) -> str:
+        """Return command to simulate an upgrade (dry-run)."""
+        return "apt-get --simulate upgrade"
+
+    def cache_size(self) -> str:
+        """Return command to check package cache size."""
+        return "du -sh /var/cache/apt 2>/dev/null || echo '0\t/var/cache/apt'"
 
 
 class DnfManager(PackageManager):
     """Package manager for RHEL systems (dnf)."""
 
     def list_upgradable(self) -> str:
-        raise NotImplementedError
+        return "dnf check-update --quiet 2>/dev/null || true"
 
     def upgrade_all(self, exclude_patterns: list[str] | None = None) -> str:
-        raise NotImplementedError
+        if exclude_patterns:
+            excludes = " ".join(f"--exclude={p}" for p in exclude_patterns)
+            return f"dnf upgrade -y {excludes}"
+        return "dnf upgrade -y"
 
     def install_version(self, package: str, version: str) -> str:
-        raise NotImplementedError
+        return f"dnf downgrade -y {package}-{version}"
 
     def list_installed_versions(self, packages: list[str]) -> str:
-        raise NotImplementedError
+        pkg_list = " ".join(packages)
+        return f"rpm -q --qf '%{{NAME}}=%{{VERSION}}-%{{RELEASE}}\\n' {pkg_list} 2>/dev/null"
 
     def clean_cache(self) -> str:
-        raise NotImplementedError
+        return "dnf clean all"
 
     def autoremove(self) -> str:
-        raise NotImplementedError
+        return "dnf autoremove -y"
+
+    def simulate_upgrade(self) -> str:
+        """Return command to simulate an upgrade (dry-run)."""
+        return "dnf check-update"
+
+    def cache_size(self) -> str:
+        """Return command to check package cache size."""
+        return "du -sh /var/cache/dnf 2>/dev/null || echo '0\t/var/cache/dnf'"
 
 
 def get_package_manager(os_family: OSFamily) -> PackageManager:

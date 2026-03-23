@@ -157,6 +157,23 @@ uv run pytest -v
 **What**: Full test suite.
 **Why**: Final regression check — 179 tests, all passing.
 
+### 2026-03-23 — Phase 1.3: Disk Cleanup Sub-Graph
+
+```bash
+uv run pytest tests/agent/subgraphs/test_disk_cleanup.py -v
+```
+**What**: Ran disk cleanup sub-graph tests.
+**Why**: Verify LangGraph sub-graph implementation — 31 tests, all passing.
+**Issues**: 2 failures on first run:
+  1. Lambda wrapping async functions caused `InvalidUpdateError: Expected dict, got <coroutine>` — fixed by using `async def` wrappers.
+  2. Mock at wrong level — SandboxExecutor dry-run mode adds `[DRY-RUN]` prefix, need to mock at executor level not SSH level.
+
+```bash
+uv run pytest -v
+```
+**What**: Full test suite.
+**Why**: Regression check — 209 tests, all passing.
+
 ## vLLM / LLM
 
 *(No vLLM commands run yet.)*

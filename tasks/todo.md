@@ -1,4 +1,4 @@
-# AutoMaint — Task Tracking
+# Errander-AI — Task Tracking
 
 ## Phase 1: Scaffold + First Action End-to-End (disk_cleanup)
 
@@ -101,16 +101,72 @@
 - [ ] Verify metrics are exposed
 
 ## Phase 2: Remaining Action Types
-- [ ] Implement patching sub-graph (with kernel exclusion + rollback)
-- [ ] Implement docker_prune sub-graph
-- [ ] Implement log_rotation sub-graph
-- [ ] Implement backup_verify sub-graph
-- [ ] Implement AptManager commands
-- [ ] Implement DnfManager commands
+- [x] Implement log_rotation sub-graph (path validation, logrotate + manual fallback, idempotency)
+- [x] Implement docker_prune sub-graph (docker availability check, dangling/stopped detection, idempotency)
+- [x] Implement patching sub-graph (kernel exclusion via fnmatch, version snapshot, rollback, idempotency)
+- [x] Implement backup_verify sub-graph (read-only: exists/recent/non-zero checks, no execute node)
+- [x] Wire all sub-graphs into vm_graph.py dispatch (all 5 action types now dispatched)
+- [x] Idempotency via pre-check skipping in all assess nodes (nothing_to_do flag)
+- [x] 28 log_rotation tests, 18 docker_prune tests, 24 patching tests, 14 backup_verify tests
+- [x] Design review — 10 issues found and fixed (kernel exclusion, whitelist, approval, rollback, etc.)
+- [x] All 587 tests passing, lint clean
 
 ## Phase 3: Hardening
-- [ ] Rolling updates (percentage-based fleet caps)
-- [ ] Canary logic (run on 1 VM first, then fleet)
-- [ ] Drift detection (pre-flight check before live execution)
-- [ ] Comprehensive error handling and edge cases
-- [ ] Load testing with multiple VMs
+- [x] Rolling updates (percentage-based fleet caps)
+- [x] Canary logic (run on 1 VM first, then fleet)
+- [x] Drift detection (pre-flight check before live execution)
+- [x] Comprehensive error handling and edge cases (25 new tests, 677 total)
+- [x] Load testing with multiple VMs (20 tests: wave partitioning, fleet batch graph, concurrent locks)
+- [x] Playwright approvals UI tests (22 tests: page content, navigation, approve/reject actions, badge cross-page)
+
+## Phase 4: LLM Flexibility + Secrets Encryption + UI Config
+
+### Phase A — LLM Provider Flexibility
+- [x] Remove hardcoded `Qwen/Qwen3-8B-AWQ` from `llm.py`; add `model: str` + `temperature: float` to `LLMClient.__init__`
+- [x] Remove `thinking: bool` param and `/no_think` prefix from `complete()`
+- [x] Add `llm_model` + `llm_temperature` to `Settings` dataclass + `load_settings()`
+- [x] Add `model` + `temperature` fields to `LLMSettingsSchema` with validator (0.0–2.0)
+- [x] Update `_build_components()` and `run_llm_check()` in `main.py` to pass model/temperature
+- [x] Update `decisions.py` — remove `thinking=` kwarg from all `client.complete()` calls
+- [x] Add `model` + `temperature` to `config/settings.yaml` and `example/settings.yaml`
+- [x] Write `docs/LLM-PROVIDERS.md` (vLLM, Ollama, OpenAI, Anthropic, Groq configs)
+- [x] Rewrite `tests/integrations/test_llm.py` (removed thinking tests, added verbatim/temp/model tests)
+
+### Phase A.5 — Secrets Encryption
+- [x] Implement `SecretsManager` with Fernet (`enc:v1:<token>` format) in `errander/integrations/secrets.py`
+- [x] Add `--generate-secrets-key` and `--encrypt VALUE` CLI flags to `main.py`
+- [x] Add YAML decryption (`_decrypt_yaml_strings`) to all `validate_*` functions in `schema.py`
+- [x] Update `_load_env_str()` in `settings.py` to decrypt `enc:v1:` env var values
+- [x] Implement `SecretsRedactingFilter` log filter in `errander/observability/redaction.py`
+- [x] Attach redaction filter to root logger in `main.py`
+- [x] Write `docs/SECRETS.md` (setup, threat model, key rotation)
+- [x] Write `tests/integrations/test_secrets.py` (24 tests)
+- [x] Write `tests/observability/test_redaction.py` (9 tests)
+- [x] Write `tests/config/test_secrets_loading.py` (6 tests)
+
+### Phase B — UI Settings + Inventory Management
+- [x] Implement `OverridesStore` (SQLite) in `errander/safety/overrides.py` — `settings_overrides` + `inventory_overrides` tables
+- [x] Extend `load_settings()` with `db_overrides: dict[str, str]` param — env > DB > YAML > default precedence
+- [x] Add `SETTINGS_CHANGED` + `INVENTORY_CHANGED` to `EventType` enum in `events.py`
+- [x] Add `GET/POST /ui/settings` routes with source indicators, model presets, reset buttons, LLM test
+- [x] Add `GET/POST /ui/inventory` routes — disable YAML VMs, add/delete ad-hoc VMs
+- [x] Add HTTP Basic Auth middleware on `/ui/*` (via `secrets.compare_digest`)
+- [x] Implement inventory merge in `run_env_batch()` (YAML → filter disabled → append db_additions)
+- [x] Wire `overrides_store` into scheduler loop `_run()` closure
+- [x] Add `ui_user`, `ui_password`, `sources` fields to `Settings`
+- [x] Update `async_main()`: init `OverridesStore`, pass to `start_metrics_server()`
+- [x] Write `tests/safety/test_overrides.py` (18 tests — T1)
+- [x] Write `tests/config/test_settings_precedence.py` (21 tests — T2)
+- [x] Write `tests/agent/test_inventory_merge.py` (9 tests — T3)
+- [x] Write `docs/learning/22-ui-settings-and-inventory.md`
+- [x] Update `docs/SETUP.md` — Step 5b: Secure the Web UI
+- [x] Update `STATUS.md` and `tasks/todo.md`
+- [x] 799 tests passing, lint clean
+
+### Phase B — Playwright Tests (T4-T6)
+- [x] Write `tests/ui/test_settings_playwright.py` (15 tests): page load, save+persist, reset, env-lock source labels
+- [x] Write `tests/ui/test_inventory_playwright.py` (17 tests): page load, VM display, toggle, add ad-hoc VM, delete
+- [x] Write `tests/ui/test_ui_auth_playwright.py` (13 tests): 401 without creds, 200 with creds, wrong user/pass, WWW-Authenticate, /metrics+/health open
+- [x] Bug fix: nested `<form>` inside main settings form broke Save button (Chromium closes outer form). Fixed via HTML5 `form="reset-{key}"` out-of-band pattern.
+- [x] Create `errander/__main__.py` so `python -m errander` works
+- [x] 844 tests passing, lint clean

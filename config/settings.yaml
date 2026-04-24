@@ -7,12 +7,32 @@ agent:
   vm_lock_ttl_seconds: 7200
   graceful_shutdown_timeout_seconds: 120
 
+  # Rolling updates (100 = all VMs at once, 25 = 25% per wave)
+  rolling_update_percentage: 100
+  wave_failure_threshold: 0.5
+  health_check_command: "echo ok"
+
+  # Canary (run 1 VM first, health-check, then fleet)
+  canary_enabled: false
+  canary_health_check_command: "systemctl is-system-running"
+
+  # Drift detection (compare current state to stored baseline)
+  drift_detection_enabled: false
+  drift_abort_on_detection: false
+
 slack:
-  approvals_channel_env: AUTOMAINT_SLACK_CHANNEL_ID
-  status_channel: automaint-status
+  approvals_channel_env: ERRANDER_SLACK_CHANNEL_ID
+  status_channel: errander-status
   poll_interval_seconds: 30
 
 llm:
+  # Required: model ID (provider-specific — see docs/LLM-PROVIDERS.md)
+  model: "Qwen/Qwen3-8B-AWQ"
+
+  # Sampling temperature. 0.0 = deterministic, 0.1 = low variance (default),
+  # up to 2.0 for high variance. Keep low for structured JSON responses.
+  temperature: 0.1
+
   timeout_seconds: 30
   max_retries: 2
 

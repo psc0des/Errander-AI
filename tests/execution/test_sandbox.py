@@ -6,8 +6,8 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from automaint.execution.sandbox import SandboxExecutor
-from automaint.execution.ssh import SSHConnectionManager, SSHResult
+from errander.execution.sandbox import SandboxExecutor
+from errander.execution.ssh import SSHConnectionManager, SSHResult
 
 
 def _make_result(stdout: str = "ok", exit_code: int = 0) -> SSHResult:
@@ -25,7 +25,7 @@ class TestSandboxDryRun:
         executor = SandboxExecutor(mgr, dry_run=True)
 
         result = await executor.execute(
-            "vm-1", "10.0.1.10", "automaint", "/key",
+            "vm-1", "10.0.1.10", "errander-ai", "/key",
             command="apt-get upgrade -y",
         )
 
@@ -44,14 +44,14 @@ class TestSandboxDryRun:
 
         with patch.object(mgr, "execute", execute_mock):
             result = await executor.execute(
-                "vm-1", "10.0.1.10", "automaint", "/key",
+                "vm-1", "10.0.1.10", "errander-ai", "/key",
                 command="apt-get upgrade -y",
                 simulate_command="apt-get --simulate upgrade",
             )
 
         assert result.stdout == "2 packages would be upgraded"
         execute_mock.assert_awaited_once_with(
-            "vm-1", "10.0.1.10", "automaint", "/key",
+            "vm-1", "10.0.1.10", "errander-ai", "/key",
             "apt-get --simulate upgrade", None,
         )
 
@@ -65,7 +65,7 @@ class TestSandboxDryRun:
         executor = SandboxExecutor(mgr, dry_run=True)
 
         await executor.execute(
-            "vm-1", "10.0.1.10", "automaint", "/key",
+            "vm-1", "10.0.1.10", "errander-ai", "/key",
             command="rm -rf /tmp/old-files",
         )
 
@@ -88,7 +88,7 @@ class TestSandboxLive:
 
         with patch.object(mgr, "execute", execute_mock):
             result = await executor.execute(
-                "vm-1", "10.0.1.10", "automaint", "/key",
+                "vm-1", "10.0.1.10", "errander-ai", "/key",
                 command="apt-get upgrade -y",
                 simulate_command="apt-get --simulate upgrade",  # ignored in live mode
             )
@@ -96,7 +96,7 @@ class TestSandboxLive:
         assert result.stdout == "packages upgraded"
         # Should execute the real command, not the simulate one
         execute_mock.assert_awaited_once_with(
-            "vm-1", "10.0.1.10", "automaint", "/key",
+            "vm-1", "10.0.1.10", "errander-ai", "/key",
             "apt-get upgrade -y", None,
         )
 
@@ -112,7 +112,7 @@ class TestSandboxLive:
         ssh_result = _make_result("done")
         with patch.object(mgr, "execute", AsyncMock(return_value=ssh_result)):
             await executor.execute(
-                "vm-1", "10.0.1.10", "automaint", "/key",
+                "vm-1", "10.0.1.10", "errander-ai", "/key",
                 command="apt-get upgrade -y",
             )
 
@@ -166,11 +166,11 @@ class TestCommandLog:
 
         with patch.object(mgr, "execute", execute_mock):
             await executor.execute(
-                "vm-1", "10.0.1.10", "automaint", "/key",
+                "vm-1", "10.0.1.10", "errander-ai", "/key",
                 command="long-cmd", timeout=600,
             )
 
         execute_mock.assert_awaited_once_with(
-            "vm-1", "10.0.1.10", "automaint", "/key",
+            "vm-1", "10.0.1.10", "errander-ai", "/key",
             "long-cmd", 600,
         )

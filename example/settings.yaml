@@ -1,0 +1,116 @@
+# Errander-AI Settings — Example Configuration
+#
+# This file controls operational parameters. Secrets (tokens, keys, passwords)
+# are NEVER in this file — they come from environment variables.
+#
+# Required environment variables:
+#   ERRANDER_SLACK_BOT_TOKEN     Slack bot OAuth token (xoxb-...)
+#   ERRANDER_SLACK_CHANNEL_ID    Approvals channel ID (C0123456789)
+#   ERRANDER_LLM_BASE_URL        vLLM endpoint (http://10.0.1.5:8000/v1)
+#   ERRANDER_AUDIT_DB_URL        SQLite path (errander.sqlite)
+#
+# Optional overrides:
+#   ERRANDER_LLM_API_KEY         vLLM API key (default: "not-needed")
+#   ERRANDER_APPROVAL_TIMEOUT    Approval timeout in seconds
+#   ERRANDER_METRICS_PORT        Prometheus metrics port
+#   ERRANDER_DRY_RUN             Default to dry-run mode (true/false)
+
+agent:
+  # --- Approval ---
+  # How long to wait for a Slack ✅/❌ reaction before auto-rejecting.
+  # Default: 1800s (30 minutes). Increase for large batches / slow reviewers.
+  approval_timeout_seconds: 1800
+
+  # --- SSH ---
+  # Max seconds to wait for a single SSH command to complete.
+  # Increase for slow VMs or large package downloads.
+  ssh_command_timeout_seconds: 300
+
+  # How many times to retry an SSH connection on failure.
+  ssh_reconnect_attempts: 3
+
+  # Backoff intervals (seconds) between reconnect attempts.
+  # 3 attempts: wait 5s, then 15s, then 45s.
+  ssh_reconnect_backoff: [5, 15, 45]
+
+  # --- Safety ---
+  # Abort the batch if this fraction of targets fail pre-flight checks.
+  # 0.5 = abort if ≥50% of targets are unreachable.
+  fleet_failure_threshold: 0.5
+
+  # How long a VM lock can be held before it's considered stale.
+  # A stale lock from a previous crashed run is automatically released.
+  vm_lock_ttl_seconds: 7200  # 2 hours
+
+  # Graceful shutdown: wait this many seconds for in-flight actions to complete.
+  graceful_shutdown_timeout_seconds: 120
+
+  # --- Rolling Updates ---
+  # Process VMs in waves instead of all at once.
+  # 100 = all VMs in a single wave (default behavior, no change).
+  # 25 = 25% per wave — 8 VMs becomes 4 waves of 2.
+  rolling_update_percentage: 100
+
+  # Abort remaining waves if this fraction of a wave's VMs fail health check.
+  # 0.5 = abort if >50% fail.
+  wave_failure_threshold: 0.5
+
+  # SSH command run on each VM after a wave completes to verify health.
+  health_check_command: "echo ok"
+
+  # --- Canary ---
+  # Run 1 VM first, health-check it strictly, then roll out to the rest.
+  # If the canary fails, remaining waves are aborted.
+  canary_enabled: false
+
+  # Stricter health check for the canary VM (wave 0).
+  # "systemctl is-system-running" returns non-zero if degraded.
+  canary_health_check_command: "systemctl is-system-running"
+
+  # --- Drift Detection ---
+  # Compare each VM's discovered state against a stored baseline before executing.
+  # Drift types: OS version, disk usage (>20%), docker availability, reboot, packages (>5).
+  drift_detection_enabled: false
+
+  # When true: skip VM execution if drift is detected.
+  # When false: log the drift but continue with maintenance.
+  drift_abort_on_detection: false
+
+slack:
+  # Slack channel for approval requests and batch reports.
+  # Channel ID set via ERRANDER_SLACK_CHANNEL_ID env var.
+  approvals_channel_env: ERRANDER_SLACK_CHANNEL_ID
+
+  # How often to poll for ✅/❌ reactions on the approval message.
+  poll_interval_seconds: 30
+
+llm:
+  # Required: model ID (provider-specific — see docs/LLM-PROVIDERS.md)
+  # Examples: "Qwen/Qwen3-8B-AWQ" (vLLM), "gpt-4o-mini" (OpenAI),
+  #           "claude-sonnet-4-6" (Anthropic), "llama-3.3-70b-versatile" (Groq)
+  model: "Qwen/Qwen3-8B-AWQ"
+
+  # Sampling temperature. 0.0 = deterministic, 0.1 = low variance (default),
+  # up to 2.0 for high variance. Keep low for structured JSON responses.
+  temperature: 0.1
+
+  # Seconds to wait for a response before timing out.
+  # Self-hosted T4 GPU needs ~30-60s. Cloud APIs are typically < 10s.
+  timeout_seconds: 60
+
+  # Number of retries on timeout/connection errors.
+  # No retry on 4xx/5xx (those aren't transient).
+  max_retries: 2
+
+# Per-environment cron schedules.
+# Standard 5-field cron: minute hour day month day_of_week
+# Leave null to disable scheduled runs for an environment (manual trigger only).
+schedules:
+  production:
+    maintenance: "0 2 * * tue,thu"   # 02:00 UTC on Tuesdays and Thursdays
+
+  staging:
+    maintenance: "0 22 * * mon-fri"  # 22:00 UTC weeknights
+
+  dev:
+    maintenance: "0 9 * * mon-fri"   # 09:00 UTC weekday mornings

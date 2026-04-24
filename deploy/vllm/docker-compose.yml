@@ -1,0 +1,76 @@
+# Errander-AI — vLLM inference server
+#
+# Serves Qwen3-8B-AWQ on a Tesla T4 (16GB VRAM) via an OpenAI-compatible
+# API on port 8000. The agent connects via ERRANDER_LLM_BASE_URL.
+#
+# Usage:
+#   cp .env.example .env          # configure once
+#   docker compose up -d          # start
+#   docker compose logs -f        # tail logs
+#   docker compose down           # stop
+#   docker compose pull && docker compose up -d   # upgrade vLLM
+
+services:
+  vllm:
+    image: vllm/vllm-openai:latest
+    container_name: errander-vllm
+    restart: unless-stopped
+
+    # GPU — pass all available GPUs to the container.
+    # For a dedicated T4 VM this is always device 0.
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+    # Model weights are stored on the host and mounted read-only.
+    # First run downloads ~5GB; subsequent starts load from cache.
+    volumes:
+      - ${MODEL_CACHE_DIR:-/opt/vllm/model-cache}:/root/.cache/huggingface:ro
+      - ${MODEL_CACHE_DIR:-/opt/vllm/model-cache}:/root/.cache/huggingface
+
+    ports:
+      - "${VLLM_PORT:-8000}:8000"
+
+    # Bind to localhost only — no public exposure.
+    # The agent connects via the private VPN IP of this VM.
+    environment:
+      - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN:-}
+
+    # The exact serve command from CLAUDE.md.
+    # Flags:
+    #   --enable-reasoning           enables chain-of-thought / thinking mode
+    #   --reasoning-parser deepseek_r1  parses <think>...</think> blocks
+    #   --enable-auto-tool-choice    allows model to call tools
+    #   --tool-call-parser hermes    parses Hermes-format tool calls
+    #   --max-model-len 8192         fits comfortably in 16GB VRAM
+    #   --gpu-memory-utilization 0.85  leaves 15% headroom for KV cache spikes
+    command: >
+      --model ${MODEL_ID:-Qwen/Qwen3-8B-AWQ}
+      --enable-reasoning
+      --reasoning-parser deepseek_r1
+      --enable-auto-tool-choice
+      --tool-call-parser hermes
+      --max-model-len ${MAX_MODEL_LEN:-8192}
+      --gpu-memory-utilization ${GPU_MEM_UTIL:-0.85}
+      --host 0.0.0.0
+      --port 8000
+      --served-model-name ${SERVED_MODEL_NAME:-qwen3-8b}
+
+    # Health check — vLLM exposes /health once the model is loaded (~2-3 min on first start).
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 180s   # model load takes ~2-3 min on T4
+
+    # Logging — keep last 7 days, 100MB max
+    logging:
+      driver: json-file
+      options:
+        max-size: "100m"
+        max-file: "7"

@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from automaint.execution.ssh import SSHConnectionManager, SSHResult, check_connectivity, execute_ssh
+from errander.execution.ssh import SSHConnectionManager, SSHResult, check_connectivity, execute_ssh
 
 
 class TestSSHResult:
@@ -57,7 +57,7 @@ class TestSSHConnectionManager:
 
         with patch.object(mgr, "_connect", return_value=fake_conn):
             result = await mgr.execute(
-                "vm-1", "10.0.1.10", "automaint", "/key", "uptime",
+                "vm-1", "10.0.1.10", "errander-ai", "/key", "uptime",
             )
 
         assert result.success
@@ -73,8 +73,8 @@ class TestSSHConnectionManager:
 
         connect_mock = AsyncMock(return_value=fake_conn)
         with patch.object(mgr, "_connect", connect_mock):
-            await mgr.execute("vm-1", "10.0.1.10", "automaint", "/key", "cmd1")
-            await mgr.execute("vm-1", "10.0.1.10", "automaint", "/key", "cmd2")
+            await mgr.execute("vm-1", "10.0.1.10", "errander-ai", "/key", "cmd1")
+            await mgr.execute("vm-1", "10.0.1.10", "errander-ai", "/key", "cmd2")
 
         # _connect called only once — second call reuses
         connect_mock.assert_awaited_once()
@@ -84,8 +84,8 @@ class TestSSHConnectionManager:
         connect_mock = AsyncMock(side_effect=[FakeSSHConnection(), FakeSSHConnection()])
 
         with patch.object(mgr, "_connect", connect_mock):
-            await mgr.execute("vm-1", "10.0.1.10", "automaint", "/key", "cmd")
-            await mgr.execute("vm-2", "10.0.2.10", "automaint", "/key", "cmd")
+            await mgr.execute("vm-1", "10.0.1.10", "errander-ai", "/key", "cmd")
+            await mgr.execute("vm-2", "10.0.2.10", "errander-ai", "/key", "cmd")
 
         assert connect_mock.await_count == 2
 
@@ -103,7 +103,7 @@ class TestSSHConnectionManager:
         with patch.object(mgr, "_connect", return_value=fake_conn):
             with pytest.raises(TimeoutError, match="timed out"):
                 await mgr.execute(
-                    "vm-1", "10.0.1.10", "automaint", "/key", "sleep 999",
+                    "vm-1", "10.0.1.10", "errander-ai", "/key", "sleep 999",
                     timeout=1,
                 )
 
@@ -116,13 +116,13 @@ class TestSSHConnectionManager:
         bad_conn = FakeSSHConnection(fail_on_run=True)
 
         with patch.object(mgr, "_connect", return_value=good_conn):
-            await mgr.execute("vm-1", "10.0.1.10", "automaint", "/key", "cmd1")
+            await mgr.execute("vm-1", "10.0.1.10", "errander-ai", "/key", "cmd1")
 
         # Manually replace the connection with a bad one
         mgr._connections["vm-1"] = bad_conn  # type: ignore[assignment]
 
         with pytest.raises(ConnectionError, match="SSH command failed"):
-            await mgr.execute("vm-1", "10.0.1.10", "automaint", "/key", "cmd2")
+            await mgr.execute("vm-1", "10.0.1.10", "errander-ai", "/key", "cmd2")
 
         assert "vm-1" not in mgr._connections
 
@@ -139,7 +139,7 @@ class TestSSHConnectionManager:
         )
 
         with patch.object(mgr, "_connect", connect_mock):
-            result = await mgr.execute("vm-1", "10.0.1.10", "automaint", "/key", "uptime")
+            result = await mgr.execute("vm-1", "10.0.1.10", "errander-ai", "/key", "uptime")
 
         assert result.success
         assert connect_mock.await_count == 3
@@ -157,14 +157,14 @@ class TestSSHConnectionManager:
 
         with patch.object(mgr, "_connect", connect_mock):
             with pytest.raises(ConnectionError, match="failed after 2 attempts"):
-                await mgr.execute("vm-1", "10.0.1.10", "automaint", "/key", "uptime")
+                await mgr.execute("vm-1", "10.0.1.10", "errander-ai", "/key", "uptime")
 
     async def test_close_single(self) -> None:
         mgr = SSHConnectionManager()
         fake_conn = FakeSSHConnection()
 
         with patch.object(mgr, "_connect", return_value=fake_conn):
-            await mgr.execute("vm-1", "10.0.1.10", "automaint", "/key", "uptime")
+            await mgr.execute("vm-1", "10.0.1.10", "errander-ai", "/key", "uptime")
 
         await mgr.close("vm-1")
         assert fake_conn.closed
@@ -176,8 +176,8 @@ class TestSSHConnectionManager:
         conn2 = FakeSSHConnection()
 
         with patch.object(mgr, "_connect", side_effect=[conn1, conn2]):
-            await mgr.execute("vm-1", "10.0.1.10", "automaint", "/key", "cmd")
-            await mgr.execute("vm-2", "10.0.2.10", "automaint", "/key", "cmd")
+            await mgr.execute("vm-1", "10.0.1.10", "errander-ai", "/key", "cmd")
+            await mgr.execute("vm-2", "10.0.2.10", "errander-ai", "/key", "cmd")
 
         await mgr.close_all()
         assert conn1.closed
@@ -189,7 +189,7 @@ class TestSSHConnectionManager:
 
         async with SSHConnectionManager() as mgr:
             with patch.object(mgr, "_connect", return_value=fake_conn):
-                await mgr.execute("vm-1", "10.0.1.10", "automaint", "/key", "cmd")
+                await mgr.execute("vm-1", "10.0.1.10", "errander-ai", "/key", "cmd")
 
         assert fake_conn.closed
 
@@ -199,8 +199,8 @@ class TestSSHConnectionManager:
         conn2 = FakeSSHConnection()
 
         with patch.object(mgr, "_connect", side_effect=[conn1, conn2]):
-            await mgr.execute("vm-1", "10.0.1.10", "automaint", "/key", "cmd")
-            await mgr.execute("vm-2", "10.0.2.10", "automaint", "/key", "cmd")
+            await mgr.execute("vm-1", "10.0.1.10", "errander-ai", "/key", "cmd")
+            await mgr.execute("vm-2", "10.0.2.10", "errander-ai", "/key", "cmd")
 
         assert set(mgr.active_connections) == {"vm-1", "vm-2"}
 
@@ -212,13 +212,13 @@ class TestSSHConnectionManager:
         with patch.object(mgr, "_connect", return_value=fake_conn):
             # This should use timeout=5, not the default 300
             result = await mgr.execute(
-                "vm-1", "10.0.1.10", "automaint", "/key", "echo fast",
+                "vm-1", "10.0.1.10", "errander-ai", "/key", "echo fast",
                 timeout=5,
             )
             assert result.success
 
-    async def test_null_exit_status_becomes_negative(self) -> None:
-        """If asyncssh returns None exit_status, we use -1."""
+    async def test_none_exit_status_becomes_255(self) -> None:
+        """If asyncssh returns None exit_status, we use 255 (conventional SSH error code)."""
         mgr = SSHConnectionManager()
 
         async def null_exit_run(command: str, check: bool = True) -> FakeSSHProcess:
@@ -228,8 +228,29 @@ class TestSSHConnectionManager:
         fake_conn.run = null_exit_run  # type: ignore[assignment]
 
         with patch.object(mgr, "_connect", return_value=fake_conn):
-            result = await mgr.execute("vm-1", "10.0.1.10", "automaint", "/key", "cmd")
-            assert result.exit_code == -1
+            result = await mgr.execute("vm-1", "10.0.1.10", "errander-ai", "/key", "cmd")
+            assert result.exit_code == 255
+            assert not result.success
+
+    async def test_timeout_clears_connection_from_pool(self) -> None:
+        """Timeout during execute removes the stale connection from the pool."""
+        mgr = SSHConnectionManager(command_timeout=1)
+
+        async def timeout_run(command: str, check: bool = True) -> FakeSSHProcess:
+            await asyncio.sleep(10)
+            return FakeSSHProcess()
+
+        fake_conn = FakeSSHConnection()
+        fake_conn.run = timeout_run  # type: ignore[assignment]
+
+        with patch.object(mgr, "_connect", return_value=fake_conn):
+            with pytest.raises(TimeoutError):
+                await mgr.execute(
+                    "vm-1", "10.0.1.10", "errander-ai", "/key", "sleep 999",
+                    timeout=1,
+                )
+
+        assert "vm-1" not in mgr._connections
 
 
 class TestExecuteSSH:
@@ -241,11 +262,11 @@ class TestExecuteSSH:
         )
 
         with patch(
-            "automaint.execution.ssh.SSHConnectionManager.execute",
+            "errander.execution.ssh.SSHConnectionManager.execute",
             return_value=fake_result,
         ):
             result = await execute_ssh(
-                "10.0.1.10", "automaint", "/key", "echo hello",
+                "10.0.1.10", "errander-ai", "/key", "echo hello",
             )
             assert result.success
             assert result.stdout == "hello"
@@ -258,9 +279,9 @@ class TestCheckConnectivity:
         fake_conn = MagicMock()
         fake_conn.close = MagicMock()
 
-        with patch("automaint.execution.ssh.asyncssh.connect", new_callable=AsyncMock, return_value=fake_conn):
-            assert await check_connectivity("10.0.1.10", "automaint", "/key")
+        with patch("errander.execution.ssh.asyncssh.connect", new_callable=AsyncMock, return_value=fake_conn):
+            assert await check_connectivity("10.0.1.10", "errander-ai", "/key")
 
     async def test_failure(self) -> None:
-        with patch("automaint.execution.ssh.asyncssh.connect", new_callable=AsyncMock, side_effect=OSError("refused")):
-            assert not await check_connectivity("10.0.1.10", "automaint", "/key")
+        with patch("errander.execution.ssh.asyncssh.connect", new_callable=AsyncMock, side_effect=OSError("refused")):
+            assert not await check_connectivity("10.0.1.10", "errander-ai", "/key")

@@ -6,15 +6,15 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from automaint.execution.os_detection import (
+from errander.execution.os_detection import (
     detect_os,
     parse_disk_usage,
     parse_os_release,
     parse_uptime,
     verify_os_match,
 )
-from automaint.execution.ssh import SSHConnectionManager, SSHResult
-from automaint.models.vm import OSFamily
+from errander.execution.ssh import SSHConnectionManager, SSHResult
+from errander.models.vm import OSFamily
 
 
 class TestParseOSRelease:
@@ -152,7 +152,7 @@ class TestDetectOS:
         ])
 
         with patch.object(mgr, "execute", execute_mock):
-            info = await detect_os("vm-1", "10.0.1.10", "automaint", "/key", mgr)
+            info = await detect_os("vm-1", "10.0.1.10", "errander-ai", "/key", mgr)
 
         assert info.os_family == OSFamily.UBUNTU
         assert "Ubuntu 22.04" in info.os_version
@@ -174,7 +174,7 @@ class TestDetectOS:
         ])
 
         with patch.object(mgr, "execute", execute_mock):
-            info = await detect_os("vm-1", "10.0.1.10", "automaint", "/key", mgr)
+            info = await detect_os("vm-1", "10.0.1.10", "errander-ai", "/key", mgr)
 
         assert info.docker_available is True
 
@@ -186,7 +186,7 @@ class TestDetectOS:
 
         with patch.object(mgr, "execute", execute_mock):
             with pytest.raises(ValueError, match="Failed to read"):
-                await detect_os("vm-1", "10.0.1.10", "automaint", "/key", mgr)
+                await detect_os("vm-1", "10.0.1.10", "errander-ai", "/key", mgr)
 
     async def test_graceful_degradation_on_optional_failures(self) -> None:
         """If df, docker, etc. fail, we still get a VMInfo with defaults."""
@@ -202,7 +202,7 @@ class TestDetectOS:
         ])
 
         with patch.object(mgr, "execute", execute_mock):
-            info = await detect_os("vm-1", "10.0.1.10", "automaint", "/key", mgr)
+            info = await detect_os("vm-1", "10.0.1.10", "errander-ai", "/key", mgr)
 
         assert info.os_family == OSFamily.DEBIAN
         assert info.disk_usage == {}

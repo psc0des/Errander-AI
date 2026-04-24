@@ -113,7 +113,7 @@ Mock the `_connect` method, not the entire `asyncssh` module. This tests the rea
 
 ### `monkeypatch` for Env Vars
 ```python
-monkeypatch.setenv("AUTOMAINT_SLACK_BOT_TOKEN", "xoxb-test")
+monkeypatch.setenv("ERRANDER_SLACK_BOT_TOKEN", "xoxb-test")
 settings = load_settings()
 assert settings.slack_bot_token == "xoxb-test"
 ```

@@ -7,12 +7,12 @@ from pathlib import Path
 import pytest
 import yaml
 
-from automaint.config.inventory import (
+from errander.config.inventory import (
     load_inventory,
     validate_ssh_keys,
     validate_target,
 )
-from automaint.models.vm import OSFamily, VMTarget
+from errander.models.vm import OSFamily, VMTarget
 
 
 class TestLoadInventory:
@@ -28,7 +28,7 @@ class TestLoadInventory:
             "environments": {
                 "dev": {
                     "approval_policy": "relaxed",
-                    "ssh_user": "automaint",
+                    "ssh_user": "errander-ai",
                     "ssh_key_path": "~/.ssh/key",
                     "targets": [
                         {"host": "10.0.1.10", "name": "web-01", "os_family": "ubuntu"},
@@ -72,7 +72,7 @@ class TestLoadInventory:
             "environments": {
                 "production": {
                     "approval_policy": "strict",
-                    "ssh_user": "automaint",
+                    "ssh_user": "errander-ai",
                     "ssh_key_path": "~/.ssh/key",
                     "targets": [
                         {"host": "10.0.1.10", "name": "web-01", "os_family": "ubuntu"},
@@ -87,7 +87,7 @@ class TestLoadInventory:
             },
         })
         targets = load_inventory(path)
-        assert targets[0].ssh_user == "automaint"
+        assert targets[0].ssh_user == "errander-ai"
         assert targets[1].ssh_user == "db-admin"
 
     def test_host_policy_override(self, tmp_path: Path) -> None:
@@ -96,7 +96,7 @@ class TestLoadInventory:
             "environments": {
                 "production": {
                     "approval_policy": "strict",
-                    "ssh_user": "automaint",
+                    "ssh_user": "errander-ai",
                     "ssh_key_path": "~/.ssh/key",
                     "targets": [
                         {
@@ -117,7 +117,7 @@ class TestLoadInventory:
             "environments": {
                 "production": {
                     "approval_policy": "strict",
-                    "ssh_user": "automaint",
+                    "ssh_user": "errander-ai",
                     "ssh_key_path": "~/.ssh/prod",
                     "targets": [
                         {"host": "10.0.1.10", "name": "web-prod", "os_family": "ubuntu"},
@@ -125,7 +125,7 @@ class TestLoadInventory:
                 },
                 "staging": {
                     "approval_policy": "moderate",
-                    "ssh_user": "automaint",
+                    "ssh_user": "errander-ai",
                     "ssh_key_path": "~/.ssh/stg",
                     "targets": [
                         {"host": "10.0.2.10", "name": "web-stg", "os_family": "debian"},
@@ -145,7 +145,7 @@ class TestLoadInventory:
             "environments": {
                 "dev": {
                     "approval_policy": "relaxed",
-                    "ssh_user": "automaint",
+                    "ssh_user": "errander-ai",
                     "ssh_key_path": "~/.ssh/key",
                     "targets": [
                         {
@@ -180,7 +180,7 @@ class TestValidateTarget:
         target = VMTarget(
             vm_id="dev/web-01",
             hostname="10.0.1.10",
-            ssh_user="automaint",
+            ssh_user="errander-ai",
             ssh_key_path="~/.ssh/key",
             os_family=OSFamily.UBUNTU,
             policy="moderate",
@@ -192,7 +192,7 @@ class TestValidateTarget:
         target = VMTarget(
             vm_id="dev/web-01",
             hostname="  ",
-            ssh_user="automaint",
+            ssh_user="errander-ai",
             ssh_key_path="~/.ssh/key",
             os_family=OSFamily.UBUNTU,
         )
@@ -214,7 +214,7 @@ class TestValidateTarget:
         target = VMTarget(
             vm_id="dev/web-01",
             hostname="10.0.1.10",
-            ssh_user="automaint",
+            ssh_user="errander-ai",
             ssh_key_path="  ",
             os_family=OSFamily.UBUNTU,
         )
@@ -225,7 +225,7 @@ class TestValidateTarget:
         target = VMTarget(
             vm_id="dev/web-01",
             hostname="10.0.1.10",
-            ssh_user="automaint",
+            ssh_user="errander-ai",
             ssh_key_path="~/.ssh/key",
             os_family=OSFamily.UBUNTU,
             policy="unknown-policy",
@@ -255,7 +255,7 @@ class TestValidateSSHKeys:
         target = VMTarget(
             vm_id="dev/web-01",
             hostname="10.0.1.10",
-            ssh_user="automaint",
+            ssh_user="errander-ai",
             ssh_key_path=str(key_file),
             os_family=OSFamily.UBUNTU,
         )
@@ -266,7 +266,7 @@ class TestValidateSSHKeys:
         target = VMTarget(
             vm_id="dev/web-01",
             hostname="10.0.1.10",
-            ssh_user="automaint",
+            ssh_user="errander-ai",
             ssh_key_path="/nonexistent/path/key",
             os_family=OSFamily.UBUNTU,
         )
@@ -279,14 +279,14 @@ class TestValidateSSHKeys:
         target1 = VMTarget(
             vm_id="dev/web-01",
             hostname="10.0.1.10",
-            ssh_user="automaint",
+            ssh_user="errander-ai",
             ssh_key_path="/nonexistent/key",
             os_family=OSFamily.UBUNTU,
         )
         target2 = VMTarget(
             vm_id="dev/web-02",
             hostname="10.0.1.11",
-            ssh_user="automaint",
+            ssh_user="errander-ai",
             ssh_key_path="/nonexistent/key",
             os_family=OSFamily.UBUNTU,
         )

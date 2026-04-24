@@ -1,4 +1,4 @@
-# AutoMaint — Full Project Specification
+# Errander-AI — Full Project Specification
 
 > Autonomous maintenance agent that eliminates repetitive operational toil across heterogeneous VM infrastructure. Performs secure patching (non-kernel), log rotation, Docker pruning, disk cleanup, and more — with safety gates, rollback, and full audit logging.
 
@@ -29,7 +29,7 @@
 
 ## 1. System Overview
 
-AutoMaint is a long-lived agent process that runs on a single VM inside a private VPN. It autonomously maintains a fleet of heterogeneous Linux VMs (Ubuntu, RHEL, Debian) by performing:
+Errander-AI is a long-lived agent process that runs on a single VM inside a private VPN. It autonomously maintains a fleet of heterogeneous Linux VMs (Ubuntu, RHEL, Debian) by performing:
 
 - **Non-kernel OS patching** — security and package updates
 - **Docker pruning** — reclaim disk from dangling images, stopped containers, build cache
@@ -59,7 +59,7 @@ graph TB
             vllm["vLLM Server<br/>Qwen3-8B-AWQ<br/>(private IP)"]
         end
         subgraph Agent_VM["Agent VM"]
-            agent["AutoMaint Agent"]
+            agent["Errander-AI Agent"]
             sched["APScheduler"]
             poller["Slack Poller"]
             db["SQLite Audit DB"]
@@ -92,7 +92,7 @@ graph TB
 
 ### Infrastructure (v1)
 
-- **Agent VM**: Single small VM running the AutoMaint process as a systemd service
+- **Agent VM**: Single small VM running the Errander-AI process as a systemd service
 - **LLM VM**: Separate VM running vLLM with Qwen3-8B-AWQ (Tesla T4 16GB VRAM, 4 vCPUs, 16GB RAM — already exists)
 - **Target VMs**: Existing fleet (already exist)
 - **Total new infrastructure**: One VM for the agent
@@ -202,7 +202,7 @@ class BatchState(TypedDict):
     # Identity
     batch_id: str                           # Unique run identifier
     triggered_by: str                       # "schedule", "slack_command", "manual"
-    trigger_details: str                    # e.g., "/automaint run --env production"
+    trigger_details: str                    # e.g., "/errander run --env production"
 
     # Configuration (loaded at run start)
     dry_run: bool                           # True for phase 1, False for phase 2
@@ -604,7 +604,7 @@ Note: In the two-phase execution model, the safety gate during dry-run classifie
 ### 6.5 VM-Level Locking
 
 - Before any operation on a VM, the agent acquires a file-based lock
-- Lock file: `/var/run/automaint/<vm_name>.lock` on the agent VM
+- Lock file: `/var/run/errander/<vm_name>.lock` on the agent VM
 - Lock contains: `batch_id`, `acquired_at`, `acquired_by`
 - TTL: 2 hours — if the agent crashes, stale locks expire automatically
 - If lock is already held: skip that VM, report "VM is currently under maintenance by another run"
@@ -719,7 +719,7 @@ graph TD
     end
 
     save --> report["Generate Report<br/>LLM summary or template"]
-    report --> post["Post to Slack<br/>#automaint-approvals"]
+    report --> post["Post to Slack<br/>#errander-approvals"]
     post --> gate["Approval Gate<br/>interrupt()"]
 
     gate -->|"✅ reaction"| drift["Pre-Flight<br/>Drift Check"]
@@ -800,7 +800,7 @@ Agent                           Slack                          Operator
 
 ```mermaid
 graph TD
-    post["Post Report<br/>to #automaint-approvals"] --> interrupt["interrupt()<br/>graph pauses"]
+    post["Post Report<br/>to #errander-approvals"] --> interrupt["interrupt()<br/>graph pauses"]
     interrupt --> poll_loop["Poll Slack API<br/>every 30 seconds"]
     poll_loop --> check{"Reaction<br/>found?"}
     check -->|"no reaction"| timeout_check{"30 min<br/>elapsed?"}
@@ -817,7 +817,7 @@ graph TD
 
 1. Agent completes dry-run, generates `MaintenancePlan`
 2. LLM generates readable Slack summary (or template fallback)
-3. Agent posts report to `#automaint-approvals` channel via Slack API
+3. Agent posts report to `#errander-approvals` channel via Slack API
 4. LangGraph `interrupt()` pauses the graph, saves checkpoint
 5. Agent polls `conversations.reactions` API every 30 seconds
 6. On ✅ reaction: extract Slack user ID, resume with `Command(resume="approved")`
@@ -829,7 +829,7 @@ graph TD
 One consolidated message per batch (not per-VM):
 
 ```
-🔧 AutoMaint Maintenance Plan — Sat Mar 22, 02:00 UTC
+🔧 Errander-AI Maintenance Plan — Sat Mar 22, 02:00 UTC
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 📊 Summary: 8 VMs | 47 patches | 12.4 GB reclaimable
@@ -866,12 +866,12 @@ Timeout: auto-reject in 30 minutes
 ### Slash Commands (On-Demand Triggers)
 
 ```
-/automaint run web-prod-*                    # by hostname pattern
-/automaint run --env staging                 # by environment
-/automaint run db-prod-01 --actions patching,docker_prune  # specific actions
-/automaint run --env production --exclude db-prod-01       # exclude VMs
-/automaint run --env production --force --reason "emergency security patch"  # bypass window
-/automaint status                            # current/recent runs
+/errander run web-prod-*                    # by hostname pattern
+/errander run --env staging                 # by environment
+/errander run db-prod-01 --actions patching,docker_prune  # specific actions
+/errander run --env production --exclude db-prod-01       # exclude VMs
+/errander run --env production --force --reason "emergency security patch"  # bypass window
+/errander status                            # current/recent runs
 ```
 
 The Slack bot validates the command, triggers a dry-run, and follows the standard approval flow.
@@ -886,7 +886,7 @@ The Slack bot validates the command, triggers a dry-run, and follows the standar
 - **Inference server**: vLLM on dedicated VM with Tesla T4 16GB VRAM, 4 vCPUs, 16GB RAM
 - **Serve command**: `vllm serve Qwen/Qwen3-8B-AWQ --enable-reasoning --reasoning-parser deepseek_r1 --enable-auto-tool-choice --tool-call-parser hermes --max-model-len 8192 --gpu-memory-utilization 0.85`
 - **API**: OpenAI-compatible (`/v1/chat/completions`) on private IP inside VPN
-- **Client**: OpenAI Python SDK pointed at configurable `AUTOMAINT_LLM_BASE_URL`
+- **Client**: OpenAI Python SDK pointed at configurable `ERRANDER_LLM_BASE_URL`
 - **Thinking modes**: Thinking mode (reasoning enabled) for planning + failure analysis. `/no_think` prefix for report generation (faster, no reasoning overhead).
 - **Response format**: All LLM responses are structured JSON, parsed and validated via Pydantic models. No free-text responses.
 - **Timeout**: 60 seconds per call (T4 is slower than cloud APIs)
@@ -1072,7 +1072,7 @@ graph TD
     gather --> gather_detail
     gather_detail --> persist["Persist to Audit DB<br/>structured JSON"]
     persist --> format["Format Summary"]
-    format --> slack_post["Post to Slack<br/>#automaint-status"]
+    format --> slack_post["Post to Slack<br/>#errander-status"]
 
 ```
 
@@ -1092,7 +1092,7 @@ graph TD
 
 ### Scan Output
 
-**Slack** (`#automaint-status` channel) — daily summary, concise, per-VM:
+**Slack** (`#errander-status` channel) — daily summary, concise, per-VM:
 
 ```
 📊 Daily Scan — Wed Mar 19, 06:00 UTC
@@ -1122,8 +1122,8 @@ environments:
     maintenance_window: "02:00-06:00 UTC"
     maintenance_days: [saturday]
     approval_policy: strict
-    ssh_user: automaint
-    ssh_key_path: ~/.ssh/automaint_prod
+    ssh_user: errander
+    ssh_key_path: ~/.ssh/errander_prod
     targets:
       - host: 10.0.1.10
         name: web-prod-01
@@ -1133,14 +1133,14 @@ environments:
         name: db-prod-01
         os_family: rhel
         tags: [database]
-        ssh_user: automaint-db      # overrides group-level
+        ssh_user: errander-db      # overrides group-level
 
   staging:
     maintenance_window: "00:00-06:00 UTC"
     maintenance_days: [daily]
     approval_policy: moderate
-    ssh_user: automaint
-    ssh_key_path: ~/.ssh/automaint_staging
+    ssh_user: errander
+    ssh_key_path: ~/.ssh/errander_staging
     targets:
       - host: 10.0.2.10
         name: web-stg-01
@@ -1151,8 +1151,8 @@ environments:
     maintenance_window: null
     maintenance_days: [daily]
     approval_policy: relaxed
-    ssh_user: automaint
-    ssh_key_path: ~/.ssh/automaint_dev
+    ssh_user: errander
+    ssh_key_path: ~/.ssh/errander_dev
     targets:
       - host: 10.0.3.10
         name: web-dev-01
@@ -1208,8 +1208,8 @@ agent:
   graceful_shutdown_timeout_seconds: 120
 
 slack:
-  approvals_channel_env: AUTOMAINT_SLACK_CHANNEL_ID
-  status_channel: automaint-status      # for discovery scans
+  approvals_channel_env: ERRANDER_SLACK_CHANNEL_ID
+  status_channel: errander-status      # for discovery scans
   poll_interval_seconds: 30
 
 llm:
@@ -1245,9 +1245,9 @@ graph TD
     defaults -->|"overridden by"| env
     env -->|"overridden by"| host
 
-    defaults -.->|"ssh_user: automaint<br/>ssh_key_path: default"| merged
+    defaults -.->|"ssh_user: errander<br/>ssh_key_path: default"| merged
     env -.->|"maintenance_window: 02-06 UTC<br/>approval_policy: strict"| merged
-    host -.->|"ssh_user: automaint-db<br/>(only for db-prod-01)"| merged["Resolved Config<br/>for db-prod-01"]
+    host -.->|"ssh_user: errander-db<br/>(only for db-prod-01)"| merged["Resolved Config<br/>for db-prod-01"]
 
 ```
 
@@ -1261,11 +1261,11 @@ graph TD
 ### Secrets (Environment Variables — v1)
 
 ```
-AUTOMAINT_SLACK_BOT_TOKEN      # posting messages + polling reactions
-AUTOMAINT_SLACK_CHANNEL_ID     # dedicated approvals channel
-AUTOMAINT_LLM_BASE_URL         # private vLLM endpoint (e.g., http://10.0.0.5:8000/v1)
-AUTOMAINT_LLM_API_KEY          # if vLLM requires auth (may be empty)
-AUTOMAINT_AUDIT_DB_URL         # SQLite path (e.g., /var/lib/automaint/audit.sqlite)
+ERRANDER_SLACK_BOT_TOKEN      # posting messages + polling reactions
+ERRANDER_SLACK_CHANNEL_ID     # dedicated approvals channel
+ERRANDER_LLM_BASE_URL         # private vLLM endpoint (e.g., http://10.0.0.5:8000/v1)
+ERRANDER_LLM_API_KEY          # if vLLM requires auth (may be empty)
+ERRANDER_AUDIT_DB_URL         # SQLite path (e.g., /var/lib/errander/audit.sqlite)
 ```
 
 SSH keys: referenced by file path in inventory config, never inlined. Agent validates all key paths are readable at startup.
@@ -1280,17 +1280,17 @@ SSH keys: referenced by file path in inventory config, never inlined. Agent vali
 
 | Metric | Type | Labels | Alert On |
 |---|---|---|---|
-| `automaint_actions_total` | Counter | `action`, `vm`, `status`, `risk_tier` | `status="failure"` |
-| `automaint_action_duration_seconds` | Histogram | `action`, `vm` | Significantly above baseline |
-| `automaint_ssh_connection_failures_total` | Counter | `vm` | Any increment (immediate alert) |
-| `automaint_rollback_total` | Counter | `action`, `vm`, `status` | Any rollback, especially `status="failure"` |
+| `errander_actions_total` | Counter | `action`, `vm`, `status`, `risk_tier` | `status="failure"` |
+| `errander_action_duration_seconds` | Histogram | `action`, `vm` | Significantly above baseline |
+| `errander_ssh_connection_failures_total` | Counter | `vm` | Any increment (immediate alert) |
+| `errander_rollback_total` | Counter | `action`, `vm`, `status` | Any rollback, especially `status="failure"` |
 
 Exposed at `/metrics` endpoint on the agent process.
 
 ### V2 Metrics (Deferred)
 
-- `automaint_approval_wait_seconds` — time waiting for human approval
-- `automaint_dry_run_drift_detected_total` — state drift between dry-run and live execution
+- `errander_approval_wait_seconds` — time waiting for human approval
+- `errander_dry_run_drift_detected_total` — state drift between dry-run and live execution
 
 ### Operational Logs
 
@@ -1405,7 +1405,7 @@ Used by systemd watchdog (agent pings every 30 seconds, restart after 3 missed p
 ### Concurrent Maintenance
 
 - **VM-level locking** before any operation. File-based lock for v1.
-- Lock file: `/var/run/automaint/<vm_name>.lock` on agent VM
+- Lock file: `/var/run/errander/<vm_name>.lock` on agent VM
 - Lock contents: `batch_id`, `acquired_at`, `acquired_by`
 - If lock already held: skip VM, report "VM is currently under maintenance by another run"
 - **TTL**: 2 hours. Prevents stale locks from permanently blocking a VM if the agent crashes.
@@ -1456,8 +1456,8 @@ sequenceDiagram
 4. Start Slack poller (begin polling for approval reactions and slash commands)
 5. Expose `/metrics` endpoint (Prometheus)
 6. Expose `/health` endpoint
-7. Log "AutoMaint agent ready" to operational log
-8. Post startup message to Slack: "🟢 AutoMaint agent started. Next scheduled run: [time]"
+7. Log "Errander-AI agent ready" to operational log
+8. Post startup message to Slack: "🟢 Errander-AI agent started. Next scheduled run: [time]"
 9. Trigger a **non-blocking** discovery scan in background — agent is "ready" and accepting commands while scan runs. Post results to Slack when complete.
 
 No SSH reachability check at startup. SSH validation happens at the start of each run. This avoids slow startup when targets are unreachable.
@@ -1496,7 +1496,7 @@ If a maintenance run **is** in progress:
 2. Let the currently executing action on each active VM **finish** (don't abort mid-package-install)
 3. Mark remaining unprocessed VMs as `SKIPPED` with reason "agent shutdown"
 4. Commit audit log for everything completed
-5. Post to Slack: "⚠️ AutoMaint shutting down. Completed maintenance on 4/10 VMs. Remaining 6 skipped."
+5. Post to Slack: "⚠️ Errander-AI shutting down. Completed maintenance on 4/10 VMs. Remaining 6 skipped."
 6. Exit cleanly
 
 **NEVER rollback on graceful shutdown.** Completed actions stay completed.
@@ -1523,7 +1523,7 @@ graph TD
 On restart after unexpected termination:
 1. Detect stale LangGraph checkpoints from the crashed run
 2. **Discard them. NEVER resume interrupted runs.** VM state may have changed during downtime.
-3. Post to Slack: "⚠️ AutoMaint restarted after unexpected shutdown. Previous run was interrupted — [X] VMs may have partial maintenance. Manual review recommended."
+3. Post to Slack: "⚠️ Errander-AI restarted after unexpected shutdown. Previous run was interrupted — [X] VMs may have partial maintenance. Manual review recommended."
 4. List which VMs were in-progress at crash time
 5. Clean up stale lock files (check TTL)
 6. Resume normal scheduling from clean state
@@ -1604,7 +1604,7 @@ These interfaces should be abstracted in v1 even though only one implementation 
 ## Appendix: Directory Structure
 
 ```
-automaint/
+errander/
 ├── agent/                  # LangGraph agent definitions
 │   ├── graph.py            # Parent orchestrator graph (fan-out to VMs)
 │   ├── vm_graph.py         # Per-VM maintenance graph

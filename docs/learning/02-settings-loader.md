@@ -43,7 +43,7 @@ The inventory YAML groups targets under environments:
 ```yaml
 environments:
   production:
-    ssh_user: automaint          # ← environment-level default
+    ssh_user: errander          # ← environment-level default
     ssh_key_path: ~/.ssh/prod
     approval_policy: strict
     targets:
@@ -53,7 +53,7 @@ environments:
       - host: 10.0.1.20
         name: db-01
         os_family: rhel
-        ssh_user: automaint-db   # ← overrides env-level
+        ssh_user: errander-db   # ← overrides env-level
 ```
 
 Resolution in `_resolve_single_target()`:
@@ -73,7 +73,7 @@ Three sources, in priority order:
 
 ```python
 approval_timeout_seconds=_load_env_int(
-    "AUTOMAINT_APPROVAL_TIMEOUT",
+    "ERRANDER_APPROVAL_TIMEOUT",
     agent.approval_timeout_seconds if agent else 1800,  # YAML or default
 )
 ```

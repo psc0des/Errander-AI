@@ -1,4 +1,4 @@
-# Architecture Options for AutoMaint
+# Architecture Options for Errander-AI
 
 Three approaches to structuring the LangGraph state machine. Each trades off simplicity, flexibility, and operational complexity.
 

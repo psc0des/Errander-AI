@@ -2,9 +2,400 @@
 
 from __future__ import annotations
 
+import json
+from datetime import UTC
+from unittest.mock import AsyncMock, MagicMock, patch
 
-class TestLLMClient:
-    """Tests for LLM client with fallback."""
+import pytest
+from pydantic import BaseModel
 
-    def test_placeholder(self) -> None:
-        """Placeholder."""
+from errander.integrations.llm import LLMClient, _parse_response
+
+# --- Test response model ---
+
+class _Echo(BaseModel):
+    message: str
+    count: int
+
+
+# --- Shared client fixture (created once per module to avoid httpx setup overhead) ---
+
+@pytest.fixture(scope="module")
+def llm_client() -> LLMClient:
+    return LLMClient(
+        base_url="http://10.0.1.5:8000/v1",
+        model="test-model",
+        api_key="not-needed",
+        timeout_seconds=60,
+        max_retries=2,
+    )
+
+
+@pytest.fixture(scope="module")
+def llm_client_no_retry() -> LLMClient:
+    return LLMClient(
+        base_url="http://10.0.1.5:8000/v1",
+        model="test-model",
+        timeout_seconds=60,
+        max_retries=0,
+    )
+
+
+# --- _parse_response unit tests ---
+
+class TestParseResponse:
+    def test_parses_raw_json(self) -> None:
+        result = _parse_response('{"message": "hello", "count": 3}', _Echo)
+        assert result is not None
+        assert result.message == "hello"
+        assert result.count == 3
+
+    def test_parses_markdown_fenced_json(self) -> None:
+        content = '```json\n{"message": "fenced", "count": 1}\n```'
+        result = _parse_response(content, _Echo)
+        assert result is not None
+        assert result.message == "fenced"
+
+    def test_parses_plain_fenced_json(self) -> None:
+        content = '```\n{"message": "plain", "count": 2}\n```'
+        result = _parse_response(content, _Echo)
+        assert result is not None
+        assert result.count == 2
+
+    def test_returns_none_on_invalid_json(self) -> None:
+        result = _parse_response("not json at all", _Echo)
+        assert result is None
+
+    def test_returns_none_on_schema_mismatch(self) -> None:
+        result = _parse_response('{"wrong_field": "x"}', _Echo)
+        assert result is None
+
+    def test_strips_whitespace(self) -> None:
+        result = _parse_response('  \n{"message": "trimmed", "count": 0}\n  ', _Echo)
+        assert result is not None
+        assert result.message == "trimmed"
+
+
+# --- LLMClient tests ---
+
+def _make_chat_response(content: str) -> MagicMock:
+    """Build a mock OpenAI chat completion response."""
+    msg = MagicMock()
+    msg.content = content
+    choice = MagicMock()
+    choice.message = msg
+    response = MagicMock()
+    response.choices = [choice]
+    return response
+
+
+class TestLLMClientComplete:
+    @pytest.mark.asyncio
+    async def test_returns_parsed_model_on_success(self, llm_client: LLMClient) -> None:
+        payload = json.dumps({"message": "ok", "count": 7})
+        mock_response = _make_chat_response(payload)
+        with patch.object(
+            llm_client._client.chat.completions, "create",
+            AsyncMock(return_value=mock_response),
+        ):
+            result = await llm_client.complete("test prompt", _Echo)
+        assert result is not None
+        assert result.message == "ok"
+        assert result.count == 7
+
+    @pytest.mark.asyncio
+    async def test_sends_prompt_verbatim_without_modification(self, llm_client: LLMClient) -> None:
+        """complete() must send the prompt as-is — no prefix injection."""
+        payload = json.dumps({"message": "ok", "count": 1})
+        mock_response = _make_chat_response(payload)
+        captured: list[list[dict]] = []
+
+        async def _capture(**kwargs: object) -> MagicMock:
+            captured.append(kwargs.get("messages", []))  # type: ignore[arg-type]
+            return mock_response
+
+        with patch.object(llm_client._client.chat.completions, "create", _capture):
+            await llm_client.complete("my exact prompt", _Echo)
+
+        user_msg = captured[0][1]["content"]
+        assert user_msg == "my exact prompt"
+
+    @pytest.mark.asyncio
+    async def test_uses_configured_temperature(self, llm_client: LLMClient) -> None:
+        """complete() must use self._temperature, not a hardcoded literal."""
+        client = LLMClient(
+            base_url="http://10.0.1.5:8000/v1",
+            model="test-model",
+            temperature=0.7,
+        )
+        payload = json.dumps({"message": "ok", "count": 1})
+        mock_response = _make_chat_response(payload)
+        captured_kwargs: list[dict] = []
+
+        async def _capture(**kwargs: object) -> MagicMock:
+            captured_kwargs.append(dict(kwargs))
+            return mock_response
+
+        with patch.object(client._client.chat.completions, "create", _capture):
+            await client.complete("prompt", _Echo)
+
+        assert captured_kwargs[0]["temperature"] == 0.7
+
+    @pytest.mark.asyncio
+    async def test_uses_configured_model(self, llm_client: LLMClient) -> None:
+        """complete() must use self._model, not a hardcoded constant."""
+        payload = json.dumps({"message": "ok", "count": 1})
+        mock_response = _make_chat_response(payload)
+        captured_kwargs: list[dict] = []
+
+        async def _capture(**kwargs: object) -> MagicMock:
+            captured_kwargs.append(dict(kwargs))
+            return mock_response
+
+        with patch.object(llm_client._client.chat.completions, "create", _capture):
+            await llm_client.complete("prompt", _Echo)
+
+        assert captured_kwargs[0]["model"] == "test-model"
+
+    @pytest.mark.asyncio
+    async def test_returns_none_on_timeout(self, llm_client_no_retry: LLMClient) -> None:
+        from openai import APITimeoutError
+        with patch.object(
+            llm_client_no_retry._client.chat.completions, "create",
+            AsyncMock(side_effect=APITimeoutError(request=MagicMock())),
+        ):
+            result = await llm_client_no_retry.complete("test", _Echo)
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_returns_none_on_connection_error(self, llm_client_no_retry: LLMClient) -> None:
+        from openai import APIConnectionError
+        with patch.object(
+            llm_client_no_retry._client.chat.completions, "create",
+            AsyncMock(side_effect=APIConnectionError(request=MagicMock())),
+        ):
+            result = await llm_client_no_retry.complete("test", _Echo)
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_retries_on_transient_errors(self, llm_client: LLMClient) -> None:
+        from openai import APIConnectionError
+        payload = json.dumps({"message": "ok", "count": 1})
+        mock_response = _make_chat_response(payload)
+        call_count = 0
+
+        async def _flaky(**kwargs: object) -> MagicMock:
+            nonlocal call_count
+            call_count += 1
+            if call_count < 2:
+                raise APIConnectionError(request=MagicMock())
+            return mock_response
+
+        with patch.object(llm_client._client.chat.completions, "create", _flaky):
+            result = await llm_client.complete("test", _Echo)
+
+        assert result is not None
+        assert call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_returns_none_after_exhausting_retries(self, llm_client: LLMClient) -> None:
+        from openai import APIConnectionError
+        with patch.object(
+            llm_client._client.chat.completions, "create",
+            AsyncMock(side_effect=APIConnectionError(request=MagicMock())),
+        ):
+            result = await llm_client.complete("test", _Echo)
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_returns_none_on_bad_json_response(self, llm_client: LLMClient) -> None:
+        mock_response = _make_chat_response("This is not JSON")
+        with patch.object(
+            llm_client._client.chat.completions, "create",
+            AsyncMock(return_value=mock_response),
+        ):
+            result = await llm_client.complete("test", _Echo)
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_returns_none_on_api_status_error(self, llm_client: LLMClient) -> None:
+        from openai import APIStatusError
+        with patch.object(
+            llm_client._client.chat.completions, "create",
+            AsyncMock(
+                side_effect=APIStatusError(
+                    message="Internal Server Error",
+                    response=MagicMock(status_code=500),
+                    body=None,
+                )
+            ),
+        ):
+            result = await llm_client.complete("test", _Echo)
+        assert result is None
+
+
+class TestLLMClientHealthCheck:
+    @pytest.mark.asyncio
+    async def test_returns_true_when_models_available(self, llm_client: LLMClient) -> None:
+        mock_models = MagicMock()
+        mock_models.data = [MagicMock()]
+        with patch.object(
+            llm_client._client.models, "list",
+            AsyncMock(return_value=mock_models),
+        ):
+            assert await llm_client.health_check() is True
+
+    @pytest.mark.asyncio
+    async def test_returns_false_on_connection_error(self, llm_client: LLMClient) -> None:
+        from openai import APIConnectionError
+        with patch.object(
+            llm_client._client.models, "list",
+            AsyncMock(side_effect=APIConnectionError(request=MagicMock())),
+        ):
+            assert await llm_client.health_check() is False
+
+    @pytest.mark.asyncio
+    async def test_returns_false_when_no_models(self, llm_client: LLMClient) -> None:
+        mock_models = MagicMock()
+        mock_models.data = []
+        with patch.object(
+            llm_client._client.models, "list",
+            AsyncMock(return_value=mock_models),
+        ):
+            assert await llm_client.health_check() is False
+
+
+# --- Integration: decisions.py with LLM client ---
+
+class TestDecisionsWithLLM:
+    """Verify decisions.py uses LLM when available and falls back when not."""
+
+    @pytest.mark.asyncio
+    async def test_prioritize_uses_llm_when_available(self, llm_client: LLMClient) -> None:
+        from errander.agent.decisions import prioritize_actions
+        from errander.models.actions import ActionType
+        from errander.models.vm import OSFamily, VMInfo
+
+        vm_info = VMInfo(
+            os_family=OSFamily.UBUNTU,
+            os_version="Ubuntu 22.04",
+            disk_usage={"/": 60.0},
+            docker_available=True,
+            pending_packages=5,
+            uptime_seconds=86400.0,
+        )
+        llm_payload = json.dumps({
+            "action_types": [
+                "patching", "disk_cleanup", "log_rotation",
+                "docker_prune", "backup_verify",
+            ]
+        })
+        mock_response = _make_chat_response(llm_payload)
+        with patch.object(
+            llm_client._client.chat.completions, "create",
+            AsyncMock(return_value=mock_response),
+        ):
+            actions = await prioritize_actions(vm_info, llm_client=llm_client)
+
+        assert actions[0].action_type == ActionType.PATCHING
+
+    @pytest.mark.asyncio
+    async def test_prioritize_falls_back_when_llm_unavailable(self, llm_client: LLMClient) -> None:
+        from openai import APIConnectionError
+
+        from errander.agent.decisions import DEFAULT_PRIORITY, prioritize_actions
+        from errander.models.vm import OSFamily, VMInfo
+
+        vm_info = VMInfo(
+            os_family=OSFamily.UBUNTU,
+            os_version="Ubuntu 22.04",
+            disk_usage={"/": 50.0},
+            docker_available=True,
+            pending_packages=5,
+            uptime_seconds=86400.0,
+        )
+        with patch.object(
+            llm_client._client.chat.completions, "create",
+            AsyncMock(side_effect=APIConnectionError(request=MagicMock())),
+        ):
+            actions = await prioritize_actions(vm_info, llm_client=llm_client)
+
+        assert [a.action_type for a in actions] == DEFAULT_PRIORITY
+
+    @pytest.mark.asyncio
+    async def test_prioritize_falls_back_on_bad_llm_response(self, llm_client: LLMClient) -> None:
+        from errander.agent.decisions import DEFAULT_PRIORITY, prioritize_actions
+        from errander.models.vm import OSFamily, VMInfo
+
+        vm_info = VMInfo(
+            os_family=OSFamily.UBUNTU,
+            os_version="Ubuntu 22.04",
+            disk_usage={"/": 50.0},
+            docker_available=True,
+            pending_packages=5,
+            uptime_seconds=86400.0,
+        )
+        mock_response = _make_chat_response("not valid json")
+        with patch.object(
+            llm_client._client.chat.completions, "create",
+            AsyncMock(return_value=mock_response),
+        ):
+            actions = await prioritize_actions(vm_info, llm_client=llm_client)
+
+        assert [a.action_type for a in actions] == DEFAULT_PRIORITY
+
+    @pytest.mark.asyncio
+    async def test_generate_report_uses_llm(self, llm_client: LLMClient) -> None:
+        from datetime import datetime
+
+        from errander.agent.decisions import generate_report
+        from errander.models.actions import ActionResult, ActionStatus, ActionType
+
+        now = datetime.now(tz=UTC)
+        results = [
+            ActionResult(
+                action_type=ActionType.DISK_CLEANUP,
+                status=ActionStatus.SUCCESS,
+                vm_id="dev/web-01",
+                started_at=now,
+                completed_at=now,
+            )
+        ]
+        llm_report = "Errander-AI ran disk cleanup on dev/web-01. All clear."
+        mock_response = _make_chat_response(json.dumps({"report": llm_report}))
+        with patch.object(
+            llm_client._client.chat.completions, "create",
+            AsyncMock(return_value=mock_response),
+        ):
+            report = await generate_report(results, batch_id="b-001", llm_client=llm_client)
+
+        assert report == llm_report
+
+    @pytest.mark.asyncio
+    async def test_generate_report_falls_back_to_template(self, llm_client: LLMClient) -> None:
+        from datetime import datetime
+
+        from openai import APIConnectionError
+
+        from errander.agent.decisions import generate_report
+        from errander.models.actions import ActionResult, ActionStatus, ActionType
+
+        now = datetime.now(tz=UTC)
+        results = [
+            ActionResult(
+                action_type=ActionType.DISK_CLEANUP,
+                status=ActionStatus.DRY_RUN_OK,
+                vm_id="dev/web-01",
+                started_at=now,
+                completed_at=now,
+            )
+        ]
+        with patch.object(
+            llm_client._client.chat.completions, "create",
+            AsyncMock(side_effect=APIConnectionError(request=MagicMock())),
+        ):
+            report = await generate_report(results, batch_id="b-002", llm_client=llm_client)
+
+        assert "b-002" in report
+        assert "dev/web-01" in report
+        assert "[DRY]" in report

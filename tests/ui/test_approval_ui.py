@@ -12,13 +12,11 @@ Tests cover:
 from __future__ import annotations
 
 import pytest
-from aiohttp import web
 from aiohttp.test_utils import TestClient, TestServer
 
-from automaint.observability.metrics import start_metrics_server
-from automaint.safety.approval import ApprovalManager
-from automaint.safety.audit import AuditStore
-
+from errander.observability.metrics import start_metrics_server
+from errander.safety.approval import ApprovalManager
+from errander.safety.audit import AuditStore
 
 # ---------------------------------------------------------------------------
 # Helpers

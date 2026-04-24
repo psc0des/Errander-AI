@@ -32,3 +32,12 @@ uv.lock
 # Coverage
 htmlcov/
 .coverage
+
+# Claude Code (local tool config — never commit)
+.claude/
+
+# Logs
+*.log
+
+# Playwright browser binaries
+playwright/.local-browsers/

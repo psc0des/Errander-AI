@@ -7,8 +7,8 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from automaint.integrations.slack import APPROVE_REACTION, REJECT_REACTION, SlackClient, SlackError
-from automaint.safety.approval import (
+from errander.integrations.slack import APPROVE_REACTION, REJECT_REACTION, SlackClient, SlackError
+from errander.safety.approval import (
     ApprovalManager,
     PendingApproval,
     await_dual_approval,

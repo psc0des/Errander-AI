@@ -1,0 +1,97 @@
+# Errander-AI Inventory — Example Configuration
+#
+# Structure:
+#   environments:
+#     <env-name>:
+#       ssh_user: default SSH user for all hosts in this env
+#       ssh_key_path: path to SSH private key (key-based auth only)
+#       approval_policy: relaxed | moderate | strict
+#       maintenance_window: "HH:MM-HH:MM" time range (agent timezone)
+#       maintenance_days: list of weekday names
+#       targets:
+#         - host: IP or hostname (must be reachable via VPN)
+#           name: human-readable VM name (shown in Slack reports)
+#           os_family: ubuntu | debian | rhel
+#           tags: optional labels for grouping
+#           policy: override environment policy for this host (optional)
+#           ssh_user: override environment ssh_user (optional)
+#           ssh_key_path: override key path (optional)
+#
+# Note: SSH keys are referenced by path. Never inline key material.
+# The agent uses key-based auth only — passwords are not supported.
+
+environments:
+
+  production:
+    ssh_user: errander
+    ssh_key_path: ~/.ssh/errander_prod
+    approval_policy: strict
+    maintenance_window: "02:00-06:00"
+    maintenance_days:
+      - tuesday
+      - thursday
+    maintenance_timezone: UTC
+    targets:
+      - host: 10.0.1.10
+        name: prod-web-01
+        os_family: ubuntu
+        tags: [web, prod, tier-1]
+
+      - host: 10.0.1.11
+        name: prod-web-02
+        os_family: ubuntu
+        tags: [web, prod, tier-1]
+
+      - host: 10.0.1.20
+        name: prod-db-01
+        os_family: ubuntu
+        tags: [database, prod, tier-1]
+        policy: strict  # explicit — no automated actions, approval required for all
+
+      - host: 10.0.2.10
+        name: prod-worker-01
+        os_family: rhel
+        tags: [worker, prod]
+
+  staging:
+    ssh_user: errander
+    ssh_key_path: ~/.ssh/errander_staging
+    approval_policy: moderate
+    maintenance_window: "22:00-06:00"   # overnight window crosses midnight
+    maintenance_timezone: UTC
+    maintenance_days:
+      - monday
+      - tuesday
+      - wednesday
+      - thursday
+      - friday
+    targets:
+      - host: 10.0.10.10
+        name: staging-web-01
+        os_family: ubuntu
+        tags: [web, staging]
+
+      - host: 10.0.10.20
+        name: staging-worker-01
+        os_family: debian
+        tags: [worker, staging]
+
+  dev:
+    ssh_user: devops
+    ssh_key_path: ~/.ssh/errander_dev
+    approval_policy: relaxed    # auto-approve low + medium risk
+    maintenance_window: "08:00-20:00"   # broad window for dev
+    maintenance_timezone: UTC
+    maintenance_days:
+      - monday
+      - tuesday
+      - wednesday
+      - thursday
+      - friday
+      - saturday
+      - sunday
+    targets:
+      - host: 10.0.20.10
+        name: dev-all-in-one
+        os_family: ubuntu
+        tags: [dev, all-in-one]

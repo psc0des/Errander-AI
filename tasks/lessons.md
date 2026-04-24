@@ -1,7 +1,286 @@
-# AutoMaint — Lessons Learned
+# Errander-AI — Lessons Learned
 
 Self-improvement log. Updated after corrections, mistakes, and surprises.
 
 ---
 
-<!-- Lessons will be added here as development progresses -->
+## Phase 1.3 — LangGraph Node Wrapping
+
+**Lesson**: Async nodes that need injected dependencies must use `async def` wrapper closures, not lambdas. LangGraph calls node functions and awaits them — a lambda that returns a coroutine object is not the same as an async function.
+
+```python
+# WRONG — lambda returning coroutine, not awaitable function
+builder.add_node("assess", lambda s: assess_node(s, executor=executor))
+
+# CORRECT — async def wrapper
+async def _assess(state):
+    return await assess_node(state, executor=executor)
+builder.add_node("assess", _assess)
+```
+
+---
+
+## Phase 1.5 — Pre-compile Shared Graphs Once
+
+**Lesson**: Build and compile the per-VM `StateGraph` once in the builder, not once per VM at dispatch time. `StateGraph.compile()` is expensive. Capture the compiled graph in a closure and reuse it for all `Send()` fan-out invocations.
+
+```python
+# In build_batch_graph():
+vm_compiled = build_vm_graph(executor, locker, audit_store, ssh_manager).compile()
+
+def _route_after_validate(state):
+    return [Send("run_vm", vm_state) for t in healthy]
+
+async def _run_vm(state):
+    return await run_vm_node(state, vm_compiled=vm_compiled)  # closure
+```
+
+---
+
+## Phase 1.5 — LangGraph Send() Fan-Out
+
+**Lesson**: `Send()` objects must be returned by **conditional edge routing functions**, not by graph nodes. Nodes must return dicts. If a node returns `list[Send]`, LangGraph throws `InvalidUpdateError: Expected dict, got [Send(...)]`.
+
+```python
+# WRONG — node returning Send objects
+builder.add_node("fan_out", lambda state: [Send("run_vm", {...})])
+
+# CORRECT — conditional edge routing function returning Send objects
+def _route_after_validate(state):
+    if not state.get("healthy_targets"):
+        return "generate_report"
+    return [Send("run_vm", vm_state) for t in state["healthy_targets"]]
+
+builder.add_conditional_edges("validate_targets", _route_after_validate, ["run_vm", "generate_report"])
+```
+
+**Why**: In LangGraph's execution model, nodes write state updates (dicts). The graph scheduler reads routing functions to determine which nodes to activate next. `Send()` is a scheduler directive, not a state update — it belongs in the routing layer, not the node layer.
+
+---
+
+## Phase 1.6 — Module-Scoped Fixtures for Expensive Clients
+
+**Lesson**: When testing clients that initialise expensive transports (e.g., `AsyncOpenAI` initialises an httpx async transport), use `pytest.fixture(scope="module")` to create the client once per module, not once per test.
+
+```python
+# SLOW — creates a new AsyncOpenAI (+ httpx transport) for every test
+def _make_client() -> LLMClient:
+    return LLMClient(base_url="http://...", ...)
+
+# FAST — created once, shared across all tests in the module
+@pytest.fixture(scope="module")
+def llm_client() -> LLMClient:
+    return LLMClient(base_url="http://...", ...)
+```
+
+**Why**: `AsyncOpenAI.__init__` sets up an httpx `AsyncClient` with connection pool configuration. At ~1.4s each × 23 tests = 57s. With module scope: 2 clients × ~1.5s setup = 3s total, ~0.01s per call.
+
+---
+
+## Phase 1.6 — aiohttp Async Context Manager Pattern
+
+**Lesson**: `aiohttp` sessions use `async with session.post(url) as resp:` — the response is an async context manager, NOT an awaitable. Calling `resp = await session.post(...)` returns the CM object, not the response. Tests that mock `session.post` must return an async context manager, not the response directly.
+
+```python
+# WRONG — post() is not awaitable
+resp = await session.post(url, json=payload)
+
+# CORRECT — post() returns an async context manager
+async with session.post(url, json=payload) as resp:
+    data = await resp.json()
+```
+
+In tests, wrap mock responses with an async CM helper:
+
+```python
+def _ctx(resp: MagicMock) -> MagicMock:
+    cm = MagicMock()
+    cm.__aenter__ = AsyncMock(return_value=resp)
+    cm.__aexit__ = AsyncMock(return_value=False)
+    return cm
+
+mock_session.post = MagicMock(return_value=_ctx(mock_resp))
+```
+
+**Why**: `aiohttp` uses the CM protocol for connection lifecycle management (keeping the connection open until the body is read, then releasing it back to the pool). It's a deliberate API design, not optional.
+
+---
+
+## Phase 1.6 — Rate-Limit Retry: `continue` vs `break`
+
+**Lesson**: In a `for attempt in range(N)` retry loop, use `continue` to retry, not `break`. `break` exits the loop and falls through to any post-loop code (e.g., a final `raise`). `continue` restarts the next iteration.
+
+```python
+# WRONG — break exits the loop, falls through to raise SlackError("failed after retries")
+if attempt == 0:
+    await asyncio.sleep(retry_after)
+    break  # exits loop, hits the raise at the bottom
+
+# CORRECT — continue restarts loop with attempt=1 (the retry)
+if attempt == 0:
+    await asyncio.sleep(retry_after)
+    continue
+```
+
+**Why**: This bug is subtle because `break` looks like "stop waiting and retry" but it actually means "exit the loop entirely". Always use `continue` when the intent is to repeat the loop body.
+
+---
+
+## Phase 1.6 — aiohttp web.Response: content_type param vs Content-Type header
+
+**Lesson**: `aiohttp.web.Response` raises `ValueError` if you pass both the `content_type` keyword argument AND a `Content-Type` key in the `headers` dict. Choose one or the other — not both.
+
+```python
+# WRONG — ValueError: passing both Content-Type header and content_type param
+web.Response(
+    body=output,
+    content_type="text/plain",
+    headers={"Content-Type": "text/plain; version=0.0.4"},
+)
+
+# CORRECT — set Content-Type via headers only
+web.Response(
+    body=output,
+    headers={"Content-Type": "text/plain; version=0.0.4; charset=utf-8"},
+)
+```
+
+**Why**: aiohttp validates this at construction time to avoid ambiguous/conflicting headers. The same rule applies for `charset` — don't pass it if `Content-Type` already specifies it via `headers`.
+
+---
+
+## Phase 1.7 — APScheduler 3.x: next_run_time on Pending Jobs
+
+**Lesson**: `APScheduler 3.x` uses `__slots__` on `Job`. When the scheduler hasn't been started yet, jobs sit in a pending list with `next_run_time` uninitialized — accessing it raises `AttributeError` even though the slot is declared. Use `getattr(job, "next_run_time", None)` when reading the attribute outside of a running scheduler context.
+
+```python
+# WRONG — AttributeError if scheduler not started
+str(job.next_run_time) if job.next_run_time else "paused"
+
+# CORRECT — safe read
+next_run = getattr(job, "next_run_time", None)
+str(next_run) if next_run else "pending"
+```
+
+**Why**: Python's `__slots__` mechanism doesn't initialize slots to any value — they simply don't exist until explicitly set. This differs from regular instance attributes where `__init__` typically sets all attributes.
+
+---
+
+## Phase 1.7 — APScheduler replace_existing: Jobstore vs Pending List
+
+**Lesson**: `replace_existing=True` in APScheduler 3.x only deduplicates against the persistent jobstore — not the in-memory pending list used before the scheduler starts. Adding two jobs with the same ID to an unstarted scheduler results in two pending jobs. Don't test APScheduler internal deduplication behavior; it's not our logic.
+
+---
+
+## Pre-Phase 1.8 — Empty List vs None in Python Conditionals
+
+**Lesson**: Use `x if x is not None else default` instead of `x or default` when `x` can be a legitimately empty list. `[] or default` returns `default` because empty list is falsy, silently ignoring the explicit empty input.
+
+```python
+# WRONG — treats empty list same as None
+days or ["tuesday", "thursday"]   # [] → ["tuesday", "thursday"] (wrong!)
+
+# CORRECT — only falls back on actual None
+days if days is not None else ["tuesday", "thursday"]  # [] stays []
+```
+
+---
+
+## Phase 1.7 — Python Timezone: UTC offset varies by DST
+
+**Lesson**: When writing timezone-specific tests, check whether DST is active on the test date. Europe/Paris is CET (UTC+1) in winter, CEST (UTC+2) in summer. April dates use CEST (UTC+2), not CET (UTC+1). Always verify the UTC offset for the specific date in your test.
+
+```python
+# April 7 — CEST (UTC+2), NOT CET (UTC+1)
+# 01:00 UTC = 03:00 CEST → outside window [04:00, 06:00)
+# 02:00 UTC = 04:00 CEST → inside window [04:00, 06:00)
+```
+
+---
+
+## Phase 4 — Patching Local Imports Requires the Module's Own Path
+
+**Lesson**: When a function does a local import (`from errander.agent.graph import build_batch_graph` inside the function body), `patch("errander.main.build_batch_graph")` fails with `AttributeError` because the name never exists on `errander.main`. Patch the module where the symbol is *defined*: `patch("errander.agent.graph.build_batch_graph")`.
+
+```python
+# WRONG — name doesn't exist on errander.main (it's a local import)
+with patch("errander.main.build_batch_graph", ...):
+
+# CORRECT — patch where the function is defined
+with patch("errander.agent.graph.build_batch_graph", ...):
+```
+
+---
+
+## Phase 4 — logging.LogRecord With Dict Args Raises KeyError
+
+**Lesson**: Python's `logging.LogRecord.__init__` immediately interpolates `args` into the message when `args` is set in the constructor. If `args` is a `dict`, it calls `msg % args`, which requires string-keyed format markers. Setting string-keyed `dict` args without matching `%(key)s` markers causes `KeyError`. Fix: construct the `LogRecord` with no args, then set `record.args = {...}` after construction so interpolation is bypassed.
+
+```python
+# WRONG — triggers msg % args in __init__, raises KeyError
+record = logging.LogRecord("test", logging.INFO, "", 0, "msg", {"key": "val"}, None)
+
+# CORRECT — set args after construction
+record = logging.LogRecord("test", logging.INFO, "", 0, "msg", None, None)
+record.args = {"key": "val"}
+```
+
+---
+
+## Phase 4 — `load_settings()` Must Stay Synchronous
+
+**Lesson**: `load_settings()` is called before the event loop in `_build_components()`. Don't make it `async` to query the DB directly — it breaks the sync call chain. Instead, accept `db_overrides: dict[str, str]` as a pre-fetched argument. The caller (`async_main`) fetches the overrides async and passes them in.
+
+---
+
+## Phase 4 — B017 Blind Exception: Use the Actual Exception Type
+
+**Lesson**: Ruff B017 flags `pytest.raises(Exception)` as too broad. For SQLite `CHECK` constraint violations, the actual exception is `aiosqlite.IntegrityError`. Always use the specific exception class in `pytest.raises()`.
+
+```python
+# WRONG — too broad, hides what exception actually fires
+with pytest.raises(Exception):
+
+# CORRECT — names the exact exception
+import aiosqlite
+with pytest.raises(aiosqlite.IntegrityError):
+```
+
+---
+
+## Phase 4 — Nested HTML Forms Break Submit Buttons
+
+**Lesson**: HTML5 forbids nesting `<form>` elements. When aiohttp renders a reset `<form>` *inside* the main settings `<form>`, Chromium implicitly closes the outer form at the inner `<form>` tag. The Save button ends up outside any form and clicks on it do nothing — but only when a DB override exists (which triggers the reset form). Tests that click Save on a "fresh" page (no DB override) pass; tests after a prior save fail silently.
+
+Fix: use the HTML5 `form="<id>"` attribute to associate the reset button with a standalone `<form id="...">` rendered *outside* the main form.
+
+```html
+<!-- outside main form -->
+<form id="reset-ERRANDER_LLM_MODEL" method="POST" action="/ui/settings/reset">
+  <input type="hidden" name="key" value="ERRANDER_LLM_MODEL">
+</form>
+
+<!-- inside main form's row, but associated to the out-of-band form -->
+<button type="submit" form="reset-ERRANDER_LLM_MODEL" class="btn-del">Reset</button>
+```
+
+**Detection**: if a Playwright `locator.click()` on a submit button causes no navigation (even with `expect_navigation()` timing out at 30s), check for nested forms.
+
+---
+
+## Phase 4 — Playwright `locator.click()` Does NOT Auto-Wait for Navigation
+
+**Lesson**: Playwright's `locator.click()` returns as soon as the click event is dispatched — it does NOT implicitly wait for a navigation that the click triggers. If you immediately call `page.goto()` after clicking a submit button, the browser may abort the in-flight POST request before the server writes to the DB.
+
+```python
+# WRONG — goto() may abort the POST before the server processes it
+page.locator("button.btn-save").click()
+page.goto("/ui/settings")  # POST aborted? DB not updated
+
+# CORRECT — wait for the redirect to land before navigating elsewhere
+page.locator("button.btn-save").click()
+expect(page.get_by_text("Settings saved")).to_be_visible()  # waits for redirect
+page.goto("/ui/settings")
+```
+
+OR use `with page.expect_navigation():` around the click for an explicit navigation wait.

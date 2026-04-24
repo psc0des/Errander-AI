@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from automaint.safety.locking import FileLocker, LockInfo, _sanitize_vm_id
+from errander.safety.locking import FileLocker, LockInfo, _sanitize_vm_id
 
 
 class TestLockInfo:
@@ -189,3 +189,86 @@ class TestFileLocker:
         assert await locker.acquire("production/web-01", "batch-A")
         assert await locker.is_locked("production/web-01")
         assert await locker.release("production/web-01", "batch-A")
+
+
+# --- Atomic locking tests (Step 3) ---
+
+class TestAtomicLocking:
+    """Step 3: lock writes are atomic; race conditions are handled; corrupt files are stale."""
+
+    async def test_atomic_write_leaves_no_tmp_file(self, tmp_path: Path) -> None:
+        """After acquire, no .tmp file remains in the lock directory."""
+        locker = FileLocker(tmp_path / "locks")
+        assert await locker.acquire("vm-1", "batch-A")
+
+        lock_dir = tmp_path / "locks"
+        tmp_files = list(lock_dir.glob("*.tmp"))
+        assert tmp_files == [], f"Leftover .tmp files: {tmp_files}"
+
+    async def test_concurrent_acquire_only_one_wins(self, tmp_path: Path) -> None:
+        """10 concurrent acquire calls for the same VM: exactly 1 succeeds."""
+        import asyncio
+
+        locker = FileLocker(tmp_path / "locks")
+        results = await asyncio.gather(
+            *[locker.acquire("vm-1", f"batch-{i}") for i in range(10)],
+        )
+        successful = [r for r in results if r is True]
+        assert len(successful) == 1
+
+    async def test_corrupt_lock_file_logged_as_stale(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Corrupt lock file triggers a warning log and acquire succeeds."""
+        import logging
+
+        locker = FileLocker(tmp_path / "locks")
+        lock_path = locker._lock_path("vm-1")
+        lock_path.write_text("not valid json {{{")
+
+        with caplog.at_level(logging.WARNING, logger="errander.safety.locking"):
+            acquired = await locker.acquire("vm-1", "batch-A")
+
+        assert acquired is True
+        assert any("Corrupt" in r.message or "corrupt" in r.message for r in caplog.records)
+
+    async def test_crash_midwrite_recoverable(self, tmp_path: Path) -> None:
+        """Leftover .tmp file from a crashed write does not block next acquire."""
+        locker = FileLocker(tmp_path / "locks")
+        lock_path = locker._lock_path("vm-1")
+        # Simulate a crash that left a .tmp file behind
+        tmp_file = lock_path.with_suffix(lock_path.suffix + ".tmp")
+        tmp_file.write_text('{"partial": "crash"}')
+
+        # Acquire should succeed despite the leftover .tmp
+        assert await locker.acquire("vm-1", "batch-A")
+        assert await locker.is_locked("vm-1")
+
+    async def test_o_excl_race_falls_through_to_stale_check(
+        self, tmp_path: Path,
+    ) -> None:
+        """Race: _read_lock returns None but file exists → O_EXCL fails → re-read decides."""
+        from unittest.mock import patch
+
+        locker = FileLocker(tmp_path / "locks")
+
+        # Acquire with batch-A to put a real lock file in place
+        assert await locker.acquire("vm-1", "batch-A")
+
+        # Simulate the race: first call to _read_lock returns None (pre-race snapshot),
+        # but the file actually exists on disk (batch-A's lock).
+        original_read_lock = locker._read_lock
+        call_count = 0
+
+        def mock_read_lock(lock_path: object) -> object:
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return None  # Simulates checking before batch-A wrote the file
+            return original_read_lock(lock_path)  # type: ignore[arg-type]
+
+        with patch.object(locker, "_read_lock", side_effect=mock_read_lock):
+            result = await locker.acquire("vm-1", "batch-B")
+
+        # batch-A holds an unexpired lock → batch-B is blocked
+        assert result is False

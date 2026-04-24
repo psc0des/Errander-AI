@@ -1,24 +1,19 @@
-"""Tests for agent state definitions."""
+"""Tests verifying state TypedDicts exist in their canonical modules."""
 
 from __future__ import annotations
 
-from automaint.agent.state import BatchState, VMMaintenanceState
 
+class TestStateDefinitions:
+    """Verify that canonical state types are importable from their graph modules."""
 
-class TestState:
-    """Tests for state dataclass construction and reducers."""
+    def test_batch_graph_state_importable(self) -> None:
+        from errander.agent.graph import BatchGraphState
+        assert "batch_id" in BatchGraphState.__annotations__
 
-    def test_batch_state_defaults(self) -> None:
-        """BatchState should have sensible defaults."""
-        state = BatchState()
-        assert state.dry_run is True
-        assert state.vm_results == []
-        assert state.approved is None
+    def test_vm_graph_state_importable(self) -> None:
+        from errander.agent.vm_graph import VMGraphState
+        assert "vm_id" in VMGraphState.__annotations__
 
-    def test_vm_state_defaults(self) -> None:
-        """VMMaintenanceState should have sensible defaults."""
-        state = VMMaintenanceState(vm_id="test-1")
-        assert state.vm_id == "test-1"
-        assert state.dry_run is True
-        assert state.planned_actions == []
-        assert state.current_action_index == 0
+    def test_disk_cleanup_state_importable(self) -> None:
+        from errander.agent.subgraphs.disk_cleanup import DiskCleanupGraphState
+        assert "vm_id" in DiskCleanupGraphState.__annotations__

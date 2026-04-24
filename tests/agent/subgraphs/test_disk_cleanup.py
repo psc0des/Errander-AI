@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from automaint.agent.subgraphs.disk_cleanup import (
+from errander.agent.subgraphs.disk_cleanup import (
     ALLOWED_CLEANUP_PATHS,
     DiskCleanupGraphState,
     assess_node,
@@ -20,9 +20,9 @@ from automaint.agent.subgraphs.disk_cleanup import (
     validate_whitelist,
     verify_node,
 )
-from automaint.execution.sandbox import SandboxExecutor
-from automaint.execution.ssh import SSHConnectionManager, SSHResult
-from automaint.models.actions import ActionStatus
+from errander.execution.sandbox import SandboxExecutor
+from errander.execution.ssh import SSHConnectionManager, SSHResult
+from errander.models.actions import ActionStatus
 
 
 # --- Helpers ---
@@ -42,7 +42,7 @@ def _base_state(**overrides: object) -> DiskCleanupGraphState:
         "tmp_age_days": 7,
         "journal_vacuum_days": 7,
         "hostname": "10.0.1.10",  # type: ignore[typeddict-item]
-        "username": "automaint",  # type: ignore[typeddict-item]
+        "username": "errander-ai",  # type: ignore[typeddict-item]
         "key_path": "/key",  # type: ignore[typeddict-item]
     }
     defaults.update(overrides)  # type: ignore[typeddict-item]
@@ -297,17 +297,17 @@ class TestPackageManagerByName:
     """Tests for get_package_manager_by_name."""
 
     def test_ubuntu_gets_apt(self) -> None:
-        from automaint.execution.commands import AptManager
+        from errander.execution.commands import AptManager
         mgr = get_package_manager_by_name("ubuntu")
         assert isinstance(mgr, AptManager)
 
     def test_debian_gets_apt(self) -> None:
-        from automaint.execution.commands import AptManager
+        from errander.execution.commands import AptManager
         mgr = get_package_manager_by_name("debian")
         assert isinstance(mgr, AptManager)
 
     def test_rhel_gets_dnf(self) -> None:
-        from automaint.execution.commands import DnfManager
+        from errander.execution.commands import DnfManager
         mgr = get_package_manager_by_name("rhel")
         assert isinstance(mgr, DnfManager)
 
@@ -363,7 +363,7 @@ class TestBuildSubgraph:
                 "whitelist_paths": ["/tmp"],
                 "tmp_age_days": 7,
                 "hostname": "10.0.1.10",  # type: ignore[typeddict-item]
-                "username": "automaint",  # type: ignore[typeddict-item]
+                "username": "errander-ai",  # type: ignore[typeddict-item]
                 "key_path": "/key",  # type: ignore[typeddict-item]
             }
 
@@ -371,3 +371,22 @@ class TestBuildSubgraph:
 
         assert result["status"] == ActionStatus.DRY_RUN_OK.value
         assert "/tmp" in result["cleanup_output"]
+
+
+# --- Phase 3 hardening tests (Step 5) ---
+
+class TestAssessNodeEmptyOutput:
+    """Step 5: assess_node must fail when df returns empty stdout (not silently pass)."""
+
+    async def test_assess_handles_empty_stdout(self) -> None:
+        """df -h returns empty stdout with exit_code=0 → FAILED, not silent nothing-to-do."""
+        executor = _make_executor(dry_run=True)
+        execute_mock = AsyncMock(return_value=_make_result(stdout="", exit_code=0))
+
+        state = _base_state()
+
+        with patch.object(executor, "execute", execute_mock):
+            result = await assess_node(state, executor=executor)
+
+        assert result["status"] == ActionStatus.FAILED.value
+        assert "empty output" in result["error"]

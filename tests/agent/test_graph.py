@@ -2,9 +2,554 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, patch
 
-class TestBatchGraph:
-    """Tests for the parent orchestrator graph."""
+import pytest
 
-    def test_placeholder(self) -> None:
-        """Placeholder — graph tests will be added during implementation."""
+from errander.agent.graph import (
+    BatchGraphState,
+    build_batch_graph,
+    collect_results_node,
+    generate_report_node,
+    init_batch_node,
+    make_fan_out_router,
+    route_after_validate,
+    route_after_window,
+    validate_targets_node,
+    validate_window_node,
+)
+from errander.execution.sandbox import SandboxExecutor
+from errander.execution.ssh import SSHConnectionManager, SSHResult
+from errander.models.actions import ActionStatus
+from errander.safety.audit import AuditStore
+from errander.safety.locking import FileLocker
+from errander.scheduling.windows import MaintenanceWindow
+
+
+# --- Helpers ---
+
+def _make_target(
+    vm_id: str = "dev/web-01",
+    hostname: str = "10.0.1.10",
+    ssh_user: str = "errander-ai",
+    key_path: str = "/keys/id_ed25519",
+    os_family: str = "ubuntu",
+) -> dict[str, object]:
+    return {
+        "vm_id": vm_id,
+        "hostname": hostname,
+        "ssh_user": ssh_user,
+        "ssh_key_path": key_path,
+        "os_family": os_family,
+    }
+
+
+def _base_state(**overrides: object) -> BatchGraphState:
+    defaults: BatchGraphState = {
+        "dry_run": True,
+        "force": False,
+        "force_reason": "",
+        "targets": [_make_target()],
+        "healthy_targets": [],
+        "failed_targets": [],
+        "vm_results": [],
+        "report": "",
+        "error": None,
+    }
+    defaults.update(overrides)  # type: ignore[typeddict-item]
+    return defaults
+
+
+def _make_locker(tmp_path: Path) -> FileLocker:
+    return FileLocker(lock_dir=tmp_path / "locks")
+
+
+def _make_executor(dry_run: bool = True) -> SandboxExecutor:
+    return SandboxExecutor(SSHConnectionManager(), dry_run=dry_run)
+
+
+def _make_ssh_result(stdout: str = "ok", exit_code: int = 0) -> SSHResult:
+    from datetime import datetime, timezone
+    now = datetime.now(tz=timezone.utc)
+    return SSHResult(
+        exit_code=exit_code,
+        stdout=stdout,
+        stderr="",
+        command="mocked",
+        duration_seconds=0.01,
+        started_at=now,
+        completed_at=now,
+    )
+
+
+# --- init_batch ---
+
+class TestInitBatchNode:
+    @pytest.mark.asyncio
+    async def test_generates_batch_id(self) -> None:
+        result = await init_batch_node(_base_state())
+        assert "batch_id" in result
+        assert result["batch_id"].startswith("batch-")
+
+    @pytest.mark.asyncio
+    async def test_batch_ids_are_unique(self) -> None:
+        r1 = await init_batch_node(_base_state())
+        r2 = await init_batch_node(_base_state())
+        assert r1["batch_id"] != r2["batch_id"]
+
+
+# --- validate_window ---
+
+class TestValidateWindowNode:
+    @pytest.mark.asyncio
+    async def test_passes_with_no_window(self) -> None:
+        """No window configured → always passes."""
+        result = await validate_window_node(_base_state(), window=None)
+        assert result == {}
+
+    @pytest.mark.asyncio
+    async def test_passes_with_force(self) -> None:
+        """force=True bypasses window check entirely."""
+        window = MaintenanceWindow(days=["sunday"], start_hour=0, end_hour=1, timezone="UTC")
+        state = _base_state(force=True, force_reason="emergency patch")
+        result = await validate_window_node(state, window=window)
+        assert result == {}
+
+    @pytest.mark.asyncio
+    async def test_passes_inside_window(self) -> None:
+        """Current time inside window → no error."""
+        from datetime import datetime, timezone
+        from unittest.mock import patch
+
+        # Patch datetime.now to a known time: Monday 03:00 UTC
+        monday_3am = datetime(2026, 4, 6, 3, 0, 0, tzinfo=timezone.utc)
+        window = MaintenanceWindow(
+            days=["monday"], start_hour=2, end_hour=6, timezone="UTC"
+        )
+        with patch("errander.agent.graph.datetime") as mock_dt:
+            mock_dt.now.return_value = monday_3am
+            result = await validate_window_node(_base_state(), window=window)
+        assert result == {}
+
+    @pytest.mark.asyncio
+    async def test_sets_error_outside_window(self) -> None:
+        """Current time outside window → sets error, graph will short-circuit."""
+        from datetime import datetime, timezone
+        from unittest.mock import patch
+
+        # Monday 10:00 UTC — outside window [02:00, 06:00)
+        monday_10am = datetime(2026, 4, 6, 10, 0, 0, tzinfo=timezone.utc)
+        window = MaintenanceWindow(
+            days=["monday"], start_hour=2, end_hour=6, timezone="UTC"
+        )
+        with patch("errander.agent.graph.datetime") as mock_dt:
+            mock_dt.now.return_value = monday_10am
+            result = await validate_window_node(_base_state(), window=window)
+        assert "error" in result
+        assert "Outside maintenance window" in str(result["error"])
+
+    @pytest.mark.asyncio
+    async def test_sets_error_wrong_day(self) -> None:
+        """Wrong day of week → sets error."""
+        from datetime import datetime, timezone
+        from unittest.mock import patch
+
+        # Tuesday 03:00 UTC — window only allows Monday
+        tuesday_3am = datetime(2026, 4, 7, 3, 0, 0, tzinfo=timezone.utc)
+        window = MaintenanceWindow(
+            days=["monday"], start_hour=2, end_hour=6, timezone="UTC"
+        )
+        with patch("errander.agent.graph.datetime") as mock_dt:
+            mock_dt.now.return_value = tuesday_3am
+            result = await validate_window_node(_base_state(), window=window)
+        assert "error" in result
+
+    @pytest.mark.asyncio
+    async def test_build_graph_with_window_blocks_outside(self) -> None:
+        """build_batch_graph with window wires it into the node."""
+        from datetime import datetime, timezone
+        from unittest.mock import patch
+
+        window = MaintenanceWindow(
+            days=["monday"], start_hour=2, end_hour=6, timezone="UTC"
+        )
+        monday_10am = datetime(2026, 4, 6, 10, 0, 0, tzinfo=timezone.utc)
+
+        ssh_mgr = SSHConnectionManager()
+        executor = _make_executor()
+        locker = FileLocker(lock_dir=Path("/tmp/test-locks"))
+        async with AuditStore(":memory:") as store:
+            graph = build_batch_graph(
+                executor, locker, store, ssh_mgr, window=window,
+            ).compile()
+
+            with patch("errander.agent.graph.datetime") as mock_dt:
+                mock_dt.now.return_value = monday_10am
+                final = await graph.ainvoke({
+                    "targets": [],
+                    "dry_run": True,
+                    "force": False,
+                })
+
+        assert "Outside maintenance window" in final.get("error", "")
+
+
+# --- validate_targets ---
+
+class TestValidateTargetsNode:
+    @pytest.mark.asyncio
+    async def test_healthy_target_on_success(self) -> None:
+        ssh = SSHConnectionManager()
+        async with AuditStore(":memory:") as store:
+            with patch.object(
+                ssh, "execute", AsyncMock(return_value=_make_ssh_result("ok")),
+            ):
+                result = await validate_targets_node(
+                    _base_state(batch_id="b-001"),
+                    ssh_manager=ssh,
+                    audit_store=store,
+                )
+
+        assert len(result["healthy_targets"]) == 1
+        assert result["failed_targets"] == []
+
+    @pytest.mark.asyncio
+    async def test_failed_target_on_ssh_error(self) -> None:
+        ssh = SSHConnectionManager()
+        async with AuditStore(":memory:") as store:
+            with patch.object(
+                ssh, "execute",
+                AsyncMock(side_effect=ConnectionError("refused")),
+            ):
+                result = await validate_targets_node(
+                    _base_state(batch_id="b-002"),
+                    ssh_manager=ssh,
+                    audit_store=store,
+                )
+
+        assert result["healthy_targets"] == []
+        assert len(result["failed_targets"]) == 1
+
+    @pytest.mark.asyncio
+    async def test_failed_target_on_nonzero_exit(self) -> None:
+        ssh = SSHConnectionManager()
+        async with AuditStore(":memory:") as store:
+            with patch.object(
+                ssh, "execute",
+                AsyncMock(return_value=_make_ssh_result("", exit_code=1)),
+            ):
+                result = await validate_targets_node(
+                    _base_state(batch_id="b-003"),
+                    ssh_manager=ssh,
+                    audit_store=store,
+                )
+
+        assert result["healthy_targets"] == []
+        assert len(result["failed_targets"]) == 1
+
+    @pytest.mark.asyncio
+    async def test_partitions_multiple_targets(self) -> None:
+        ssh = SSHConnectionManager()
+        targets = [
+            _make_target(vm_id="dev/web-01", hostname="10.0.1.10"),
+            _make_target(vm_id="dev/web-02", hostname="10.0.1.11"),
+        ]
+        ssh_results = [
+            _make_ssh_result("ok"),
+            _make_ssh_result("", exit_code=1),
+        ]
+        async with AuditStore(":memory:") as store:
+            with patch.object(
+                ssh, "execute", AsyncMock(side_effect=ssh_results),
+            ):
+                result = await validate_targets_node(
+                    _base_state(batch_id="b-004", targets=targets),
+                    ssh_manager=ssh,
+                    audit_store=store,
+                )
+
+        assert len(result["healthy_targets"]) == 1
+        assert len(result["failed_targets"]) == 1
+        assert result["healthy_targets"][0]["vm_id"] == "dev/web-01"
+        assert result["failed_targets"][0]["vm_id"] == "dev/web-02"
+
+
+# --- Routing ---
+
+class TestRouting:
+    def test_route_after_window_no_error(self) -> None:
+        assert route_after_window(_base_state()) == "validate_targets"
+
+    def test_route_after_window_with_error(self) -> None:
+        assert route_after_window(_base_state(error="outside window")) == "generate_report"
+
+    def test_route_after_validate_healthy(self) -> None:
+        state = _base_state(healthy_targets=[_make_target()])
+        assert route_after_validate(state) == "fan_out"
+
+    def test_route_after_validate_no_healthy(self) -> None:
+        assert route_after_validate(_base_state()) == "generate_report"
+
+
+# --- fan_out routing ---
+
+class TestFanOutRouter:
+    def test_creates_send_per_healthy_target(self, tmp_path: Path) -> None:
+        from langgraph.types import Send
+        executor = _make_executor()
+        locker = _make_locker(tmp_path)
+        audit_store = MagicMock(spec=AuditStore)
+        ssh = SSHConnectionManager()
+
+        route_fn, _ = make_fan_out_router(None, executor, locker, audit_store, ssh)
+
+        targets = [
+            _make_target(vm_id="dev/web-01"),
+            _make_target(vm_id="dev/web-02"),
+        ]
+        state = _base_state(batch_id="b-fan-01", healthy_targets=targets)
+        result = route_fn(state)
+
+        assert isinstance(result, list)
+        assert len(result) == 2
+        assert all(isinstance(s, Send) for s in result)
+
+    def test_returns_generate_report_when_no_healthy(self, tmp_path: Path) -> None:
+        executor = _make_executor()
+        locker = _make_locker(tmp_path)
+        audit_store = MagicMock(spec=AuditStore)
+        ssh = SSHConnectionManager()
+
+        route_fn, _ = make_fan_out_router(None, executor, locker, audit_store, ssh)
+        result = route_fn(_base_state(healthy_targets=[]))
+
+        assert result == "generate_report"
+
+
+# --- collect_results / generate_report ---
+
+class TestCollectResultsNode:
+    @pytest.mark.asyncio
+    async def test_passthrough(self) -> None:
+        state = _base_state(vm_results=[{"action_type": "disk_cleanup"}])
+        result = await collect_results_node(state)
+        assert result == {}
+
+
+class TestGenerateReportNode:
+    @pytest.mark.asyncio
+    async def test_generates_report(self) -> None:
+        from datetime import datetime, timezone
+        now = datetime.now(tz=timezone.utc).isoformat()
+        state = _base_state(
+            batch_id="b-report-01",
+            vm_results=[{
+                "action_type": "disk_cleanup",
+                "status": ActionStatus.DRY_RUN_OK.value,
+                "vm_id": "dev/web-01",
+                "started_at": now,
+                "completed_at": now,
+                "detail": "",
+                "error": None,
+            }],
+        )
+        result = await generate_report_node(state)
+        assert "report" in result
+        assert "b-report-01" in result["report"]
+        assert "dev/web-01" in result["report"]
+
+    @pytest.mark.asyncio
+    async def test_report_with_empty_results(self) -> None:
+        state = _base_state(batch_id="b-empty")
+        result = await generate_report_node(state)
+        assert "b-empty" in result["report"]
+        assert "Total actions: 0" in result["report"]
+
+
+# --- Full graph ---
+
+class TestBuildBatchGraph:
+    def test_graph_builds(self, tmp_path: Path) -> None:
+        executor = _make_executor()
+        locker = _make_locker(tmp_path)
+        audit_store = MagicMock(spec=AuditStore)
+        audit_store.log_event = AsyncMock()
+        ssh = SSHConnectionManager()
+
+        graph = build_batch_graph(executor, locker, audit_store, ssh)
+        assert graph is not None
+
+    def test_graph_compiles(self, tmp_path: Path) -> None:
+        executor = _make_executor()
+        locker = _make_locker(tmp_path)
+        audit_store = MagicMock(spec=AuditStore)
+        audit_store.log_event = AsyncMock()
+        ssh = SSHConnectionManager()
+
+        compiled = build_batch_graph(executor, locker, audit_store, ssh).compile()
+        assert compiled is not None
+
+    @pytest.mark.asyncio
+    async def test_no_healthy_targets_produces_report(self, tmp_path: Path) -> None:
+        """When all targets fail validation, report is generated with 0 actions."""
+        executor = _make_executor()
+        locker = _make_locker(tmp_path)
+        audit_store = MagicMock(spec=AuditStore)
+        audit_store.log_event = AsyncMock()
+        ssh = SSHConnectionManager()
+
+        with patch.object(
+            ssh, "execute",
+            AsyncMock(side_effect=ConnectionError("refused")),
+        ):
+            compiled = build_batch_graph(executor, locker, audit_store, ssh).compile()
+            final = await compiled.ainvoke(_base_state())
+
+        assert final.get("report", "") != ""
+        assert len(final.get("healthy_targets", [])) == 0
+
+    @pytest.mark.asyncio
+    async def test_full_dry_run_single_vm(self, tmp_path: Path) -> None:
+        """Full flow: init → window → validate → fan_out → run_vm(disk_cleanup) → report."""
+        from errander.models.vm import OSFamily, VMInfo
+
+        executor = _make_executor(dry_run=True)
+        locker = _make_locker(tmp_path)
+        audit_store = MagicMock(spec=AuditStore)
+        audit_store.log_event = AsyncMock()
+        ssh_main = SSHConnectionManager()
+
+        vm_info = VMInfo(
+            os_family=OSFamily.UBUNTU,
+            os_version="Ubuntu 22.04",
+            disk_usage={"/": 55.0},
+            docker_available=False,
+            pending_packages=0,
+            uptime_seconds=86400.0,
+        )
+
+        df_output = (
+            "Filesystem Size Used Avail Use% Mounted on\n"
+            "/dev/sda1 20G 10G 10G 50% /\n"
+        )
+
+        # ssh_main.execute is used by validate_targets (1 call)
+        # executor._ssh.execute is used by discover + disk_cleanup sub-graph
+        with patch.object(
+            ssh_main, "execute",
+            AsyncMock(return_value=_make_ssh_result("ok")),
+        ):
+            with patch(
+                "errander.agent.vm_graph.detect_os",
+                AsyncMock(return_value=vm_info),
+            ):
+                disk_cleanup_responses = [
+                    _make_ssh_result(df_output),       # assess: df
+                    _make_ssh_result("1.0M\ttotal"),    # assess: /tmp
+                    _make_ssh_result("500K"),            # assess: apt-cache
+                    _make_ssh_result("200M"),            # assess: journal
+                    _make_ssh_result("0 packages"),     # assess: orphaned-deps
+                    _make_ssh_result("done"),            # execute: /tmp
+                    _make_ssh_result("done"),            # execute: apt-cache
+                    _make_ssh_result("done"),            # execute: journal
+                    _make_ssh_result("done"),            # execute: orphaned-deps
+                ]
+                with patch.object(
+                    executor._ssh, "execute",
+                    AsyncMock(side_effect=disk_cleanup_responses),
+                ):
+                    compiled = build_batch_graph(
+                        executor, locker, audit_store, ssh_main,
+                    ).compile()
+                    final = await compiled.ainvoke(_base_state())
+
+        assert final.get("batch_id", "").startswith("batch-")
+        assert len(final.get("healthy_targets", [])) == 1
+        assert final.get("report", "") != ""
+
+        # Disk cleanup result in vm_results
+        vm_results = final.get("vm_results", [])
+        assert any(r.get("action_type") == "disk_cleanup" for r in vm_results)
+        disk_result = next(r for r in vm_results if r.get("action_type") == "disk_cleanup")
+        assert disk_result["status"] == ActionStatus.DRY_RUN_OK.value
+
+
+# --- Exception safety tests for run_vm_node ---
+
+class TestRunVmNodeExceptionSafety:
+    """Step 1C: run_vm_node must catch VM graph crashes and return a FAILED entry."""
+
+    @pytest.mark.asyncio
+    async def test_run_vm_node_catches_vm_graph_crash(self, tmp_path: Path) -> None:
+        """VM graph crash is caught; vm_results contains a FAILED entry."""
+        from errander.agent.graph import run_vm_node
+        from errander.agent.vm_graph import VMGraphState
+
+        bad_compiled = MagicMock()
+        bad_compiled.ainvoke = AsyncMock(side_effect=RuntimeError("graph exploded"))
+
+        state = VMGraphState(
+            vm_id="dev/web-01",
+            batch_id="batch-test",
+            dry_run=True,
+            hostname="10.0.1.10",
+            ssh_user="errander-ai",
+            ssh_key_path="/key",
+            os_family="ubuntu",
+            locked=False,
+            results=[],
+            current_action_index=0,
+            planned_actions=[],
+            error=None,
+        )
+
+        result = await run_vm_node(state, vm_compiled=bad_compiled)
+
+        assert len(result["vm_results"]) == 1
+        assert result["vm_results"][0]["status"] == ActionStatus.FAILED.value
+        assert result["vm_results"][0]["vm_id"] == "dev/web-01"
+        assert "graph exploded" in str(result["vm_results"][0].get("error", ""))
+
+    @pytest.mark.asyncio
+    async def test_batch_continues_when_one_vm_crashes(self, tmp_path: Path) -> None:
+        """When one VM graph crashes, remaining VMs complete and report is generated."""
+        from errander.models.vm import OSFamily, VMInfo
+
+        executor = _make_executor(dry_run=True)
+        locker = _make_locker(tmp_path)
+        audit_store = MagicMock(spec=AuditStore)
+        audit_store.log_event = AsyncMock()
+        ssh_main = SSHConnectionManager()
+
+        targets = [
+            _make_target(vm_id="vm-01", hostname="10.0.1.1"),
+            _make_target(vm_id="vm-02", hostname="10.0.1.2"),
+        ]
+
+        # Both targets pass SSH validation
+        with patch.object(
+            ssh_main, "execute",
+            AsyncMock(return_value=_make_ssh_result("ok")),
+        ):
+            # vm_graph always raises (simulating crash for all VMs)
+            with patch(
+                "errander.agent.graph.build_vm_graph",
+                return_value=MagicMock(
+                    compile=MagicMock(
+                        return_value=MagicMock(
+                            ainvoke=AsyncMock(side_effect=RuntimeError("crash")),
+                        )
+                    )
+                ),
+            ):
+                compiled = build_batch_graph(
+                    executor, locker, audit_store, ssh_main,
+                ).compile()
+                final = await compiled.ainvoke(_base_state(targets=targets))
+
+        # Report was still generated (graph completed)
+        assert final.get("report", "") != ""
+        # vm_results has FAILED entries
+        vm_results = final.get("vm_results", [])
+        assert all(r.get("status") == ActionStatus.FAILED.value for r in vm_results)

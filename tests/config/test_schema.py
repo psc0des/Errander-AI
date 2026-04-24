@@ -8,7 +8,7 @@ import pytest
 import yaml
 from pydantic import ValidationError
 
-from automaint.config.schema import (
+from errander.config.schema import (
     EnvironmentSchema,
     InventoryConfig,
     PoliciesConfig,
@@ -63,7 +63,7 @@ class TestEnvironmentSchema:
         env = EnvironmentSchema(
             targets=[TargetSchema(host="10.0.1.10", name="web-01", os_family="ubuntu")],
         )
-        assert env.ssh_user == "automaint"
+        assert env.ssh_user == "errander-ai"
         assert env.approval_policy == "moderate"
 
     def test_invalid_policy_rejected(self) -> None:
@@ -225,3 +225,48 @@ class TestValidateSettings:
     def test_missing_file_raises(self, tmp_path: Path) -> None:
         with pytest.raises(FileNotFoundError):
             validate_settings(tmp_path / "nope.yaml")
+
+
+# --- Settings bounds validation tests (Step 4) ---
+
+class TestAgentSettingsBoundsValidation:
+    """Step 4: Phase 3 settings must reject out-of-bounds values at load time."""
+
+    def test_rolling_pct_rejects_zero(self) -> None:
+        with pytest.raises(ValidationError, match="rolling_update_percentage"):
+            from errander.config.schema import AgentSettingsSchema
+            AgentSettingsSchema(rolling_update_percentage=0)
+
+    def test_rolling_pct_rejects_negative(self) -> None:
+        with pytest.raises(ValidationError, match="rolling_update_percentage"):
+            from errander.config.schema import AgentSettingsSchema
+            AgentSettingsSchema(rolling_update_percentage=-10)
+
+    def test_rolling_pct_rejects_over_100(self) -> None:
+        with pytest.raises(ValidationError, match="rolling_update_percentage"):
+            from errander.config.schema import AgentSettingsSchema
+            AgentSettingsSchema(rolling_update_percentage=150)
+
+    def test_rolling_pct_accepts_boundary_values(self) -> None:
+        from errander.config.schema import AgentSettingsSchema
+
+        s1 = AgentSettingsSchema(rolling_update_percentage=1)
+        s100 = AgentSettingsSchema(rolling_update_percentage=100)
+        assert s1.rolling_update_percentage == 1
+        assert s100.rolling_update_percentage == 100
+
+    def test_wave_threshold_rejects_out_of_range(self) -> None:
+        from errander.config.schema import AgentSettingsSchema
+
+        with pytest.raises(ValidationError, match="failure threshold"):
+            AgentSettingsSchema(wave_failure_threshold=1.5)
+        with pytest.raises(ValidationError, match="failure threshold"):
+            AgentSettingsSchema(wave_failure_threshold=-0.1)
+
+    def test_timeout_rejects_zero_and_huge(self) -> None:
+        from errander.config.schema import AgentSettingsSchema
+
+        with pytest.raises(ValidationError, match="timeout"):
+            AgentSettingsSchema(approval_timeout_seconds=0)
+        with pytest.raises(ValidationError, match="timeout"):
+            AgentSettingsSchema(approval_timeout_seconds=999999)

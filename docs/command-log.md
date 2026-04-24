@@ -1,4 +1,4 @@
-# AutoMaint Command Log
+# Errander-AI Command Log
 
 Developer reference for every command used in building this project.
 
@@ -7,7 +7,7 @@ Developer reference for every command used in building this project.
 ### 2026-03-21 — Initial Scaffolding
 
 ```bash
-mkdir -p automaint/agent/subgraphs automaint/safety automaint/execution automaint/integrations automaint/observability automaint/config automaint/models automaint/scheduling tests/agent/subgraphs tests/safety tests/execution tests/integrations tests/observability tests/config tests/models tests/scheduling tasks
+mkdir -p errander/agent/subgraphs errander/safety errander/execution errander/integrations errander/observability errander/config errander/models errander/scheduling tests/agent/subgraphs tests/safety tests/execution tests/integrations tests/observability tests/config tests/models tests/scheduling tasks
 ```
 **What**: Created the full directory tree for Option C architecture (parent orchestrator + fan-out + sub-graphs).
 **Why**: Scaffolding all modules upfront so every file has a home from day one.
@@ -19,7 +19,7 @@ ls "C:/PS/AI/Junior DevOps Engineer - Agent/"
 **Why**: Verified starting state — only CLAUDE.md and docs/ existed.
 
 ```bash
-find automaint tests tasks -type f -name "*.py" -o -name "*.md" -o -name "*.toml" | sort
+find errander tests tasks -type f -name "*.py" -o -name "*.md" -o -name "*.toml" | sort
 ```
 **What**: Listed all scaffolded files after creation.
 **Why**: Final verification that all 86 files were created in the correct locations.
@@ -80,11 +80,11 @@ python -m uv sync --extra dev
 ### 2026-03-21 — Import Verification + First Test Run
 
 ```bash
-.venv/Scripts/python.exe -c "import automaint; print('automaint OK')"
-.venv/Scripts/python.exe -c "from automaint.models.vm import VMTarget, OSFamily; print('models OK')"
-.venv/Scripts/python.exe -c "from automaint.agent.state import BatchState, VMMaintenanceState; print('state OK')"
-.venv/Scripts/python.exe -c "from automaint.execution.commands import get_package_manager; print('commands OK')"
-.venv/Scripts/python.exe -c "from automaint.config.policies import get_policy; print('policies OK')"
+.venv/Scripts/python.exe -c "import errander; print('errander OK')"
+.venv/Scripts/python.exe -c "from errander.models.vm import VMTarget, OSFamily; print('models OK')"
+.venv/Scripts/python.exe -c "from errander.agent.state import BatchState, VMMaintenanceState; print('state OK')"
+.venv/Scripts/python.exe -c "from errander.execution.commands import get_package_manager; print('commands OK')"
+.venv/Scripts/python.exe -c "from errander.config.policies import get_policy; print('policies OK')"
 ```
 **What**: Verified all key modules import without errors.
 **Why**: Ensuring the scaffold is importable before running tests.
@@ -377,6 +377,181 @@ uv run pytest tests/ui/test_web_ui.py -q
 ```
 **Why**: Verify Playwright tests still pass after nav changes in _page().
 **Result**: 25 passed in 53.57s.
+
+## Phase 3 — Hardening (Rolling Updates, Canary, Drift Detection)
+
+### 2026-04-18 — Rolling updates, canary logic, drift detection
+
+```bash
+uv run pytest tests/config/test_settings.py tests/safety/test_drift.py -x -q
+```
+**What**: Run settings + drift module tests after Step 1 (schema/settings) and Step 2 (drift.py).
+**Why**: Verify foundation before building on it.
+**Result**: 35 passed in 0.32s.
+
+```bash
+uv run pytest tests/agent/test_vm_graph.py -x -q
+```
+**What**: Run VM graph tests after Step 3 (drift_check_node integration).
+**Why**: Catch routing regression — route_after_discover now returns "drift_check" not "plan_actions".
+**Result**: 1 failure (existing test expected "plan_actions"). Fixed test. 39 passed.
+
+```bash
+uv run pytest tests/agent/test_graph.py -x -q
+```
+**What**: Run batch graph tests after Step 4 (rolling updates / new topology).
+**Why**: Verify new wave-based graph topology didn't break existing tests.
+**Result**: 25 passed in 1.41s.
+
+```bash
+uv run pytest tests/agent/test_rolling_updates.py tests/agent/test_canary.py -x -q
+```
+**What**: Run new rolling update and canary tests.
+**Why**: Step 4 + Step 5 verification.
+**Result**: 31 passed in 1.09s.
+
+```bash
+uv run pytest -x -q
+```
+**What**: Full test suite after all 6 implementation steps.
+**Why**: No regressions — all 652 tests must pass.
+**Result**: 652 passed in 56.54s.
+
+```bash
+uv run ruff check errander/safety/drift.py errander/agent/vm_graph.py errander/agent/graph.py errander/config/schema.py errander/config/settings.py errander/models/events.py errander/observability/metrics.py errander/main.py
+```
+**What**: Lint the modified files.
+**Why**: Confirm no new lint errors introduced.
+**Result**: All errors are pre-existing (TC001 type-checking imports, UP017 datetime.UTC alias, etc.) — none introduced by Phase 3 changes.
+
+## Phase 3 — Edge Case Hardening (2026-04-19)
+
+```bash
+uv run pytest -q
+```
+**What**: Full test suite after all Phase 3 hardening implementation steps.
+**Why**: Verify 677 tests pass (25 new tests added) with no regressions.
+**Result**: 677 passed in ~61s.
+
+```bash
+uv run ruff check errander/safety/audit.py errander/agent/vm_graph.py errander/agent/graph.py errander/execution/ssh.py errander/config/schema.py errander/safety/locking.py
+```
+**What**: Lint check on all files modified during Phase 3 edge case hardening.
+**Why**: Confirm no new lint violations introduced (only pre-existing UP017/TC001 violations remain).
+**Result**: No new errors from Phase 3 changes. Fixed UP041 (asyncio.TimeoutError alias), F401 (unused timezone), E402 (logger placement) issues found during lint.
+
+### 2026-04-19 — Load tests + Playwright approvals tests
+
+```bash
+uv run pytest tests/agent/test_load.py tests/ui/test_approvals_playwright.py -v
+```
+**What**: Run the two new test files in isolation to catch failures early.
+**Why**: Verify 20 load tests and 22 Playwright approvals tests all pass before running full suite.
+**Result**: 2 failures — `ActionStatus.COMPLETED` (wrong enum value, fixed to `ActionStatus.SUCCESS`) and `test_report_excerpt_shown` (report inside collapsed `<details>`, fixed by clicking to expand first).
+
+```bash
+uv run ruff check --fix tests/agent/test_load.py tests/ui/test_approvals_playwright.py
+```
+**What**: Auto-fix lint in new test files.
+**Why**: Caught I001 (unsorted imports), UP017 (timezone.utc → UTC), F541 (f-string without placeholders).
+**Result**: 10 auto-fixed; remaining 8 (TC003, E501, SIM117) fixed manually.
+
+```bash
+uv run pytest -q
+```
+**What**: Full test suite after load test + Playwright approvals additions.
+**Why**: Verify 719 tests pass with no regressions.
+**Result**: 719 passed in ~89s.
+
+## Phase 4 — LLM Flexibility + Secrets + UI Config (2026-04-19)
+
+```bash
+uv run pytest tests/integrations/test_llm.py tests/integrations/test_secrets.py tests/observability/test_redaction.py tests/config/test_secrets_loading.py -v
+```
+**What**: Run Phase A + A.5 new tests in isolation.
+**Why**: Verify rewritten LLM tests, 24 secrets tests, 9 redaction tests, and 6 secrets-loading tests all pass before touching the full suite.
+**Result**: All passed.
+
+```bash
+uv run ruff check --fix errander/integrations/llm.py errander/integrations/secrets.py errander/observability/redaction.py errander/config/schema.py errander/config/settings.py errander/agent/decisions.py errander/main.py
+```
+**What**: Auto-fix lint on all Phase A/A.5 modified files.
+**Why**: Caught I001 (import ordering — two `from openai import ...` lines merged), F401 (unused imports).
+**Result**: Fixed automatically. Pre-existing UP047/B905/SIM105 errors left untouched.
+
+```bash
+uv run pytest -q
+```
+**What**: Full test suite after Phase A + A.5 implementation.
+**Why**: Verify no regressions from LLM client and secrets changes.
+**Result**: All tests passing.
+
+```bash
+uv run pytest tests/safety/test_overrides.py tests/config/test_settings_precedence.py tests/agent/test_inventory_merge.py -v
+```
+**What**: Run Phase B new tests in isolation.
+**Why**: Verify 18 overrides tests, 21 settings-precedence tests, and 9 inventory-merge tests before running full suite.
+**Result**: All 49 passed after fixing patch target (`errander.agent.graph.build_batch_graph` not `errander.main.build_batch_graph` — local import inside function body).
+
+```bash
+uv run ruff check --fix tests/safety/test_overrides.py tests/config/test_settings_precedence.py tests/agent/test_inventory_merge.py
+```
+**What**: Auto-fix lint on Phase B test files.
+**Why**: Caught F401 (unused `os`, `patch`, `pytest`), I001 (unsorted imports), B017 (blind Exception).
+**Result**: 8 auto-fixed; `TC003` suppressed with `# noqa`; `B017` fixed by catching `aiosqlite.IntegrityError`.
+
+```bash
+uv run pytest --tb=short -q
+```
+**What**: Full test suite after Phase B implementation.
+**Why**: Verify 799 tests pass with no regressions.
+**Result**: 799 passed in ~103s.
+
+```bash
+uv run ruff check errander/ tests/
+```
+**What**: Full project lint check after Phase 4.
+**Why**: Confirm no new violations — only pre-existing TC001/UP017/etc. remain.
+**Result**: Only pre-existing errors; all Phase 4 files clean.
+
+## Phase 4 — Playwright Tests T4-T6 (2026-04-20)
+
+```bash
+uv run pytest tests/ui/test_settings_playwright.py tests/ui/test_inventory_playwright.py tests/ui/test_ui_auth_playwright.py -v --tb=short
+```
+**What**: Run the three new Phase 4 Playwright test files in isolation.
+**Why**: Debug 4 remaining failures from previous session before running full suite.
+**Result**: Initially 41/45 passing; root cause found — nested `<form>` in settings page.
+
+```bash
+uv run ruff check tests/ui/ --fix
+```
+**What**: Auto-fix lint on all UI Playwright test files.
+**Why**: Caught I001 (import ordering), F841 (unused variables), E501 (long lines in test_web_ui.py).
+**Result**: 9 auto-fixed; remaining manually corrected.
+
+```bash
+uv run pytest tests/ui/ -v --tb=short
+```
+**What**: Run all 111 UI Playwright tests after nested-form fix.
+**Why**: Verify all settings, inventory, auth, and existing UI tests pass.
+**Result**: 111 passed.
+
+```bash
+uv run pytest --tb=short -q
+```
+**What**: Full test suite after all Phase 4 Playwright fixes.
+**Why**: Confirm 844 tests pass with no regressions.
+**Result**: 844 passed in ~146s.
+
+## Entry Point Fix (2026-04-20)
+
+```bash
+uv run python -m errander --help
+```
+**What**: Test `python -m errander` invocation.
+**Why**: User tried to run the agent and hit `No module named errander.__main__`.
+**Fix**: Created `errander/__main__.py` that calls `errander.main.main()`.
 
 ## SSH / Target VMs
 

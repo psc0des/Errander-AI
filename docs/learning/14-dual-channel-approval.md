@@ -3,7 +3,7 @@
 ## What Was Built and Why
 
 The approval flow previously worked through Slack only: the agent posted a dry-run report
-to #automaint-approvals, then polled for ✅/❌ emoji reactions every 30 seconds. This is
+to #errander-approvals, then polled for ✅/❌ emoji reactions every 30 seconds. This is
 fine at a desk but inconvenient if Slack is unavailable or if the operator prefers a web
 interface.
 

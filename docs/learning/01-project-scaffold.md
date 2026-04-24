@@ -7,7 +7,7 @@
 
 ## What Was Built
 
-The complete project skeleton for AutoMaint using **Option C: Parent Orchestrator + Fan-Out with Sub-Graphs**. This is a 3-level LangGraph architecture:
+The complete project skeleton for Errander-AI using **Option C: Parent Orchestrator + Fan-Out with Sub-Graphs**. This is a 3-level LangGraph architecture:
 
 1. **Batch Orchestrator** (`agent/graph.py`) — loads config, validates targets, fans out to VMs via `Send()`
 2. **Per-VM Graph** (`agent/vm_graph.py`) — locks VM, discovers state, plans/dispatches actions sequentially
@@ -94,7 +94,7 @@ This means the full graph pipeline runs identically in both modes — only the e
 ## Project Structure
 
 ```
-automaint/
+errander/
 ├── agent/           # LangGraph graphs (3 levels)
 │   ├── graph.py     # Level 1: Batch orchestrator (fan-out)
 │   ├── vm_graph.py  # Level 2: Per-VM maintenance

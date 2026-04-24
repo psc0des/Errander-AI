@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from automaint.models.vm import OSFamily, VMTarget
+from errander.models.vm import OSFamily, VMTarget
 
 
 class TestVMModels:

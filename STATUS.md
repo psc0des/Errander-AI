@@ -1,10 +1,10 @@
-# AutoMaint — Project Status
+# Errander-AI — Project Status
 
 ## Last Updated
-2026-04-10
+2026-04-20
 
 ## Current Phase
-**Dual-channel approval complete (Slack reactions + Web UI buttons). 479 tests passing. Next: Phase 1.8 End-to-End Validation (needs real VM).**
+**Phase 4 fully complete — all 844 tests passing, lint clean. Next: Phase 1.8 end-to-end validation (needs real VM).**
 
 ## Completed
 
@@ -53,22 +53,22 @@
 - **Tests**: 23 tests covering filtering, prioritisation, failure analysis, report generation
 
 ### Phase 1.6: Integrations
-- **LLM client** (`automaint/integrations/llm.py`): Full `LLMClient` — `complete()` with thinking/no_think modes, structured JSON via Pydantic, retry on transient errors, `health_check()`. Wired into `decisions.py` — all three decision functions now accept optional `llm_client` parameter and fall back to hardcoded logic when `None` or LLM unreachable.
-- **Slack client** (`automaint/integrations/slack.py`): Full `SlackClient` — `post_message()` returns `ts`, `get_reactions()` polls by `ts`, `post_alert()` convenience wrapper. Rate limiting handled with one automatic retry respecting `Retry-After`. All I/O via outbound HTTPS, no inbound webhooks.
-- **Approval gate** (`automaint/safety/approval.py`): `request_approval()` formats and posts dry-run plan to Slack. `poll_approval()` polls every N seconds — ❌ takes priority over ✅, timeout auto-rejects, transient Slack errors skip the poll without aborting.
-- **Prometheus metrics** (`automaint/observability/metrics.py`, `tracking.py`): `REGISTRY` with 7 metrics (actions_total, action_duration_seconds, batch_duration_seconds, ssh_errors_total, llm_requests_total, approval_wait_seconds, vm_lock_held_seconds). `start_metrics_server()` launches aiohttp app serving `/metrics` and `/health`. `tracking.py` provides `record_action_result()`, `record_ssh_error()`, `record_llm_outcome()`.
+- **LLM client** (`errander/integrations/llm.py`): Full `LLMClient` — `complete()` with thinking/no_think modes, structured JSON via Pydantic, retry on transient errors, `health_check()`. Wired into `decisions.py` — all three decision functions now accept optional `llm_client` parameter and fall back to hardcoded logic when `None` or LLM unreachable.
+- **Slack client** (`errander/integrations/slack.py`): Full `SlackClient` — `post_message()` returns `ts`, `get_reactions()` polls by `ts`, `post_alert()` convenience wrapper. Rate limiting handled with one automatic retry respecting `Retry-After`. All I/O via outbound HTTPS, no inbound webhooks.
+- **Approval gate** (`errander/safety/approval.py`): `request_approval()` formats and posts dry-run plan to Slack. `poll_approval()` polls every N seconds — ❌ takes priority over ✅, timeout auto-rejects, transient Slack errors skip the poll without aborting.
+- **Prometheus metrics** (`errander/observability/metrics.py`, `tracking.py`): `REGISTRY` with 7 metrics (actions_total, action_duration_seconds, batch_duration_seconds, ssh_errors_total, llm_requests_total, approval_wait_seconds, vm_lock_held_seconds). `start_metrics_server()` launches aiohttp app serving `/metrics` and `/health`. `tracking.py` provides `record_action_result()`, `record_ssh_error()`, `record_llm_outcome()`.
 - **Tests**: 74 tests — 23 LLM, 10 Slack client, 21 approval gate, 20 metrics
 
 ### Pre-Phase 1.8: Wiring + Entry Point
-- **`validate_window_node` wired** (`automaint/agent/graph.py`): No longer a stub. Calls `check_window_from_config()` — blocks batch if outside window (sets `error` → short-circuits to `generate_report`). `force=True` bypasses with warning. `build_batch_graph()` now accepts optional `window: MaintenanceWindow | None`.
+- **`validate_window_node` wired** (`errander/agent/graph.py`): No longer a stub. Calls `check_window_from_config()` — blocks batch if outside window (sets `error` → short-circuits to `generate_report`). `force=True` bypasses with warning. `build_batch_graph()` now accepts optional `window: MaintenanceWindow | None`.
 - **`main.py` implemented**: Full entry point — CLI args, config loading, component wiring (SSH, executor, locker, Slack, LLM), `--run-now` mode, scheduler loop with per-env cron jobs, graceful shutdown on SIGTERM/SIGINT.
 - **`EnvironmentSchema`** extended with `maintenance_timezone: str = "UTC"`.
 - **`_build_maintenance_window()`** helper parses `"HH:MM-HH:MM"` window strings from inventory.
 - **Tests**: 21 graph tests (now 25), 17 main.py tests
 
 ### Phase 1.7: Config & Scheduling
-- **Maintenance windows** (`automaint/scheduling/windows.py`): `is_within_window()` handles normal and overnight windows, timezone-aware via `zoneinfo`. `MaintenanceWindow` dataclass with validation. `check_window_from_config()` convenience wrapper.
-- **Scheduler** (`automaint/scheduling/scheduler.py`): `MaintenanceScheduler` wraps `AsyncIOScheduler` — `add_maintenance_job()` registers cron-triggered async callbacks, `list_jobs()` summarises registered jobs, `start()`/`stop()` manage lifecycle. Misfire grace: 600s, coalesce enabled.
+- **Maintenance windows** (`errander/scheduling/windows.py`): `is_within_window()` handles normal and overnight windows, timezone-aware via `zoneinfo`. `MaintenanceWindow` dataclass with validation. `check_window_from_config()` convenience wrapper.
+- **Scheduler** (`errander/scheduling/scheduler.py`): `MaintenanceScheduler` wraps `AsyncIOScheduler` — `add_maintenance_job()` registers cron-triggered async callbacks, `list_jobs()` summarises registered jobs, `start()`/`stop()` manage lifecycle. Misfire grace: 600s, coalesce enabled.
 - **Example configs** (`example/inventory.yaml`, `example/settings.yaml`): Reference configuration files covering production/staging/dev environments with annotated comments.
 - **Tests**: 36 tests — 25 windows, 11 scheduler
 
@@ -76,10 +76,10 @@
 - **`deploy/vllm/docker-compose.yml`** — production Docker Compose for vLLM: NVIDIA GPU passthrough, the exact serve command from CLAUDE.md, `restart: unless-stopped`, model volume mount, healthcheck (180s start period for model load), 7-day log retention
 - **`deploy/vllm/.env.example`** — all tunable vars: `MODEL_ID`, `HF_TOKEN`, `MAX_MODEL_LEN`, `GPU_MEM_UTIL`, `VLLM_PORT`, `MODEL_CACHE_DIR`
 - **`LLMClient.check_endpoint()`** — detailed health check: reachability, model list, test completion with round-trip latency
-- **`--check-llm` CLI flag** in `main.py` — `uv run python -m automaint --check-llm` prints status, model IDs, and latency without starting the agent
+- **`--check-llm` CLI flag** in `main.py` — `uv run python -m errander --check-llm` prints status, model IDs, and latency without starting the agent
 
 ### Dual-Channel Approval (Slack + Web UI)
-- **`ApprovalManager`** (`automaint/safety/approval.py`): In-memory store for pending approvals. `PendingApproval` dataclass with `asyncio.Event` for signalling. `register()`, `decide()` (idempotent), `wait_for_decision()` (timeout auto-rejects), `get_pending()`, `get_history()`.
+- **`ApprovalManager`** (`errander/safety/approval.py`): In-memory store for pending approvals. `PendingApproval` dataclass with `asyncio.Event` for signalling. `register()`, `decide()` (idempotent), `wait_for_decision()` (timeout auto-rejects), `get_pending()`, `get_history()`.
 - **`await_dual_approval()`**: Races Slack reaction polling against UI button click using `asyncio.wait(FIRST_COMPLETED)`. If Slack post fails, falls back gracefully to UI-only mode. Cancels the slower channel when either decides.
 - **`GET /ui/approvals`**: Lists pending approvals with report excerpt and Approve/Reject buttons. Shows recent decision history table. Auto-refreshes every 15s. Red badge count in nav when pending > 0.
 - **`POST /ui/approvals/{id}/approve|reject`**: Form submit handler — calls `manager.decide()`, redirects back to list. Returns 503 if manager not connected. Idempotent for unknown batch IDs.
@@ -112,7 +112,7 @@
 ### SQLite Audit Integration (native, no MCP)
 - **`AuditStore.get_events()`** extended with `action_type` filter — all four filters (batch_id, vm_id, event_type, action_type) can be combined freely
 - **`AuditStore.get_recent_batches(limit)`** — returns batch summaries: batch_id, started_at, event_count, vm_ids (distinct)
-- **`--audit` CLI mode** in `main.py`: `uv run python -m automaint --audit [--batch-id X] [--vm-id Y] [--action-type Z] [--event-type T] [--last N] [--batches]`
+- **`--audit` CLI mode** in `main.py`: `uv run python -m errander --audit [--batch-id X] [--vm-id Y] [--action-type Z] [--event-type T] [--last N] [--batches]`
 - **Integration tests** (`tests/safety/test_audit_integration.py`, 21 tests):
   - `action_type` filter correctness (6 tests)
   - `get_recent_batches()` correctness (7 tests)
@@ -120,11 +120,81 @@
   - Audit CLI query functions via `run_audit_query()` (5 tests)
 - **Tests**: 415 total passing
 
+### Design Review (10 fixes)
+- Hardened kernel exclusion (frozenset + fnmatch, reject attempts to weaken)
+- Disk cleanup whitelist enforcement in validate node (not just assess)
+- Approval gate enforces risk tiers per policy (not blanket auto-approve)
+- Rollback architecture: version snapshot before patching, batch rollback on failure
+- Backup verify uses NEEDS_MANUAL status (not just SUCCESS/FAILED)
+- Docker prune validates docker availability before proceeding
+- Log rotation rejects paths outside `/var/log`
+- All sub-graphs use ActionStatus enum consistently
+- Dispatch handles unknown action types gracefully (ValueError catch)
+- Audit integration tests patched for all 5 action types
+
+### Phase 2: All Action Sub-Graphs (complete)
+- **Log rotation** (`errander/agent/subgraphs/log_rotation.py`): Path validation → find oversized files → logrotate or manual gzip+truncate → verify. Idempotent via `nothing_to_do`. 28 tests.
+- **Docker prune** (`errander/agent/subgraphs/docker_prune.py`): Docker availability check → count dangling images + stopped containers → `docker system prune -af` → verify df. Idempotent. 18 tests.
+- **Patching** (`errander/agent/subgraphs/patching.py`): Kernel exclusion (mandatory frozenset + fnmatch) → list upgradable → version snapshot → upgrade → verify versions. Idempotent. 24 tests.
+- **Backup verify** (`errander/agent/subgraphs/backup_verify.py`): Read-only — no execute node. Check exists/recent/non-zero for each backup path. Flags MISSING/STALE/EMPTY. 14 tests.
+- **VM graph wiring** (`errander/agent/vm_graph.py`): All 5 sub-graphs compiled once and dispatched via `_run_*` helpers. Unknown action types handled gracefully.
+- **README.md**: Comprehensive project README with architecture, how-it-works, safety gates, quick start, configuration, observability, vLLM deployment.
+
+### Phase 3: Hardening (complete)
+
+- **Rolling updates** (`errander/agent/graph.py`): Wave-based fleet dispatch. `_partition_into_waves()` splits healthy targets by `rolling_update_percentage`. New graph topology: `validate_targets → prepare_waves → dispatch_wave → run_vm → check_wave_health → (loop|collect)`. Defaults to 100% (single wave) — backward-compatible.
+- **Canary logic** (`errander/agent/graph.py`): When `canary_enabled=True`, `prepare_waves_node` forces wave 0 = 1 VM. `check_wave_health_node` uses the stricter `canary_health_check_command` for wave 0; any failure aborts the entire rollout (`canary_passed=False`).
+- **Drift detection** (`errander/safety/drift.py`, `errander/agent/vm_graph.py`): New `drift_check` node inserted between `discover` and `plan_actions`. Compares discovered VM state against SQLite-stored baseline (OS version, disk usage >20%, docker availability, reboot detection, package count >5). Saves baseline after each successful run. Disabled by default.
+- **New metrics**: `errander_wave_health_checks_total` counter (labeled by wave index and outcome).
+- **Settings wired**: 7 new fields in `AgentSettingsSchema` and `Settings` dataclass, env var overrides, and `config/settings.yaml` + `example/settings.yaml` updated.
+- **Phase 3 edge-case hardening** (5 steps, 25 new tests, 677 total):
+  - **Sub-graph exception safety** (`errander/agent/vm_graph.py`): All 5 `_run_*` helpers wrap `ainvoke()` in try/except — `(ConnectionError, OSError, TimeoutError)` + bare `Exception # noqa: BLE001`. Exceptions return a FAILED result dict; the `release_lock_node` always executes. `audit_results_node` wraps `save_baseline()` so a drift DB error never aborts the batch.
+  - **Batch orchestrator exception safety** (`errander/agent/graph.py`): `run_vm_node`'s `ainvoke()` wrapped in bare `Exception` guard returning a FAILED vm_results entry.
+  - **Audit resilience** (`errander/safety/audit.py`): `log_event()` retries once on `aiosqlite.OperationalError` (with 100ms backoff), then swallows persistent `OperationalError` and `aiosqlite.Error` so audit failures never abort a live batch.
+  - **Atomic file locking** (`errander/safety/locking.py`): `acquire()` uses `os.O_CREAT | os.O_EXCL` for race-free creation; stale-lock overwrites use `os.replace()` (atomic on same filesystem). `_write_lock_atomic()` helper writes to `.tmp` then renames atomically.
+  - **Settings bounds validation** (`errander/config/schema.py`): `@field_validator` on `rolling_update_percentage` [1–100], `wave_failure_threshold`/`fleet_failure_threshold` [0.0–1.0], and all timeout fields [1–86400].
+  - **SSH hardening** (`errander/execution/ssh.py`): Timeout handler clears stale connection from pool; `None` exit_status maps to 255 (SSH convention).
+  - **Sub-graph empty-output guards**: `snapshot_node` (patching) fails on empty package snapshot; `assess_node` (disk_cleanup, docker_prune) fails on empty `df`/`wc -l` stdout; `assess_node` (log_rotation) fails on non-zero `find` exit code.
+
+### Load Testing + Playwright Approvals (complete)
+- **`tests/agent/test_load.py`** (20 tests): `TestLargeFleetPartitioning` (7 pure-unit wave math tests at 100–200 VMs), `TestFleetBatchGraph` (7 integration tests — 10-VM fleet, rolling waves, wave abort at boundary, canary abort, crash recovery), `TestConcurrentLockOperations` (6 tests — 50-coroutine race, 20-VM lifecycle, stale lock recovery, force release, serial waves).
+- **`tests/ui/test_approvals_playwright.py`** (22 Playwright tests): Module-scoped aiohttp server with `ApprovalManager` pre-seeded with 5 pending approvals. `TestApprovalsPage` (7), `TestApprovalsNavigation` (4), `TestDashboardWithPendingApprovals` (4), `TestApproveAction` (2), `TestRejectAction` (2), `TestApprovalsBadgeAcrossPages` (3).
+- **Total tests: 719** — all passing, lint clean.
+
+### Phase 4: LLM Flexibility + Secrets Encryption + UI Config (complete)
+
+- **Phase A — LLM provider flexibility**: Removed hardcoded `Qwen/Qwen3-8B-AWQ` and `/no_think` prefix. `LLMClient` now accepts `model: str` and `temperature: float`. Works with any OpenAI-compatible API (vLLM, Ollama, OpenAI, Anthropic via proxy, Groq). `decisions.py` updated — no more `thinking=True/False`. Provider docs in `docs/LLM-PROVIDERS.md`.
+
+- **Phase A.5 — Secrets encryption foundation**:
+  - `SecretsManager` with Fernet AES-128-CBC + HMAC-SHA256, `enc:v1:<token>` format
+  - `--generate-secrets-key` and `--encrypt VALUE` CLI commands
+  - YAML config decryption on load (`_decrypt_yaml_strings`)
+  - `SecretsRedactingFilter` log filter scrubs API keys, Slack tokens, `enc:v1:` blobs from all log output
+  - 24 `test_secrets.py`, 9 `test_redaction.py`, 6 `test_secrets_loading.py` tests
+
+- **Phase B — UI settings + inventory management**:
+  - `OverridesStore` (SQLite) — two tables: `settings_overrides` and `inventory_overrides`
+  - Settings precedence: env > DB (UI) > YAML > default. `load_settings()` accepts pre-fetched `db_overrides`.
+  - `GET/POST /ui/settings` — runtime LLM/approval setting changes. Source indicators (env=locked, db=blue, yaml=green). "Test Connection" button validates LLM endpoint.
+  - `GET/POST /ui/inventory` — disable YAML VMs or add ad-hoc VMs. Changes take effect on next batch run.
+  - HTTP Basic Auth middleware on all `/ui/*` routes (`secrets.compare_digest`, timing-safe)
+  - Inventory merge in `run_env_batch()`: YAML → filter disabled → append db_additions
+  - All audit-change events logged as `SETTINGS_CHANGED` / `INVENTORY_CHANGED`
+  - New tests: 18 `test_overrides.py` (T1), 21 `test_settings_precedence.py` (T2), 9 `test_inventory_merge.py` (T3)
+  - Learning doc: `docs/learning/22-ui-settings-and-inventory.md`
+  - SETUP.md updated: Step 5b — Secure the Web UI
+
+- **Phase 4 Playwright tests (T4-T6 — 45 tests)**:
+  - `tests/ui/test_settings_playwright.py` (15 tests): page load, save+persist, reset, env-var lock / source labels
+  - `tests/ui/test_inventory_playwright.py` (17 tests): page load, VM display, toggle, add ad-hoc VM, delete
+  - `tests/ui/test_ui_auth_playwright.py` (13 tests): 401 without creds, 200 with creds, wrong user/pass, WWW-Authenticate header, /metrics+/health open
+  - **Bug fixed**: Nested `<form>` inside the main settings `<form>` caused Chromium to implicitly close the outer form — Save button ended up orphaned. Fixed via HTML5 `form="reset-{key}"` attribute pattern (out-of-band form + form-attr button).
+
 ## In Progress
-None — dual-channel approval complete. Phase 1.8 requires real VM infrastructure.
+None.
 
 ## Next Up
-- **Phase 1.8: End-to-End Validation** — dry-run disk_cleanup on a real VM through the full pipeline
+- **Phase 1.8: End-to-End Validation** — dry-run all action types on a real VM through the full pipeline (needs infrastructure)
 
 
 
@@ -135,7 +205,7 @@ None — dual-channel approval complete. Phase 1.8 requires real VM infrastructu
 - **State serialisation at boundaries**: Sub-graph states use TypedDict; the VM graph stores results as `list[dict]`. ActionResult objects are serialised when written, deserialised when read (e.g., report generator). Avoids Pydantic/dataclass serialisation across graph boundaries.
 - **Hardcoded fallbacks first**: All LLM-powered functions (`prioritize_actions`, `generate_report`, `analyze_failure`) are fully implemented with hardcoded logic before LLM integration. The agent is fully functional without LLM.
 - **Module-scoped test fixtures for expensive clients**: `AsyncOpenAI` initialises an httpx transport (~1.4s). Using `pytest.fixture(scope="module")` reduces LLM test suite from 57s to 6.5s.
-- **Custom Prometheus registry**: Using `CollectorRegistry()` instead of the library default for test isolation and explicit ownership — `generate_latest(REGISTRY)` only outputs AutoMaint metrics.
+- **Custom Prometheus registry**: Using `CollectorRegistry()` instead of the library default for test isolation and explicit ownership — `generate_latest(REGISTRY)` only outputs Errander-AI metrics.
 - **Scheduler does not enforce windows**: The APScheduler cron triggers runs at the configured time; the graph's `validate_window_node` is the authoritative safety gate. Separates scheduling concerns from safety concerns.
 - **Outbound-only Slack**: No webhooks, no inbound endpoints, no nginx. Agent polls `reactions.get` every 30s. Zero infra overhead for approval flow.
 - **Web UI on same port as /metrics**: The `/ui` routes run on the same aiohttp server as `/metrics` and `/health` (port 9090). No new process, no new port, direct in-process access to `AuditStore`. Separate server warranted only if UI needs auth or WebSockets.
@@ -147,37 +217,45 @@ None — dual-channel approval complete. Phase 1.8 requires real VM infrastructu
 - **`asyncio.wait(FIRST_COMPLETED)` for dual-channel racing**: `await asyncio.wait({slack_task, ui_task}, return_when=FIRST_COMPLETED)` is the right primitive — cleaner than `asyncio.gather` with cancellation tokens or manual flags. The losing task is explicitly cancelled with `await t` to drain any pending cleanup.
 - **`asyncio.Event()` as the signalling primitive**: `PendingApproval._event` is set by `decide()` and waited on by `_wait_ui()`. No queues, no locks — the event is the direct channel between the HTTP handler coroutine and the approval waiter. Works because all coroutines share the same event loop.
 - **Idempotent `decide()`**: Uses `self._pending.pop(batch_id, None)` — returns None silently if already decided. This makes dual-channel racing safe: the slower channel can call `decide()` after the faster one without raising.
+- **Canary as wave 0**: Canary is not a separate mechanism — it's just wave 0 with exactly 1 VM and a stricter health check command. `prepare_waves_node` inserts the canary target as `waves[0]` before the percentage-based remaining waves. Zero new nodes or state machines.
+- **Drift stored as audit events**: Baselines are stored as `DRIFT_BASELINE_SAVED` events in the existing SQLite audit trail (JSON blob in metadata). No new table, no schema migration. Queried via `get_events(vm_id=..., event_type=..., limit=1)` — most recent entry is the current baseline.
+- **`dispatch_wave` as no-op node**: In the wave-based graph, `dispatch_wave` is a pass-through node (`lambda state: {}`) whose only role is to be the named source for the conditional edge that emits `Send()` objects. The routing function does the real work. Same pattern as `check_more_actions` in the VM graph.
+- **`make_fan_out_router` kept for backward compat**: New `make_wave_dispatcher` handles production use. `make_fan_out_router` still exists and is still imported in tests — removing it would break existing test assertions without any benefit.
 - **Port bind before validation caused test failures**: `start_metrics_server()` was called before `--env` validation checks. When two `async_main` calls ran in the same process (test suite), the second bind on port 9090 failed. Fix: validate `--env` / unknown env BEFORE creating the audit store or starting the server.
+- **`load_settings()` stays synchronous (Phase 4)**: Accepts pre-fetched `db_overrides: dict[str, str]` instead of `OverridesStore` directly — keeps the sync call chain intact and makes testing simple.
+- **`enc:v1:` prefix for encrypted values (Phase 4)**: Prefix-tagged format makes it easy to detect encrypted vs plaintext at any layer (env var, YAML, DB) without needing a separate `is_secret` flag.
+- **Basic Auth on `/ui/*` only (Phase 4)**: `/metrics` and `/health` remain open (Prometheus scrapers don't support auth). Auth scoped to human-facing routes only.
+- **Inventory merge in `run_env_batch()` (Phase 4)**: Merge happens at batch invocation time — operators can change inventory via UI and the next scheduled run picks it up without restart.
 
 ## Blockers
 None.
 
 ## Files Changed (This Session)
 ### Modified
-- `automaint/agent/decisions.py` — LLM wired in: all decision functions accept optional llm_client, fall back to hardcoded
-- `automaint/integrations/llm.py` — Full LLMClient implementation
+- `errander/agent/decisions.py` — LLM wired in: all decision functions accept optional llm_client, fall back to hardcoded
+- `errander/integrations/llm.py` — Full LLMClient implementation
 - `tests/integrations/test_llm.py` — 23 tests
-- `automaint/agent/vm_graph.py` — Full per-VM graph implementation
-- `automaint/agent/graph.py` — Full batch orchestrator implementation
+- `errander/agent/vm_graph.py` — Full per-VM graph implementation
+- `errander/agent/graph.py` — Full batch orchestrator implementation
 - `tests/agent/test_decisions.py` — 23 tests (updated for new llm_client signature)
 - `tests/agent/test_vm_graph.py` — 28 tests
 - `tests/agent/test_graph.py` — 21 tests
-- `automaint/main.py` — full entry point implementation
-- `automaint/agent/graph.py` — validate_window_node wired + build_batch_graph accepts window
-- `automaint/config/schema.py` — EnvironmentSchema.maintenance_timezone field added
+- `errander/main.py` — full entry point implementation
+- `errander/agent/graph.py` — validate_window_node wired + build_batch_graph accepts window
+- `errander/config/schema.py` — EnvironmentSchema.maintenance_timezone field added
 - `example/inventory.yaml` — maintenance_timezone field added to all environments
 - `tests/agent/test_graph.py` — 4 new window node tests (25 total)
 - `tests/test_main.py` — 17 tests for CLI parsing and helper functions
-- `automaint/scheduling/windows.py` — is_within_window, MaintenanceWindow dataclass
-- `automaint/scheduling/scheduler.py` — MaintenanceScheduler wrapping AsyncIOScheduler
+- `errander/scheduling/windows.py` — is_within_window, MaintenanceWindow dataclass
+- `errander/scheduling/scheduler.py` — MaintenanceScheduler wrapping AsyncIOScheduler
 - `tests/scheduling/test_windows.py` — 25 tests
 - `tests/scheduling/test_scheduler.py` — 11 tests
 - `example/inventory.yaml` — annotated reference inventory
 - `example/settings.yaml` — annotated reference settings
-- `automaint/integrations/slack.py` — Full SlackClient implementation
-- `automaint/safety/approval.py` — request_approval + poll_approval
-- `automaint/observability/metrics.py` — Prometheus registry + HTTP server
-- `automaint/observability/tracking.py` — record_action_result, record_ssh_error, record_llm_outcome
+- `errander/integrations/slack.py` — Full SlackClient implementation
+- `errander/safety/approval.py` — request_approval + poll_approval
+- `errander/observability/metrics.py` — Prometheus registry + HTTP server
+- `errander/observability/tracking.py` — record_action_result, record_ssh_error, record_llm_outcome
 - `tests/integrations/test_slack.py` — 10 tests
 - `tests/safety/test_approval.py` — 21 tests
 - `tests/observability/test_metrics.py` — 20 tests
@@ -185,26 +263,55 @@ None.
 - `docs/learning/13-vllm-setup.md` — learning doc: GPU passthrough, host volumes, healthcheck start_period, check_endpoint design
 - `deploy/vllm/docker-compose.yml` — production vLLM container with GPU passthrough
 - `deploy/vllm/.env.example` — configurable deployment vars
-- `automaint/integrations/llm.py` — check_endpoint() method with model list + latency
-- `automaint/main.py` — --check-llm flag + run_llm_check()
-- `automaint/observability/metrics.py` — UI routes + handlers, typed AppKey, AuditStore import
+- `errander/integrations/llm.py` — check_endpoint() method with model list + latency
+- `errander/main.py` — --check-llm flag + run_llm_check()
+- `errander/observability/metrics.py` — UI routes + handlers, typed AppKey, AuditStore import
 - `docs/learning/12-web-ui.md` — learning doc: AppKey, slash URL matching, same-server architecture, Pico.css
-- `automaint/main.py` — pass audit_store to start_metrics_server()
-- `automaint/safety/audit.py` — action_type filter in get_events(), get_recent_batches() method added
-- `automaint/main.py` — --audit CLI mode, run_audit_query(), EventType import
+- `errander/main.py` — pass audit_store to start_metrics_server()
+- `errander/safety/audit.py` — action_type filter in get_events(), get_recent_batches() method added
+- `errander/main.py` — --audit CLI mode, run_audit_query(), EventType import
 - `tests/safety/test_audit_integration.py` — 21 integration tests (created)
 - `docs/learning/11-sqlite-audit.md` — learning doc: GROUP_CONCAT aggregation, CLI short-circuit pattern, integration test strategy
-- `tasks/todo.md` — Phases 1.4/1.5/1.6/1.7 items checked off
-- `docs/command-log.md` — Phase 1.6 + 1.7 commands added
-- `tasks/lessons.md` — aiohttp async CM, rate-limit retry, APScheduler __slots__, DST offset, web.Response lessons added
+- `tasks/todo.md` — Phases 1.4/1.5/1.6/1.7 items checked off; Phase 4 tasks added and checked off
+- `docs/command-log.md` — Phase 1.6 + 1.7 + 4 commands added
+- `tasks/lessons.md` — aiohttp async CM, rate-limit retry, APScheduler __slots__, DST offset, web.Response, Phase 4 lessons added
+- `tasks/phase4-llm-flexibility-and-ui-config.md` — status updated to Complete
 
-### Created
-- `docs/learning/05-vm-graph.md` — LangGraph action loop, lock patterns
-- `docs/learning/06-batch-orchestrator.md` — Send() fan-out, reducers, compiled graph reuse
-- `docs/learning/07-llm-client.md` — LLM client patterns, thinking modes, fallback design
-- `docs/learning/08-slack-approval.md` — aiohttp pattern, Slack reaction polling, approval gate design
-- `docs/learning/09-metrics.md` — Prometheus registry, counter vs histogram, aiohttp server
-- `docs/learning/10-scheduling.md` — maintenance windows, APScheduler, timezone handling
+### Phase 4 — Modified
+- `errander/integrations/llm.py` — removed hardcoded model/thinking-mode, added model+temperature params
+- `errander/integrations/secrets.py` — rewritten: SecretsManager with Fernet enc:v1: format
+- `errander/config/schema.py` — added _decrypt_yaml_strings, LLMSettingsSchema.model+temperature, validators
+- `errander/config/settings.py` — added llm_model, llm_temperature, ui_user, ui_password, sources, db_overrides param
+- `errander/agent/decisions.py` — removed thinking= kwarg from all complete() calls
+- `errander/main.py` — added --generate-secrets-key, --encrypt flags; OverridesStore init; inventory merge; overrides_store wired to scheduler loop
+- `errander/observability/metrics.py` — Basic Auth middleware, /ui/settings and /ui/inventory routes + handlers
+- `errander/models/events.py` — added SETTINGS_CHANGED and INVENTORY_CHANGED to EventType
+- `config/settings.yaml` — added llm.model and llm.temperature fields
+- `example/settings.yaml` — added llm.model and llm.temperature fields
+- `tests/integrations/test_llm.py` — rewritten: removed thinking tests, added verbatim/temp/model tests
+- `docs/SETUP.md` — added Step 5b: Secure the Web UI
+- `docs/learning/README.md` — added entries 20, 21, 22
+
+### Phase 4 — Created
+- `errander/safety/overrides.py` — OverridesStore: settings_overrides + inventory_overrides SQLite tables
+- `errander/observability/redaction.py` — SecretsRedactingFilter log filter
+- `tests/integrations/test_secrets.py` — 24 SecretsManager tests
+- `tests/observability/test_redaction.py` — 9 redaction filter tests
+- `tests/config/test_secrets_loading.py` — 6 YAML/env decryption integration tests
+- `tests/safety/test_overrides.py` — 18 OverridesStore tests (T1)
+- `tests/config/test_settings_precedence.py` — 21 settings precedence tests (T2)
+- `tests/agent/test_inventory_merge.py` — 9 inventory merge tests (T3)
+- `docs/learning/22-ui-settings-and-inventory.md` — learning doc: precedence chain, DB schema, merge algo, Basic Auth
+- `docs/LLM-PROVIDERS.md` — provider config reference (vLLM, Ollama, OpenAI, Anthropic, Groq)
+- `docs/SECRETS.md` — encryption setup guide, threat model, key rotation
+
+## Decisions Made (Phase 4)
+- **`load_settings()` stays synchronous**: Accepts pre-fetched `db_overrides: dict[str, str]` instead of `OverridesStore` directly — keeps the sync call chain intact and makes testing simple.
+- **`enc:v1:` prefix for encrypted values**: Prefix-tagged format makes it easy to detect encrypted vs plaintext at any layer (env var, YAML, DB) without needing a separate `is_secret` flag.
+- **Basic Auth on `/ui/*` only**: The `/metrics` and `/health` endpoints remain open (Prometheus scrapers don't support auth by default). Auth is scoped to the human-facing routes.
+- **`secrets.compare_digest()` for password check**: Constant-time comparison prevents timing oracle attacks — critical for a network-exposed auth check.
+- **Inventory merge in `run_env_batch()`**: The merge happens at batch invocation time, not at startup — operators can change inventory via the UI and the very next scheduled run picks it up without restart.
+- **`_name` temporary field pattern**: YAML target dicts get `_name` injected for filter lookup, then `del`-ed before the list reaches the graph. Avoids passing unknown fields into graph state.
 
 ## Test Count
-479 tests passing (454 unit/integration + 25 Playwright UI tests).
+799 tests passing (774 unit/integration + 25 Playwright UI tests).

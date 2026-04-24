@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from automaint.config.policies import BUILTIN_POLICIES, get_policy
-from automaint.models.actions import RiskTier
+from errander.config.policies import BUILTIN_POLICIES, get_policy
+from errander.models.actions import RiskTier
 
 
 class TestPolicies:

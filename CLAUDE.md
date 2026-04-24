@@ -1,4 +1,4 @@
-# AutoMaint — LangGraph Autonomous Maintenance Agent
+# Errander-AI — LangGraph Autonomous Maintenance Agent
 
 Autonomous maintenance agent that eliminates repetitive operational toil across heterogeneous VM infrastructure. Performs secure patching (non-kernel), log rotation, Docker pruning, disk cleanup, and more — with safety gates, rollback, and full audit logging.
 
@@ -25,7 +25,10 @@ Autonomous maintenance agent that eliminates repetitive operational toil across 
 
 ## Key Commands
 - `uv run pytest` — run tests
-- `uv run python -m automaint` — run agent locally
+- `uv run python -m errander --run-now --env <env> --dry-run` — dry-run a batch immediately
+- `uv run python -m errander --check-llm` — verify vLLM endpoint connectivity and latency
+- `uv run python -m errander --audit --batches` — view recent batch history
+- `uv run python -m errander --audit --batch-id <id>` — view all events for a batch
 - `uv run ruff check .` — lint
 - `uv run mypy .` — typecheck
 
@@ -44,7 +47,7 @@ Autonomous maintenance agent that eliminates repetitive operational toil across 
 │                                                  │
 │  ┌──────────────┐     ┌──────────────────────┐  │
 │  │ Self-hosted   │     │ Agent VM              │  │
-│  │ LLM (vLLM)   │◄────│  - AutoMaint agent    │  │
+│  │ LLM (vLLM)   │◄────│  - Errander-AI agent    │  │
 │  │ (private IP)  │     │  - APScheduler        │  │
 │  └──────────────┘     │  - Slack poller        │  │
 │                        │  - Audit DB (SQLite)   │  │
@@ -82,7 +85,7 @@ Autonomous maintenance agent that eliminates repetitive operational toil across 
 ## Architecture (target)
 
 ```
-automaint/
+errander/
 ├── agent/                  # LangGraph agent definitions
 │   ├── graph.py            # Parent orchestrator graph (fan-out to VMs)
 │   ├── vm_graph.py         # Per-VM maintenance graph (dispatches to action sub-graphs)
@@ -132,10 +135,20 @@ tasks/
 ├── todo.md                 # Current task tracking
 └── lessons.md              # Self-improvement log
 docs/
+├── SETUP.md                # End-to-end setup guide (new users start here)
 ├── SPEC.md                 # Full project specification
 ├── langgraph-primer.md     # LangGraph reference
 ├── architecture-options.md # Architecture decision record
-└── safety-architecture.md  # Safety design decisions
+├── safety-architecture.md  # Safety design decisions
+├── command-log.md          # Every command run during development
+└── learning/               # Per-feature learning docs (01-XX-feature-name.md)
+example/
+├── inventory.yaml          # Annotated reference inventory (prod/staging/dev)
+└── settings.yaml           # Annotated reference settings (schedule, LLM, Slack)
+deploy/
+└── vllm/
+    ├── docker-compose.yml  # Production vLLM container (GPU passthrough, Qwen3-8B-AWQ)
+    └── .env.example        # Configurable deployment vars (model, GPU, port, cache dir)
 ```
 
 ## Risk Tiers (safety gates)
@@ -185,7 +198,7 @@ Anything not on this whitelist requires human approval to clean.
 - Server: vLLM on dedicated VM with Tesla T4 16GB VRAM, 4 vCPUs, 16GB RAM
 - vLLM serve: `vllm serve Qwen/Qwen3-8B-AWQ --enable-reasoning --reasoning-parser deepseek_r1 --enable-auto-tool-choice --tool-call-parser hermes --max-model-len 8192 --gpu-memory-utilization 0.85`
 - Exposes OpenAI-compatible API (`/v1/chat/completions`) on private IP
-- Agent uses OpenAI Python SDK pointed at configurable `AUTOMAINT_LLM_BASE_URL`
+- Agent uses OpenAI Python SDK pointed at configurable `ERRANDER_LLM_BASE_URL`
 - Thinking modes: thinking (planning + failure analysis), `/no_think` (report generation)
 - All LLM responses: structured JSON via Pydantic models
 - Timeout: 60 seconds (T4 is slower than cloud APIs)
@@ -195,17 +208,17 @@ Anything not on this whitelist requires human approval to clean.
 
 ### Slack (outbound only)
 - Agent communicates with Slack entirely via outbound HTTPS to Slack API
-- Approval: post report to `#automaint-approvals`, poll for ✅/❌ reactions every 30s
+- Approval: post report to `#errander-approvals`, poll for ✅/❌ reactions every 30s
 - Timeout: 30 minutes (configurable), auto-REJECT on timeout
 - Zero inbound traffic to agent VM
 
 ### Secrets (environment variables for v1)
 ```
-AUTOMAINT_SLACK_BOT_TOKEN      # posting messages + polling reactions
-AUTOMAINT_SLACK_CHANNEL_ID     # dedicated approvals channel
-AUTOMAINT_LLM_BASE_URL         # private vLLM endpoint
-AUTOMAINT_LLM_API_KEY          # if vLLM requires auth
-AUTOMAINT_AUDIT_DB_URL         # SQLite path for v1
+ERRANDER_SLACK_BOT_TOKEN      # posting messages + polling reactions
+ERRANDER_SLACK_CHANNEL_ID     # dedicated approvals channel
+ERRANDER_LLM_BASE_URL         # private vLLM endpoint
+ERRANDER_LLM_API_KEY          # if vLLM requires auth
+ERRANDER_AUDIT_DB_URL         # SQLite path for v1
 ```
 SSH keys: referenced by file path in inventory config, never inlined.
 `.gitignore` must include: `.env`, `*.pem`, `*.key`, `*.sqlite`

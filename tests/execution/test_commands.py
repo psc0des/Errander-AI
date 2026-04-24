@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from automaint.execution.commands import AptManager, DnfManager, get_package_manager
-from automaint.models.vm import OSFamily
+from errander.execution.commands import AptManager, DnfManager, get_package_manager
+from errander.models.vm import OSFamily
 
 
 class TestGetPackageManager:

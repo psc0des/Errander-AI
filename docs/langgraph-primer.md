@@ -1,6 +1,6 @@
-# LangGraph Primer for AutoMaint
+# LangGraph Primer for Errander-AI
 
-Practical reference for building the AutoMaint agent. Skip theory — this is how things actually work.
+Practical reference for building the Errander-AI agent. Skip theory — this is how things actually work.
 
 ---
 

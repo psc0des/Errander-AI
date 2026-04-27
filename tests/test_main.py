@@ -205,3 +205,174 @@ class TestAsyncMainRunNow:
 
         result = await async_main(args)
         assert result == 1
+
+
+# ---------------------------------------------------------------------------
+# _window_opener
+# ---------------------------------------------------------------------------
+
+class TestWindowOpener:
+    @pytest.mark.asyncio
+    async def test_no_pending_skips_run_env_batch(self, tmp_path: Path) -> None:
+        """When no pending deferred records, run_env_batch is not called."""
+        from unittest.mock import AsyncMock, patch
+
+        from errander.config.schema import EnvironmentSchema, TargetSchema
+        from errander.config.settings import Settings
+        from errander.execution.sandbox import SandboxExecutor
+        from errander.execution.ssh import SSHConnectionManager
+        from errander.main import _window_opener
+        from errander.safety.approval import ApprovalManager
+        from errander.safety.audit import AuditStore
+        from errander.safety.deferred import DeferredExecutionStore
+        from errander.safety.locking import FileLocker
+        from errander.safety.overrides import OverridesStore
+
+        target = TargetSchema(host="10.0.1.1", name="web-01", os_family="ubuntu")
+        env_schema = EnvironmentSchema(
+            maintenance_window="02:00-06:00",
+            maintenance_days=["monday"],
+            targets=[target],
+        )
+
+        deferred_store = DeferredExecutionStore(":memory:")
+        await deferred_store.initialize()
+
+        async with AuditStore(":memory:") as audit_store:
+            overrides_store = OverridesStore(":memory:")
+            await overrides_store.initialize()
+            try:
+                with patch("errander.main.run_env_batch", new_callable=AsyncMock) as mock_run:
+                    await _window_opener(
+                        env_name="dev",
+                        env_schema=env_schema,
+                        settings=Settings(),
+                        executor=SandboxExecutor(SSHConnectionManager(), dry_run=True),
+                        locker=FileLocker(lock_dir=tmp_path),
+                        ssh_manager=SSHConnectionManager(),
+                        audit_store=audit_store,
+                        deferred_store=deferred_store,
+                        approval_manager=ApprovalManager(),
+                        slack_client=None,
+                        overrides_store=overrides_store,
+                    )
+                mock_run.assert_not_awaited()
+            finally:
+                await deferred_store.close()
+                await overrides_store.close()
+
+    @pytest.mark.asyncio
+    async def test_pending_record_triggers_live_run(self, tmp_path: Path) -> None:
+        """When a pending deferred record exists, run_env_batch is called with dry_run=False."""
+        from datetime import datetime, timezone
+        from unittest.mock import AsyncMock, patch
+
+        from errander.config.schema import EnvironmentSchema, TargetSchema
+        from errander.config.settings import Settings
+        from errander.execution.sandbox import SandboxExecutor
+        from errander.execution.ssh import SSHConnectionManager
+        from errander.main import _window_opener
+        from errander.safety.approval import ApprovalManager
+        from errander.safety.audit import AuditStore
+        from errander.safety.deferred import DeferredExecutionStore
+        from errander.safety.locking import FileLocker
+        from errander.safety.overrides import OverridesStore
+
+        target = TargetSchema(host="10.0.1.1", name="web-01", os_family="ubuntu")
+        env_schema = EnvironmentSchema(
+            maintenance_window="02:00-06:00",
+            maintenance_days=["monday"],
+            targets=[target],
+        )
+
+        deferred_store = DeferredExecutionStore(":memory:")
+        await deferred_store.initialize()
+        future_window = datetime(2026, 4, 27, 2, 0, 0, tzinfo=timezone.utc)
+        await deferred_store.save("b-test", "dev", "alice", future_window)
+
+        async with AuditStore(":memory:") as audit_store:
+            overrides_store = OverridesStore(":memory:")
+            await overrides_store.initialize()
+            try:
+                with patch("errander.main.run_env_batch", new_callable=AsyncMock) as mock_run:
+                    await _window_opener(
+                        env_name="dev",
+                        env_schema=env_schema,
+                        settings=Settings(),
+                        executor=SandboxExecutor(SSHConnectionManager(), dry_run=True),
+                        locker=FileLocker(lock_dir=tmp_path),
+                        ssh_manager=SSHConnectionManager(),
+                        audit_store=audit_store,
+                        deferred_store=deferred_store,
+                        approval_manager=ApprovalManager(),
+                        slack_client=None,
+                        overrides_store=overrides_store,
+                    )
+
+                mock_run.assert_awaited_once()
+                call_kwargs = mock_run.call_args.kwargs
+                assert call_kwargs["dry_run"] is False
+                assert call_kwargs["force"] is True
+            finally:
+                await deferred_store.close()
+                await overrides_store.close()
+
+    @pytest.mark.asyncio
+    async def test_pending_record_marked_done_after_run(self, tmp_path: Path) -> None:
+        """After _window_opener runs, the deferred record is marked done."""
+        from datetime import datetime, timezone
+        from unittest.mock import AsyncMock, patch
+
+        from errander.config.schema import EnvironmentSchema, TargetSchema
+        from errander.config.settings import Settings
+        from errander.execution.sandbox import SandboxExecutor
+        from errander.execution.ssh import SSHConnectionManager
+        from errander.main import _window_opener
+        from errander.safety.approval import ApprovalManager
+        from errander.safety.audit import AuditStore
+        from errander.safety.deferred import DeferredExecutionStore
+        from errander.safety.locking import FileLocker
+        from errander.safety.overrides import OverridesStore
+
+        target = TargetSchema(host="10.0.1.1", name="web-01", os_family="ubuntu")
+        env_schema = EnvironmentSchema(
+            maintenance_window="02:00-06:00",
+            maintenance_days=["monday"],
+            targets=[target],
+        )
+
+        deferred_store = DeferredExecutionStore(":memory:")
+        await deferred_store.initialize()
+        future_window = datetime(2026, 4, 27, 2, 0, 0, tzinfo=timezone.utc)
+        await deferred_store.save("b-test", "dev", "alice", future_window)
+
+        async with AuditStore(":memory:") as audit_store:
+            overrides_store = OverridesStore(":memory:")
+            await overrides_store.initialize()
+            try:
+                with patch("errander.main.run_env_batch", new_callable=AsyncMock):
+                    await _window_opener(
+                        env_name="dev",
+                        env_schema=env_schema,
+                        settings=Settings(),
+                        executor=SandboxExecutor(SSHConnectionManager(), dry_run=True),
+                        locker=FileLocker(lock_dir=tmp_path),
+                        ssh_manager=SSHConnectionManager(),
+                        audit_store=audit_store,
+                        deferred_store=deferred_store,
+                        approval_manager=ApprovalManager(),
+                        slack_client=None,
+                        overrides_store=overrides_store,
+                    )
+
+                assert deferred_store._db is not None
+                cursor = await deferred_store._db.execute(
+                    "SELECT status FROM deferred_executions WHERE batch_id = ?",
+                    ("b-test",),
+                )
+                row = await cursor.fetchone()
+                assert row is not None
+                assert row["status"] == "done"
+            finally:
+                await deferred_store.close()
+                await overrides_store.close()

@@ -553,6 +553,22 @@ uv run python -m errander --help
 **Why**: User tried to run the agent and hit `No module named errander.__main__`.
 **Fix**: Created `errander/__main__.py` that calls `errander.main.main()`.
 
+## Deferred Execution (2026-04-27)
+
+```bash
+uv run pytest tests/safety/test_deferred.py tests/scheduling/test_windows.py tests/agent/test_graph.py::TestApprovalGateDeferred tests/test_main.py::TestWindowOpener -v
+```
+**What**: Run only the new deferred execution tests (59 tests across 4 files).
+**Why**: Verify all new tests pass before running the full suite.
+**Result**: 59 passed.
+
+```bash
+uv run pytest
+```
+**What**: Full test suite after deferred execution feature.
+**Why**: Confirm 878 tests pass with no regressions.
+**Result**: 878 passed in ~304s.
+
 ## SSH / Target VMs
 
 *(No SSH commands run yet.)*

@@ -19,7 +19,7 @@ environments:
   staging:
     maintenance_window: "00:00-06:00 UTC"
     maintenance_days: [daily]
-    approval_policy: moderate
+    approval_policy: strict
     ssh_user: errander
     ssh_key_path: ~/.ssh/errander_staging
     targets:
@@ -31,7 +31,7 @@ environments:
   dev:
     maintenance_window: null
     maintenance_days: [daily]
-    approval_policy: relaxed
+    approval_policy: strict
     ssh_user: errander
     ssh_key_path: ~/.ssh/errander_dev
     targets:

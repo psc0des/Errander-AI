@@ -23,13 +23,24 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 logger = logging.getLogger(__name__)
 
 #: Canonical lowercase day names in calendar order.
 _DAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+
+#: Mapping from full lowercase day name to 3-letter cron abbreviation.
+_CRON_DAY_ABBR: dict[str, str] = {
+    "monday": "mon",
+    "tuesday": "tue",
+    "wednesday": "wed",
+    "thursday": "thu",
+    "friday": "fri",
+    "saturday": "sat",
+    "sunday": "sun",
+}
 
 
 @dataclass
@@ -148,3 +159,55 @@ def check_window_from_config(now: datetime, window: MaintenanceWindow) -> bool:
         end_hour=window.end_hour,
         timezone=window.timezone,
     )
+
+
+def next_window_open(now: datetime, window: MaintenanceWindow) -> datetime:
+    """Return the UTC datetime of the next window open.
+
+    Always returns a strictly future time.  If called while inside the window
+    the current window is skipped and the NEXT occurrence is returned.
+
+    Args:
+        now: Current time (timezone-aware).
+        window: Configured maintenance window.
+
+    Returns:
+        UTC datetime when the window next opens.
+
+    Raises:
+        RuntimeError: If no window start can be found within 8 days (shouldn't happen
+            with a valid window that has at least one allowed day).
+    """
+    tz = ZoneInfo(window.timezone)
+    local_now = now.astimezone(tz)
+
+    for days_ahead in range(0, 8):
+        candidate = local_now + timedelta(days=days_ahead)
+        candidate_start = candidate.replace(
+            hour=window.start_hour, minute=0, second=0, microsecond=0
+        )
+        day_name = candidate_start.strftime("%A").lower()
+        if day_name in window.days and candidate_start > local_now:
+            return candidate_start.astimezone(timezone.utc)
+
+    msg = "Could not find next window open within 8 days"
+    raise RuntimeError(msg)
+
+
+def window_start_cron(window: MaintenanceWindow) -> str:
+    """Return a cron expression that fires exactly at window open time.
+
+    The expression is suitable for APScheduler's CronTrigger.
+
+    Args:
+        window: Configured maintenance window.
+
+    Returns:
+        Cron string of the form ``"0 <hour> * * <days>"``.
+        When all seven days are present, the day field is ``*``.
+    """
+    if set(window.days) == set(_DAYS):
+        days_str = "*"
+    else:
+        days_str = ",".join(_CRON_DAY_ABBR[d] for d in window.days)
+    return f"0 {window.start_hour} * * {days_str}"

@@ -155,8 +155,8 @@ deploy/
 
 | Tier | Actions | Approval |
 |---|---|---|
-| Low | Disk cleanup, log rotation, Docker prune | Automatic |
-| Medium | Non-kernel patching, config changes | Log + notify |
+| Low | Disk cleanup, log rotation | Automatic |
+| Medium | Docker prune, non-kernel patching, config changes | Log + notify |
 | High | Service restarts, backup verification | Human approval required |
 | Critical | Kernel operations, data deletion | Blocked — never automated |
 

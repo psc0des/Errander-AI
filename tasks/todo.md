@@ -170,3 +170,21 @@
 - [x] Bug fix: nested `<form>` inside main settings form broke Save button (Chromium closes outer form). Fixed via HTML5 `form="reset-{key}"` out-of-band pattern.
 - [x] Create `errander/__main__.py` so `python -m errander` works
 - [x] 844 tests passing, lint clean
+
+### Deferred Execution — Window-Gated Approval
+- [x] Add `EXECUTION_DEFERRED` + `DEFERRED_EXECUTION_STARTED` to `EventType` (`errander/models/events.py`)
+- [x] Create `DeferredExecutionStore` with SQLite table `deferred_executions` (`errander/safety/deferred.py`)
+- [x] Add `next_window_open()` and `window_start_cron()` to `errander/scheduling/windows.py`
+- [x] Extend `BatchGraphState` with `env_name` and `deferred` fields (`errander/agent/graph.py`)
+- [x] Add deferral logic to `approval_gate_node` — saves to `DeferredExecutionStore`, logs audit event, Slack notification
+- [x] Add `deferred_store` param to `build_batch_graph()`
+- [x] Add `_window_opener()` function to `errander/main.py`
+- [x] Register window-opener cron jobs in scheduler loop
+- [x] Initialize `DeferredExecutionStore` alongside `AuditStore` in `async_main()`
+- [x] Thread `env_name` into batch initial state
+- [x] Write `tests/safety/test_deferred.py` (15 tests)
+- [x] Write 9 new window helper tests in `tests/scheduling/test_windows.py`
+- [x] Write 6 new approval gate deferred tests in `tests/agent/test_graph.py`
+- [x] Write 3 new `_window_opener` tests in `tests/test_main.py`
+- [x] Update `STATUS.md`, `todo.md`, `command-log.md`, `docs/learning/24-deferred-execution.md`
+- [x] 878 tests passing

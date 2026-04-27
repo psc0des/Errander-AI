@@ -56,7 +56,7 @@ environments:
   staging:
     ssh_user: errander
     ssh_key_path: ~/.ssh/errander_staging
-    approval_policy: moderate
+    approval_policy: strict
     maintenance_window: "22:00-06:00"   # overnight window crosses midnight
     maintenance_timezone: UTC
     maintenance_days:
@@ -79,7 +79,7 @@ environments:
   dev:
     ssh_user: devops
     ssh_key_path: ~/.ssh/errander_dev
-    approval_policy: relaxed    # auto-approve low + medium risk
+    approval_policy: strict
     maintenance_window: "08:00-20:00"   # broad window for dev
     maintenance_timezone: UTC
     maintenance_days:

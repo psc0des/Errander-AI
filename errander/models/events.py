@@ -32,6 +32,8 @@ class EventType(StrEnum):
     DRIFT_DETECTED = "drift_detected"
     SETTINGS_CHANGED = "settings_changed"
     INVENTORY_CHANGED = "inventory_changed"
+    EXECUTION_DEFERRED = "execution_deferred"
+    DEFERRED_EXECUTION_STARTED = "deferred_execution_started"
 
 
 @dataclass

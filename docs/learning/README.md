@@ -29,3 +29,4 @@ Index of all learning docs created during development. Each doc explains what wa
 | 21 | [Load Testing & Playwright Approvals](21-load-testing.md) | 3 | `21-load-testing.md` |
 | 22 | [UI Settings & Inventory Management](22-ui-settings-and-inventory.md) | 4 | `22-ui-settings-and-inventory.md` |
 | 23 | [Playwright UI Tests](23-playwright-ui-tests.md) | 4 | `23-playwright-ui-tests.md` |
+| 24 | [Deferred Execution: Window-Gated Approval](24-deferred-execution.md) | 4 | `24-deferred-execution.md` |

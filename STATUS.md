@@ -1,10 +1,10 @@
 # Errander-AI — Project Status
 
 ## Last Updated
-2026-04-20
+2026-04-27
 
 ## Current Phase
-**Phase 4 fully complete — all 844 tests passing, lint clean. Next: Phase 1.8 end-to-end validation (needs real VM).**
+**Deferred execution (window-gated approval) fully complete — all 878 tests passing. Next: Phase 1.8 end-to-end validation (needs real VM).**
 
 ## Completed
 
@@ -190,6 +190,18 @@
   - `tests/ui/test_ui_auth_playwright.py` (13 tests): 401 without creds, 200 with creds, wrong user/pass, WWW-Authenticate header, /metrics+/health open
   - **Bug fixed**: Nested `<form>` inside the main settings `<form>` caused Chromium to implicitly close the outer form — Save button ended up orphaned. Fixed via HTML5 `form="reset-{key}"` attribute pattern (out-of-band form + form-attr button).
 
+### Deferred Execution — Window-Gated Approval (complete)
+
+The approval flow is now fully decoupled from execution. A dry-run scan can happen at 10 AM, the operator approves at 1 PM, and live execution only fires when the maintenance window opens (e.g., 11 PM).
+
+- **`errander/models/events.py`**: Added `EXECUTION_DEFERRED` and `DEFERRED_EXECUTION_STARTED` to `EventType`
+- **`errander/safety/deferred.py`** (NEW): `DeferredExecutionStore` — SQLite table `deferred_executions`; `save()`, `get_pending()`, `mark_executing()`, `mark_done()`, `expire_old()` (7-day auto-expiry)
+- **`errander/scheduling/windows.py`**: Added `next_window_open()` (next future window start, skips current open window) and `window_start_cron()` (converts window config to APScheduler cron string)
+- **`errander/agent/graph.py`**: `BatchGraphState` extended with `env_name` and `deferred` fields; `approval_gate_node` defers approved dry-runs made outside window; `build_batch_graph()` accepts `deferred_store`
+- **`errander/main.py`**: `DeferredExecutionStore` initialised alongside `AuditStore`; `_window_opener()` function executes pending deferred batches at window start; window-opener cron jobs registered per environment; `env_name` threaded into initial batch state
+- **Tests**: 34 new tests — `tests/safety/test_deferred.py` (15), `tests/scheduling/test_windows.py` (+9), `tests/agent/test_graph.py` (+6), `tests/test_main.py` (+3 `_window_opener` tests)
+- **Total: 878 tests passing**
+
 ## In Progress
 None.
 
@@ -229,6 +241,27 @@ None.
 
 ## Blockers
 None.
+
+## Files Changed (2026-04-27 — Deferred Execution)
+
+### Modified
+- `errander/models/events.py` — added `EXECUTION_DEFERRED`, `DEFERRED_EXECUTION_STARTED` to `EventType`
+- `errander/scheduling/windows.py` — added `next_window_open()`, `window_start_cron()`, `_CRON_DAY_ABBR` map
+- `errander/agent/graph.py` — `BatchGraphState` extended; `approval_gate_node` with deferred logic; `build_batch_graph()` new `deferred_store` param; imports updated
+- `errander/main.py` — `DeferredExecutionStore` import + init; `deferred_store` param in `run_env_batch()`; `_window_opener()` function; window-opener cron job registration; `env_name` in initial state; `deferred_store.close()` in finally
+- `tests/scheduling/test_windows.py` — 9 new tests for `next_window_open` and `window_start_cron`
+- `tests/agent/test_graph.py` — 6 new `TestApprovalGateDeferred` tests
+- `tests/test_main.py` — 3 new `TestWindowOpener` tests; `SSHConnectionManager` import added
+- `docs/SETUP.md` — updated test count to 878 (from SETUP.md step 6)
+- `config/inventory.yaml` — approval_policy strict for all envs
+- `example/inventory.yaml` — approval_policy strict for all envs
+- `errander/models/actions.py` — Docker prune risk tier raised from LOW to MEDIUM
+- `CLAUDE.md` — Risk Tiers table updated (Docker prune → Medium)
+
+### Created
+- `errander/safety/deferred.py` — `DeferredExecutionStore` + `DeferredExecution` dataclass
+- `tests/safety/test_deferred.py` — 15 tests for `DeferredExecutionStore`
+- `docs/learning/24-deferred-execution.md` — learning doc
 
 ## Files Changed (This Session)
 ### Modified
@@ -314,4 +347,4 @@ None.
 - **`_name` temporary field pattern**: YAML target dicts get `_name` injected for filter lookup, then `del`-ed before the list reaches the graph. Avoids passing unknown fields into graph state.
 
 ## Test Count
-799 tests passing (774 unit/integration + 25 Playwright UI tests).
+878 tests passing (853 unit/integration + 25 Playwright UI tests).

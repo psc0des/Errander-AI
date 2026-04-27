@@ -10,6 +10,8 @@ from errander.scheduling.windows import (
     MaintenanceWindow,
     check_window_from_config,
     is_within_window,
+    next_window_open,
+    window_start_cron,
 )
 
 
@@ -165,3 +167,78 @@ class TestCheckWindowFromConfig:
     def test_wrong_day(self) -> None:
         w = MaintenanceWindow(days=["tuesday"], start_hour=2, end_hour=6, timezone="UTC")
         assert check_window_from_config(MON_05H, w) is False
+
+
+# ---------------------------------------------------------------------------
+# next_window_open
+# ---------------------------------------------------------------------------
+
+class TestNextWindowOpen:
+    # Reference: 2026-04-06 is a Monday
+
+    def test_returns_future_start_when_before_window_today(self) -> None:
+        """Currently before window on a valid day → returns today at start_hour."""
+        # Monday 00:00, window Mon 02:00-06:00 → next open = Monday 02:00
+        now = _utc(2026, 4, 6, 0)
+        w = MaintenanceWindow(days=["monday"], start_hour=2, end_hour=6, timezone="UTC")
+        result = next_window_open(now, w)
+        expected = _utc(2026, 4, 6, 2)
+        assert result == expected
+
+    def test_skips_past_start_to_next_occurrence(self) -> None:
+        """Now is inside window (start_hour already passed) → next occurrence next week."""
+        # Monday 03:00 inside [02:00, 06:00) — window already open, skip to next Monday
+        now = _utc(2026, 4, 6, 3)
+        w = MaintenanceWindow(days=["monday"], start_hour=2, end_hour=6, timezone="UTC")
+        result = next_window_open(now, w)
+        expected = _utc(2026, 4, 13, 2)  # next Monday 02:00
+        assert result == expected
+
+    def test_skips_to_next_valid_day(self) -> None:
+        """On a non-window day → skip to next allowed day."""
+        # Tuesday 10:00, window Sat-Sun 23:00 → next Saturday
+        now = _utc(2026, 4, 7, 10)   # Tuesday
+        w = MaintenanceWindow(days=["saturday", "sunday"], start_hour=23, end_hour=3, timezone="UTC")
+        result = next_window_open(now, w)
+        expected = _utc(2026, 4, 11, 23)  # Saturday 23:00
+        assert result == expected
+
+    def test_result_is_utc(self) -> None:
+        """Return value is always UTC."""
+        now = _utc(2026, 4, 6, 0)
+        w = MaintenanceWindow(days=["monday"], start_hour=2, end_hour=6, timezone="UTC")
+        result = next_window_open(now, w)
+        from datetime import timezone as _tz
+        assert result.tzinfo is not None
+        assert result.utcoffset().total_seconds() == 0  # type: ignore[union-attr]
+
+    def test_at_exact_start_hour_skips_current(self) -> None:
+        """Called at exactly start_hour:00 (window just opened) → skip current, return next."""
+        now = _utc(2026, 4, 6, 2)  # Monday 02:00 exactly
+        w = MaintenanceWindow(days=["monday"], start_hour=2, end_hour=6, timezone="UTC")
+        result = next_window_open(now, w)
+        expected = _utc(2026, 4, 13, 2)  # next Monday
+        assert result == expected
+
+
+# ---------------------------------------------------------------------------
+# window_start_cron
+# ---------------------------------------------------------------------------
+
+class TestWindowStartCron:
+    def test_single_day(self) -> None:
+        w = MaintenanceWindow(days=["monday"], start_hour=2, end_hour=6, timezone="UTC")
+        assert window_start_cron(w) == "0 2 * * mon"
+
+    def test_multiple_days(self) -> None:
+        w = MaintenanceWindow(days=["tuesday", "thursday"], start_hour=23, end_hour=3, timezone="UTC")
+        assert window_start_cron(w) == "0 23 * * tue,thu"
+
+    def test_all_seven_days_produces_star(self) -> None:
+        all_days = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+        w = MaintenanceWindow(days=all_days, start_hour=4, end_hour=6, timezone="UTC")
+        assert window_start_cron(w) == "0 4 * * *"
+
+    def test_weekend(self) -> None:
+        w = MaintenanceWindow(days=["saturday", "sunday"], start_hour=10, end_hour=14, timezone="UTC")
+        assert window_start_cron(w) == "0 10 * * sat,sun"

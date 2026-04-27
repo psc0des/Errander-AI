@@ -553,3 +553,217 @@ class TestRunVmNodeExceptionSafety:
         # vm_results has FAILED entries
         vm_results = final.get("vm_results", [])
         assert all(r.get("status") == ActionStatus.FAILED.value for r in vm_results)
+
+
+# ---------------------------------------------------------------------------
+# approval_gate_node — deferred execution
+# ---------------------------------------------------------------------------
+
+class TestApprovalGateDeferred:
+    """Dry-run approval outside window → defer; inside window or live → execute."""
+
+    def _make_approval_state(
+        self,
+        dry_run: bool = True,
+        env_name: str = "production",
+        vm_results: list[dict[str, object]] | None = None,
+    ) -> BatchGraphState:
+        return _base_state(
+            dry_run=dry_run,
+            env_name=env_name,
+            vm_results=vm_results or [],
+            report="Test report",
+        )
+
+    @pytest.mark.asyncio
+    async def test_dry_run_outside_window_defers(self) -> None:
+        """Dry-run approval while outside window saves to deferred_store."""
+        from datetime import datetime, timezone
+        from unittest.mock import patch
+
+        from errander.agent.graph import approval_gate_node
+        from errander.safety.deferred import DeferredExecutionStore
+
+        window = MaintenanceWindow(
+            days=["monday"], start_hour=2, end_hour=6, timezone="UTC"
+        )
+        # 2030-01-07 is a Monday; 10:00 UTC is outside window [02:00, 06:00).
+        # Next window = 2030-01-14 02:00, expiry = 2030-01-21 — safely in the future.
+        monday_10am = datetime(2030, 1, 7, 10, 0, 0, tzinfo=timezone.utc)
+
+        deferred_store = DeferredExecutionStore(":memory:")
+        await deferred_store.initialize()
+
+        try:
+            state = self._make_approval_state()
+            with patch("errander.agent.graph.datetime") as mock_dt:
+                mock_dt.now.return_value = monday_10am
+                result = await approval_gate_node(
+                    state,
+                    window=window,
+                    deferred_store=deferred_store,
+                )
+
+            assert result.get("deferred") is True
+            assert result.get("approved") is True
+            pending = await deferred_store.get_pending("production")
+            assert len(pending) == 1
+        finally:
+            await deferred_store.close()
+
+    @pytest.mark.asyncio
+    async def test_dry_run_inside_window_not_deferred(self) -> None:
+        """Dry-run approval while inside window → not deferred."""
+        from datetime import datetime, timezone
+        from unittest.mock import patch
+
+        from errander.agent.graph import approval_gate_node
+        from errander.safety.deferred import DeferredExecutionStore
+
+        window = MaintenanceWindow(
+            days=["monday"], start_hour=2, end_hour=6, timezone="UTC"
+        )
+        monday_3am = datetime(2026, 4, 6, 3, 0, 0, tzinfo=timezone.utc)
+
+        deferred_store = DeferredExecutionStore(":memory:")
+        await deferred_store.initialize()
+
+        try:
+            state = self._make_approval_state()
+            with patch("errander.agent.graph.datetime") as mock_dt:
+                mock_dt.now.return_value = monday_3am
+                result = await approval_gate_node(
+                    state,
+                    window=window,
+                    deferred_store=deferred_store,
+                )
+
+            assert result.get("deferred") is False
+            assert await deferred_store.get_pending("production") == []
+        finally:
+            await deferred_store.close()
+
+    @pytest.mark.asyncio
+    async def test_live_run_not_deferred_regardless_of_window(self) -> None:
+        """Live run is never deferred, even when outside window."""
+        from datetime import datetime, timezone
+        from unittest.mock import patch
+
+        from errander.agent.graph import approval_gate_node
+        from errander.safety.deferred import DeferredExecutionStore
+
+        window = MaintenanceWindow(
+            days=["monday"], start_hour=2, end_hour=6, timezone="UTC"
+        )
+        monday_10am = datetime(2026, 4, 6, 10, 0, 0, tzinfo=timezone.utc)
+
+        deferred_store = DeferredExecutionStore(":memory:")
+        await deferred_store.initialize()
+
+        try:
+            state = self._make_approval_state(dry_run=False)
+            with patch("errander.agent.graph.datetime") as mock_dt:
+                mock_dt.now.return_value = monday_10am
+                result = await approval_gate_node(
+                    state,
+                    window=window,
+                    deferred_store=deferred_store,
+                )
+
+            assert result.get("deferred") is False
+        finally:
+            await deferred_store.close()
+
+    @pytest.mark.asyncio
+    async def test_no_window_configured_not_deferred(self) -> None:
+        """No window → never deferred."""
+        from errander.agent.graph import approval_gate_node
+        from errander.safety.deferred import DeferredExecutionStore
+
+        deferred_store = DeferredExecutionStore(":memory:")
+        await deferred_store.initialize()
+
+        try:
+            state = self._make_approval_state()
+            result = await approval_gate_node(
+                state,
+                window=None,
+                deferred_store=deferred_store,
+            )
+            assert result.get("deferred") is False
+        finally:
+            await deferred_store.close()
+
+    @pytest.mark.asyncio
+    async def test_dry_run_outside_window_notifies_slack(self) -> None:
+        """When deferring, Slack gets a notification with the window time."""
+        from datetime import datetime, timezone
+        from unittest.mock import AsyncMock, patch
+
+        from errander.agent.graph import approval_gate_node
+        from errander.safety.deferred import DeferredExecutionStore
+
+        window = MaintenanceWindow(
+            days=["monday"], start_hour=2, end_hour=6, timezone="UTC"
+        )
+        monday_10am = datetime(2030, 1, 7, 10, 0, 0, tzinfo=timezone.utc)
+
+        slack_client = MagicMock()
+        slack_client.post_alert = AsyncMock()
+
+        deferred_store = DeferredExecutionStore(":memory:")
+        await deferred_store.initialize()
+
+        try:
+            state = self._make_approval_state()
+            with patch("errander.agent.graph.datetime") as mock_dt:
+                mock_dt.now.return_value = monday_10am
+                await approval_gate_node(
+                    state,
+                    window=window,
+                    deferred_store=deferred_store,
+                    slack_client=slack_client,
+                )
+
+            slack_client.post_alert.assert_awaited_once()
+            call_text: str = slack_client.post_alert.call_args[0][0]
+            assert "scheduled for" in call_text
+        finally:
+            await deferred_store.close()
+
+    @pytest.mark.asyncio
+    async def test_dry_run_outside_window_logs_audit_event(self) -> None:
+        """Deferral logs an EXECUTION_DEFERRED audit event."""
+        from datetime import datetime, timezone
+        from unittest.mock import patch
+
+        from errander.agent.graph import approval_gate_node
+        from errander.models.events import EventType
+        from errander.safety.audit import AuditStore
+        from errander.safety.deferred import DeferredExecutionStore
+
+        window = MaintenanceWindow(
+            days=["monday"], start_hour=2, end_hour=6, timezone="UTC"
+        )
+        monday_10am = datetime(2030, 1, 7, 10, 0, 0, tzinfo=timezone.utc)
+
+        deferred_store = DeferredExecutionStore(":memory:")
+        await deferred_store.initialize()
+
+        async with AuditStore(":memory:") as audit_store:
+            try:
+                state = self._make_approval_state()
+                with patch("errander.agent.graph.datetime") as mock_dt:
+                    mock_dt.now.return_value = monday_10am
+                    await approval_gate_node(
+                        state,
+                        window=window,
+                        deferred_store=deferred_store,
+                        audit_store=audit_store,
+                    )
+
+                events = await audit_store.get_events(batch_id=state.get("batch_id", "unknown"))
+                deferred_events = [e for e in events if e.event_type == EventType.EXECUTION_DEFERRED]
+                assert len(deferred_events) == 1
+            finally:
+                await deferred_store.close()

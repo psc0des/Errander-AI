@@ -40,8 +40,13 @@ from errander.models.events import AuditEvent, EventType
 from errander.observability.metrics import BATCH_DURATION
 from errander.safety.approval import ApprovalManager, await_dual_approval
 from errander.safety.audit import AuditStore
+from errander.safety.deferred import DeferredExecutionStore
 from errander.safety.locking import FileLocker
-from errander.scheduling.windows import MaintenanceWindow, check_window_from_config
+from errander.scheduling.windows import (
+    MaintenanceWindow,
+    check_window_from_config,
+    next_window_open,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -101,6 +106,10 @@ class BatchGraphState(TypedDict, total=False):
     # Drift detection passthrough (for VMGraphState injection)
     drift_detection_enabled: bool
     drift_abort_on_detection: bool
+
+    # Deferred execution
+    env_name: str
+    deferred: bool
 
 
 # --- Node functions ---
@@ -469,16 +478,25 @@ async def approval_gate_node(
     *,
     approval_manager: ApprovalManager | None = None,
     slack_client: SlackClient | None = None,
+    audit_store: AuditStore | None = None,
+    window: MaintenanceWindow | None = None,
+    deferred_store: DeferredExecutionStore | None = None,
 ) -> dict[str, Any]:
     """Check if approval is needed and wait for it.
 
     If the highest risk tier across all actions is HIGH or above and
     an approval_manager is available, posts the report for approval
     and waits. Otherwise auto-approves.
+
+    For dry-run batches approved while outside the maintenance window,
+    execution is deferred: a record is saved to DeferredExecutionStore
+    and the window-opener scheduler job picks it up at window start.
     """
     vm_results = state.get("vm_results", [])
     batch_id = state.get("batch_id", "unknown")
+    env_name = state.get("env_name", "unknown")
     report = state.get("report", "")
+    dry_run = state.get("dry_run", True)
 
     max_tier = _max_risk_tier_from_results(vm_results)
 
@@ -496,10 +514,47 @@ async def approval_gate_node(
             "approved" if approved else "rejected",
             approver or "timeout",
         )
-        return {"approved": approved}
+    else:
+        approved = True
+        approver = None
+        logger.info("Batch %s auto-approved (max risk tier: %s)", batch_id, max_tier.value)
 
-    logger.info("Batch %s auto-approved (max risk tier: %s)", batch_id, max_tier.value)
-    return {"approved": True}
+    # Dry-run approval outside window → defer execution to next window start.
+    if approved and dry_run and window is not None:
+        now = datetime.now(tz=timezone.utc)
+        if not check_window_from_config(now, window):
+            next_open = next_window_open(now, window)
+            if deferred_store is not None:
+                await deferred_store.save(
+                    batch_id=batch_id,
+                    env_name=env_name,
+                    approved_by=approver,
+                    window_start=next_open,
+                )
+            if audit_store is not None:
+                await audit_store.log_event(AuditEvent(
+                    event_type=EventType.EXECUTION_DEFERRED,
+                    batch_id=batch_id,
+                    detail=f"Deferred to {next_open.isoformat()}",
+                    metadata={
+                        "window_start": next_open.isoformat(),
+                        "approved_by": approver,
+                    },
+                ))
+            if slack_client is not None:
+                approver_label = approver or "auto"
+                await slack_client.post_alert(
+                    f"Batch `{batch_id}` approved by {approver_label}.\n"
+                    f"Outside maintenance window - execution scheduled for "
+                    f"{next_open.strftime('%Y-%m-%d %H:%M UTC')}"
+                )
+            logger.info(
+                "Batch %s deferred to %s (approved by %s)",
+                batch_id, next_open.isoformat(), approver,
+            )
+            return {"approved": True, "deferred": True}
+
+    return {"approved": approved, "deferred": False}
 
 
 # --- Routing ---
@@ -664,6 +719,7 @@ def build_batch_graph(
     approval_manager: ApprovalManager | None = None,
     slack_client: SlackClient | None = None,
     settings: Any = None,
+    deferred_store: DeferredExecutionStore | None = None,
 ) -> StateGraph:
     """Construct the batch orchestrator graph.
 
@@ -709,6 +765,9 @@ def build_batch_graph(
             state,
             approval_manager=approval_manager,
             slack_client=slack_client,
+            audit_store=audit_store,
+            window=window,
+            deferred_store=deferred_store,
         )
 
     _dispatch_wave_fn, vm_compiled = make_wave_dispatcher(

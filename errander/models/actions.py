@@ -53,7 +53,7 @@ class ActionStatus(StrEnum):
 ACTION_RISK_TIERS: dict[ActionType, RiskTier] = {
     ActionType.DISK_CLEANUP: RiskTier.LOW,
     ActionType.LOG_ROTATION: RiskTier.LOW,
-    ActionType.DOCKER_PRUNE: RiskTier.LOW,
+    ActionType.DOCKER_PRUNE: RiskTier.MEDIUM,
     ActionType.PATCHING: RiskTier.MEDIUM,
     ActionType.BACKUP_VERIFY: RiskTier.HIGH,
 }

@@ -34,10 +34,11 @@ from errander.models.events import EventType
 from errander.observability.metrics import start_metrics_server
 from errander.safety.approval import ApprovalManager
 from errander.safety.audit import AuditStore
+from errander.safety.deferred import DeferredExecutionStore
 from errander.safety.locking import FileLocker
 from errander.safety.overrides import OverridesStore
 from errander.scheduling.scheduler import MaintenanceScheduler
-from errander.scheduling.windows import MaintenanceWindow
+from errander.scheduling.windows import MaintenanceWindow, window_start_cron
 
 logger = structlog.get_logger(__name__)
 
@@ -434,6 +435,7 @@ async def run_env_batch(
     approval_manager: ApprovalManager | None = None,
     slack_client: SlackClient | None = None,
     overrides_store: OverridesStore | None = None,
+    deferred_store: DeferredExecutionStore | None = None,
 ) -> None:
     """Run a full maintenance batch for one environment.
 
@@ -453,6 +455,7 @@ async def run_env_batch(
         approval_manager=approval_manager,
         slack_client=slack_client,
         settings=settings,
+        deferred_store=deferred_store,
     ).compile()
 
     # Build effective target list: YAML base, apply DB overrides (disable/add)
@@ -509,6 +512,7 @@ async def run_env_batch(
         "force": force,
         "force_reason": force_reason,
         "vm_results": [],
+        "env_name": env_name,
     }
 
     logger.info(
@@ -533,6 +537,69 @@ async def run_env_batch(
 
     if final.get("error"):
         logger.warning("Batch ended with error", error=final["error"])
+
+
+# ---------------------------------------------------------------------------
+# Window opener (executes deferred batches at window start)
+# ---------------------------------------------------------------------------
+
+async def _window_opener(
+    env_name: str,
+    env_schema: EnvironmentSchema,
+    settings: Settings,
+    executor: SandboxExecutor,
+    locker: FileLocker,
+    ssh_manager: SSHConnectionManager,
+    audit_store: AuditStore,
+    deferred_store: DeferredExecutionStore,
+    approval_manager: ApprovalManager,
+    slack_client: SlackClient | None,
+    overrides_store: OverridesStore,
+) -> None:
+    """Execute pending deferred batches when a maintenance window opens."""
+    from errander.models.events import AuditEvent, EventType as _ET
+
+    await deferred_store.expire_old()
+    pending = await deferred_store.get_pending(env_name)
+    if not pending:
+        logger.info("Window opened — no pending deferred batches", env=env_name)
+        return
+
+    for record in pending:
+        logger.info(
+            "Executing deferred batch",
+            env=env_name,
+            batch_id=record.batch_id,
+            approved_by=record.approved_by,
+        )
+        await deferred_store.mark_executing(record.batch_id)
+        await audit_store.log_event(AuditEvent(
+            event_type=_ET.DEFERRED_EXECUTION_STARTED,
+            batch_id=record.batch_id,
+            detail=f"Executing deferred batch approved by {record.approved_by}",
+        ))
+        try:
+            await run_env_batch(
+                env_name=env_name,
+                env_schema=env_schema,
+                settings=settings,
+                executor=executor,
+                locker=locker,
+                ssh_manager=ssh_manager,
+                audit_store=audit_store,
+                dry_run=False,
+                force=True,
+                force_reason=(
+                    f"Deferred execution: approved by {record.approved_by} "
+                    f"at {record.approved_at.isoformat()}"
+                ),
+                approval_manager=approval_manager,
+                slack_client=slack_client,
+                overrides_store=overrides_store,
+                deferred_store=deferred_store,
+            )
+        finally:
+            await deferred_store.mark_done(record.batch_id)
 
 
 # ---------------------------------------------------------------------------
@@ -603,6 +670,10 @@ async def async_main(args: argparse.Namespace) -> int:
     audit_store = AuditStore(settings.audit_db_url)
     await audit_store.__aenter__()
 
+    # --- Deferred execution store (same DB file, separate table) ---
+    deferred_store = DeferredExecutionStore(settings.audit_db_url)
+    await deferred_store.initialize()
+
     # --- Overrides store (same DB, separate tables) ---
     overrides_store = OverridesStore(settings.audit_db_url)
     await overrides_store.initialize()
@@ -638,6 +709,7 @@ async def async_main(args: argparse.Namespace) -> int:
                 approval_manager=approval_manager,
                 slack_client=slack,
                 overrides_store=overrides_store,
+                deferred_store=deferred_store,
             )
             return 0
 
@@ -670,9 +742,39 @@ async def async_main(args: argparse.Namespace) -> int:
                     approval_manager=approval_manager,
                     slack_client=slack,
                     overrides_store=overrides_store,
+                    deferred_store=deferred_store,
                 )
 
             scheduler.add_maintenance_job(_run, cron, job_id=f"maint-{env_name}")
+
+            # Register window-opener job for envs with a maintenance window.
+            env_window = _build_maintenance_window(env_schema)
+            if env_window is not None:
+                opener_cron = window_start_cron(env_window)
+
+                async def _open_window(
+                    _env=env_name,
+                    _schema=env_schema,
+                ) -> None:
+                    await _window_opener(
+                        env_name=_env,
+                        env_schema=_schema,
+                        settings=settings,
+                        executor=executor,
+                        locker=locker,
+                        ssh_manager=ssh_manager,
+                        audit_store=audit_store,
+                        deferred_store=deferred_store,
+                        approval_manager=approval_manager,
+                        slack_client=slack,
+                        overrides_store=overrides_store,
+                    )
+
+                scheduler.add_maintenance_job(
+                    _open_window,
+                    opener_cron,
+                    job_id=f"window-opener-{env_name}",
+                )
 
         await scheduler.start()
 
@@ -709,6 +811,7 @@ async def async_main(args: argparse.Namespace) -> int:
         if slack is not None:
             await slack.close()
         await overrides_store.close()
+        await deferred_store.close()
         await audit_store.__aexit__(None, None, None)
 
 

@@ -233,6 +233,25 @@ SSH keys: referenced by file path in inventory config, never inlined.
 
 ---
 
+## Git Identity
+
+- GitHub username: **psc0des**
+- Git author name: `psc0des`
+- Git author email: `sarathy.vass6@gmail.com`
+- Before the first commit in any session, verify git config is correct:
+  ```bash
+  git config user.name   # must be psc0des
+  git config user.email  # must be sarathy.vass6@gmail.com
+  ```
+- If either is wrong or blank, set them before committing:
+  ```bash
+  git config --global user.name "psc0des"
+  git config --global user.email "sarathy.vass6@gmail.com"
+  ```
+- NEVER commit with a work/corporate email — if caught after push, the repo must be deleted and recreated (force-push rewrites history but GitHub retains old objects until GC)
+
+---
+
 ## Workflow Orchestration
 
 ### 1. Plan Mode Default

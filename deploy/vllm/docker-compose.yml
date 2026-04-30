@@ -39,18 +39,15 @@ services:
     environment:
       - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN:-}
 
-    # The exact serve command from CLAUDE.md.
     # Flags:
-    #   --enable-reasoning           enables chain-of-thought / thinking mode
-    #   --reasoning-parser deepseek_r1  parses <think>...</think> blocks
     #   --enable-auto-tool-choice    allows model to call tools
     #   --tool-call-parser hermes    parses Hermes-format tool calls
     #   --max-model-len 8192         fits comfortably in 16GB VRAM
     #   --gpu-memory-utilization 0.85  leaves 15% headroom for KV cache spikes
+    # Note: --enable-reasoning and --reasoning-parser were removed in newer vLLM
+    #       versions — reasoning is now auto-detected from the model config.
     command: >
       --model ${MODEL_ID:-Qwen/Qwen3-8B-AWQ}
-      --enable-reasoning
-      --reasoning-parser deepseek_r1
       --enable-auto-tool-choice
       --tool-call-parser hermes
       --max-model-len ${MAX_MODEL_LEN:-8192}

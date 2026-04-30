@@ -146,6 +146,8 @@ curl http://localhost:8000/v1/models
 
 ## Step 3 — Configure SSH access to target VMs
 
+> **Single-VM setup?** If you only have one VM, the agent and target are the same machine. Run all commands below on that VM and use `localhost` wherever `<target-vm-ip>` appears.
+
 On each **target VM**:
 
 ```bash

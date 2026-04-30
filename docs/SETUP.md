@@ -43,7 +43,8 @@ git clone https://github.com/psc0des/Errander-AI.git errander
 cd errander
 
 # Install uv (package manager)
-pip install uv
+curl -LsSf https://astral.sh/uv/install.sh | sh
+source ~/.bashrc   # adds uv to PATH — or open a new terminal
 
 # Install all dependencies
 uv sync --extra dev
@@ -103,7 +104,7 @@ docker run --rm --gpus all nvidia/cuda:12.0.0-base-ubuntu20.04 nvidia-smi
 ### 2b. Start vLLM
 
 ```bash
-cd errander/deploy/vllm
+cd deploy/vllm
 
 # Configure
 cp .env.example .env
@@ -116,10 +117,10 @@ sudo mkdir -p /opt/vllm/model-cache
 sudo chown $USER /opt/vllm/model-cache
 
 # Start vLLM (first run downloads ~5GB model weights — takes 5-10 min)
-docker compose up -d
+docker-compose up -d
 
 # Watch the logs until you see "Application startup complete"
-docker compose logs -f
+docker-compose logs -f
 ```
 
 **Expected output when ready:**
@@ -411,8 +412,8 @@ The agent runs continuously, triggering maintenance batches on the schedule defi
 ## Troubleshooting
 
 **`--check-llm` says UNREACHABLE**
-- Confirm vLLM is running: `docker compose -f deploy/vllm/docker-compose.yml ps`
-- Check logs: `docker compose -f deploy/vllm/docker-compose.yml logs --tail 50`
+- Confirm vLLM is running: `docker-compose -f deploy/vllm/docker-compose.yml ps`
+- Check logs: `docker-compose -f deploy/vllm/docker-compose.yml logs --tail 50`
 - Confirm the agent VM can reach the LLM VM: `curl http://<llm-vm-ip>:8000/health`
 - Check firewall: port 8000 must be open between agent VM and LLM VM
 
@@ -427,7 +428,7 @@ The agent runs continuously, triggering maintenance batches on the schedule defi
 **vLLM container exits immediately**
 - GPU not found: run `docker run --rm --gpus all nvidia/cuda:12.0-base-ubuntu20.04 nvidia-smi`
 - VRAM OOM: reduce `GPU_MEM_UTIL` to `0.80` in `deploy/vllm/.env`
-- Check Docker logs: `docker compose -f deploy/vllm/docker-compose.yml logs`
+- Check Docker logs: `docker-compose -f deploy/vllm/docker-compose.yml logs`
 
 **Agent falls back to hardcoded logic (LLM not used)**
 - This is expected and correct — Errander-AI never blocks on LLM availability

@@ -4,11 +4,11 @@
 # API on port 8000. The agent connects via ERRANDER_LLM_BASE_URL.
 #
 # Usage:
-#   cp .env.example .env          # configure once
-#   docker compose up -d          # start
-#   docker compose logs -f        # tail logs
-#   docker compose down           # stop
-#   docker compose pull && docker compose up -d   # upgrade vLLM
+#   cp .env.example .env                          # configure once
+#   docker-compose up -d                          # start
+#   docker-compose logs -f                        # tail logs
+#   docker-compose down                           # stop
+#   docker-compose pull && docker-compose up -d   # upgrade vLLM
 
 services:
   vllm:
@@ -26,10 +26,9 @@ services:
               count: all
               capabilities: [gpu]
 
-    # Model weights are stored on the host and mounted read-only.
+    # Model weights are stored on the host and mounted read-write.
     # First run downloads ~5GB; subsequent starts load from cache.
     volumes:
-      - ${MODEL_CACHE_DIR:-/opt/vllm/model-cache}:/root/.cache/huggingface:ro
       - ${MODEL_CACHE_DIR:-/opt/vllm/model-cache}:/root/.cache/huggingface
 
     ports:

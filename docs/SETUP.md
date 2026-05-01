@@ -167,7 +167,10 @@ On the **agent VM**:
 # Generate a dedicated SSH key for Errander-AI
 ssh-keygen -t ed25519 -f ~/.ssh/errander_prod -C "errander-agent" -N ""
 
-# Copy the public key to each target VM
+# Set a temporary password on the errander user so ssh-copy-id can authenticate once
+sudo passwd errander
+
+# Copy the public key to each target VM (enter the temporary password when prompted)
 ssh-copy-id -i ~/.ssh/errander_prod.pub errander@<target-vm-ip>
 
 # Test connectivity

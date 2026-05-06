@@ -252,6 +252,30 @@ SSH keys: referenced by file path in inventory config, never inlined.
 
 ---
 
+## Repo Portability
+
+The repo is fully self-contained — everything needed to run the project is in GitHub. To set up on any new machine:
+
+```bash
+git clone https://github.com/psc0des/Errander-AI.git
+cd Errander-AI
+uv sync --extra dev        # rebuilds virtualenv
+cp example/inventory.yaml inventory.yaml   # edit with real VM IPs
+```
+
+Then recreate `.env` (never committed — intentionally excluded):
+```
+ERRANDER_LLM_BASE_URL=...
+ERRANDER_LLM_MODEL=...
+ERRANDER_SLACK_BOT_TOKEN=...
+ERRANDER_SLACK_CHANNEL_ID=...
+ERRANDER_AUDIT_DB_URL=errander.sqlite
+```
+
+Nothing else is needed. `.venv/` and `.sqlite` are always regenerated locally.
+
+---
+
 ## Workflow Orchestration
 
 ### 1. Plan Mode Default

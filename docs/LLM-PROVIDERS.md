@@ -35,7 +35,7 @@ vLLM serve command (see `deploy/vllm/docker-compose.yml`):
 
 ```bash
 vllm serve Qwen/Qwen3-8B-AWQ \
-  --enable-reasoning --reasoning-parser deepseek_r1 \
+  --reasoning-parser deepseek_r1 \
   --enable-auto-tool-choice --tool-call-parser hermes \
   --max-model-len 8192 --gpu-memory-utilization 0.85
 ```

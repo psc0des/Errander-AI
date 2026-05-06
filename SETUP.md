@@ -33,9 +33,9 @@ Step-by-step instructions for getting Errander-AI running from scratch.
 |---|---|
 | **Controller** | Errander-AI agent, SQLite, web UI — your Windows PC or a Linux VM |
 | **Target VMs** | The Linux VMs being maintained — Ubuntu 20.04+, Debian 11+, RHEL 8+ |
-| **LLM VM** *(optional)* | vLLM serving Qwen3-8B-AWQ — only needed for AI-powered decisions |
+| **LLM endpoint** *(optional)* | Any OpenAI-compatible API for AI-powered decisions: a cloud API (OpenAI, Anthropic, Groq, etc.), a local LLM on the controller (Ollama, LM Studio), or a self-hosted vLLM on a dedicated GPU VM (16 GB VRAM recommended) |
 
-The LLM VM is **optional**. The agent runs fine without it using built-in hardcoded logic. See [Advanced: Self-hosted LLM](#advanced--self-hosted-llm-optional) if you want AI-powered decisions.
+The LLM is **optional**. The agent runs fine without one using built-in hardcoded logic. See [Step 4 — Set up an LLM](#step-4--set-up-an-llm) for the three options.
 
 ---
 
@@ -205,11 +205,33 @@ sudo -u errander sudo /bin/df -h /
 
 ## Step 4 — Set up an LLM
 
-The agent needs an LLM endpoint that speaks the OpenAI API (`/v1/chat/completions`). Pick one of the two options below.
+The agent needs an LLM endpoint that speaks the OpenAI API (`/v1/chat/completions`). Pick **one** of the three options below — Errander-AI works with any OpenAI-compatible endpoint and does not lock you into a particular provider.
+
+| Option | Best for | Trade-offs |
+|---|---|---|
+| **A. Cloud API** (OpenAI, Anthropic, Groq, etc.) | Fastest setup, no infrastructure | Data leaves your VPN |
+| **B. Local LLM on the controller** (Ollama, LM Studio) | Privacy + no separate VM | Limited by your controller's RAM/VRAM |
+| **C. Self-hosted vLLM on a dedicated GPU VM** | Privacy + production performance | Needs an NVIDIA GPU with **16 GB VRAM** (Tesla T4 reference) |
+
+See `docs/LLM-PROVIDERS.md` for paste-ready `.env` blocks for every supported provider.
 
 ---
 
-### Option A — Local LLM on Windows (Ollama or LM Studio)
+### Option A — Cloud API (fastest)
+
+Set the following in `.env` on the controller:
+
+```
+ERRANDER_LLM_BASE_URL=https://api.openai.com/v1   # or Groq, Anthropic, etc.
+ERRANDER_LLM_MODEL=gpt-4o-mini
+ERRANDER_LLM_API_KEY=sk-...
+```
+
+Verify with `uv run python -m errander --check-llm` and **skip to Step 5**.
+
+---
+
+### Option B — Local LLM on the controller (Ollama or LM Studio)
 
 Use this if your Windows controller has enough RAM/VRAM to run a model locally. No separate GPU VM needed.
 
@@ -240,9 +262,9 @@ ERRANDER_LLM_BASE_URL=http://localhost:1234/v1
 
 ---
 
-### Option B — Self-hosted vLLM on a dedicated GPU VM
+### Option C — Self-hosted vLLM on a dedicated GPU VM
 
-Use this if you have a separate Linux VM with an NVIDIA GPU (Tesla T4 recommended, 16 GB VRAM).
+Use this if you have a separate Linux VM with an NVIDIA GPU. Recommended hardware: Tesla T4 with **16 GB VRAM**, 4 vCPUs, 16 GB RAM. 16 GB VRAM is what Qwen3-8B-AWQ needs at 8K context with `--gpu-memory-utilization 0.85`.
 
 **On the LLM VM:**
 
@@ -356,6 +378,29 @@ Optionally copy and edit settings:
 ```bash
 cp example/settings.yaml settings.yaml
 ```
+
+### Step 6b — Secure the Web UI (optional but recommended)
+
+The agent exposes a web UI at `http://<controller-ip>:<metrics-port>/ui/`. By default it is **open** (no auth). To protect it with HTTP Basic Auth, add two env vars to `.env`:
+
+```
+ERRANDER_UI_USER=admin
+ERRANDER_UI_PASSWORD=choose-a-strong-password
+```
+
+The middleware uses `secrets.compare_digest()` (constant-time comparison) so it is safe against timing attacks. The UI covers three areas:
+
+- `/ui/` — batch run history and pending approvals
+- `/ui/settings` — runtime LLM/approval settings (no restart required)
+- `/ui/inventory` — disable YAML VMs or add ad-hoc VMs before the next run
+
+**Settings precedence reminder:** changes made via the UI write to the `settings_overrides` table in SQLite. The full precedence chain is:
+
+```
+env var  >  DB (UI)  >  settings.yaml  >  built-in default
+```
+
+If `ERRANDER_LLM_MODEL` is set as an env var, the UI field is locked (shown in red) — you cannot override it from the UI.
 
 ---
 
@@ -517,75 +562,28 @@ Point the Task Scheduler action at this `.bat` file instead.
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
-| `ERRANDER_LLM_BASE_URL` | Yes | — | LLM endpoint — Ollama, LM Studio, or vLLM |
+| `ERRANDER_LLM_BASE_URL` | Yes | — | LLM endpoint — any OpenAI-compatible API (cloud, Ollama, LM Studio, or vLLM) |
+| `ERRANDER_LLM_MODEL` | Yes | — | Model ID for the chosen provider, e.g. `gpt-4o-mini`, `qwen3:8b`, `Qwen/Qwen3-8B-AWQ` |
 | `ERRANDER_SLACK_BOT_TOKEN` | Yes | — | Slack bot token (`xoxb-...`) |
 | `ERRANDER_SLACK_CHANNEL_ID` | Yes | — | Approvals channel ID (`C...`) |
 | `ERRANDER_AUDIT_DB_URL` | No | `errander.sqlite` | SQLite file path |
 | `ERRANDER_LLM_API_KEY` | No | `not-needed` | API key if your LLM server requires auth |
+| `ERRANDER_LLM_TEMPERATURE` | No | `0.1` | Sampling temperature (0.0–2.0; keep low for JSON output) |
+| `ERRANDER_UI_USER` | No | — | If set together with `ERRANDER_UI_PASSWORD`, enables HTTP Basic Auth on the Web UI |
+| `ERRANDER_UI_PASSWORD` | No | — | Password for the Web UI (compared with `secrets.compare_digest`) |
 
 ---
 
-## Advanced — Self-hosted LLM (optional)
+## Monitoring
 
-By default the agent uses hardcoded logic for decisions. If you want AI-powered action prioritisation and failure analysis, you can point it at a self-hosted vLLM instance.
+Once the agent is running, the following endpoints are exposed on the metrics port (default `9090`):
 
-**Hardware required:** NVIDIA Tesla T4 GPU (16 GB VRAM), 4 vCPUs, 16 GB RAM, Linux.
-
-### Install Docker + NVIDIA Container Toolkit
-
-```bash
-# Docker
-curl -fsSL https://get.docker.com | sh
-
-# NVIDIA Container Toolkit
-distribution=$(. /etc/os-release; echo $ID$VERSION_ID)
-curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey \
-  | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
-curl -sL "https://nvidia.github.io/libnvidia-container/$distribution/libnvidia-container.list" \
-  | sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' \
-  | sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
-sudo apt-get update && sudo apt-get install -y nvidia-container-toolkit
-sudo nvidia-ctk runtime configure --runtime=docker
-sudo systemctl restart docker
-
-# Verify GPU is visible
-docker run --rm --gpus all nvidia/cuda:12.0-base-ubuntu20.04 nvidia-smi
-```
-
-### Start vLLM
-
-```bash
-cd errander/deploy/vllm
-cp .env.example .env
-# Defaults work for Qwen3-8B-AWQ on a T4 — edit only if needed
-
-sudo mkdir -p /opt/vllm/model-cache
-sudo chown $USER /opt/vllm/model-cache
-
-# First run downloads ~5 GB of model weights (5-10 min)
-docker compose up -d
-docker compose logs -f
-# Wait for: "Application startup complete"
-```
-
-### Verify
-
-```bash
-curl http://localhost:8000/health
-# {"status":"ok"}
-```
-
-### Connect the agent
-
-Add to `.env` on the controller:
-```
-ERRANDER_LLM_BASE_URL=http://<llm-vm-ip>:8000/v1
-```
-
-Then test from the controller:
-```bash
-uv run python -m errander --check-llm
-# Status  : OK
-# Models  : qwen3-8b
-# Latency : ~1200 ms
-```
+| URL | What it shows |
+|---|---|
+| `http://<controller>:9090/ui` | Dashboard — recent batches, event counts, VM history |
+| `http://<controller>:9090/ui/batches` | Full batch history |
+| `http://<controller>:9090/ui/approvals` | Pending approvals — Approve/Reject buttons |
+| `http://<controller>:9090/ui/settings` | Runtime LLM/approval settings (no restart required) |
+| `http://<controller>:9090/ui/inventory` | Disable YAML VMs or add ad-hoc VMs before the next run |
+| `http://<controller>:9090/metrics` | Prometheus metrics (scrape this with Prometheus) |
+| `http://<controller>:9090/health` | Liveness check — `{"status":"ok"}` |

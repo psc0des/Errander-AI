@@ -93,7 +93,7 @@ graph TB
 ### Infrastructure (v1)
 
 - **Agent VM**: Single small VM running the Errander-AI process as a systemd service
-- **LLM VM**: Separate VM running vLLM with Qwen3-8B-AWQ (Tesla T4 16GB VRAM, 4 vCPUs, 16GB RAM — already exists)
+- **LLM endpoint**: User picks at install time. Two supported paths: (a) any OpenAI-compatible cloud API (OpenAI, Anthropic, Groq, etc.) — no extra infrastructure; or (b) a separate VM running vLLM with Qwen3-8B-AWQ (Tesla T4 **16 GB VRAM**, 4 vCPUs, 16 GB RAM) for private, no-egress deployments. The agent also runs without an LLM via hardcoded fallbacks.
 - **Target VMs**: Existing fleet (already exist)
 - **Total new infrastructure**: One VM for the agent
 - **No vector database** — PostgreSQL (v2) handles all data storage needs
@@ -882,18 +882,28 @@ The Slack bot validates the command, triggers a dry-run, and follows the standar
 
 ### Provider Setup
 
-- **Model**: Qwen3-8B-AWQ (Apache 2.0 license, official HuggingFace weights)
-- **Inference server**: vLLM on dedicated VM with Tesla T4 16GB VRAM, 4 vCPUs, 16GB RAM
-- **Serve command**: `vllm serve Qwen/Qwen3-8B-AWQ --enable-reasoning --reasoning-parser deepseek_r1 --enable-auto-tool-choice --tool-call-parser hermes --max-model-len 8192 --gpu-memory-utilization 0.85`
-- **API**: OpenAI-compatible (`/v1/chat/completions`) on private IP inside VPN
-- **Client**: OpenAI Python SDK pointed at configurable `ERRANDER_LLM_BASE_URL`
-- **Thinking modes**: Thinking mode (reasoning enabled) for planning + failure analysis. `/no_think` prefix for report generation (faster, no reasoning overhead).
+The agent works with **any OpenAI-compatible endpoint**. The user picks one at install time via three env vars: `ERRANDER_LLM_BASE_URL`, `ERRANDER_LLM_MODEL`, and `ERRANDER_LLM_API_KEY` (when required by the provider). See `docs/LLM-PROVIDERS.md` for paste-ready configs per provider.
+
+- **Client**: OpenAI Python SDK pointed at configurable `ERRANDER_LLM_BASE_URL`. Model and temperature are configurable; no provider-specific prompt prefixes are baked into the agent.
 - **Response format**: All LLM responses are structured JSON, parsed and validated via Pydantic models. No free-text responses.
+- **Fallback**: When the LLM is unreachable, the agent uses hardcoded default priority ordering and template-based reports. The agent must never block on LLM availability.
+
+#### Path A — Cloud API (recommended for fastest setup)
+
+- Any OpenAI-compatible cloud: OpenAI, Anthropic (via OpenAI-compat endpoint), Groq, Together, etc.
+- No extra infrastructure required.
+- Timeout: typically < 10 seconds.
+- Trade-off: data leaves the VPN. Not suitable for environments that require fully private inference.
+
+#### Path B — Self-hosted vLLM (recommended for private, no-egress deployments)
+
+- **Reference model**: Qwen3-8B-AWQ (Apache 2.0 license, official HuggingFace weights)
+- **Reference hardware**: dedicated VM with NVIDIA Tesla T4 **16 GB VRAM**, 4 vCPUs, 16 GB RAM
+- **Serve command**: `vllm serve Qwen/Qwen3-8B-AWQ --reasoning-parser deepseek_r1 --enable-auto-tool-choice --tool-call-parser hermes --max-model-len 8192 --gpu-memory-utilization 0.85`
+- **API**: OpenAI-compatible (`/v1/chat/completions`) on private IP inside the VPN
 - **Timeout**: 60 seconds per call (T4 is slower than cloud APIs)
 - **Concurrency**: Sequential LLM calls preferred — T4 has limited VRAM, concurrent requests risk OOM or degraded latency. vLLM handles batching natively but the agent should not fire parallel requests.
 - **Upgrade path**: Qwen3.5-9B-AWQ when official weights and stable vLLM support are available
-
-The client code works unchanged if swapped to a public API (OpenAI, Anthropic via proxy, etc.).
 
 ### LLM-Powered Functions (v1)
 

@@ -5,9 +5,8 @@ Autonomous maintenance agent that eliminates repetitive operational toil across 
 ## Stack (100% Open Source, Cloud-Agnostic)
 - Language: Python 3.12+
 - Agent Framework: LangGraph (state machines for decision workflows)
-- LLM: Qwen3-8B-AWQ on vLLM (self-hosted, private VPN, Tesla T4 16GB VRAM)
-- LLM Client: OpenAI Python SDK pointed at configurable base URL
-- LLM Modes: thinking mode for planning + failure analysis, `/no_think` for report generation
+- LLM: any OpenAI-compatible endpoint — user picks at install time. Two supported paths: (a) **cloud API** (OpenAI, Anthropic, Groq, etc.) for fastest setup; (b) **self-hosted vLLM** running Qwen3-8B-AWQ on a 16 GB VRAM GPU (Tesla T4 reference) for private, no-egress deployments.
+- LLM Client: OpenAI Python SDK pointed at configurable base URL (model + temperature configurable; no provider-specific prompt prefixes baked in)
 - LLM Responses: structured JSON via Pydantic models
 - Infrastructure: Targets heterogeneous VMs (Linux — Ubuntu/RHEL/Debian)
 - SSH: asyncssh (async-native, key-based auth only)
@@ -134,8 +133,8 @@ tests/                      # Mirrors src structure
 tasks/
 ├── todo.md                 # Current task tracking
 └── lessons.md              # Self-improvement log
+SETUP.md                    # End-to-end setup guide (new users start here — at repo root)
 docs/
-├── SETUP.md                # End-to-end setup guide (new users start here)
 ├── SPEC.md                 # Full project specification
 ├── langgraph-primer.md     # LangGraph reference
 ├── architecture-options.md # Architecture decision record
@@ -194,17 +193,23 @@ Anything not on this whitelist requires human approval to clean.
 ## Infrastructure Constraints (v1)
 
 ### LLM
-- Model: Qwen3-8B-AWQ (Apache 2.0, official HuggingFace weights)
-- Server: vLLM on dedicated VM with Tesla T4 16GB VRAM, 4 vCPUs, 16GB RAM
-- vLLM serve: `vllm serve Qwen/Qwen3-8B-AWQ --enable-reasoning --reasoning-parser deepseek_r1 --enable-auto-tool-choice --tool-call-parser hermes --max-model-len 8192 --gpu-memory-utilization 0.85`
-- Exposes OpenAI-compatible API (`/v1/chat/completions`) on private IP
-- Agent uses OpenAI Python SDK pointed at configurable `ERRANDER_LLM_BASE_URL`
-- Thinking modes: thinking (planning + failure analysis), `/no_think` (report generation)
-- All LLM responses: structured JSON via Pydantic models
-- Timeout: 60 seconds (T4 is slower than cloud APIs)
-- Sequential LLM calls preferred (low VRAM concurrency)
-- Fallback: when LLM is unreachable, agent uses hardcoded default priority ordering and template-based reports
-- Upgrade path: Qwen3.5-9B-AWQ when official weights + stable vLLM support available
+- The agent supports any OpenAI-compatible endpoint. The user picks one at install time via `ERRANDER_LLM_BASE_URL` + `ERRANDER_LLM_MODEL` (+ `ERRANDER_LLM_API_KEY` if the provider needs it). See `docs/LLM-PROVIDERS.md`.
+- Agent uses the OpenAI Python SDK; no provider-specific prompt prefixes are baked in. Model and temperature are configurable.
+- All LLM responses: structured JSON via Pydantic models.
+- Fallback: when the LLM is unreachable, the agent uses hardcoded default priority ordering and template-based reports — it must never block on LLM availability.
+
+**Path A — Cloud API (recommended for fastest setup):**
+- Any OpenAI-compatible cloud (OpenAI, Anthropic via OpenAI-compat endpoint, Groq, Together, etc.).
+- Timeout: typically < 10 seconds.
+
+**Path B — Self-hosted vLLM (recommended for private, no-egress deployments):**
+- Reference model: Qwen3-8B-AWQ (Apache 2.0, official HuggingFace weights).
+- Reference hardware: dedicated VM with NVIDIA Tesla T4 **16 GB VRAM**, 4 vCPUs, 16 GB RAM.
+- vLLM serve: `vllm serve Qwen/Qwen3-8B-AWQ --reasoning-parser deepseek_r1 --enable-auto-tool-choice --tool-call-parser hermes --max-model-len 8192 --gpu-memory-utilization 0.85`
+- Exposes OpenAI-compatible API (`/v1/chat/completions`) on private IP.
+- Timeout: 60 seconds (T4 is slower than cloud APIs).
+- Sequential LLM calls preferred (low VRAM concurrency).
+- Upgrade path: Qwen3.5-9B-AWQ when official weights + stable vLLM support are available.
 
 ### Slack (outbound only)
 - Agent communicates with Slack entirely via outbound HTTPS to Slack API

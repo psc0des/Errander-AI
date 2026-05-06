@@ -187,7 +187,7 @@ All Slack communication is outbound HTTPS. No webhooks, no inbound traffic.
 |-----------|-----------|-------|
 | Language | Python 3.12+ | Async-first, strict typing |
 | Agent Framework | LangGraph | State machines for decision workflows |
-| LLM | Qwen3-8B-AWQ on vLLM | Self-hosted, private VPN, Tesla T4 16GB VRAM |
+| LLM | Any OpenAI-compatible endpoint | User-choice at install: cloud API (OpenAI, Anthropic, Groq, etc.) **or** self-hosted vLLM running Qwen3-8B-AWQ on a 16 GB VRAM GPU (Tesla T4 reference). See `docs/LLM-PROVIDERS.md`. |
 | LLM Client | OpenAI Python SDK | Pointed at configurable base URL |
 | SSH | asyncssh | Async-native, key-based auth only, connection pooling |
 | Notifications | Slack API | Outbound HTTPS only, reaction polling |
@@ -249,7 +249,6 @@ deploy/
     docker-compose.yml      # vLLM container (GPU passthrough)
 docs/
   SPEC.md                   # Full project specification
-  SETUP.md                  # End-to-end setup guide
   learning/                 # Per-feature learning docs
 example/
   inventory.yaml            # Reference inventory config
@@ -266,7 +265,7 @@ example/
 - [uv](https://docs.astral.sh/uv/) package manager
 - SSH key access to target VMs
 - (Optional) Slack bot token for notifications
-- (Optional) GPU VM with vLLM for LLM features
+- (Optional) An LLM endpoint for AI-powered decisions — either a cloud API (OpenAI, Anthropic, Groq, etc.) or a self-hosted vLLM on a 16 GB VRAM GPU. The agent runs without one using hardcoded fallbacks.
 
 ### Install and Run Tests
 
@@ -417,9 +416,14 @@ uv run python -m errander --audit --action-type patching --last 50
 
 ---
 
-## vLLM Deployment
+## LLM Deployment
 
-The LLM runs on a dedicated GPU VM inside the VPN:
+The agent works with any OpenAI-compatible endpoint — pick one at install time:
+
+- **Cloud API** (fastest setup): set `ERRANDER_LLM_BASE_URL`, `ERRANDER_LLM_MODEL`, and `ERRANDER_LLM_API_KEY` in `.env` for OpenAI, Anthropic, Groq, etc. See `docs/LLM-PROVIDERS.md` for paste-ready configs.
+- **Self-hosted vLLM** (private, no data egress): runs on a dedicated GPU VM inside the VPN. Reference hardware is an NVIDIA Tesla T4 with 16 GB VRAM, 4 vCPUs, 16 GB RAM.
+
+For self-hosted vLLM:
 
 ```bash
 cd deploy/vllm

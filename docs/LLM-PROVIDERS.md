@@ -138,6 +138,80 @@ llm:
 
 ---
 
+## Option F: Azure AI Foundry
+
+**When to pick:** You already have an Azure subscription with Foundry credit. Lets you A/B
+different models (gpt-4o-mini, Llama-3.3-70B, Phi-4, Mistral-Large, DeepSeek, etc.) behind
+the same agent code to compare cost vs. output quality. Data stays in your Azure tenant.
+
+Foundry exposes two endpoint shapes depending on the model. The agent uses the stock OpenAI
+SDK, so pick the URL form that matches your deployment.
+
+### F1: Azure OpenAI models (gpt-4o, gpt-4o-mini, gpt-4.1, o-series)
+
+Use the **v1 preview** endpoint — it's OpenAI-compatible with no code changes:
+
+```env
+ERRANDER_LLM_BASE_URL=https://<your-resource>.openai.azure.com/openai/v1/
+ERRANDER_LLM_MODEL=<your-deployment-name>
+ERRANDER_LLM_API_KEY=<key from "Keys and Endpoint" blade>
+```
+
+```yaml
+# settings.yaml
+llm:
+  model: "<your-deployment-name>"   # the deployment name you chose, NOT the model ID
+  temperature: 0.1
+  timeout_seconds: 30
+  max_retries: 2
+```
+
+Notes:
+- `ERRANDER_LLM_MODEL` must be the **deployment name** you set in Foundry, not the
+  underlying model (`gpt-4o-mini`).
+- The trailing slash on the base URL matters.
+- Recommended starter deployment: `gpt-4o-mini` — cheap, fast, sufficient for structured JSON.
+  Move to `gpt-4o` or `gpt-4.1` if reasoning quality on incident analysis is too low.
+
+### F2: Foundry serverless / Models-as-a-Service (Llama, Phi, Mistral, DeepSeek, Cohere)
+
+These expose a true OpenAI-compatible endpoint per deployment:
+
+```env
+ERRANDER_LLM_BASE_URL=https://<deployment-name>.<region>.models.ai.azure.com/v1
+ERRANDER_LLM_MODEL=<model-id-shown-in-foundry>
+ERRANDER_LLM_API_KEY=<key from the deployment page>
+```
+
+```yaml
+llm:
+  model: "<model-id-shown-in-foundry>"
+  temperature: 0.1
+  timeout_seconds: 45
+  max_retries: 2
+```
+
+Notes:
+- Each serverless deployment has its **own** base URL and key — switching models means
+  swapping the env vars, not just `ERRANDER_LLM_MODEL`.
+- Good models to A/B for this agent: `Llama-3.3-70B-Instruct`, `Mistral-Large-2411`,
+  `Phi-4`, `DeepSeek-V3`. Compare them on the same dry-run plan and judge the quality of
+  the generated maintenance report and incident-analysis JSON.
+- Some MaaS models charge per-token; some are pay-per-hour endpoint hosting. Check the
+  pricing page in Foundry before leaving an endpoint running overnight.
+
+### Comparing models across Foundry
+
+Practical workflow for quality testing:
+
+1. Deploy 2–3 models in Foundry.
+2. Keep separate `.env.foundry-gpt4omini`, `.env.foundry-llama70b`, `.env.foundry-phi4` files.
+3. Symlink/copy the one you want to test to `.env`, run the same dry-run command, save
+   `errander.sqlite` aside per model.
+4. Diff the LLM-generated report sections to judge output quality.
+
+---
+
 ## Verifying your configuration
 
 ```bash

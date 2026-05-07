@@ -209,7 +209,7 @@ The agent needs an LLM endpoint that speaks the OpenAI API (`/v1/chat/completion
 
 | Option | Best for | Trade-offs |
 |---|---|---|
-| **A. Cloud API** (OpenAI, Anthropic, Groq, etc.) | Fastest setup, no infrastructure | Data leaves your VPN |
+| **A. Cloud API** (OpenAI, Anthropic, Groq, Azure AI Foundry, etc.) | Fastest setup, no infrastructure | Data leaves your VPN (Foundry stays in your Azure tenant) |
 | **B. Local LLM on the controller** (Ollama, LM Studio) | Privacy + no separate VM | Limited by your controller's RAM/VRAM |
 | **C. Self-hosted vLLM on a dedicated GPU VM** | Privacy + production performance | Needs an NVIDIA GPU with **16 GB VRAM** (Tesla T4 reference) |
 
@@ -222,12 +222,19 @@ See `docs/LLM-PROVIDERS.md` for paste-ready `.env` blocks for every supported pr
 Set the following in `.env` on the controller:
 
 ```
-ERRANDER_LLM_BASE_URL=https://api.openai.com/v1   # or Groq, Anthropic, etc.
+ERRANDER_LLM_BASE_URL=https://api.openai.com/v1   # or Groq, Anthropic, Azure AI Foundry, etc.
 ERRANDER_LLM_MODEL=gpt-4o-mini
 ERRANDER_LLM_API_KEY=sk-...
 ```
 
-Verify with `uv run python -m errander --check-llm` and **skip to Step 5**.
+For Azure AI Foundry (Azure OpenAI deployment), use the v1-preview endpoint shape:
+```
+ERRANDER_LLM_BASE_URL=https://<your-resource>.openai.azure.com/openai/v1/
+ERRANDER_LLM_MODEL=<your-deployment-name>
+ERRANDER_LLM_API_KEY=<key from "Keys and Endpoint" blade>
+```
+
+Verify with `uv run python -m errander --check-llm` and **skip to Step 5**. See `docs/LLM-PROVIDERS.md` Option F for non-OpenAI Foundry models (Llama, Phi, Mistral, DeepSeek).
 
 ---
 

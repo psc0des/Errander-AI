@@ -187,7 +187,7 @@ All Slack communication is outbound HTTPS. No webhooks, no inbound traffic.
 |-----------|-----------|-------|
 | Language | Python 3.12+ | Async-first, strict typing |
 | Agent Framework | LangGraph | State machines for decision workflows |
-| LLM | Any OpenAI-compatible endpoint | User-choice at install: cloud API (OpenAI, Anthropic, Groq, etc.) **or** self-hosted vLLM running Qwen3-8B-AWQ on a 16 GB VRAM GPU (Tesla T4 reference). See `docs/LLM-PROVIDERS.md`. |
+| LLM | Any OpenAI-compatible endpoint | User-choice at install: cloud API (OpenAI, Anthropic, Groq, Azure AI Foundry, etc.) **or** self-hosted vLLM running Qwen3-8B-AWQ on a 16 GB VRAM GPU (Tesla T4 reference). See `docs/LLM-PROVIDERS.md`. |
 | LLM Client | OpenAI Python SDK | Pointed at configurable base URL |
 | SSH | asyncssh | Async-native, key-based auth only, connection pooling |
 | Notifications | Slack API | Outbound HTTPS only, reaction polling |
@@ -420,7 +420,7 @@ uv run python -m errander --audit --action-type patching --last 50
 
 The agent works with any OpenAI-compatible endpoint — pick one at install time:
 
-- **Cloud API** (fastest setup): set `ERRANDER_LLM_BASE_URL`, `ERRANDER_LLM_MODEL`, and `ERRANDER_LLM_API_KEY` in `.env` for OpenAI, Anthropic, Groq, etc. See `docs/LLM-PROVIDERS.md` for paste-ready configs.
+- **Cloud API** (fastest setup): set `ERRANDER_LLM_BASE_URL`, `ERRANDER_LLM_MODEL`, and `ERRANDER_LLM_API_KEY` in `.env` for OpenAI, Anthropic, Groq, Azure AI Foundry, etc. See `docs/LLM-PROVIDERS.md` for paste-ready configs.
 - **Self-hosted vLLM** (private, no data egress): runs on a dedicated GPU VM inside the VPN. Reference hardware is an NVIDIA Tesla T4 with 16 GB VRAM, 4 vCPUs, 16 GB RAM.
 
 For self-hosted vLLM:

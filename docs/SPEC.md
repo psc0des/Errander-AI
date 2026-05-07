@@ -890,10 +890,10 @@ The agent works with **any OpenAI-compatible endpoint**. The user picks one at i
 
 #### Path A — Cloud API (recommended for fastest setup)
 
-- Any OpenAI-compatible cloud: OpenAI, Anthropic (via OpenAI-compat endpoint), Groq, Together, etc.
+- Any OpenAI-compatible cloud: OpenAI, Anthropic (via OpenAI-compat endpoint), Groq, Together, Azure AI Foundry, etc.
 - No extra infrastructure required.
 - Timeout: typically < 10 seconds.
-- Trade-off: data leaves the VPN. Not suitable for environments that require fully private inference.
+- Trade-off: data leaves the VPN. Not suitable for environments that require fully private inference. (Azure AI Foundry keeps data inside your Azure tenant — see `docs/LLM-PROVIDERS.md` Option F.)
 
 #### Path B — Self-hosted vLLM (recommended for private, no-egress deployments)
 

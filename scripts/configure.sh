@@ -28,14 +28,16 @@ prompt_val() {
     else
         printf "    %s: " "$label"
     fi
-    read -r REPLY
+    read -r REPLY || true          # || true: prevent set -e exit on EOF/signal
+    REPLY="${REPLY%$'\r'}"         # strip trailing \r (Windows clipboard paste)
     [ -z "$REPLY" ] && REPLY="$default"
 }
 
 # prompt_secret "label"  →  result in REPLY (no echo)
 prompt_secret() {
     printf "    %s: " "$1"
-    read -rs REPLY
+    read -rs REPLY || true
+    REPLY="${REPLY%$'\r'}"
     echo
 }
 

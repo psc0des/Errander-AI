@@ -571,11 +571,44 @@ uv run pytest
 
 ## SSH / Target VMs
 
-*(No SSH commands run yet.)*
+### 2026-05-09 — Phase 1.8 E2E Validation (Azure VMs)
+
+```bash
+# On Master VM — install uv (pip-based, before bootstrap script existed)
+pip3 install uv
+```
+**What**: Installed uv via pip3 on Ubuntu 22.04 Master VM.
+**Why**: python3.12 not in default Ubuntu 22.04 apt repos; uv can manage its own Python.
+
+```bash
+# On Master VM — install Python 3.12 via uv
+uv python install 3.12
+```
+**What**: Downloaded and installed Python 3.12.13 into uv's managed Python store.
+**Why**: Agent requires Python 3.12+; uv installer avoids deadsnakes PPA.
+
+```bash
+# Add uv to PATH for current session and permanently
+export PATH="/root/.local/bin:$PATH"
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
+```
+**What**: Fixed missing PATH entry after `uv python install` warning.
+**Why**: uv installs to ~/.local/bin which is not in PATH by default on Ubuntu 22.04.
 
 ## Deployment
 
 *(No deployment commands run yet.)*
+
+## Bootstrap Script
+
+### 2026-05-09 — scripts/bootstrap.sh
+
+```bash
+# End users run this one-liner to bootstrap the Master VM
+curl -LsSf https://raw.githubusercontent.com/psc0des/Errander-AI/main/scripts/bootstrap.sh | bash
+```
+**What**: Single command that detects distro, installs git/curl/uv/Python 3.12, clones repo, runs uv sync, verifies import.
+**Why**: Manual step-by-step approach in SETUP.md had implicit steps that tripped up real users (PATH export, Python 3.12 not in apt on Ubuntu 22.04).
 
 ## Debugging
 

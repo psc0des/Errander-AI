@@ -1,10 +1,10 @@
 # Errander-AI — Project Status
 
 ## Last Updated
-2026-04-27
+2026-05-09
 
 ## Current Phase
-**Deferred execution (window-gated approval) fully complete — all 878 tests passing. Next: Phase 1.8 end-to-end validation (needs real VM).**
+**Phase 1.8 — End-to-end validation in progress. Azure VMs provisioned (2× Standard_B2ls_v2). LLM: Azure AI Foundry. Bootstrap script created. Master VM setup underway.**
 
 ## Completed
 
@@ -203,10 +203,12 @@ The approval flow is now fully decoupled from execution. A dry-run scan can happ
 - **Total: 878 tests passing**
 
 ## In Progress
-None.
+- **Phase 1.8: End-to-End Validation** — Master VM bootstrap in progress (uv + Python 3.12 installed). Next: SSH key setup → errander user on Target → .env + inventory.yaml → first dry-run.
 
 ## Next Up
-- **Phase 1.8: End-to-End Validation** — dry-run all action types on a real VM through the full pipeline (needs infrastructure)
+- Complete Phase 1.8 dry-run validation on Azure VMs
+- Verify audit trail, metrics endpoint, web UI approvals end-to-end
+- Live run once dry-run is confirmed clean
 
 
 
@@ -241,6 +243,16 @@ None.
 
 ## Blockers
 None.
+
+## Files Changed (2026-05-09 — E2E Validation Prep + Docs)
+
+### Created
+- `scripts/bootstrap.sh` — distro-agnostic bootstrap script (Ubuntu/Debian/RHEL/CentOS/Oracle/Fedora): detects pkg manager, installs git + curl + uv + Python 3.12, clones repo, runs uv sync, verifies import
+- `.gitattributes` — enforce LF line endings for .sh, .py, .yaml, .md files
+
+### Modified
+- `SETUP.md` — major overhaul: added Prerequisites section (software, network ports table, Azure NSG note for port 9090, SSH tunnel alternative); updated architecture diagram to reflect Azure VNet topology; fixed git clone URL placeholders; marked Step 5 (Slack) as optional with web UI fallback; updated .env templates (added ERRANDER_LLM_MODEL, commented out Slack, added UI auth); fixed env var table (Slack Required: Yes → No); replaced Linux Step 1 manual commands with bootstrap script one-liner
+- `CLAUDE.md` — added commit message format rule (one line, type: description, under 72 chars)
 
 ## Files Changed (2026-04-27 — Deferred Execution)
 

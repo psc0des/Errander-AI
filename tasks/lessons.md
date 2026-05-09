@@ -268,6 +268,44 @@ Fix: use the HTML5 `form="<id>"` attribute to associate the reset button with a 
 
 ---
 
+## Phase 1.8 — Setup Doc: Collect Credentials Before Creating the File
+
+**Lesson**: When a step says "add to `.env`" but the file isn't created until the next step, users are stuck. The right pattern: the credential-collection step shows a "Your three values:" reference block and verifies connectivity inline (using env vars directly, not loading from a file). The file-creation step then says "paste the values from Step N here."
+
+```bash
+# Step 4 — verify inline, no .env needed
+ERRANDER_LLM_BASE_URL=https://.../v1/ \
+ERRANDER_LLM_MODEL=my-deployment \
+ERRANDER_LLM_API_KEY=sk-... \
+uv run python -m errander --check-llm
+
+# Step 5 — now create .env with verified values
+cat > .env << 'EOF'
+ERRANDER_LLM_BASE_URL=<from step 4>
+...
+EOF
+```
+
+---
+
+## Phase 1.8 — Commit Messages Must Be One Line
+
+**Lesson**: Commit messages must be `type: short description` on a single line, under 72 characters. No body, no bullets, no blank lines. If multi-line messages are used the user will correct you — add this rule to CLAUDE.md so it persists across sessions.
+
+---
+
+## Phase 1.8 — Ollama Runs on CPU or GPU (Not CPU-Only)
+
+**Lesson**: Ollama supports CPU, NVIDIA GPU, AMD GPU, and Apple Silicon — it auto-detects. The correct distinction between Ollama and vLLM is *ease of setup* (Ollama: single install, any hardware) vs *production throughput* (vLLM: NVIDIA GPU required, dedicated VM). Don't describe Ollama as "CPU-only."
+
+---
+
+## Phase 1.8 — Consolidate Related Steps; Don't Split Across Sections
+
+**Lesson**: When two consecutive steps are tightly coupled (e.g., "collect Slack tokens" immediately followed by "put Slack tokens in .env"), merge them into one step with a subsection. Users who complete step N expect to act on its output immediately — making them hold values until a later step causes confusion and mistakes.
+
+---
+
 ## Phase 4 — Playwright `locator.click()` Does NOT Auto-Wait for Navigation
 
 **Lesson**: Playwright's `locator.click()` returns as soon as the click event is dispatched — it does NOT implicitly wait for a navigation that the click triggers. If you immediately call `page.goto()` after clicking a submit button, the browser may abort the in-flight POST request before the server writes to the DB.

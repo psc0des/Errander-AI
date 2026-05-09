@@ -95,6 +95,14 @@
 ### 1.8 End-to-End Validation
 - [x] Wire validate_window_node in graph.py to real is_within_window() call
 - [x] Implement main.py entry point (load config, start scheduler + metrics server, wire graph)
+- [x] Overhaul SETUP.md — prerequisites, network ports, Azure NSG, architecture diagram, step labels
+- [x] Create scripts/bootstrap.sh — distro-agnostic Linux bootstrap (Ubuntu/Debian/RHEL/CentOS/Oracle/Fedora)
+- [x] Create scripts/bootstrap.ps1 — Windows bootstrap (winget git, official uv installer, no admin)
+- [x] Create scripts/configure.sh — interactive setup (LLM, VMs, SSH key, Slack, writes .env + inventory.yaml)
+- [x] Create .gitattributes — enforce LF line endings for .sh files
+- [x] Fix Step 4: verify LLM inline (no .env), collect values → Step 5 creates .env
+- [x] Fix Step 5 + old Step 6 confusion: merged Slack into Configure step, steps 6-9 renumbered
+- [x] Add Steps 4-6 quick path section (configure.sh one-liner)
 - [ ] Dry-run disk_cleanup on a test VM via the full graph pipeline
 - [ ] Verify audit trail captures all events
 - [ ] Verify Slack notification works

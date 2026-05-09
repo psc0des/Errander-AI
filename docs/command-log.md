@@ -599,6 +599,37 @@ echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
 
 *(No deployment commands run yet.)*
 
+## Setup Scripts
+
+### 2026-05-10 — scripts/configure.sh (interactive setup)
+
+```bash
+# End users run this after bootstrap.sh + LLM setup
+bash scripts/configure.sh
+```
+**What**: Interactive script that prompts for LLM provider/credentials, target VMs, SSH key path, optional Slack, then writes `.env` + `inventory.yaml` and verifies the LLM connection.
+**Why**: Steps 4–6 of SETUP.md required users to manually construct .env and inventory.yaml — the script eliminates that and makes the flow sequential and prompting.
+
+```bash
+# Verify LLM inline (no .env needed) — used inside configure.sh
+ERRANDER_LLM_BASE_URL=https://<resource>.openai.azure.com/openai/v1/ \
+ERRANDER_LLM_MODEL=<deployment> \
+ERRANDER_LLM_API_KEY=<key> \
+uv run python -m errander --check-llm
+```
+**What**: Tests LLM connection using inline env vars rather than loading from .env.
+**Why**: .env doesn't exist yet during Step 4 — inline vars verify credentials before Step 5 creates the file.
+
+### 2026-05-10 — scripts/bootstrap.ps1 (Windows bootstrap)
+
+```powershell
+# Clone first, then run bootstrap
+git clone https://github.com/psc0des/Errander-AI.git errander
+powershell -ExecutionPolicy Bypass -File errander\scripts\bootstrap.ps1
+```
+**What**: Windows equivalent of bootstrap.sh — installs git (winget), uv (official PS installer), Python 3.12, runs uv sync, verifies import. No admin required.
+**Why**: Windows Step 1 was manual; Linux had a one-liner. Now both platforms have identical one-liner experience.
+
 ## Bootstrap Script
 
 ### 2026-05-10 — private repo fix

@@ -322,8 +322,8 @@ If you pick Option B, choose the right tool:
 Pick **Ollama** if you want the simpler path — it works on CPU or GPU, and you can run it on the Master VM or any other machine.
 Pick **vLLM** if you have a dedicated GPU VM and need production-grade throughput.
 
-All options write the same three env vars to your `.env` on the Master VM.
-Run `--check-llm` at the end of whichever option you choose to confirm it works.
+Each option below gives you three values (`BASE_URL`, `MODEL`, `API_KEY`) and a verify command.
+Note them down — you'll paste them into your `.env` in Step 5.
 
 > For full provider config reference, see `docs/LLM-PROVIDERS.md`.
 
@@ -339,31 +339,36 @@ Run `--check-llm` at the end of whichever option you choose to confirm it works.
 2. Copy the **Endpoint URL** and one of the **Keys**
 3. Note your **deployment name** (the name you gave the model in Foundry — e.g. `gpt-4o-mini-deploy`, not the model ID)
 
-Add to `.env` on the Master VM:
-```bash
-ERRANDER_LLM_BASE_URL=https://<your-resource>.openai.azure.com/openai/v1/
-ERRANDER_LLM_MODEL=<your-deployment-name>
-ERRANDER_LLM_API_KEY=<key from Keys and Endpoint blade>
+Your three values:
 ```
-> The trailing `/` on the URL is required. `ERRANDER_LLM_MODEL` is your deployment name, not `gpt-4o-mini`.
+BASE_URL  = https://<your-resource>.openai.azure.com/openai/v1/   ← trailing / required
+MODEL     = <your-deployment-name>                                 ← deployment name, not model ID
+API_KEY   = <key from Keys and Endpoint blade>
+```
 
 #### OpenAI
-```bash
-ERRANDER_LLM_BASE_URL=https://api.openai.com/v1
-ERRANDER_LLM_MODEL=gpt-4o-mini
-ERRANDER_LLM_API_KEY=sk-...
+
+Your three values:
+```
+BASE_URL  = https://api.openai.com/v1
+MODEL     = gpt-4o-mini
+API_KEY   = sk-...
 ```
 
 #### Groq *(free tier available at console.groq.com)*
-```bash
-ERRANDER_LLM_BASE_URL=https://api.groq.com/openai/v1
-ERRANDER_LLM_MODEL=llama-3.3-70b-versatile
-ERRANDER_LLM_API_KEY=gsk_...
+
+Your three values:
+```
+BASE_URL  = https://api.groq.com/openai/v1
+MODEL     = llama-3.3-70b-versatile
+API_KEY   = gsk_...
 ```
 
-**Verify** *(Master VM, from inside the `errander/` directory)*:
+**Verify** — test the connection before moving on *(Master VM, inside `errander/` directory)*:
 ```bash
-export $(grep -v '^#' .env | xargs)
+ERRANDER_LLM_BASE_URL=<your-base-url> \
+ERRANDER_LLM_MODEL=<your-model> \
+ERRANDER_LLM_API_KEY=<your-key> \
 uv run python -m errander --check-llm
 # Expected: Status: OK, Latency: <Xms>, Response: 'OK'
 ```
@@ -390,17 +395,20 @@ ollama pull qwen3:8b
 # Ollama starts automatically and listens on port 11434
 ```
 
-Add to `.env` on the Master VM:
-```bash
-ERRANDER_LLM_BASE_URL=http://localhost:11434/v1
-ERRANDER_LLM_MODEL=qwen3:8b
-ERRANDER_LLM_API_KEY=ollama
+Your three values:
+```
+BASE_URL  = http://localhost:11434/v1
+MODEL     = qwen3:8b
+API_KEY   = ollama
 ```
 
 **Verify** *(Master VM)*:
 ```bash
-export $(grep -v '^#' .env | xargs)
+ERRANDER_LLM_BASE_URL=http://localhost:11434/v1 \
+ERRANDER_LLM_MODEL=qwen3:8b \
+ERRANDER_LLM_API_KEY=ollama \
 uv run python -m errander --check-llm
+# Expected: Status: OK, Latency: <Xms>, Response: 'OK'
 ```
 
 ---
@@ -445,17 +453,19 @@ docker compose logs -f
 # Wait for: "Application startup complete"
 ```
 
-Add to `.env` on the **Master VM**:
-```bash
-ERRANDER_LLM_BASE_URL=http://<gpu-vm-private-ip>:8000/v1
-ERRANDER_LLM_MODEL=Qwen/Qwen3-8B-AWQ
-# No API key needed for unauthenticated vLLM
+Your three values *(on the Master VM)*:
+```
+BASE_URL  = http://<gpu-vm-private-ip>:8000/v1
+MODEL     = Qwen/Qwen3-8B-AWQ
+API_KEY   = (leave blank — unauthenticated vLLM needs no key)
 ```
 
 **Verify** *(Master VM)*:
 ```bash
-export $(grep -v '^#' .env | xargs)
+ERRANDER_LLM_BASE_URL=http://<gpu-vm-private-ip>:8000/v1 \
+ERRANDER_LLM_MODEL=Qwen/Qwen3-8B-AWQ \
 uv run python -m errander --check-llm
+# Expected: Status: OK, Latency: <Xms>, Response: 'OK'
 ```
 
 ---
@@ -464,7 +474,7 @@ uv run python -m errander --check-llm
 
 ### Create `.env`  *(Master VM)*
 
-Inside the `errander/` directory. Use the values you collected in Step 4 for the LLM lines.
+Inside the `errander/` directory. Paste the `BASE_URL`, `MODEL`, and `API_KEY` values you noted in Step 4.
 
 **Linux:**
 ```bash

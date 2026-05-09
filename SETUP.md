@@ -292,77 +292,106 @@ sudo -u errander sudo /bin/df -h /
 
 ---
 
-## Step 4 — Set up an LLM
+## Step 4 — Set up an LLM *(Master VM)*
 
-The agent needs an LLM endpoint that speaks the OpenAI API (`/v1/chat/completions`). Pick **one** of the three options below — Errander-AI works with any OpenAI-compatible endpoint and does not lock you into a particular provider.
+The LLM powers maintenance decisions and report generation. It is **optional** — the agent falls back to built-in hardcoded logic if no LLM is configured and will never block on LLM availability.
 
-| Option | Best for | Trade-offs |
-|---|---|---|
-| **A. Cloud API** (OpenAI, Anthropic, Groq, Azure AI Foundry, etc.) | Fastest setup, no infrastructure | Data leaves your VPN (Foundry stays in your Azure tenant) |
-| **B. Local LLM on the controller** (Ollama, LM Studio) | Privacy + no separate VM | Limited by your controller's RAM/VRAM |
-| **C. Self-hosted vLLM on a dedicated GPU VM** | Privacy + production performance | Needs an NVIDIA GPU with **16 GB VRAM** (Tesla T4 reference) |
+**Which option should I pick?**
 
-See `docs/LLM-PROVIDERS.md` for paste-ready `.env` blocks for every supported provider.
+| Situation | Pick |
+|---|---|
+| You have an Azure subscription with AI Foundry | **Option A — Azure AI Foundry** |
+| You have an OpenAI / Groq / Anthropic account | **Option A — Cloud API** |
+| Your Master VM has 8 GB+ RAM and you want no external calls | **Option B — Ollama** |
+| You have a dedicated GPU VM (NVIDIA, 16 GB VRAM) | **Option C — Self-hosted vLLM** |
+| Just testing / no account yet | **Option A — Groq** (free tier, no credit card) |
+
+All options write the same three env vars to your `.env` on the Master VM.
+Run `--check-llm` at the end of whichever option you choose to confirm it works.
+
+> For full provider config reference, see `docs/LLM-PROVIDERS.md`.
 
 ---
 
-### Option A — Cloud API (fastest)
+### Option A — Cloud API *(recommended — no extra infrastructure)*
 
-Set the following in `.env` on the controller:
+**All commands run on the Master VM.**
 
+#### Azure AI Foundry *(if you have an Azure subscription)*
+
+1. In the Azure portal, go to your **AI Foundry resource** → **Keys and Endpoint**
+2. Copy the **Endpoint URL** and one of the **Keys**
+3. Note your **deployment name** (the name you gave the model in Foundry — e.g. `gpt-4o-mini-deploy`, not the model ID)
+
+Add to `.env` on the Master VM:
+```bash
+ERRANDER_LLM_BASE_URL=https://<your-resource>.openai.azure.com/openai/v1/
+ERRANDER_LLM_MODEL=<your-deployment-name>
+ERRANDER_LLM_API_KEY=<key from Keys and Endpoint blade>
 ```
-ERRANDER_LLM_BASE_URL=https://api.openai.com/v1   # or Groq, Anthropic, Azure AI Foundry, etc.
+> The trailing `/` on the URL is required. `ERRANDER_LLM_MODEL` is your deployment name, not `gpt-4o-mini`.
+
+#### OpenAI
+```bash
+ERRANDER_LLM_BASE_URL=https://api.openai.com/v1
 ERRANDER_LLM_MODEL=gpt-4o-mini
 ERRANDER_LLM_API_KEY=sk-...
 ```
 
-For Azure AI Foundry (Azure OpenAI deployment), use the v1-preview endpoint shape:
-```
-ERRANDER_LLM_BASE_URL=https://<your-resource>.openai.azure.com/openai/v1/
-ERRANDER_LLM_MODEL=<your-deployment-name>
-ERRANDER_LLM_API_KEY=<key from "Keys and Endpoint" blade>
+#### Groq *(free tier available at console.groq.com)*
+```bash
+ERRANDER_LLM_BASE_URL=https://api.groq.com/openai/v1
+ERRANDER_LLM_MODEL=llama-3.3-70b-versatile
+ERRANDER_LLM_API_KEY=gsk_...
 ```
 
-Verify with `uv run python -m errander --check-llm` and **skip to Step 5**. See `docs/LLM-PROVIDERS.md` Option F for non-OpenAI Foundry models (Llama, Phi, Mistral, DeepSeek).
+**Verify** *(Master VM, from inside the `errander/` directory)*:
+```bash
+export $(grep -v '^#' .env | xargs)
+uv run python -m errander --check-llm
+# Expected: Status: OK, Latency: <Xms>, Response: 'OK'
+```
 
 ---
 
-### Option B — Local LLM on the controller (Ollama or LM Studio)
+### Option B — Ollama on the Master VM *(no cloud account needed)*
 
-Use this if your Windows controller has enough RAM/VRAM to run a model locally. No separate GPU VM needed.
+Use this if your Master VM has 8 GB+ RAM and you want all inference to stay local.
+No GPU required — Ollama runs on CPU (slower but functional).
 
-**Ollama** (easiest):
+**On the Master VM:**
 
-1. Download and install from [ollama.com](https://ollama.com)
-2. Pull a model:
-   ```powershell
-   ollama pull qwen3:8b
-   ```
-3. Ollama starts automatically and listens on `http://localhost:11434`
+```bash
+# Install Ollama
+curl -fsSL https://ollama.com/install.sh | sh
 
-Set in `.env`:
+# Pull a model (~5 GB download)
+ollama pull qwen3:8b
+
+# Ollama starts automatically and listens on port 11434
 ```
+
+Add to `.env` on the Master VM:
+```bash
 ERRANDER_LLM_BASE_URL=http://localhost:11434/v1
+ERRANDER_LLM_MODEL=qwen3:8b
+ERRANDER_LLM_API_KEY=ollama
 ```
 
-**LM Studio:**
-
-1. Download from [lmstudio.ai](https://lmstudio.ai)
-2. Download a model (Qwen3-8B-GGUF recommended)
-3. Go to **Local Server** tab → Start server (default port 1234)
-
-Set in `.env`:
-```
-ERRANDER_LLM_BASE_URL=http://localhost:1234/v1
+**Verify** *(Master VM)*:
+```bash
+export $(grep -v '^#' .env | xargs)
+uv run python -m errander --check-llm
 ```
 
 ---
 
-### Option C — Self-hosted vLLM on a dedicated GPU VM
+### Option C — Self-hosted vLLM *(dedicated GPU VM, 16 GB VRAM)*
 
-Use this if you have a separate Linux VM with an NVIDIA GPU. Recommended hardware: Tesla T4 with **16 GB VRAM**, 4 vCPUs, 16 GB RAM. 16 GB VRAM is what Qwen3-8B-AWQ needs at 8K context with `--gpu-memory-utilization 0.85`.
+Use this if you have a separate Linux VM with an NVIDIA GPU.
+Recommended hardware: Tesla T4, 16 GB VRAM, 4 vCPUs, 16 GB RAM.
 
-**On the LLM VM:**
+**On the GPU VM** *(not the Master VM)*:
 
 ```bash
 # Install Docker
@@ -379,27 +408,35 @@ sudo apt-get update && sudo apt-get install -y nvidia-container-toolkit
 sudo nvidia-ctk runtime configure --runtime=docker
 sudo systemctl restart docker
 
-# Verify GPU is visible
+# Verify GPU is visible to Docker
 docker run --rm --gpus all nvidia/cuda:12.0-base-ubuntu20.04 nvidia-smi
 ```
 
 ```bash
-# Start vLLM
+# Start vLLM (from your cloned repo on the GPU VM)
 cd errander/deploy/vllm
 cp .env.example .env
 
 sudo mkdir -p /opt/vllm/model-cache
 sudo chown $USER /opt/vllm/model-cache
 
-# First run downloads ~5 GB of model weights (5-10 min)
+# First run downloads ~5 GB of model weights (5–10 min)
 docker compose up -d
 docker compose logs -f
 # Wait for: "Application startup complete"
 ```
 
-Set in `.env` on the **controller**:
+Add to `.env` on the **Master VM**:
+```bash
+ERRANDER_LLM_BASE_URL=http://<gpu-vm-private-ip>:8000/v1
+ERRANDER_LLM_MODEL=Qwen/Qwen3-8B-AWQ
+# No API key needed for unauthenticated vLLM
 ```
-ERRANDER_LLM_BASE_URL=http://<llm-vm-ip>:8000/v1
+
+**Verify** *(Master VM)*:
+```bash
+export $(grep -v '^#' .env | xargs)
+uv run python -m errander --check-llm
 ```
 
 ---

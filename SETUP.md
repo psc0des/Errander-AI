@@ -167,86 +167,63 @@ uv run python -c "import errander; print('OK')"
 
 ---
 
-## Step 2 — Set up SSH keys (controller → target VMs)
+## Step 2 — Set up SSH keys
 
 Errander-AI connects to target VMs using key-based SSH only. No passwords are ever used.
 
-### Windows controller
+The SSH key is generated **on the Master VM (controller)** — that is the machine running the agent, which makes outbound SSH connections to target VMs.
 
-1. **Generate an SSH key pair**
+```
+Your laptop → (SSH) → Master VM → (SSH, private IP) → Target VM
+                       ↑ key lives here
+```
 
-   Open PowerShell or Command Prompt:
-   ```powershell
-   ssh-keygen -t ed25519 -f "$HOME\.ssh\errander_prod" -C "errander-agent" -N ""
-   ```
+### On the Master VM
 
-   This creates two files:
-   - `C:\Users\<you>\.ssh\errander_prod` — private key (never share this)
-   - `C:\Users\<you>\.ssh\errander_prod.pub` — public key (goes on target VMs)
-
-2. **Restrict key file permissions** (important — asyncssh warns on overly permissive keys)
-
-   In PowerShell:
-   ```powershell
-   $keyPath = "$HOME\.ssh\errander_prod"
-   $acl = Get-Acl $keyPath
-   $acl.SetAccessRuleProtection($true, $false)
-   $rule = New-Object System.Security.AccessControl.FileSystemAccessRule(
-       $env:USERNAME, "FullControl", "Allow"
-   )
-   $acl.SetAccessRule($rule)
-   Set-Acl $keyPath $acl
-   ```
-
-   Or right-click the file → Properties → Security → Advanced → Disable inheritance → remove all except your user.
-
-3. **Copy the public key to each target VM**
-
-   ```powershell
-   # Print the public key
-   Get-Content "$HOME\.ssh\errander_prod.pub"
-   ```
-
-   Then on each target VM (SSH in manually first):
-   ```bash
-   # On the target VM
-   sudo useradd -m -s /bin/bash errander
-   sudo mkdir -p /home/errander/.ssh
-   sudo chmod 700 /home/errander/.ssh
-
-   # Paste the public key from above
-   echo "ssh-ed25519 AAAA...your-key... errander-agent" \
-     | sudo tee /home/errander/.ssh/authorized_keys
-   sudo chmod 600 /home/errander/.ssh/authorized_keys
-   sudo chown -R errander:errander /home/errander/.ssh
-   ```
-
-4. **Test the connection from Windows**
-
-   ```powershell
-   ssh -i "$HOME\.ssh\errander_prod" errander@<target-vm-ip> "echo connected"
-   # connected
-   ```
-
-### Linux controller
+**1. Generate the key pair**
 
 ```bash
-# Generate key
+# Run this on the Master VM
 ssh-keygen -t ed25519 -f ~/.ssh/errander_prod -C "errander-agent" -N ""
+```
 
-# On each target VM — create user and install public key
-ssh <your-admin-user>@<target-vm-ip> "
-  sudo useradd -m -s /bin/bash errander
-  sudo mkdir -p /home/errander/.ssh
-  sudo chmod 700 /home/errander/.ssh
-  echo '$(cat ~/.ssh/errander_prod.pub)' \
-    | sudo tee /home/errander/.ssh/authorized_keys
-  sudo chmod 600 /home/errander/.ssh/authorized_keys
-  sudo chown -R errander:errander /home/errander/.ssh
-"
+This creates two files on the Master VM:
+- `~/.ssh/errander_prod` — private key (stays on Master VM, never shared)
+- `~/.ssh/errander_prod.pub` — public key (installed on each target VM)
 
-# Test
-ssh -i ~/.ssh/errander_prod errander@<target-vm-ip> "echo connected"
+**2. Print the public key — you will need it in the next step**
+
+```bash
+# Run this on the Master VM
+cat ~/.ssh/errander_prod.pub
+```
+
+Copy the output to your clipboard.
+
+**3. On each Target VM — create the errander user and install the public key**
+
+SSH into your Target VM from your laptop, then run:
+
+```bash
+# Run these on the Target VM
+sudo useradd -m -s /bin/bash errander
+sudo mkdir -p /home/errander/.ssh
+sudo chmod 700 /home/errander/.ssh
+
+# Paste the public key output from step 2
+echo "ssh-ed25519 AAAA...paste-your-key-here... errander-agent" \
+  | sudo tee /home/errander/.ssh/authorized_keys
+
+sudo chmod 600 /home/errander/.ssh/authorized_keys
+sudo chown -R errander:errander /home/errander/.ssh
+```
+
+**4. Test the connection — from Master VM to Target VM (private IP)**
+
+```bash
+# Run this on the Master VM
+ssh -i ~/.ssh/errander_prod errander@<target-vm-private-ip> "echo connected"
+# Expected output: connected
 ```
 
 ---

@@ -53,7 +53,13 @@ Before starting, confirm the following are in place.
 | git | `git --version` |
 | pip | `pip3 --version` |
 
-If any are missing: `sudo apt-get install -y python3.12 python3-pip git`
+If any are missing:
+```bash
+sudo apt-get install -y python3-pip git
+# Note: python3.12 is not in default apt repos on Ubuntu 22.04.
+# Install uv first (below) and run `uv python install 3.12` instead —
+# uv manages its own Python and does not need a system-level 3.12.
+```
 
 ### Network ports
 
@@ -122,16 +128,19 @@ The web UI and metrics endpoint run on port 9090. To access it from your laptop,
 ### Linux controller
 
 ```bash
-# Install Python 3.12+ (Ubuntu/Debian)
-sudo apt-get update && sudo apt-get install -y python3.12 python3-pip git
+# Install pip and git
+sudo apt-get update && sudo apt-get install -y python3-pip git
 
 # Install uv
 pip3 install uv
 
+# Install Python 3.12 via uv (works on Ubuntu 22.04 and later — no PPA needed)
+uv python install 3.12
+
 # Clone and install
 git clone https://github.com/psc0des/Errander-AI.git errander
 cd errander
-uv sync --extra dev
+uv sync
 
 # Verify
 uv run python -c "import errander; print('OK')"

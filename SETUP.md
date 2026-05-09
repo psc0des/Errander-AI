@@ -230,21 +230,23 @@ ssh -i ~/.ssh/errander_prod errander@<target-vm-private-ip> "echo connected"
 
 ## Step 3 — Configure target VMs (sudo permissions)
 
-On each **target VM**, grant the `errander` user passwordless sudo for the commands Errander-AI needs.
+**All commands in this step run on the Target VM.**
+SSH into your Target VM from your laptop before starting.
+
+Grant the `errander` user passwordless sudo for the commands Errander-AI needs.
 
 > **Important:** A syntax error in a sudoers file can lock you out of `sudo` entirely.
 > Follow the backup → write → validate → verify sequence below exactly.
 > Keep your current SSH session open throughout — do not close it until the verify step passes.
 
-**1. Back up existing sudoers files**
+**1. Back up existing sudoers files** *(Target VM)*
 
 ```bash
-# On the Target VM
 sudo cp /etc/sudoers /etc/sudoers.bak.$(date +%Y%m%d)
 sudo cp -r /etc/sudoers.d /etc/sudoers.d.bak.$(date +%Y%m%d)
 ```
 
-**2. Create the errander sudoers file**
+**2. Create the errander sudoers file** *(Target VM)*
 
 ```bash
 sudo tee /etc/sudoers.d/errander << 'EOF'
@@ -262,7 +264,7 @@ errander ALL=(ALL) NOPASSWD: \
 EOF
 ```
 
-**3. Set correct permissions and validate syntax**
+**3. Set correct permissions and validate syntax** *(Target VM)*
 
 ```bash
 # sudoers.d files must be mode 440 — world-readable but not writable
@@ -281,7 +283,7 @@ sudo rm /etc/sudoers.d/errander
 sudo cp -r /etc/sudoers.d.bak.$(date +%Y%m%d) /etc/sudoers.d
 ```
 
-**4. Verify the errander user can use sudo**
+**4. Verify the errander user can use sudo** *(Target VM)*
 
 ```bash
 sudo -u errander sudo /bin/df -h /

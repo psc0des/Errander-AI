@@ -6,12 +6,9 @@
 #
 # Supported distros: Ubuntu, Debian, RHEL, CentOS, Oracle Linux, Fedora
 #
-# Usage (one-liner):
-#   curl -LsSf https://raw.githubusercontent.com/psc0des/Errander-AI/main/scripts/bootstrap.sh | bash
-#
-# Usage (review first):
-#   curl -O https://raw.githubusercontent.com/psc0des/Errander-AI/main/scripts/bootstrap.sh
-#   bash bootstrap.sh [install-dir]   # default install-dir: errander
+# Usage:
+#   git clone https://github.com/psc0des/Errander-AI.git errander
+#   bash errander/scripts/bootstrap.sh
 
 set -euo pipefail
 

@@ -129,18 +129,11 @@ The web UI and metrics endpoint run on port 9090. To access it from your laptop,
 
 **Recommended — run the bootstrap script.**
 It detects your distro (Ubuntu, Debian, RHEL, CentOS, Oracle Linux, Fedora),
-installs all prerequisites, clones the repo, and verifies the install.
+installs all prerequisites, and verifies the install.
 
 ```bash
-curl -LsSf https://raw.githubusercontent.com/psc0des/Errander-AI/main/scripts/bootstrap.sh | bash
-```
-
-Prefer to review the script first?
-
-```bash
-curl -O https://raw.githubusercontent.com/psc0des/Errander-AI/main/scripts/bootstrap.sh
-cat bootstrap.sh        # review
-bash bootstrap.sh       # run
+git clone https://github.com/psc0des/Errander-AI.git errander
+bash errander/scripts/bootstrap.sh
 ```
 
 Once complete, **skip to Step 2** — the script handles everything in Step 1.

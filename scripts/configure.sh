@@ -86,8 +86,10 @@ case "$LLM_CHOICE" in
   1)
     warn "Azure AI Foundry"
     echo "    Find these at: Azure portal → AI Foundry resource → Keys and Endpoint"
+    echo "    The portal gives you the base domain only — append /openai/v1/ yourself."
+    echo "    e.g. https://<resource>.cognitiveservices.azure.com/openai/v1/"
     echo ""
-    prompt_val "Endpoint URL (e.g. https://<resource>.openai.azure.com/openai/v1/)"
+    prompt_val "Endpoint URL (must end with /openai/v1/)"
     LLM_BASE_URL="$REPLY"
     prompt_val "Deployment name (e.g. gpt-4o-mini-deploy — NOT the model ID)"
     LLM_MODEL="$REPLY"

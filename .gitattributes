@@ -1,0 +1,9 @@
+# Force LF line endings for shell scripts regardless of OS
+*.sh text eol=lf
+
+# Python and YAML — LF everywhere
+*.py text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.toml text eol=lf
+*.md text eol=lf

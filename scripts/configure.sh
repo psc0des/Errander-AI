@@ -236,6 +236,7 @@ step "3/5" "SSH key pair"
 
 SSH_KEY_EXPANDED="${SSH_KEY_PATH/#\~/$HOME}"
 
+_key_is_new=false
 if [ -f "$SSH_KEY_EXPANDED" ]; then
     ok "Key already exists at $SSH_KEY_EXPANDED — reusing"
 else
@@ -243,24 +244,27 @@ else
     mkdir -p "$(dirname "$SSH_KEY_EXPANDED")"
     ssh-keygen -t ed25519 -f "$SSH_KEY_EXPANDED" -C "errander-agent" -N ""
     ok "Key pair generated"
+    _key_is_new=true
 fi
 
 SSH_PUBKEY="$(cat "$SSH_KEY_EXPANDED.pub")"
 
-echo ""
-echo -e "  ${BOLD}Public key — install this on every target VM:${NC}"
-echo "  ┌────────────────────────────────────────────────────────────────────┐"
-echo "  │ $SSH_PUBKEY"
-echo "  └────────────────────────────────────────────────────────────────────┘"
-echo ""
-echo "  On each Target VM (SETUP.md Step 2 for the full sequence):"
-echo "    sudo useradd -m -s /bin/bash $SSH_USER"
-echo "    sudo mkdir -p /home/$SSH_USER/.ssh && sudo chmod 700 /home/$SSH_USER/.ssh"
-echo "    echo \"$SSH_PUBKEY\" | sudo tee /home/$SSH_USER/.ssh/authorized_keys"
-echo "    sudo chmod 600 /home/$SSH_USER/.ssh/authorized_keys"
-echo "    sudo chown -R $SSH_USER:$SSH_USER /home/$SSH_USER/.ssh"
-echo ""
-warn "Complete SETUP.md Steps 2-3 (SSH + sudo) on each Target VM before running the agent."
+if $_key_is_new; then
+    echo ""
+    echo -e "  ${BOLD}Public key — install this on every target VM:${NC}"
+    echo "  ┌────────────────────────────────────────────────────────────────────┐"
+    echo "  │ $SSH_PUBKEY"
+    echo "  └────────────────────────────────────────────────────────────────────┘"
+    echo ""
+    echo "  On each Target VM (SETUP.md Step 2 for the full sequence):"
+    echo "    sudo useradd -m -s /bin/bash $SSH_USER"
+    echo "    sudo mkdir -p /home/$SSH_USER/.ssh && sudo chmod 700 /home/$SSH_USER/.ssh"
+    echo "    echo \"$SSH_PUBKEY\" | sudo tee /home/$SSH_USER/.ssh/authorized_keys"
+    echo "    sudo chmod 600 /home/$SSH_USER/.ssh/authorized_keys"
+    echo "    sudo chown -R $SSH_USER:$SSH_USER /home/$SSH_USER/.ssh"
+    echo ""
+    warn "Complete SETUP.md Steps 2-3 (SSH + sudo) on each Target VM before running the agent."
+fi
 
 # ── 4. Slack ──────────────────────────────────────────────────────────────────
 step "4/5" "Slack  (optional)"

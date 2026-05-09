@@ -127,14 +127,38 @@ The web UI and metrics endpoint run on port 9090. To access it from your laptop,
 
 ### Linux controller
 
+**Recommended — run the bootstrap script.**
+It detects your distro (Ubuntu, Debian, RHEL, CentOS, Oracle Linux, Fedora),
+installs all prerequisites, clones the repo, and verifies the install.
+
+```bash
+curl -LsSf https://raw.githubusercontent.com/psc0des/Errander-AI/main/scripts/bootstrap.sh | bash
+```
+
+Prefer to review the script first?
+
+```bash
+curl -O https://raw.githubusercontent.com/psc0des/Errander-AI/main/scripts/bootstrap.sh
+cat bootstrap.sh        # review
+bash bootstrap.sh       # run
+```
+
+Once complete, **skip to Step 2** — the script handles everything in Step 1.
+
+<details>
+<summary>Manual installation (reference / fallback)</summary>
+
 ```bash
 # Install pip and git
-sudo apt-get update && sudo apt-get install -y python3-pip git
+sudo apt-get update && sudo apt-get install -y python3-pip git   # Ubuntu/Debian
+# sudo dnf install -y python3-pip git                            # RHEL/CentOS/Oracle
 
-# Install uv
-pip3 install uv
+# Install uv (official installer — no PPA, works on all distros)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+export PATH="$HOME/.local/bin:$PATH"
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
 
-# Install Python 3.12 via uv (works on Ubuntu 22.04 and later — no PPA needed)
+# Install Python 3.12 via uv
 uv python install 3.12
 
 # Clone and install
@@ -145,6 +169,8 @@ uv sync
 # Verify
 uv run python -c "import errander; print('OK')"
 ```
+
+</details>
 
 ---
 

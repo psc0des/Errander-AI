@@ -296,15 +296,27 @@ sudo -u errander sudo /bin/df -h /
 
 The LLM powers maintenance decisions and report generation. It is **optional** — the agent falls back to built-in hardcoded logic if no LLM is configured and will never block on LLM availability.
 
-**Which option should I pick?**
+There are two fundamentally different approaches:
 
-| Situation | Pick |
-|---|---|
-| You have an Azure subscription with AI Foundry | **Option A — Azure AI Foundry** |
-| You have an OpenAI / Groq / Anthropic account | **Option A — Cloud API** |
-| Your Master VM has 8 GB+ RAM and you want no external calls | **Option B — Ollama** |
-| You have a dedicated GPU VM (NVIDIA, 16 GB VRAM) | **Option C — Self-hosted vLLM** |
-| Just testing / no account yet | **Option A — Groq** (free tier, no credit card) |
+| | **Option A — Cloud API** | **Option B — Self-hosted** |
+|---|---|---|
+| **Where it runs** | Provider's servers (OpenAI, Azure, Groq…) | Your own VM |
+| **Setup effort** | Minutes — just an API key | More work — install and run a model |
+| **Data privacy** | Leaves your network (except Azure Foundry, which stays in your Azure tenant) | Never leaves your network |
+| **Cost** | Pay per token (Groq has a free tier) | Free after setup (hardware cost only) |
+| **Performance** | Fast | Depends on hardware (see below) |
+
+**Pick Option A if:** you have a cloud account or just want the fastest setup.
+**Pick Option B if:** data must stay on your own infrastructure.
+
+If you pick Option B, choose the right tool based on your hardware:
+
+| | **Ollama** | **vLLM** |
+|---|---|---|
+| **Runs on** | Master VM (same machine as the agent) | Separate dedicated GPU VM |
+| **Hardware needed** | CPU only — 8 GB+ RAM | NVIDIA GPU with 16 GB VRAM |
+| **Inference speed** | Slow (CPU) | Fast (GPU) |
+| **Best for** | Dev / testing without cloud | Production self-hosted |
 
 All options write the same three env vars to your `.env` on the Master VM.
 Run `--check-llm` at the end of whichever option you choose to confirm it works.
@@ -313,7 +325,7 @@ Run `--check-llm` at the end of whichever option you choose to confirm it works.
 
 ---
 
-### Option A — Cloud API *(recommended — no extra infrastructure)*
+### Option A — Cloud API *(no extra infrastructure)*
 
 **All commands run on the Master VM.**
 
@@ -354,10 +366,12 @@ uv run python -m errander --check-llm
 
 ---
 
-### Option B — Ollama on the Master VM *(no cloud account needed)*
+### Option B — Self-hosted
 
-Use this if your Master VM has 8 GB+ RAM and you want all inference to stay local.
-No GPU required — Ollama runs on CPU (slower but functional).
+#### B1 — Ollama *(CPU, runs on the Master VM)*
+
+No GPU required. Ollama runs on the Master VM alongside the agent.
+Needs 8 GB+ RAM. Inference is slower than cloud APIs but fully private.
 
 **On the Master VM:**
 
@@ -386,12 +400,12 @@ uv run python -m errander --check-llm
 
 ---
 
-### Option C — Self-hosted vLLM *(dedicated GPU VM, 16 GB VRAM)*
+#### B2 — vLLM *(GPU, dedicated VM)*
 
-Use this if you have a separate Linux VM with an NVIDIA GPU.
+Requires a separate Linux VM with an NVIDIA GPU.
 Recommended hardware: Tesla T4, 16 GB VRAM, 4 vCPUs, 16 GB RAM.
 
-**On the GPU VM** *(not the Master VM)*:
+**On the GPU VM** *(not the Master VM — this is a separate dedicated machine)*:
 
 ```bash
 # Install Docker

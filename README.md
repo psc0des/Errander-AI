@@ -22,8 +22,8 @@ Master VM (Agent + LLM)              Target VMs
 |  +---------+---------+  |          +-----------+
 |            |             |          +-----------+
 |  +---------v---------+  |---SSH--->| Debian-03 |
-|  | Qwen3 (vLLM)      |  |          +-----------+
-|  | (brain)            |  |          +-----------+
+|  | LLM               |  |          +-----------+
+|  | (your choice)     |  |          +-----------+
 |  +-------------------+  |---SSH--->| Debian-N  |
 +-------------------------+          +-----------+
 ```
@@ -94,9 +94,9 @@ Level 3: Action Sub-Graphs
 |                  VPN (private)                    |
 |                                                   |
 |  +---------------+     +----------------------+  |
-|  | Self-hosted   |     | Agent VM             |  |
-|  | LLM (vLLM)   |<----| - Errander-AI agent  |  |
-|  | (private IP)  |     | - APScheduler        |  |
+|  | LLM endpoint  |     | Agent VM             |  |
+|  | (cloud or     |<----| - Errander-AI agent  |  |
+|  |  self-hosted) |     | - APScheduler        |  |
 |  +---------------+     | - Slack poller        |  |
 |                         | - Audit DB (SQLite)  |  |
 |                         | - Prometheus /metrics|  |
@@ -195,7 +195,7 @@ All Slack communication is outbound HTTPS. No webhooks, no inbound traffic.
 | Audit Trail | SQLite (v1) | PostgreSQL planned for v2 |
 | Observability | Prometheus + Web UI | `/metrics`, `/health`, `/ui` on port 9090 |
 | VM Locking | File-based (v1) | Valkey (Redis fork) planned for v2 |
-| Testing | pytest + pytest-asyncio + Playwright | 587 tests |
+| Testing | pytest + pytest-asyncio + Playwright | 878 tests |
 | Linting | ruff | |
 | Type Checking | mypy (strict mode) | |
 | Package Manager | uv | |
@@ -231,7 +231,7 @@ errander/
     sandbox.py              # Dry-run / sandbox execution mode
   integrations/             # External service integrations
     slack.py                # Slack API client (outbound only)
-    llm.py                  # LLM client (OpenAI SDK -> vLLM)
+    llm.py                  # LLM client (OpenAI SDK → any OpenAI-compatible endpoint)
   observability/            # Metrics and monitoring
     metrics.py              # Prometheus metrics + Web UI + /metrics endpoint
   config/                   # Configuration
@@ -243,7 +243,7 @@ errander/
     scheduler.py            # APScheduler setup
     windows.py              # Maintenance window enforcement
   main.py                   # Entry point
-tests/                      # Mirrors src structure (587 tests)
+tests/                      # Mirrors src structure (878 tests)
 deploy/
   vllm/
     docker-compose.yml      # vLLM container (GPU passthrough)
@@ -270,28 +270,36 @@ example/
 ### Install and Run Tests
 
 ```bash
-git clone <repo-url>
-cd errander-ai
+git clone https://github.com/psc0des/Errander-AI.git errander
+cd errander
 uv sync
 uv run pytest
 ```
 
+> **New machine?** `scripts/bootstrap.sh` (Linux) or `scripts/bootstrap.ps1` (Windows) handles git, uv, and Python 3.12 installation automatically.
+
 ### Configure
 
+Run the interactive setup script — it prompts for everything and writes `.env` + `inventory.yaml`:
+
 ```bash
-# Required
-export ERRANDER_AUDIT_DB_URL="sqlite:///errander.db"
+bash scripts/configure.sh
+```
+
+Or set env vars manually:
+
+```bash
+export ERRANDER_LLM_BASE_URL="https://<resource>.openai.azure.com/openai/v1/"
+export ERRANDER_LLM_MODEL="<deployment-name>"
+export ERRANDER_LLM_API_KEY="<key>"
+export ERRANDER_AUDIT_DB_URL="errander.sqlite"
 
 # Optional — Slack notifications
 export ERRANDER_SLACK_BOT_TOKEN="xoxb-..."
 export ERRANDER_SLACK_CHANNEL_ID="C0..."
-
-# Optional — self-hosted LLM
-export ERRANDER_LLM_BASE_URL="http://10.0.1.50:8000/v1"
-export ERRANDER_LLM_API_KEY="token-abc123"
 ```
 
-Create `config/inventory.yaml` (see `example/inventory.yaml`) and `config/settings.yaml` (see `example/settings.yaml`).
+Create `inventory.yaml` (see `example/inventory.yaml`) and optionally `settings.yaml` (see `example/settings.yaml`).
 
 ### Run
 
@@ -326,7 +334,7 @@ After starting, visit `http://localhost:9090/ui`:
 ## Key Commands
 
 ```bash
-uv run pytest                                          # Run all 587 tests
+uv run pytest                                          # Run all 878 tests
 uv run ruff check .                                    # Lint
 uv run mypy .                                          # Type check
 uv run python -m errander --run-now --env dev --dry-run # Dry-run a batch
@@ -455,10 +463,9 @@ uv run python -m errander --check-llm
 
 - PostgreSQL for audit trail (replace SQLite)
 - Valkey (BSD-licensed Redis fork) for distributed VM locking
-- Rolling updates (percentage-based fleet caps)
-- Canary logic (run on 1 VM first, then fleet)
-- Drift detection (pre-flight check before live execution)
 - React/Next.js dashboard
+- HashiCorp Vault for secrets (replace env vars)
+- Slack webhooks via nginx reverse proxy (replace polling)
 
 ---
 

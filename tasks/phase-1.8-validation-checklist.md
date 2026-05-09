@@ -10,7 +10,7 @@ Goal: prove the agent works end-to-end against real iron. Cut scope to **disk cl
 - [ ] Pick one RHEL-family VM (target #2) — defer if not available
 - [ ] Pick the LLM path: cloud API (fastest) or self-hosted vLLM (16 GB VRAM)
 - [ ] Slack app created, bot in `#errander-approvals`, channel ID copied
-- [ ] `git pull` on the controller — confirm `8a7c65e` is the latest commit
+- [ ] `git pull` on the controller — confirm `aa32f48` is the latest commit
 - [ ] `uv sync --extra dev` succeeds
 - [ ] `uv run pytest` — all green before touching real VMs
 

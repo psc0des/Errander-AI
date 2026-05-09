@@ -601,6 +601,14 @@ echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
 
 ## Setup Scripts
 
+### 2026-05-10 — doc audit and fixes
+
+```bash
+git rev-parse --short HEAD   # checked current HEAD hash for validation checklist update
+```
+**What**: Verified current HEAD commit hash.
+**Why**: tasks/phase-1.8-validation-checklist.md had a stale commit hash (8a7c65e) — updated to current HEAD.
+
 ### 2026-05-10 — scripts/configure.sh (interactive setup)
 
 ```bash

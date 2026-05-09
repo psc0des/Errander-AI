@@ -240,14 +240,24 @@ SSH keys: referenced by file path in inventory config, never inlined.
 
 ## Doc Sync Rule (mandatory)
 
-Before every `git commit` + `git push`, sync ALL of the following that are relevant to the changes made:
+**Everything goes in one commit.** Code changes + doc updates = single atomic commit, then push. Never push first and sync docs afterward.
 
-- `STATUS.md` — update Last Updated, In Progress, Files Changed
-- `docs/command-log.md` — log every shell command run this session
+Before every `git commit` + `git push`, update all files that are relevant to the changes made:
+
+### Always update (every session)
+- `STATUS.md` — Last Updated, In Progress, Files Changed
+- `docs/command-log.md` — every shell command run this session
 - `tasks/todo.md` — mark completed items, add new items
-- `tasks/lessons.md` — add any lessons from corrections or surprises
+- `tasks/lessons.md` — any lessons from corrections or surprises this session
 
-**Everything goes in one commit.** Code changes + doc updates = single atomic commit, then push. Never push code changes and sync docs separately afterward.
+### Update when relevant (when the specific thing changes)
+- `SETUP.md` — when setup steps or scripts change
+- `README.md` — when major features, architecture, or test counts change
+- `RUN.md` — when CLI commands or run process changes
+- `CLAUDE.md` — when project rules or architecture decisions change
+- `docs/learning/XX-feature.md` — create one for every new feature implemented
+- `docs/LLM-PROVIDERS.md` — when LLM provider support changes
+- `docs/SECRETS.md` — when secrets management changes
 
 ---
 

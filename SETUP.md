@@ -309,14 +309,18 @@ There are two fundamentally different approaches:
 **Pick Option A if:** you have a cloud account or just want the fastest setup.
 **Pick Option B if:** data must stay on your own infrastructure.
 
-If you pick Option B, choose the right tool based on your hardware:
+If you pick Option B, choose the right tool:
 
 | | **Ollama** | **vLLM** |
 |---|---|---|
-| **Runs on** | Master VM (same machine as the agent) | Separate dedicated GPU VM |
-| **Hardware needed** | CPU only — 8 GB+ RAM | NVIDIA GPU with 16 GB VRAM |
-| **Inference speed** | Slow (CPU) | Fast (GPU) |
-| **Best for** | Dev / testing without cloud | Production self-hosted |
+| **Hardware** | CPU or GPU — any machine | NVIDIA GPU required (16 GB VRAM) |
+| **Where it runs** | Any VM, including Master VM | Dedicated GPU VM recommended |
+| **Setup** | Single install command | Docker + NVIDIA Container Toolkit |
+| **Performance** | Fast on GPU, slow on CPU-only | High throughput, production-grade |
+| **Best for** | Getting started, dev/testing | Production self-hosted deployment |
+
+Pick **Ollama** if you want the simpler path — it works on CPU or GPU, and you can run it on the Master VM or any other machine.
+Pick **vLLM** if you have a dedicated GPU VM and need production-grade throughput.
 
 All options write the same three env vars to your `.env` on the Master VM.
 Run `--check-llm` at the end of whichever option you choose to confirm it works.
@@ -368,10 +372,11 @@ uv run python -m errander --check-llm
 
 ### Option B — Self-hosted
 
-#### B1 — Ollama *(CPU, runs on the Master VM)*
+#### B1 — Ollama *(runs on any VM — CPU or GPU)*
 
-No GPU required. Ollama runs on the Master VM alongside the agent.
-Needs 8 GB+ RAM. Inference is slower than cloud APIs but fully private.
+Ollama is the easiest self-hosted path. It runs on the Master VM or any other machine,
+uses whatever hardware is available (CPU or NVIDIA/AMD/Apple GPU), and needs no Docker setup.
+Needs 8 GB+ RAM minimum. Inference is GPU-fast when a GPU is present, CPU-slow without one.
 
 **On the Master VM:**
 

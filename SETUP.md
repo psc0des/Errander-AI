@@ -7,35 +7,80 @@ Step-by-step instructions for getting Errander-AI running from scratch.
 ## Architecture Overview
 
 ```
-┌──────────────────────────────────────────────────────┐
-│                    Private VPN                       │
+┌─────────────────────────────────────────────────────┐
+│            Azure VNet / Private Network              │
 │                                                      │
-│  ┌─────────────────────┐   ┌──────────────────────┐  │
-│  │  Controller          │   │  LLM VM             │  │
-│  │  (Windows or Linux)  │──►│  vLLM + Qwen3-8B-AWQ│  │
-│  │  Errander-AI agent   │   │  (NVIDIA T4 GPU)     │  │
-│  │  APScheduler         │   └──────────────────────┘  │
-│  │  SQLite audit DB     │                             │
-│  │  Web UI :9090        │                             │
-│  └──────────┬───────────┘                             │
-│             │ SSH (key-based, async)                  │
-│    ┌────────▼────────────────┐                        │
-│    │  Target VMs             │                        │
-│    │  Ubuntu / Debian / RHEL │                        │
-│    └─────────────────────────┘                        │
+│  ┌──────────────────────┐                            │
+│  │  Master VM            │                            │
+│  │  (Linux controller)   │                            │
+│  │  Errander-AI agent    │                            │
+│  │  APScheduler          │                            │
+│  │  SQLite audit DB      │                            │
+│  │  Web UI :9090         │                            │
+│  └──────────┬────────────┘                            │
+│             │ SSH port 22 (key-based, private IP)     │
+│    ┌────────▼─────────────────┐                       │
+│    │  Target VMs              │                       │
+│    │  Ubuntu / Debian / RHEL  │                       │
+│    └──────────────────────────┘                       │
 └─────────────────────────────────────────────────────┘
-        Controller → Slack API (outbound HTTPS only)
+    Master VM → LLM API      (outbound HTTPS port 443 — cloud or self-hosted)
+    Master VM → Slack API    (outbound HTTPS port 443 — optional)
+    Your laptop → Master VM  (SSH port 22 + web UI port 9090)
 ```
 
 **Roles:**
 
 | Machine | What runs there |
 |---|---|
-| **Controller** | Errander-AI agent, SQLite, web UI — your Windows PC or a Linux VM |
+| **Master VM / Controller** | Errander-AI agent, SQLite, web UI — a Linux VM or your Windows PC |
 | **Target VMs** | The Linux VMs being maintained — Ubuntu 20.04+, Debian 11+, RHEL 8+ |
-| **LLM endpoint** *(optional)* | Any OpenAI-compatible API for AI-powered decisions: a cloud API (OpenAI, Anthropic, Groq, etc.), a local LLM on the controller (Ollama, LM Studio), or a self-hosted vLLM on a dedicated GPU VM (16 GB VRAM recommended) |
+| **LLM endpoint** *(optional)* | Any OpenAI-compatible API: a cloud API (Azure AI Foundry, OpenAI, Groq, etc.), a local LLM on the controller (Ollama, LM Studio), or a self-hosted vLLM on a dedicated GPU VM (16 GB VRAM recommended) |
 
 The LLM is **optional**. The agent runs fine without one using built-in hardcoded logic. See [Step 4 — Set up an LLM](#step-4--set-up-an-llm) for the three options.
+
+---
+
+## Prerequisites
+
+Before starting, confirm the following are in place.
+
+### Software (on the Master VM / controller)
+
+| Requirement | Check |
+|---|---|
+| Python 3.12+ | `python3 --version` |
+| git | `git --version` |
+| pip | `pip3 --version` |
+
+If any are missing: `sudo apt-get install -y python3.12 python3-pip git`
+
+### Network ports
+
+| Connection | Port | Direction | Notes |
+|---|---|---|---|
+| Master VM → Target VM | 22 (SSH) | Outbound from Master | Azure: same-VNet VMs reach each other on port 22 by default — no NSG rule needed |
+| Master VM → LLM API | 443 (HTTPS) | Outbound from Master | Azure Foundry, OpenAI, Groq — outbound HTTPS is allowed by default |
+| Your laptop → Master VM | 22 (SSH) | Inbound to Master | Already open if you SSH to it today |
+| Your laptop → Master VM | 9090 (Web UI) | Inbound to Master | **Action required** — see Azure NSG note below |
+
+### Azure NSG — open port 9090 on the Master VM
+
+The web UI and metrics endpoint run on port 9090. To access it from your laptop, add an **inbound rule** to the Master VM's Network Security Group in the Azure portal:
+
+| Setting | Value |
+|---|---|
+| Source | My IP address (or your CIDR) |
+| Destination port ranges | 9090 |
+| Protocol | TCP |
+| Action | Allow |
+| Priority | 1010 (any unused priority) |
+
+> **No NSG access? Use an SSH tunnel instead:**
+> ```bash
+> ssh -L 9090:localhost:9090 <your-admin-user>@<master-vm-public-ip>
+> ```
+> Then open `http://localhost:9090/ui` on your laptop. No port 9090 rule needed.
 
 ---
 
@@ -62,7 +107,7 @@ The LLM is **optional**. The agent runs fine without one using built-in hardcode
 3. **Clone the repo and install dependencies**
 
    ```powershell
-   git clone <repo-url> errander
+   git clone https://github.com/psc0des/Errander-AI.git errander
    cd errander
    uv sync --extra dev
    ```
@@ -84,7 +129,7 @@ sudo apt-get update && sudo apt-get install -y python3.12 python3-pip git
 pip3 install uv
 
 # Clone and install
-git clone <repo-url> errander
+git clone https://github.com/psc0des/Errander-AI.git errander
 cd errander
 uv sync --extra dev
 
@@ -315,8 +360,13 @@ ERRANDER_LLM_BASE_URL=http://<llm-vm-ip>:8000/v1
 
 ---
 
-## Step 5 — Create a Slack app
+## Step 5 — Create a Slack app *(optional)*
 
+> **You can skip this step.** Slack is optional. When no Slack token is configured, the agent uses **web UI approval mode** instead: maintenance plans that require approval appear at `http://<master-vm-ip>:9090/ui/approvals` where you click Approve or Reject. All other functionality (scheduling, SSH, audit trail, metrics) is unaffected.
+>
+> Come back to this step later when you want Slack notifications and mobile approval reactions.
+
+If you do want Slack:
 
 1. Go to [api.slack.com/apps](https://api.slack.com/apps) → **Create New App** → **From scratch**
 2. Name it `Errander-AI`, select your workspace
@@ -337,19 +387,39 @@ On the controller, inside the `errander` directory:
 
 **Windows** — create `.env` with a text editor (Notepad, VS Code, etc.):
 ```
-ERRANDER_LLM_BASE_URL=http://localhost:11434/v1   # Ollama local, or your vLLM VM IP
-ERRANDER_SLACK_BOT_TOKEN=xoxb-your-token-here
-ERRANDER_SLACK_CHANNEL_ID=C0123456789
+# LLM endpoint — any OpenAI-compatible API (see Step 4)
+ERRANDER_LLM_BASE_URL=https://<your-resource>.openai.azure.com/openai/v1/
+ERRANDER_LLM_MODEL=<your-deployment-name>
+ERRANDER_LLM_API_KEY=<your-api-key>
+
 ERRANDER_AUDIT_DB_URL=errander.sqlite
+
+# Web UI auth (recommended — remove to leave UI open)
+ERRANDER_UI_USER=admin
+ERRANDER_UI_PASSWORD=changeme
+
+# Slack — optional (remove # to enable; skip for web UI approval mode)
+# ERRANDER_SLACK_BOT_TOKEN=xoxb-your-token-here
+# ERRANDER_SLACK_CHANNEL_ID=C0123456789
 ```
 
 **Linux:**
 ```bash
 cat > .env << 'EOF'
-ERRANDER_LLM_BASE_URL=http://localhost:11434/v1   # Ollama local, or your vLLM VM IP
-ERRANDER_SLACK_BOT_TOKEN=xoxb-your-token-here
-ERRANDER_SLACK_CHANNEL_ID=C0123456789
+# LLM endpoint — any OpenAI-compatible API (see Step 4)
+ERRANDER_LLM_BASE_URL=https://<your-resource>.openai.azure.com/openai/v1/
+ERRANDER_LLM_MODEL=<your-deployment-name>
+ERRANDER_LLM_API_KEY=<your-api-key>
+
 ERRANDER_AUDIT_DB_URL=errander.sqlite
+
+# Web UI auth (recommended — remove to leave UI open)
+ERRANDER_UI_USER=admin
+ERRANDER_UI_PASSWORD=changeme
+
+# Slack — optional (remove # to enable; skip for web UI approval mode)
+# ERRANDER_SLACK_BOT_TOKEN=xoxb-your-token-here
+# ERRANDER_SLACK_CHANNEL_ID=C0123456789
 EOF
 ```
 
@@ -386,28 +456,20 @@ Optionally copy and edit settings:
 cp example/settings.yaml settings.yaml
 ```
 
-### Step 6b — Secure the Web UI (optional but recommended)
+### Web UI
 
-The agent exposes a web UI at `http://<controller-ip>:<metrics-port>/ui/`. By default it is **open** (no auth). To protect it with HTTP Basic Auth, add two env vars to `.env`:
+The agent exposes a web UI at `http://<master-vm-ip>:9090/ui` (port 9090 — see Prerequisites for NSG setup). The `ERRANDER_UI_USER` / `ERRANDER_UI_PASSWORD` env vars in the `.env` template above enable HTTP Basic Auth on it.
 
-```
-ERRANDER_UI_USER=admin
-ERRANDER_UI_PASSWORD=choose-a-strong-password
-```
-
-The middleware uses `secrets.compare_digest()` (constant-time comparison) so it is safe against timing attacks. The UI covers three areas:
-
-- `/ui/` — batch run history and pending approvals
-- `/ui/settings` — runtime LLM/approval settings (no restart required)
+The UI covers:
+- `/ui/` — batch run history, event log, pending approvals
+- `/ui/approvals` — approve or reject pending maintenance plans (replaces Slack when no token is set)
+- `/ui/settings` — change LLM/approval settings at runtime (no restart required)
 - `/ui/inventory` — disable YAML VMs or add ad-hoc VMs before the next run
 
-**Settings precedence reminder:** changes made via the UI write to the `settings_overrides` table in SQLite. The full precedence chain is:
-
+Settings changed via the UI are stored in SQLite. Precedence chain:
 ```
 env var  >  DB (UI)  >  settings.yaml  >  built-in default
 ```
-
-If `ERRANDER_LLM_MODEL` is set as an env var, the UI field is locked (shown in red) — you cannot override it from the UI.
 
 ---
 
@@ -571,10 +633,10 @@ Point the Task Scheduler action at this `.bat` file instead.
 |---|---|---|---|
 | `ERRANDER_LLM_BASE_URL` | Yes | — | LLM endpoint — any OpenAI-compatible API (cloud, Ollama, LM Studio, or vLLM) |
 | `ERRANDER_LLM_MODEL` | Yes | — | Model ID for the chosen provider, e.g. `gpt-4o-mini`, `qwen3:8b`, `Qwen/Qwen3-8B-AWQ` |
-| `ERRANDER_SLACK_BOT_TOKEN` | Yes | — | Slack bot token (`xoxb-...`) |
-| `ERRANDER_SLACK_CHANNEL_ID` | Yes | — | Approvals channel ID (`C...`) |
+| `ERRANDER_LLM_API_KEY` | No | `not-needed` | API key if your LLM server requires auth (required for Azure Foundry, OpenAI, Groq, etc.) |
 | `ERRANDER_AUDIT_DB_URL` | No | `errander.sqlite` | SQLite file path |
-| `ERRANDER_LLM_API_KEY` | No | `not-needed` | API key if your LLM server requires auth |
+| `ERRANDER_SLACK_BOT_TOKEN` | No | — | Slack bot token (`xoxb-...`). If omitted, approval falls back to web UI at `/ui/approvals` |
+| `ERRANDER_SLACK_CHANNEL_ID` | No | — | Slack approvals channel ID (`C...`). Required if `ERRANDER_SLACK_BOT_TOKEN` is set |
 | `ERRANDER_LLM_TEMPERATURE` | No | `0.1` | Sampling temperature (0.0–2.0; keep low for JSON output) |
 | `ERRANDER_UI_USER` | No | — | If set together with `ERRANDER_UI_PASSWORD`, enables HTTP Basic Auth on the Web UI |
 | `ERRANDER_UI_PASSWORD` | No | — | Password for the Web UI (compared with `secrets.compare_digest`) |

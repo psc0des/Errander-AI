@@ -250,6 +250,7 @@ None.
 - `SETUP.md` — Step 2: rewrote SSH key section with diagram and Master VM / Target VM labels on every substep; Step 3: added backup → visudo validate → rollback safety sequence, labeled all substeps (Target VM); Step 4: full rewrite — decision table, Azure Foundry as first featured option, verify step per option, Master VM labels throughout; merged old Step 5 (Slack) into Step 6 as a subsection — Step 5 is now the single "Configure the agent" step with Slack as an optional sub-section at the bottom; steps 6-10 renumbered to 5-9; added Steps 4-6 quick path section (configure.sh one-liner); Windows Step 1 rewritten to use bootstrap.ps1 one-liner (was manual steps)
 - `scripts/bootstrap.ps1` — new Windows bootstrap script: installs git via winget, uv via official PowerShell installer, Python 3.12 via uv, clones repo, runs uv sync, verifies import. No admin required.
 - `scripts/configure.sh` — new interactive setup script: prompts for LLM, VMs, SSH key, Slack; writes .env + inventory.yaml; verifies LLM connection
+- `CLAUDE.md` — added mandatory doc sync rule: all docs must be updated in the same commit as code changes, before push
 
 ## Files Changed (2026-05-09 — E2E Validation Prep + Docs)
 

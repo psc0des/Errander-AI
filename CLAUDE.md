@@ -238,6 +238,19 @@ SSH keys: referenced by file path in inventory config, never inlined.
 
 ---
 
+## Doc Sync Rule (mandatory)
+
+Before every `git commit` + `git push`, sync ALL of the following that are relevant to the changes made:
+
+- `STATUS.md` — update Last Updated, In Progress, Files Changed
+- `docs/command-log.md` — log every shell command run this session
+- `tasks/todo.md` — mark completed items, add new items
+- `tasks/lessons.md` — add any lessons from corrections or surprises
+
+**Everything goes in one commit.** Code changes + doc updates = single atomic commit, then push. Never push code changes and sync docs separately afterward.
+
+---
+
 ## Commit Message Format
 
 - **One line only** — no multi-line body, no bullet points, no blank lines

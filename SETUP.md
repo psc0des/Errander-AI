@@ -292,6 +292,20 @@ sudo -u errander sudo /bin/df -h /
 
 ---
 
+## Steps 4–6 — Quick path (recommended)
+
+Once you have your LLM endpoint URL, model name, and API key ready, run the interactive setup script from inside the `errander/` directory:
+
+```bash
+bash scripts/configure.sh
+```
+
+It will prompt you for everything — LLM, target VMs, SSH key, optional Slack — then write `.env` and `inventory.yaml` and verify the LLM connection. Skip to [Step 7 — Verify everything](#step-7--verify-everything) when done.
+
+> **Prefer to configure manually?** Follow Steps 4–6 below instead.
+
+---
+
 ## Step 4 — Set up an LLM *(Master VM)*
 
 The LLM powers maintenance decisions and report generation. It is **optional** — the agent falls back to built-in hardcoded logic if no LLM is configured and will never block on LLM availability.

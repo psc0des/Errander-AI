@@ -30,7 +30,7 @@ prompt_val() {
     fi
     read -r REPLY || true          # || true: prevent set -e exit on EOF/signal
     REPLY="${REPLY%$'\r'}"         # strip trailing \r (Windows clipboard paste)
-    [ -z "$REPLY" ] && REPLY="$default"
+    REPLY="${REPLY:-$default}"     # use default if empty (safe: always exits 0)
 }
 
 # prompt_secret "label"  →  result in REPLY (no echo)

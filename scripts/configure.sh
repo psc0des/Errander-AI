@@ -150,30 +150,35 @@ step "2/5" "Target VMs"
 echo ""
 
 KEEP_INVENTORY=false
+TARGETS_YAML=""
+VM_COUNT=0
+
+# Only offer to keep existing inventory if it already has VMs in it
 if [ -f "inventory.yaml" ]; then
-    echo "  Found existing inventory.yaml:"
-    grep -E "^\s*(name|host):" inventory.yaml | sed 's/^/    /'
-    echo ""
-    printf "  Keep existing inventory? (Y/n): "
-    read -r _keep || true
-    case "${_keep,,}" in
-      n|no) KEEP_INVENTORY=false ;;
-      *)    KEEP_INVENTORY=true  ;;
-    esac
-    echo ""
+    _existing_vms=$(grep -c "^\s*- host:" inventory.yaml 2>/dev/null || echo 0)
+    if [ "$_existing_vms" -gt 0 ]; then
+        echo "  Found existing inventory.yaml with ${_existing_vms} VM(s):"
+        grep -E "host:|name:" inventory.yaml | grep -v "ssh_" | sed 's/^/    /'
+        echo ""
+        printf "  Keep existing inventory? (Y/n): "
+        read -r _keep || true
+        echo ""
+        case "${_keep,,}" in
+          n|no) KEEP_INVENTORY=false ;;
+          *)    KEEP_INVENTORY=true  ;;
+        esac
+    fi
 fi
 
 if $KEEP_INVENTORY; then
     ok "Keeping existing inventory.yaml"
-    # Read env/ssh settings from existing file so .env stays consistent
     ENV_NAME=$(grep -m1 "^environments:" -A1 inventory.yaml | tail -1 | tr -d ' :')
     ENV_NAME="${ENV_NAME:-dev}"
     SSH_USER=$(grep -m1 "ssh_user:" inventory.yaml | awk '{print $2}')
     SSH_USER="${SSH_USER:-errander}"
     SSH_KEY_PATH=$(grep -m1 "ssh_key_path:" inventory.yaml | awk '{print $2}')
     SSH_KEY_PATH="${SSH_KEY_PATH:-~/.ssh/errander_prod}"
-    VM_COUNT=$(grep -c "host:" inventory.yaml || true)
-    TARGETS_YAML=""  # not used — file already written
+    VM_COUNT=$_existing_vms
 else
     prompt_val "Environment name" "dev"
     ENV_NAME="$REPLY"
@@ -185,38 +190,49 @@ else
     SSH_KEY_PATH="$REPLY"
 
     echo ""
-    echo "  Add target VMs one by one. Leave hostname blank to stop."
+    printf "  Do you want to add target VMs now? (Y/n): "
+    read -r _add_vms || true
     echo ""
 
-    TARGETS_YAML=""
-    VM_COUNT=0
+    case "${_add_vms,,}" in
+      n|no)
+        warn "No VMs added — you can add them later by editing inventory.yaml"
+        ;;
+      *)
+        while true; do
+            prompt_val "  VM hostname or private IP" ""
+            VM_HOST="$REPLY"
+            [ -z "$VM_HOST" ] && break
 
-    while true; do
-        prompt_val "  VM hostname or private IP  (blank to stop)" ""
-        VM_HOST="$REPLY"
-        [ -z "$VM_HOST" ] && break
+            VM_COUNT=$((VM_COUNT + 1))
+            DEFAULT_NAME="${ENV_NAME}-vm-$(printf '%02d' $VM_COUNT)"
 
-        VM_COUNT=$((VM_COUNT + 1))
-        DEFAULT_NAME="${ENV_NAME}-vm-$(printf '%02d' $VM_COUNT)"
+            prompt_val "  VM name" "$DEFAULT_NAME"
+            VM_NAME="$REPLY"
 
-        prompt_val "  VM name" "$DEFAULT_NAME"
-        VM_NAME="$REPLY"
+            prompt_val "  OS family  (ubuntu / debian / rhel)" "ubuntu"
+            VM_OS="$REPLY"
 
-        prompt_val "  OS family  (ubuntu / debian / rhel)" "ubuntu"
-        VM_OS="$REPLY"
-
-        TARGETS_YAML="${TARGETS_YAML}      - host: ${VM_HOST}
+            TARGETS_YAML="${TARGETS_YAML}      - host: ${VM_HOST}
         name: ${VM_NAME}
         os_family: ${VM_OS}
 "
-        ok "Added $VM_NAME  ($VM_HOST, $VM_OS)"
-        echo ""
-    done
+            ok "Added $VM_NAME  ($VM_HOST, $VM_OS)"
+            echo ""
 
-    [ "$VM_COUNT" -eq 0 ] && fail "No VMs added — add at least one target VM."
+            printf "  Add another VM? (y/N): "
+            read -r _more || true
+            echo ""
+            case "${_more,,}" in
+              y|yes) continue ;;
+              *) break ;;
+            esac
+        done
+        ;;
+    esac
+
+    [ "$VM_COUNT" -gt 0 ] && ok "$VM_COUNT VM(s) added to environment '${ENV_NAME}'"
 fi
-
-ok "$VM_COUNT VM(s) in environment '${ENV_NAME}'"
 
 # ── 3. SSH key ────────────────────────────────────────────────────────────────
 step "3/5" "SSH key pair"
@@ -345,8 +361,30 @@ echo -e "${GREEN} Setup complete!${NC}"
 echo ""
 echo "  Files written:"
 echo "    .env            — LLM credentials + UI auth"
-echo "    inventory.yaml  — ${VM_COUNT} VM(s) in '${ENV_NAME}' environment"
+if $KEEP_INVENTORY; then
+    echo "    inventory.yaml  — kept existing (${VM_COUNT} VM(s) in '${ENV_NAME}' environment)"
+else
+    echo "    inventory.yaml  — ${VM_COUNT} VM(s) in '${ENV_NAME}' environment"
+fi
 echo ""
+
+if [ "$VM_COUNT" -eq 0 ]; then
+    echo -e "  ${YELLOW}▶ No VMs configured yet. Add VMs to inventory.yaml before running the agent:${NC}"
+    echo ""
+    echo "    nano inventory.yaml"
+    echo ""
+    echo "  Add each VM under the 'targets:' key:"
+    echo ""
+    echo "    targets:"
+    echo "      - host: 10.0.0.10          # private IP or hostname"
+    echo "        name: ${ENV_NAME}-vm-01  # friendly name"
+    echo "        os_family: ubuntu        # ubuntu / debian / rhel"
+    echo "      - host: 10.0.0.11"
+    echo "        name: ${ENV_NAME}-vm-02"
+    echo "        os_family: ubuntu"
+    echo ""
+fi
+
 echo -e "  ${BOLD}Before running the agent:${NC}"
 echo "  Complete SETUP.md Steps 2-3 on each target VM (errander user + sudo)."
 echo ""

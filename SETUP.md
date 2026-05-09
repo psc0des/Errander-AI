@@ -94,36 +94,36 @@ The web UI and metrics endpoint run on port 9090. To access it from your laptop,
 
 ### Windows controller
 
-1. **Install Python 3.12+**
+**Recommended — run the bootstrap script from PowerShell.**
+It installs git (via winget), uv, and Python 3.12, clones the repo, and verifies the install. No admin rights required.
 
-   Download from [python.org](https://www.python.org/downloads/) and install. During install, check **"Add Python to PATH"**.
+```powershell
+git clone https://github.com/psc0des/Errander-AI.git errander
+powershell -ExecutionPolicy Bypass -File errander\scripts\bootstrap.ps1
+```
 
-   Verify:
-   ```powershell
-   python --version
-   # Python 3.12.x
-   ```
+Once complete, **skip to Step 2** — the script handles everything in Step 1.
 
-2. **Install uv** (package manager)
+> **git not installed yet?** Download it from [git-scm.com/download/win](https://git-scm.com/download/win), install, then run the command above.
 
-   ```powershell
-   pip install uv
-   ```
+<details>
+<summary>Manual installation (reference / fallback)</summary>
 
-3. **Clone the repo and install dependencies**
+```powershell
+# 1. Install Python 3.12 from python.org (check "Add Python to PATH" during install)
+# 2. Install uv
+pip install uv
 
-   ```powershell
-   git clone https://github.com/psc0des/Errander-AI.git errander
-   cd errander
-   uv sync --extra dev
-   ```
+# 3. Clone and install
+git clone https://github.com/psc0des/Errander-AI.git errander
+cd errander
+uv sync
 
-4. **Verify the install**
+# 4. Verify
+uv run python -c "import errander; print('OK')"
+```
 
-   ```powershell
-   uv run python -c "import errander; print('OK')"
-   # OK
-   ```
+</details>
 
 ### Linux controller
 
@@ -296,12 +296,15 @@ sudo -u errander sudo /bin/df -h /
 
 Once you have your LLM endpoint URL, model name, and API key ready, run the interactive setup script from inside the `errander/` directory:
 
+**Linux / Git Bash (Windows):**
 ```bash
 bash scripts/configure.sh
 ```
 
-It will prompt you for everything — LLM, target VMs, SSH key, optional Slack — then write `.env` and `inventory.yaml` and verify the LLM connection. Skip to [Step 7 — Verify everything](#step-7--verify-everything) when done.
+It will prompt you for everything — LLM, target VMs, SSH key, optional Slack — then write `.env` and `inventory.yaml` and verify the LLM connection. Skip to [Step 6 — Verify everything](#step-6--verify-everything) when done.
 
+> **Windows note:** `configure.sh` runs in Git Bash (installed with Git for Windows). Open **Git Bash** (not PowerShell) and run the command above from inside the `errander\` folder.
+>
 > **Prefer to configure manually?** Follow Steps 4–6 below instead.
 
 ---

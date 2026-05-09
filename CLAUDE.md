@@ -238,6 +238,18 @@ SSH keys: referenced by file path in inventory config, never inlined.
 
 ---
 
+## Commit Message Format
+
+- **One line only** — no multi-line body, no bullet points, no blank lines
+- Format: `type: short description (under 72 chars)`
+- Types: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`
+- Examples:
+  - `docs: fix Python 3.12 install on Ubuntu 22.04 — use uv python install`
+  - `feat: add deferred execution store with 7-day expiry`
+  - `fix: release VM lock on SSH timeout`
+
+---
+
 ## Git Identity
 
 - GitHub username: **psc0des**

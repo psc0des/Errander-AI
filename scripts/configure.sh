@@ -153,25 +153,9 @@ KEEP_INVENTORY=false
 TARGETS_YAML=""
 VM_COUNT=0
 
-# Only offer to keep existing inventory if it already has VMs in it
+# If inventory.yaml exists, silently reuse env/SSH settings and skip those prompts
 if [ -f "inventory.yaml" ]; then
     _existing_vms=$(grep -c "^\s*- host:" inventory.yaml 2>/dev/null || echo 0)
-    if [ "$_existing_vms" -gt 0 ]; then
-        echo "  Found existing inventory.yaml with ${_existing_vms} VM(s):"
-        grep -E "host:|name:" inventory.yaml | grep -v "ssh_" | sed 's/^/    /'
-        echo ""
-        printf "  Keep existing inventory? (Y/n): "
-        read -r _keep || true
-        echo ""
-        case "${_keep,,}" in
-          n|no) KEEP_INVENTORY=false ;;
-          *)    KEEP_INVENTORY=true  ;;
-        esac
-    fi
-fi
-
-if $KEEP_INVENTORY; then
-    ok "Keeping existing inventory.yaml"
     ENV_NAME=$(grep -m1 "^environments:" -A1 inventory.yaml | tail -1 | tr -d ' :')
     ENV_NAME="${ENV_NAME:-dev}"
     SSH_USER=$(grep -m1 "ssh_user:" inventory.yaml | awk '{print $2}')
@@ -179,6 +163,19 @@ if $KEEP_INVENTORY; then
     SSH_KEY_PATH=$(grep -m1 "ssh_key_path:" inventory.yaml | awk '{print $2}')
     SSH_KEY_PATH="${SSH_KEY_PATH:-~/.ssh/errander_prod}"
     VM_COUNT=$_existing_vms
+    ok "Reusing settings from existing inventory.yaml  (env=${ENV_NAME}, ssh_user=${SSH_USER})"
+    if [ "$_existing_vms" -gt 0 ]; then
+        echo "  Current VMs:"
+        grep -E "host:|name:" inventory.yaml | grep -v "ssh_" | sed 's/^/    /'
+        echo ""
+        printf "  Keep existing VMs and just add more? (Y/n): "
+        read -r _keep || true
+        echo ""
+        case "${_keep,,}" in
+          n|no) KEEP_INVENTORY=false; VM_COUNT=0; TARGETS_YAML="" ;;
+          *)    KEEP_INVENTORY=true ;;
+        esac
+    fi
 else
     prompt_val "Environment name" "dev"
     ENV_NAME="$REPLY"
@@ -188,51 +185,51 @@ else
 
     prompt_val "SSH key path" "~/.ssh/errander_prod"
     SSH_KEY_PATH="$REPLY"
+fi
 
-    echo ""
-    printf "  Do you want to add target VMs now? (Y/n): "
-    read -r _add_vms || true
-    echo ""
+echo ""
+printf "  Do you want to add target VMs now? (Y/n): "
+read -r _add_vms || true
+echo ""
 
-    case "${_add_vms,,}" in
-      n|no)
-        warn "No VMs added — you can add them later by editing inventory.yaml"
-        ;;
-      *)
-        while true; do
-            prompt_val "  VM hostname or private IP" ""
-            VM_HOST="$REPLY"
-            [ -z "$VM_HOST" ] && break
+case "${_add_vms,,}" in
+  n|no)
+    warn "No VMs added — you can add them later by editing inventory.yaml"
+    ;;
+  *)
+    while true; do
+        prompt_val "  VM hostname or private IP" ""
+        VM_HOST="$REPLY"
+        [ -z "$VM_HOST" ] && break
 
-            VM_COUNT=$((VM_COUNT + 1))
-            DEFAULT_NAME="${ENV_NAME}-vm-$(printf '%02d' $VM_COUNT)"
+        VM_COUNT=$((VM_COUNT + 1))
+        DEFAULT_NAME="${ENV_NAME}-vm-$(printf '%02d' $VM_COUNT)"
 
-            prompt_val "  VM name" "$DEFAULT_NAME"
-            VM_NAME="$REPLY"
+        prompt_val "  VM name" "$DEFAULT_NAME"
+        VM_NAME="$REPLY"
 
-            prompt_val "  OS family  (ubuntu / debian / rhel)" "ubuntu"
-            VM_OS="$REPLY"
+        prompt_val "  OS family  (ubuntu / debian / rhel)" "ubuntu"
+        VM_OS="$REPLY"
 
-            TARGETS_YAML="${TARGETS_YAML}      - host: ${VM_HOST}
+        TARGETS_YAML="${TARGETS_YAML}      - host: ${VM_HOST}
         name: ${VM_NAME}
         os_family: ${VM_OS}
 "
-            ok "Added $VM_NAME  ($VM_HOST, $VM_OS)"
-            echo ""
+        ok "Added $VM_NAME  ($VM_HOST, $VM_OS)"
+        echo ""
 
-            printf "  Add another VM? (y/N): "
-            read -r _more || true
-            echo ""
-            case "${_more,,}" in
-              y|yes) continue ;;
-              *) break ;;
-            esac
-        done
-        ;;
-    esac
+        printf "  Add another VM? (y/N): "
+        read -r _more || true
+        echo ""
+        case "${_more,,}" in
+          y|yes) continue ;;
+          *) break ;;
+        esac
+    done
+    ;;
+esac
 
-    [ "$VM_COUNT" -gt 0 ] && ok "$VM_COUNT VM(s) added to environment '${ENV_NAME}'"
-fi
+[ "$VM_COUNT" -gt 0 ] && ok "$VM_COUNT VM(s) in environment '${ENV_NAME}'"
 
 # ── 3. SSH key ────────────────────────────────────────────────────────────────
 step "3/5" "SSH key pair"

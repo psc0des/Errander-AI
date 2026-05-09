@@ -244,6 +244,11 @@ The approval flow is now fully decoupled from execution. A dry-run scan can happ
 ## Blockers
 None.
 
+## Files Changed (2026-05-10 — SETUP.md continued)
+
+### Modified
+- `SETUP.md` — Step 2: rewrote SSH key section with diagram and Master VM / Target VM labels on every substep; Step 3: added backup → visudo validate → rollback safety sequence, labeled all substeps (Target VM); Step 4: full rewrite — decision table, Azure Foundry as first featured option, verify step per option, Master VM labels throughout
+
 ## Files Changed (2026-05-09 — E2E Validation Prep + Docs)
 
 ### Created
@@ -251,7 +256,7 @@ None.
 - `.gitattributes` — enforce LF line endings for .sh, .py, .yaml, .md files
 
 ### Modified
-- `SETUP.md` — major overhaul: added Prerequisites section (software, network ports table, Azure NSG note for port 9090, SSH tunnel alternative); updated architecture diagram to reflect Azure VNet topology; fixed git clone URL placeholders; marked Step 5 (Slack) as optional with web UI fallback; updated .env templates (added ERRANDER_LLM_MODEL, commented out Slack, added UI auth); fixed env var table (Slack Required: Yes → No); replaced Linux Step 1 manual commands with bootstrap script one-liner
+- `SETUP.md` — major overhaul: added Prerequisites section (software, network ports table, Azure NSG note for port 9090, SSH tunnel alternative); updated architecture diagram to reflect Azure VNet topology; fixed git clone URL placeholders; marked Step 5 (Slack) as optional with web UI fallback; updated .env templates (added ERRANDER_LLM_MODEL, commented out Slack, added UI auth); fixed env var table (Slack Required: Yes → No); replaced Linux Step 1 manual commands with bootstrap script one-liner; fixed Python 3.12 apt install for Ubuntu 22.04; fixed private repo bootstrap (clone first, then run script)
 - `CLAUDE.md` — added commit message format rule (one line, type: description, under 72 chars)
 
 ## Files Changed (2026-04-27 — Deferred Execution)

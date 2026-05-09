@@ -601,6 +601,16 @@ echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
 
 ## Bootstrap Script
 
+### 2026-05-10 — private repo fix
+
+```bash
+# Correct invocation for private repo (curl one-liner returns 404)
+git clone https://github.com/psc0des/Errander-AI.git errander
+bash errander/scripts/bootstrap.sh
+```
+**What**: Replaced `curl | bash` one-liner with clone-first approach.
+**Why**: `raw.githubusercontent.com` returns 404 for private repos without a token.
+
 ### 2026-05-09 — scripts/bootstrap.sh
 
 ```bash

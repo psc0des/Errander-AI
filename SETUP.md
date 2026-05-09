@@ -53,13 +53,7 @@ Before starting, confirm the following are in place.
 | git | `git --version` |
 | pip | `pip3 --version` |
 
-If any are missing:
-```bash
-sudo apt-get install -y python3-pip git
-# Note: python3.12 is not in default apt repos on Ubuntu 22.04.
-# Install uv first (below) and run `uv python install 3.12` instead —
-# uv manages its own Python and does not need a system-level 3.12.
-```
+> **These are handled automatically by the bootstrap script in Step 1.** You only need to verify them if you are skipping the bootstrap and doing a manual install.
 
 ### Network ports
 

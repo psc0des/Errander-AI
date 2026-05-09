@@ -460,56 +460,19 @@ uv run python -m errander --check-llm
 
 ---
 
-## Step 5 — Create a Slack app *(optional)*
+## Step 5 — Configure the agent
 
-> **You can skip this step.** Slack is optional. When no Slack token is configured, the agent uses **web UI approval mode** instead: maintenance plans that require approval appear at `http://<master-vm-ip>:9090/ui/approvals` where you click Approve or Reject. All other functionality (scheduling, SSH, audit trail, metrics) is unaffected.
->
-> Come back to this step later when you want Slack notifications and mobile approval reactions.
+### Create `.env`  *(Master VM)*
 
-If you do want Slack:
-
-1. Go to [api.slack.com/apps](https://api.slack.com/apps) → **Create New App** → **From scratch**
-2. Name it `Errander-AI`, select your workspace
-3. Under **OAuth & Permissions** → **Bot Token Scopes**, add:
-   - `chat:write` — post messages
-   - `reactions:read` — poll for ✅/❌ reactions
-4. Click **Install to Workspace** → copy the **Bot User OAuth Token** (`xoxb-...`)
-5. Create a Slack channel `#errander-approvals` and invite the bot to it
-6. Copy the **Channel ID** — right-click the channel → View channel details → copy the ID at the bottom (starts with `C`)
-
----
-
-## Step 6 — Configure the agent
-
-### Create a `.env` file
-
-On the controller, inside the `errander` directory:
-
-**Windows** — create `.env` with a text editor (Notepad, VS Code, etc.):
-```
-# LLM endpoint — any OpenAI-compatible API (see Step 4)
-ERRANDER_LLM_BASE_URL=https://<your-resource>.openai.azure.com/openai/v1/
-ERRANDER_LLM_MODEL=<your-deployment-name>
-ERRANDER_LLM_API_KEY=<your-api-key>
-
-ERRANDER_AUDIT_DB_URL=errander.sqlite
-
-# Web UI auth (recommended — remove to leave UI open)
-ERRANDER_UI_USER=admin
-ERRANDER_UI_PASSWORD=changeme
-
-# Slack — optional (remove # to enable; skip for web UI approval mode)
-# ERRANDER_SLACK_BOT_TOKEN=xoxb-your-token-here
-# ERRANDER_SLACK_CHANNEL_ID=C0123456789
-```
+Inside the `errander/` directory. Use the values you collected in Step 4 for the LLM lines.
 
 **Linux:**
 ```bash
 cat > .env << 'EOF'
-# LLM endpoint — any OpenAI-compatible API (see Step 4)
-ERRANDER_LLM_BASE_URL=https://<your-resource>.openai.azure.com/openai/v1/
-ERRANDER_LLM_MODEL=<your-deployment-name>
-ERRANDER_LLM_API_KEY=<your-api-key>
+# LLM — paste the values from whichever Step 4 option you chose
+ERRANDER_LLM_BASE_URL=<base-url-from-step-4>
+ERRANDER_LLM_MODEL=<model-from-step-4>
+ERRANDER_LLM_API_KEY=<api-key-from-step-4>
 
 ERRANDER_AUDIT_DB_URL=errander.sqlite
 
@@ -517,11 +480,13 @@ ERRANDER_AUDIT_DB_URL=errander.sqlite
 ERRANDER_UI_USER=admin
 ERRANDER_UI_PASSWORD=changeme
 
-# Slack — optional (remove # to enable; skip for web UI approval mode)
+# Slack — optional (see "Slack notifications" below; remove # to enable)
 # ERRANDER_SLACK_BOT_TOKEN=xoxb-your-token-here
 # ERRANDER_SLACK_CHANNEL_ID=C0123456789
 EOF
 ```
+
+**Windows** — create `.env` with a text editor (Notepad, VS Code, etc.) using the same content as above.
 
 > Never commit `.env` — it is already in `.gitignore`.
 
@@ -571,9 +536,32 @@ Settings changed via the UI are stored in SQLite. Precedence chain:
 env var  >  DB (UI)  >  settings.yaml  >  built-in default
 ```
 
+### Slack notifications *(optional)*
+
+> **You can skip this section entirely.** When no Slack token is configured, the agent uses **web UI approval mode**: maintenance plans that require approval appear at `http://<master-vm-ip>:9090/ui/approvals`. All other functionality (scheduling, SSH, audit trail, metrics) is unaffected.
+>
+> Come back here when you want Slack notifications and mobile approval reactions.
+
+To enable Slack:
+
+1. Go to [api.slack.com/apps](https://api.slack.com/apps) → **Create New App** → **From scratch**
+2. Name it `Errander-AI`, select your workspace
+3. Under **OAuth & Permissions** → **Bot Token Scopes**, add:
+   - `chat:write` — post messages
+   - `reactions:read` — poll for ✅/❌ reactions
+4. Click **Install to Workspace** → copy the **Bot User OAuth Token** (`xoxb-...`)
+5. Create a Slack channel `#errander-approvals` and invite the bot to it
+6. Copy the **Channel ID** — right-click the channel → View channel details → copy the ID at the bottom (starts with `C`)
+
+Then **uncomment and fill in** the Slack lines in your `.env`:
+```
+ERRANDER_SLACK_BOT_TOKEN=xoxb-your-token-here
+ERRANDER_SLACK_CHANNEL_ID=C0123456789
+```
+
 ---
 
-## Step 7 — Verify everything
+## Step 6 — Verify everything
 
 ### Load env vars
 
@@ -609,9 +597,9 @@ uv run pytest
 
 ---
 
-## Step 8 — First run (dry-run)
+## Step 7 — First run (dry-run)
 
-**Windows PowerShell** (load env first, see Step 7):
+**Windows PowerShell** (load env first, see Step 6):
 ```powershell
 uv run python -m errander --run-now --env dev --inventory inventory.yaml --dry-run
 ```
@@ -630,7 +618,7 @@ What happens:
 
 ---
 
-## Step 9 — Live run
+## Step 8 — Live run
 
 Once dry-run looks correct:
 
@@ -642,7 +630,7 @@ Real commands execute on the target VMs.
 
 ---
 
-## Step 10 — Run as a scheduled service (production)
+## Step 9 — Run as a scheduled service (production)
 
 ### Linux controller — systemd
 

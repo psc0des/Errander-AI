@@ -1,7 +1,7 @@
 # Errander-AI — Project Status
 
 ## Last Updated
-2026-05-09
+2026-05-10
 
 ## Current Phase
 **Phase 1.8 — End-to-end validation in progress. Azure VMs provisioned (2× Standard_B2ls_v2). LLM: Azure AI Foundry. Bootstrap script created. Master VM setup underway.**
@@ -247,7 +247,7 @@ None.
 ## Files Changed (2026-05-10 — SETUP.md continued)
 
 ### Modified
-- `SETUP.md` — Step 2: rewrote SSH key section with diagram and Master VM / Target VM labels on every substep; Step 3: added backup → visudo validate → rollback safety sequence, labeled all substeps (Target VM); Step 4: full rewrite — decision table, Azure Foundry as first featured option, verify step per option, Master VM labels throughout
+- `SETUP.md` — Step 2: rewrote SSH key section with diagram and Master VM / Target VM labels on every substep; Step 3: added backup → visudo validate → rollback safety sequence, labeled all substeps (Target VM); Step 4: full rewrite — decision table, Azure Foundry as first featured option, verify step per option, Master VM labels throughout; merged old Step 5 (Slack) into Step 6 as a subsection — Step 5 is now the single "Configure the agent" step with Slack as an optional sub-section at the bottom; steps 6-10 renumbered to 5-9
 
 ## Files Changed (2026-05-09 — E2E Validation Prep + Docs)
 

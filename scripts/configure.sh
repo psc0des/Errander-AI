@@ -49,7 +49,7 @@ echo ""
 echo "  This script will:"
 echo "    1. Collect your LLM credentials and verify the connection"
 echo "    2. Add your target VMs"
-echo "    3. Generate an SSH key pair (or reuse existing)"
+echo "    3. Verify your SSH key exists (see SETUP.md Step 2 to create one)"
 echo "    4. Optionally configure Slack notifications"
 echo "    5. Write .env and inventory.yaml"
 echo ""
@@ -247,38 +247,15 @@ esac
 
 [ "$VM_COUNT" -gt 0 ] && ok "$VM_COUNT VM(s) in environment '${ENV_NAME}'"
 
-# ── 3. SSH key ────────────────────────────────────────────────────────────────
+# ── 3. SSH key — verify only (users set this up in SETUP.md Step 2) ───────────
 SSH_KEY_EXPANDED="${SSH_KEY_PATH/#\~/$HOME}"
 
-_key_is_new=false
 if [ -f "$SSH_KEY_EXPANDED" ]; then
-    ok "[3/5] SSH key already exists at $SSH_KEY_EXPANDED — skipping"
+    ok "[3/5] SSH key found at $SSH_KEY_EXPANDED"
 else
-    step "3/5" "SSH key pair"
-    warn "Generating new key pair at $SSH_KEY_EXPANDED ..."
-    mkdir -p "$(dirname "$SSH_KEY_EXPANDED")"
-    ssh-keygen -t ed25519 -f "$SSH_KEY_EXPANDED" -C "errander-agent" -N ""
-    ok "Key pair generated"
-    _key_is_new=true
-fi
-
-SSH_PUBKEY="$(cat "$SSH_KEY_EXPANDED.pub")"
-
-if $_key_is_new; then
-    echo ""
-    echo -e "  ${BOLD}Public key — install this on every target VM:${NC}"
-    echo "  ┌────────────────────────────────────────────────────────────────────┐"
-    echo "  │ $SSH_PUBKEY"
-    echo "  └────────────────────────────────────────────────────────────────────┘"
-    echo ""
-    echo "  On each Target VM (SETUP.md Step 2 for the full sequence):"
-    echo "    sudo useradd -m -s /bin/bash $SSH_USER"
-    echo "    sudo mkdir -p /home/$SSH_USER/.ssh && sudo chmod 700 /home/$SSH_USER/.ssh"
-    echo "    echo \"$SSH_PUBKEY\" | sudo tee /home/$SSH_USER/.ssh/authorized_keys"
-    echo "    sudo chmod 600 /home/$SSH_USER/.ssh/authorized_keys"
-    echo "    sudo chown -R $SSH_USER:$SSH_USER /home/$SSH_USER/.ssh"
-    echo ""
-    warn "Complete SETUP.md Steps 2-3 (SSH + sudo) on each Target VM before running the agent."
+    warn "[3/5] SSH key not found at $SSH_KEY_EXPANDED"
+    echo "  Generate it by following SETUP.md Step 2, then re-run this script."
+    echo "    ssh-keygen -t ed25519 -f $SSH_KEY_EXPANDED -C \"errander-agent\" -N \"\""
 fi
 
 # ── 4. Slack ──────────────────────────────────────────────────────────────────

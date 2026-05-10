@@ -378,8 +378,14 @@ if [ "$VM_COUNT" -eq 0 ]; then
     echo ""
 fi
 
-echo "  Next — run a dry-run:"
+echo "  Next steps (continue from SETUP.md Step 6):"
+echo ""
+echo "  Step 6 — Verify:"
 echo "    export \$(grep -v '^#' .env | xargs)"
+echo "    uv run python -c \"from errander.config.schema import validate_inventory; from pathlib import Path; inv = validate_inventory(Path('inventory.yaml')); print('Targets:', sum(len(e.targets) for e in inv.environments.values()))\""
+echo "    uv run pytest"
+echo ""
+echo "  Step 7 — Dry-run:"
 echo "    uv run python -m errander --run-now --env ${ENV_NAME} --inventory inventory.yaml --dry-run"
 echo ""
 echo "  Web UI (once the agent is running):"

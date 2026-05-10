@@ -297,6 +297,19 @@ None.
 - `SETUP.md` — Step 7 commands updated with `--force --force-reason`; added note explaining `--force` bypasses the window for first-run validation
 - `errander/agent/graph.py` — approval gate now auto-approves dry-run batches immediately; approval only required for live runs with HIGH/CRITICAL risk tier
 
+## Files Changed (2026-05-10 — configure.sh + SETUP.md 9-bug audit)
+### Modified
+- `scripts/configure.sh` — A: fixed fresh install Enter default (added `_add_vms="${_add_vms:-y}"`)
+- `scripts/configure.sh` — B: fixed "keep + add more" silently dropping new VMs (append TARGETS_YAML when KEEP_INVENTORY=true)
+- `scripts/configure.sh` — C: fixed re-run resetting UI password (read existing creds from .env before writing)
+- `scripts/configure.sh` — C: added warning when UI password is still 'changeme'
+- `scripts/configure.sh` — D: improved SSH key missing message — explicit "setup is incomplete, re-run after creating key"
+- `SETUP.md` — E: Step 7 and Step 8 `--env dev` → `--env <your-env-name>` with substitution note
+- `SETUP.md` — F: Azure Foundry URL fixed from `openai.azure.com` → `cognitiveservices.azure.com`
+- `SETUP.md` — G: systemd service rewritten to use `$(whoami)` and `$(pwd)` — no more hardcoded `errander` user
+- `SETUP.md` — H: quick path description updated — "SSH key" → "verify your SSH key path"
+- `SETUP.md` — I: added password change warning in Web UI section and `.env` template comment
+
 ## Files Changed (This Session)
 ### Modified
 - `errander/agent/decisions.py` — LLM wired in: all decision functions accept optional llm_client, fall back to hardcoded

@@ -698,6 +698,20 @@ curl -LsSf https://raw.githubusercontent.com/psc0des/Errander-AI/main/scripts/bo
 **What**: Added `--force --force-reason "initial dry-run validation"` to the suggested dry-run command in configure.sh summary and SETUP.md Step 7.
 **Why**: First dry-run blocked by maintenance window on a weekend — `--force` bypasses the window so first-run validation always works.
 
+### 2026-05-10 — configure.sh + SETUP.md 9-bug audit and fix
+
+**What**: Fixed 9 bugs found in deep audit of configure.sh and SETUP.md:
+- A: Fresh install Enter default on "Add VMs?" was treated as no — fixed with `_add_vms="${_add_vms:-y}"`
+- B: "Keep existing + Add more" silently dropped new VMs — fixed by appending TARGETS_YAML when KEEP_INVENTORY=true
+- C: Re-run always reset UI password to `changeme` — fixed by reading existing creds from .env before writing; added production warning
+- D: SSH key missing message unclear — improved to say setup is incomplete and re-run required
+- E: Step 7/8 hardcoded `--env dev` — changed to `--env <your-env-name>` with substitution note
+- F: Azure Foundry URL was `openai.azure.com` — fixed to `cognitiveservices.azure.com`
+- G: systemd service used `User=errander` (target VM user) — rewritten to use `$(whoami)` and `$(pwd)`
+- H: Quick path said "SSH key" (implies generation) — updated to "verify your SSH key path"
+- I: No warning to change default password — added callout in Web UI section and .env template
+**Why**: Project is targeting open source release — quality bar must be high for first-time users.
+
 ### 2026-05-10 — fix approval gate skipping for dry-run batches
 
 ```bash

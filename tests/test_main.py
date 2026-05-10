@@ -264,7 +264,7 @@ class TestWindowOpener:
     @pytest.mark.asyncio
     async def test_pending_record_triggers_live_run(self, tmp_path: Path) -> None:
         """When a pending deferred record exists, run_env_batch is called with dry_run=False."""
-        from datetime import datetime, timezone
+        from datetime import datetime, timedelta, timezone
         from unittest.mock import AsyncMock, patch
 
         from errander.config.schema import EnvironmentSchema, TargetSchema
@@ -287,7 +287,7 @@ class TestWindowOpener:
 
         deferred_store = DeferredExecutionStore(":memory:")
         await deferred_store.initialize()
-        future_window = datetime(2026, 4, 27, 2, 0, 0, tzinfo=timezone.utc)
+        future_window = datetime.now(tz=timezone.utc).replace(hour=2, minute=0, second=0, microsecond=0) + timedelta(days=30)
         await deferred_store.save("b-test", "dev", "alice", future_window)
 
         async with AuditStore(":memory:") as audit_store:
@@ -320,7 +320,7 @@ class TestWindowOpener:
     @pytest.mark.asyncio
     async def test_pending_record_marked_done_after_run(self, tmp_path: Path) -> None:
         """After _window_opener runs, the deferred record is marked done."""
-        from datetime import datetime, timezone
+        from datetime import datetime, timedelta, timezone
         from unittest.mock import AsyncMock, patch
 
         from errander.config.schema import EnvironmentSchema, TargetSchema
@@ -343,7 +343,7 @@ class TestWindowOpener:
 
         deferred_store = DeferredExecutionStore(":memory:")
         await deferred_store.initialize()
-        future_window = datetime(2026, 4, 27, 2, 0, 0, tzinfo=timezone.utc)
+        future_window = datetime.now(tz=timezone.utc).replace(hour=2, minute=0, second=0, microsecond=0) + timedelta(days=30)
         await deferred_store.save("b-test", "dev", "alice", future_window)
 
         async with AuditStore(":memory:") as audit_store:

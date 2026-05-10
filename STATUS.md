@@ -336,6 +336,16 @@ None.
 - `scripts/configure.sh` — encryption key auto-wired: exported into current session, appended to `~/.bashrc`/`~/.zshrc` (idempotent), and injected into systemd service EnvironmentFile if service already installed — no manual steps required
 - `scripts/bootstrap.sh` — completion message corrected: step numbers updated, configure.sh quick path surfaced
 
+## Files Changed (2026-05-10 — fix test failures on VM: stale dates, env leakage, Playwright)
+### Modified
+- `tests/safety/test_deferred.py` — WINDOW_START changed from hardcoded 2026-04-26 to `now+30d`; expiry_at was already in the past on the VM, causing get_pending() to return nothing
+- `tests/test_main.py` — same fix for two TestWindowOpener tests using `datetime(2026, 4, 27, ...)`
+- `tests/conftest.py` — added autouse fixture `clean_errander_env` that clears all ERRANDER_* env vars before each test; prevents real .env values exported to shell from polluting settings/secrets tests
+- `scripts/bootstrap.sh` — added `uv run playwright install chromium` after uv sync so browser binary is available for UI tests
+- `scripts/configure.sh` — added `playwright install chromium` line to Step 6 verify instructions
+### Created
+- `tests/ui/conftest.py` — `pytest_collection_modifyitems` hook that skips all UI tests with a clear message when Chromium binary is absent, instead of ERRORing
+
 ## Files Changed (2026-05-10 — add --extra dev to uv sync in bootstrap and docs)
 ### Modified
 - `scripts/bootstrap.sh` — `uv sync` → `uv sync --extra dev` so pytest/ruff/mypy are installed during bootstrap

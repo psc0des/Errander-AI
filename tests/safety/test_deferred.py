@@ -13,7 +13,10 @@ def _utc(*args: int) -> datetime:
     return datetime(*args, tzinfo=timezone.utc)
 
 
-WINDOW_START = _utc(2026, 4, 26, 23, 0, 0)  # Sunday 23:00 UTC
+# Always 30 days in the future so expiry_at (window_start + 7d) never passes
+WINDOW_START = datetime.now(tz=timezone.utc).replace(
+    hour=23, minute=0, second=0, microsecond=0
+) + timedelta(days=30)
 
 
 # ---------------------------------------------------------------------------

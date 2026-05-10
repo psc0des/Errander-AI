@@ -140,6 +140,10 @@ warn "running uv sync --extra dev..."
 uv sync --extra dev
 ok "dependencies installed  (includes pytest, ruff, mypy)"
 
+warn "installing Playwright Chromium browser..."
+uv run playwright install chromium || true
+ok "Chromium installed  (required for UI tests)"
+
 # Quick import check
 uv run python -c "import errander; print('OK')" \
     || fail "import check failed — re-run this script or check errors above"

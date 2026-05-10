@@ -441,3 +441,27 @@ fi
 **Lesson**: `pytest`, `ruff`, and `mypy` live under `[project.optional-dependencies] dev`. A bare `uv sync` installs only the core runtime deps and leaves those tools absent. The verify step (`uv run pytest`) then fails with "No such file or directory" — no indication that deps are the cause.
 
 **Rule**: any bootstrap or setup script that expects `pytest`/`ruff`/`mypy` to be available must run `uv sync --extra dev`. Surface this command explicitly in every place that lists verify steps (bootstrap.sh, configure.sh Step 6 output, SETUP.md).
+
+---
+
+## Phase 1.8 — Hardcoded future dates in tests go stale
+
+**Lesson**: `WINDOW_START = datetime(2026, 4, 26, ...)` was "the future" when written but is now in the past. `get_pending()` filters `AND expiry_at > now`, so records with `expiry_at = 2026-05-03` are silently excluded on any run after that date. Tests pass on the dev machine one week, fail on a fresh VM the next.
+
+**Rule**: never hardcode an absolute future date in tests. Use `datetime.now(tz=timezone.utc) + timedelta(days=N)` so expiry is always N days ahead. Even a "far future" hardcoded date (2030, 2050) will eventually become past.
+
+---
+
+## Phase 1.8 — Exported `.env` vars pollute pytest on VMs
+
+**Lesson**: `export $(grep -v '^#' .env | xargs)` before running tests causes real values (`ERRANDER_LLM_MODEL`, `ERRANDER_UI_USER`, `ERRANDER_UI_PASSWORD`) to leak into tests that expect a clean environment. Tests that check default-empty behaviour or YAML/DB precedence see the real value instead and fail.
+
+**Rule**: add an autouse fixture to `tests/conftest.py` that clears all `ERRANDER_*` env vars before every test. Tests that need specific values set them explicitly via `monkeypatch.setenv`. This makes the suite runnable regardless of what the shell environment contains.
+
+---
+
+## Phase 1.8 — Playwright tests need the browser binary, not just the Python package
+
+**Lesson**: `uv sync --extra dev` installs `pytest-playwright` (the Python package) but NOT the Chromium binary. Running `uv run pytest` then ERRORs with "Executable doesn't exist" — the error message is cryptic and looks like a broken install. The binary requires a separate `uv run playwright install chromium` step (~150 MB download).
+
+**Rule**: (1) run `playwright install chromium` in bootstrap.sh so any fresh VM has the binary; (2) add a `tests/ui/conftest.py` that skips playwright tests with a clear message when the binary is absent, so CI and servers without a browser don't error — they skip.

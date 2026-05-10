@@ -51,7 +51,7 @@ echo "    1. Collect your LLM credentials and verify the connection"
 echo "    2. Add your target VMs"
 echo "    3. Verify your SSH key exists (see SETUP.md Step 2 to create one)"
 echo "    4. Optionally configure Slack notifications"
-echo "    5. Optionally encrypt sensitive values, then write .env and inventory.yaml"
+echo "    5. Set web UI credentials, optionally encrypt secrets, write .env and inventory.yaml"
 echo ""
 echo "  Have your LLM endpoint URL, model name, and API key ready."
 echo ""
@@ -293,14 +293,44 @@ esac
 # ── 5. Write files ────────────────────────────────────────────────────────────
 step "5/5" "Writing .env and inventory.yaml"
 
-# Preserve existing UI credentials on re-run so a changed password isn't reset
-_ui_user="admin"
-_ui_pass="changeme"
+# ── Web UI credentials ────────────────────────────────────────────────────────
+echo ""
+# On re-run: read existing values as defaults so the user can accept or change them
+_existing_ui_user="admin"
+_existing_ui_pass=""
 if [ -f ".env" ]; then
-    _existing_ui_user=$(grep "^ERRANDER_UI_USER=" .env 2>/dev/null | cut -d= -f2-)
-    _existing_ui_pass=$(grep "^ERRANDER_UI_PASSWORD=" .env 2>/dev/null | cut -d= -f2-)
-    [ -n "$_existing_ui_user" ] && _ui_user="$_existing_ui_user"
-    [ -n "$_existing_ui_pass" ] && _ui_pass="$_existing_ui_pass"
+    _u=$(grep "^ERRANDER_UI_USER=" .env 2>/dev/null | cut -d= -f2-)
+    _p=$(grep "^ERRANDER_UI_PASSWORD=" .env 2>/dev/null | cut -d= -f2-)
+    [ -n "$_u" ] && _existing_ui_user="$_u"
+    [ -n "$_p" ] && _existing_ui_pass="$_p"
+fi
+
+prompt_val "Web UI username" "$_existing_ui_user"
+_ui_user="$REPLY"
+
+# Password: if one already exists show a hint rather than requiring re-entry
+if [ -n "$_existing_ui_pass" ]; then
+    echo ""
+    printf "    Web UI password  (Enter to keep existing): "
+    read -rs _new_pass || true
+    _new_pass="${_new_pass%$'\r'}"
+    echo ""
+    _ui_pass="${_new_pass:-$_existing_ui_pass}"
+else
+    while true; do
+        prompt_secret "Web UI password"
+        _ui_pass="$REPLY"
+        if [ -z "$_ui_pass" ]; then
+            warn "Password cannot be empty — please enter one"
+            continue
+        fi
+        prompt_secret "Confirm password"
+        if [ "$REPLY" != "$_ui_pass" ]; then
+            warn "Passwords do not match — try again"
+            continue
+        fi
+        break
+    done
 fi
 
 # ── Encryption (optional) ─────────────────────────────────────────────────────
@@ -385,9 +415,6 @@ _env_slack_token=""
 
 chmod 600 .env
 ok ".env written  (permissions: 600)"
-if [ "$_ui_pass" = "changeme" ]; then
-    warn "Web UI password is still 'changeme' — update ERRANDER_UI_PASSWORD in .env before going to production"
-fi
 
 # inventory.yaml
 if $KEEP_INVENTORY; then

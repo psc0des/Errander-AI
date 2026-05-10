@@ -244,6 +244,11 @@ The approval flow is now fully decoupled from execution. A dry-run scan can happ
 ## Blockers
 None.
 
+## Files Changed (2026-05-10 — fix MasterKeyMissingError in --check-llm)
+### Modified
+- `scripts/configure.sh` — LLM verify call now passes `ERRANDER_SECRETS_KEY` inline alongside the other env vars
+- `errander/main.py` — moved `--generate-secrets-key`, `--encrypt`, `--check-inventory` before `load_settings()`; wrapped `load_settings()` in try/except for `MasterKeyMissingError` with a clear actionable error message
+
 ## Files Changed (2026-05-10 — configure.sh set -e grep fixes)
 ### Modified
 - `scripts/configure.sh` — added `|| true` to all bare `grep` calls inside `$()` subshells; `set -euo pipefail` was silently killing the script when `grep` found no match (exit 1 treated as fatal)

@@ -468,6 +468,7 @@ warn "Verifying LLM connection..."
 if ERRANDER_LLM_BASE_URL="$LLM_BASE_URL" \
    ERRANDER_LLM_MODEL="$LLM_MODEL" \
    ERRANDER_LLM_API_KEY="$LLM_API_KEY" \
+   ERRANDER_SECRETS_KEY="${SECRETS_KEY:-}" \
    uv run python -m errander --check-llm 2>&1; then
     ok "LLM connection verified"
 else

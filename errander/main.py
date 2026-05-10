@@ -642,21 +642,30 @@ async def async_main(args: argparse.Namespace) -> int:
     Returns:
         Exit code (0 = success, 1 = error).
     """
-    # --- Configuration ---
-    settings = load_settings(
-        settings_path=args.config if args.config.exists() else None,
-    )
-
-    # --- Secrets management modes (no settings needed) ---
+    # --- Modes that need no settings at all ---
     if args.generate_secrets_key:
         return run_generate_secrets_key()
 
     if args.encrypt is not None:
         return run_encrypt(args.encrypt)
 
-    # --- Inventory check mode: validate and print summary, then exit ---
     if args.check_inventory:
         return run_inventory_check(args.inventory)
+
+    # --- Configuration ---
+    try:
+        settings = load_settings(
+            settings_path=args.config if args.config.exists() else None,
+        )
+    except Exception as exc:  # noqa: BLE001
+        from errander.integrations.secrets import MasterKeyMissingError
+        if isinstance(exc, MasterKeyMissingError):
+            print(
+                "Error: .env contains encrypted values but ERRANDER_SECRETS_KEY is not set.\n"
+                "Fix: export $(cat ~/.errander.key)"
+            )
+            return 1
+        raise
 
     # --- LLM check mode: verify endpoint and exit ---
     if args.check_llm:

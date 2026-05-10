@@ -785,3 +785,13 @@ git push origin main
 ```
 **What**: Added `|| true` to every bare `grep` call inside `$()` subshells in `configure.sh` — lines 159, 161, 163, 169, 302, 303, 349. Also fixed the key-line grep in the encryption section (primary bug).
 **Why**: `set -euo pipefail` is active at the top of the script. `grep` exits 1 on no-match, which `set -e` treats as fatal — silently killing the script with no error message. The encryption section failed immediately after "Generating encryption key..." because the `grep "^ERRANDER_SECRETS_KEY="` pipe had no `|| true`.
+
+### 2026-05-10 — fix MasterKeyMissingError in --check-llm
+
+```bash
+git add scripts/configure.sh errander/main.py STATUS.md tasks/lessons.md docs/command-log.md
+git commit -m "fix: pass ERRANDER_SECRETS_KEY to --check-llm call and move early-exit modes before load_settings"
+git push origin main
+```
+**What**: Two fixes — (1) configure.sh LLM verify now passes `ERRANDER_SECRETS_KEY` inline; (2) `--generate-secrets-key`, `--encrypt`, `--check-inventory` moved before `load_settings()` in `async_main`; `load_settings()` wrapped with `MasterKeyMissingError` catch printing a clear actionable message.
+**Why**: `load_settings()` decrypts all env var values including `ERRANDER_UI_PASSWORD`. When `.env` contains `enc:v1:` blobs but `ERRANDER_SECRETS_KEY` isn't in the subprocess environment, it crashes with a Python traceback instead of a helpful message.

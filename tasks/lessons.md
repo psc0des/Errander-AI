@@ -378,3 +378,37 @@ ENV_NAME=$(grep -m1 "^environments:" inventory.yaml | tail -1 | tr -d ' :' || tr
 ```
 
 **Rule**: every `grep` call in a `set -e` script must end with `|| true` unless you explicitly *want* a no-match to be fatal. This includes calls inside `$()`, pipelines, and `if` conditions (the `if` form is already safe — `if grep ...` doesn't trigger `set -e`).
+
+---
+
+## Phase 1.8 — Inline env var overrides don't inherit the full environment
+
+**Lesson**: When calling a subprocess with inline env var overrides (`VAR=val cmd`), only the vars you explicitly list are added. Other env vars the subprocess needs — including ones set earlier in the same script via `export` — are still inherited from the parent shell. But if the script uses inline overrides to supply *some* vars and forgets one that's needed for decryption, the subprocess gets no key and crashes.
+
+```bash
+# WRONG — forgets ERRANDER_SECRETS_KEY; load_settings() sees enc:v1: with no key
+ERRANDER_LLM_BASE_URL="$URL" uv run python -m errander --check-llm
+
+# CORRECT — include the key so load_settings() can decrypt enc:v1: values
+ERRANDER_LLM_BASE_URL="$URL" ERRANDER_SECRETS_KEY="${SECRETS_KEY:-}" uv run python -m errander --check-llm
+```
+
+**Rule**: when a command is invoked with inline env var overrides in a configure script, explicitly list every secret the command might need to decrypt — don't rely on environment inheritance being complete.
+
+---
+
+## Phase 1.8 — Early-exit CLI modes must run before load_settings()
+
+**Lesson**: Modes like `--check-inventory`, `--generate-secrets-key`, and `--encrypt` don't need settings. Putting them after `load_settings()` means they fail if settings can't be loaded (e.g., encrypted values with no key). Always move no-settings-needed modes before `load_settings()`.
+
+```python
+# WRONG — load_settings() crashes before --check-inventory ever runs
+settings = load_settings(...)
+if args.check_inventory:
+    return run_inventory_check(args.inventory)
+
+# CORRECT — exit before settings are needed
+if args.check_inventory:
+    return run_inventory_check(args.inventory)
+settings = load_settings(...)
+```

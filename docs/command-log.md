@@ -637,6 +637,16 @@ bash scripts/configure.sh
 **What**: Fixed prompt ordering in `[2/5] Target VMs` — "Do you want to add VMs?" now appears before the section header on fresh installs; the header only renders if user says yes.
 **Why**: Showing `[2/5] Target VMs` before asking whether to add VMs implied the step was mandatory — misleading UX.
 
+### 2026-05-10 — configure.sh UX fix (SSH key step header)
+
+**What**: Suppressed `[3/5] SSH key pair` step header when key already exists — replaced with a single `✓` line.
+**Why**: Announcing a step header then immediately saying "already done" contradicted itself.
+
+### 2026-05-10 — configure.sh remove SSH key generation
+
+**What**: Removed `ssh-keygen` call from configure.sh entirely. Script now only checks if the key exists and prints a reminder pointing to SETUP.md Step 2 if it doesn't. Banner updated from "Generate an SSH key pair" to "Verify your SSH key exists".
+**Why**: SSH key setup is a manual Step 2 concern in SETUP.md — users should own it themselves. By the time configure.sh runs (Steps 4–6), the key should already exist.
+
 ### 2026-05-10 — scripts/bootstrap.ps1 (Windows bootstrap)
 
 ```powershell

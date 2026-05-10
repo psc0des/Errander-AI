@@ -288,6 +288,8 @@ None.
 ## Files Changed (2026-05-10 — configure.sh UX fix)
 ### Modified
 - `scripts/configure.sh` — moved "Do you want to add target VMs?" prompt before section header on fresh install; section header only shown after user confirms; re-run path (existing inventory.yaml) unchanged
+- `scripts/configure.sh` — suppress `[3/5] SSH key pair` step header when key already exists; show single ok line instead
+- `scripts/configure.sh` — removed SSH key generation entirely; script now only verifies key exists and points to SETUP.md Step 2 if missing; banner updated to reflect verify-only behaviour
 
 ## Files Changed (This Session)
 ### Modified

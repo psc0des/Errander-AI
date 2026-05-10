@@ -318,9 +318,11 @@ async def run_llm_check() -> int:
     encrypted with a key that isn't available in the current session.
     """
     import os
-    base_url = os.environ.get("ERRANDER_LLM_BASE_URL", "")
-    model = os.environ.get("ERRANDER_LLM_MODEL", "")
-    api_key = os.environ.get("ERRANDER_LLM_API_KEY", "not-needed")
+    from errander.integrations.secrets import SecretsManager
+    _sm = SecretsManager(require_key=False)
+    base_url = _sm.decrypt_if_needed(os.environ.get("ERRANDER_LLM_BASE_URL", ""))
+    model = _sm.decrypt_if_needed(os.environ.get("ERRANDER_LLM_MODEL", ""))
+    api_key = _sm.decrypt_if_needed(os.environ.get("ERRANDER_LLM_API_KEY", "not-needed"))
 
     if not base_url:
         print("LLM not configured — set ERRANDER_LLM_BASE_URL (e.g. http://10.0.1.5:8000/v1)")

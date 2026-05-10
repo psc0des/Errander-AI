@@ -336,6 +336,10 @@ None.
 - `scripts/configure.sh` — encryption key auto-wired: exported into current session, appended to `~/.bashrc`/`~/.zshrc` (idempotent), and injected into systemd service EnvironmentFile if service already installed — no manual steps required
 - `scripts/bootstrap.sh` — completion message corrected: step numbers updated, configure.sh quick path surfaced
 
+## Files Changed (2026-05-10 — fix --check-llm decrypts enc:v1: API key)
+### Modified
+- `errander/main.py` — `run_llm_check()` now runs LLM env vars through `SecretsManager.decrypt_if_needed()` so encrypted API keys (enc:v1:...) are decrypted before use; previously the raw ciphertext was sent to the LLM provider causing 401
+
 ## Files Changed (2026-05-10 — fix --check-llm needs env vars in Step 6)
 ### Modified
 - `scripts/configure.sh` — Step 6 output: removed `--check-llm` (configure.sh already ran it); replaced with note "(LLM already verified above)"

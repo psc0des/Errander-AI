@@ -356,15 +356,36 @@ case "${_enc_choice,,}" in
         echo "ERRANDER_SECRETS_KEY=${SECRETS_KEY}" > "$KEY_FILE"
         chmod 600 "$KEY_FILE"
         ok "Encryption key saved to ${KEY_FILE}  (chmod 600)"
+
+        # Wire key into shell RC so every new session loads it automatically
+        SHELL_RC="${HOME}/.bashrc"
+        [ -f "${HOME}/.zshrc" ] && SHELL_RC="${HOME}/.zshrc"
+        _marker="# errander secrets key"
+        if ! grep -q "$_marker" "$SHELL_RC" 2>/dev/null; then
+            printf '\n%s\n[ -f "%s" ] && set -a && source "%s" && set +a\n' \
+                "$_marker" "$KEY_FILE" "$KEY_FILE" >> "$SHELL_RC"
+            ok "Key auto-load added to ${SHELL_RC}"
+        else
+            ok "Key auto-load already present in ${SHELL_RC}"
+        fi
+        # Export into the current session too so the LLM verify step works now
+        export ERRANDER_SECRETS_KEY="${SECRETS_KEY}"
+
+        # Wire into systemd service file if already installed
+        _svc="/etc/systemd/system/errander.service"
+        if [ -f "$_svc" ]; then
+            if ! grep -q "$KEY_FILE" "$_svc"; then
+                sudo sed -i "s|EnvironmentFile=.*\.env|EnvironmentFile=${KEY_FILE}\nEnvironmentFile=$(pwd)/.env|" "$_svc"
+                sudo systemctl daemon-reload
+                ok "Systemd service updated — key EnvironmentFile injected"
+            else
+                ok "Systemd service already references ${KEY_FILE}"
+            fi
+        fi
+
         echo ""
         echo -e "  ${BOLD}Back up this key — losing it means losing all encrypted credentials:${NC}"
         echo "  ERRANDER_SECRETS_KEY=${SECRETS_KEY}"
-        echo ""
-        echo "  Load it when running manually:"
-        echo "    source ${KEY_FILE} && export ERRANDER_SECRETS_KEY"
-        echo ""
-        echo "  For systemd — add before your .env EnvironmentFile:"
-        echo "    EnvironmentFile=${KEY_FILE}"
         echo ""
     fi
     ;;

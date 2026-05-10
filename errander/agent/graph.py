@@ -500,7 +500,11 @@ async def approval_gate_node(
 
     max_tier = _max_risk_tier_from_results(vm_results)
 
-    if max_tier in (RiskTier.HIGH, RiskTier.CRITICAL) and approval_manager is not None:
+    if dry_run:
+        approved = True
+        approver = None
+        logger.info("Batch %s dry-run — approval skipped (max risk tier: %s)", batch_id, max_tier.value)
+    elif max_tier in (RiskTier.HIGH, RiskTier.CRITICAL) and approval_manager is not None:
         logger.info(
             "Batch %s requires approval (max risk tier: %s)",
             batch_id, max_tier.value,

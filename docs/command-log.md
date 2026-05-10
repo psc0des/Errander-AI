@@ -795,3 +795,32 @@ git push origin main
 ```
 **What**: Two fixes — (1) configure.sh LLM verify now passes `ERRANDER_SECRETS_KEY` inline; (2) `--generate-secrets-key`, `--encrypt`, `--check-inventory` moved before `load_settings()` in `async_main`; `load_settings()` wrapped with `MasterKeyMissingError` catch printing a clear actionable message.
 **Why**: `load_settings()` decrypts all env var values including `ERRANDER_UI_PASSWORD`. When `.env` contains `enc:v1:` blobs but `ERRANDER_SECRETS_KEY` isn't in the subprocess environment, it crashes with a Python traceback instead of a helpful message.
+
+### 2026-05-11 — Phase 0 SRE audit remediation
+
+```bash
+uv run pytest tests -q        # baseline: 1 failed (test_disk_cleanup mock signature)
+```
+**What**: Ran full test suite to identify failures introduced by Phase 0 source changes.
+**Why**: Phase 0 was implemented in the previous session; this session picked up the test fix.
+
+```bash
+# Fixed test_disk_cleanup.py capture_execute mock: added dry_run: bool | None = None param
+# Fixed test_patching.py: route_after_execute(FAILED) now routes to "rollback", not "__end__"
+# Fixed test_audit.py: swallow tests use dry_run=True (strict mode raises in live mode)
+# Fixed test_rollback.py: patching rollback is now implemented; updated assertions
+# Fixed test_graph.py (4 tests): deferred logic inverted — dry-run never deferred, live outside window IS deferred
+# Fixed test_load.py: wave abort SSH call count 15→27 (12 validate + 12 plan_vm + 3 wave-0 health)
+```
+**What**: Fixed 9 test failures caused by Phase 0 architectural changes.
+**Why**: Phase 0 changed: (1) executor.execute() signature, (2) patching rollback routing, (3) audit strict mode, (4) rollback implementation, (5) deferred semantics inversion, (6) new planning SSH calls in the graph.
+
+```bash
+uv run pytest tests -q        # result: 767 passed, 111 skipped, 0 failed
+```
+
+```bash
+git add errander/agent/graph.py errander/agent/subgraphs/patching.py errander/agent/subgraphs/disk_cleanup.py errander/agent/subgraphs/docker_prune.py errander/agent/subgraphs/log_rotation.py errander/execution/sandbox.py errander/main.py errander/models/plans.py errander/safety/audit.py errander/safety/rollback.py errander/config/settings.py tests/agent/subgraphs/test_disk_cleanup.py tests/agent/subgraphs/test_patching.py tests/agent/test_graph.py tests/agent/test_load.py tests/safety/test_audit.py tests/safety/test_rollback.py STATUS.md tasks/todo.md tasks/lessons.md
+git commit -m "feat: Phase 0 SRE audit remediation — plan/apply, rollback, audit fail-closed"
+git push origin main
+```

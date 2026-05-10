@@ -101,13 +101,14 @@ result["latency_ms"] = round((time.monotonic() - t0) * 1000, 1)
 
 ### 6. `--check-llm` exits before any agent setup
 
-Like `--audit`, the `--check-llm` flag is checked immediately after `load_settings()` — before SSH connections, inventory loading, or the metrics server:
+`--check-llm` runs **before** `load_settings()` and reads LLM env vars directly — this means it works even when an unrelated encrypted secret (e.g. `ERRANDER_UI_PASSWORD`) has a key mismatch that would crash `load_settings()`:
 
 ```python
-settings = load_settings(...)
-
+# Early exits that need no settings at all
 if args.check_llm:
-    return await run_llm_check(settings)  # exits here
+    return await run_llm_check()  # reads env vars directly, exits here
+
+settings = load_settings(...)  # only reached for full agent modes
 
 if args.audit:
     return await run_audit_query(args, settings)  # exits here

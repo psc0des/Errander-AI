@@ -310,28 +310,38 @@ def run_inventory_check(inventory_path: Path) -> int:
 # LLM check
 # ---------------------------------------------------------------------------
 
-async def run_llm_check(settings: Settings) -> int:
-    """Check the LLM endpoint and print a human-readable status report."""
-    if not settings.llm_base_url:
+async def run_llm_check() -> int:
+    """Check the LLM endpoint and print a human-readable status report.
+
+    Reads LLM vars directly from the environment — no Settings object needed,
+    so it works even when other env vars (e.g. ERRANDER_UI_PASSWORD) are
+    encrypted with a key that isn't available in the current session.
+    """
+    import os
+    base_url = os.environ.get("ERRANDER_LLM_BASE_URL", "")
+    model = os.environ.get("ERRANDER_LLM_MODEL", "")
+    api_key = os.environ.get("ERRANDER_LLM_API_KEY", "not-needed")
+
+    if not base_url:
         print("LLM not configured — set ERRANDER_LLM_BASE_URL (e.g. http://10.0.1.5:8000/v1)")
         return 1
 
-    if not settings.llm_model:
+    if not model:
         print("LLM model not configured — set ERRANDER_LLM_MODEL or llm.model in settings.yaml")
         return 1
 
     from errander.integrations.llm import LLMClient
 
     client = LLMClient(
-        base_url=settings.llm_base_url,
-        model=settings.llm_model,
-        api_key=settings.llm_api_key,
-        temperature=settings.llm_temperature,
-        timeout_seconds=settings.llm_timeout_seconds,
+        base_url=base_url,
+        model=model,
+        api_key=api_key,
+        temperature=0.1,
+        timeout_seconds=60,
         max_retries=1,
     )
 
-    print(f"Checking LLM endpoint: {settings.llm_base_url} (model: {settings.llm_model})")
+    print(f"Checking LLM endpoint: {base_url} (model: {model})")
     print("-" * 50)
 
     result = await client.check_endpoint()
@@ -652,6 +662,12 @@ async def async_main(args: argparse.Namespace) -> int:
     if args.check_inventory:
         return run_inventory_check(args.inventory)
 
+    # LLM check only needs plaintext LLM env vars — run before load_settings()
+    # so a decryption error in an unrelated secret (e.g. ERRANDER_UI_PASSWORD)
+    # doesn't block connectivity verification.
+    if args.check_llm:
+        return await run_llm_check()
+
     # --- Configuration ---
     try:
         settings = load_settings(
@@ -666,10 +682,6 @@ async def async_main(args: argparse.Namespace) -> int:
             )
             return 1
         raise
-
-    # --- LLM check mode: verify endpoint and exit ---
-    if args.check_llm:
-        return await run_llm_check(settings)
 
     # --- Audit mode: query and exit, no scheduler or metrics needed ---
     if args.audit:

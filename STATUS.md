@@ -336,6 +336,11 @@ None.
 - `scripts/configure.sh` — encryption key auto-wired: exported into current session, appended to `~/.bashrc`/`~/.zshrc` (idempotent), and injected into systemd service EnvironmentFile if service already installed — no manual steps required
 - `scripts/bootstrap.sh` — completion message corrected: step numbers updated, configure.sh quick path surfaced
 
+## Files Changed (2026-05-10 — move --check-llm before load_settings)
+### Modified
+- `errander/main.py` — `run_llm_check()` now reads LLM env vars directly (no Settings param); moved before `load_settings()` in `async_main` so a decryption error in `ERRANDER_UI_PASSWORD` never blocks LLM connectivity verification
+- `docs/learning/13-vllm-setup.md` — updated code snippet to reflect new early-exit placement
+
 ## Files Changed (2026-05-10 — fix DecryptionError on configure.sh re-run)
 ### Modified
 - `scripts/configure.sh` — reuse existing `~/.errander.key` on re-run instead of generating a new key; new key generated only when the file is absent; prevents `enc:v1:` blobs in `.env` becoming unreadable after re-run

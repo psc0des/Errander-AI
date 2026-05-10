@@ -135,14 +135,10 @@ else
 fi
 
 # ── 7. Install Python dependencies ───────────────────────────────────────────
-step "7/7" "Python dependencies  (uv sync --extra dev)"
-warn "running uv sync --extra dev..."
-uv sync --extra dev
-ok "dependencies installed  (includes pytest, ruff, mypy)"
-
-warn "installing Playwright Chromium browser..."
-uv run playwright install chromium || true
-ok "Chromium installed  (required for UI tests)"
+step "7/7" "Python dependencies  (uv sync)"
+warn "running uv sync..."
+uv sync
+ok "dependencies installed"
 
 # Quick import check
 uv run python -c "import errander; print('OK')" \

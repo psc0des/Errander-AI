@@ -587,23 +587,13 @@ ERRANDER_SLACK_CHANNEL_ID=C0123456789
 ## Step 6 — Verify everything
 
 ```bash
-# 1. Install dev tools (pytest, ruff, mypy) — skip if bootstrap.sh already ran
-uv sync --extra dev
-
-# 2. Install Chromium browser for UI tests — skip if already done
-uv run playwright install chromium
-
-# 3. Verify inventory parses correctly — no env vars needed
+# Verify inventory parses correctly (no env vars needed)
 uv run python -m errander --check-inventory
 
-# 4. Run the full test suite
-#    Do NOT export .env before this step — exported secrets pollute the test
-#    environment and cause settings/secrets tests to fail. Tests are self-contained.
-uv run pytest
-# Expected: all tests pass
+# Verify LLM connection (load .env first)
+export $(grep -v '^#' .env | xargs)
+uv run python -m errander --check-llm
 ```
-
-> **Note:** Do not run `export $(grep -v '^#' .env | xargs)` before `uv run pytest`. The test suite manages its own environment via pytest fixtures. Export env vars only when running agent CLI commands (Steps 7+).
 
 ---
 
@@ -770,3 +760,25 @@ Once the agent is running, the following endpoints are exposed on the metrics po
 | `http://<controller>:9090/ui/inventory` | Disable YAML VMs or add ad-hoc VMs before the next run |
 | `http://<controller>:9090/metrics` | Prometheus metrics (scrape this with Prometheus) |
 | `http://<controller>:9090/health` | Liveness check — `{"status":"ok"}` |
+
+---
+
+## For developers (contributing / running tests)
+
+End users deploying the agent do not need these steps.
+
+```bash
+# Install dev tools (pytest, ruff, mypy, playwright)
+uv sync --extra dev
+
+# Install Chromium browser binary for UI tests (~150 MB, one-time)
+uv run playwright install chromium
+
+# Run the full test suite
+# Do NOT export .env before this — exported secrets leak into tests and cause failures
+uv run pytest
+
+# Lint and type-check
+uv run ruff check .
+uv run mypy .
+```

@@ -336,6 +336,12 @@ None.
 - `scripts/configure.sh` — encryption key auto-wired: exported into current session, appended to `~/.bashrc`/`~/.zshrc` (idempotent), and injected into systemd service EnvironmentFile if service already installed — no manual steps required
 - `scripts/bootstrap.sh` — completion message corrected: step numbers updated, configure.sh quick path surfaced
 
+## Files Changed (2026-05-10 — separate end-user and developer setup steps)
+### Modified
+- `scripts/configure.sh` — Step 6 output trimmed to end-user steps only: `--check-inventory` and `--check-llm`
+- `scripts/bootstrap.sh` — reverted to bare `uv sync` (no `--extra dev`, no playwright — dev tools not needed for deployment)
+- `SETUP.md` — Step 6 is now end-user only (inventory check + LLM check); pytest/playwright/ruff/mypy moved to new "For developers" section at the bottom
+
 ## Files Changed (2026-05-10 — fix SETUP.md Step 6: remove env export before pytest, add sync/playwright)
 ### Modified
 - `SETUP.md` — Step 6 rewritten: removed `export $(grep -v '^#' .env | xargs)` (poisons pytest), replaced long one-liner with `--check-inventory`, added `uv sync --extra dev` + `playwright install chromium` steps, added warning note; Step 7 Linux/Windows blocks aligned — both now show the load-env step explicitly before `--run-now`

@@ -688,6 +688,11 @@ curl -LsSf https://raw.githubusercontent.com/psc0des/Errander-AI/main/scripts/bo
 **What**: Removed "Complete SETUP.md Steps 2-3 on each target VM" from the final summary. Replaced "Before running the agent:" block with a direct "Next — run a dry-run:" line.
 **Why**: configure.sh covers Steps 4–6; Steps 2-3 must be done before reaching configure.sh. Reminding users to do prior steps in the completion summary is noise and implies they may not have been done.
 
+### 2026-05-10 — configure.sh UX fix (final summary step order)
+
+**What**: Final summary now lists Step 6 (verify inventory + `uv run pytest`) before Step 7 (dry-run), matching SETUP.md order exactly.
+**Why**: Previous summary jumped straight to dry-run, skipping the verify step — inconsistent with SETUP.md and confusing for users following the guide.
+
 ## Debugging
 
 ### 2026-03-21 — uv sync timeout issues

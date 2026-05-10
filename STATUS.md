@@ -292,6 +292,7 @@ None.
 - `scripts/configure.sh` — removed SSH key generation entirely; script now only verifies key exists and points to SETUP.md Step 2 if missing; banner updated to reflect verify-only behaviour
 - `scripts/configure.sh` — split combined "Keep existing VMs and just add more?" into two separate prompts: "Keep these VMs? (Y/n)" and "Add more VMs? (y/N)"
 - `scripts/configure.sh` — removed stale "Complete SETUP.md Steps 2-3" reminder from final summary; replaced with direct "Next — run a dry-run:" line
+- `scripts/configure.sh` — final summary now shows Step 6 (verify inventory + pytest) before Step 7 (dry-run), matching SETUP.md order
 
 ## Files Changed (This Session)
 ### Modified

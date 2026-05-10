@@ -336,6 +336,11 @@ None.
 - `scripts/configure.sh` — encryption key auto-wired: exported into current session, appended to `~/.bashrc`/`~/.zshrc` (idempotent), and injected into systemd service EnvironmentFile if service already installed — no manual steps required
 - `scripts/bootstrap.sh` — completion message corrected: step numbers updated, configure.sh quick path surfaced
 
+## Files Changed (2026-05-10 — fix --check-llm needs env vars in Step 6)
+### Modified
+- `scripts/configure.sh` — Step 6 output: removed `--check-llm` (configure.sh already ran it); replaced with note "(LLM already verified above)"
+- `SETUP.md` — Step 6: `--check-llm` moved to optional re-verify block with explicit `source ~/.errander.key` + `export .env` instructions before it
+
 ## Files Changed (2026-05-10 — separate end-user and developer setup steps)
 ### Modified
 - `scripts/configure.sh` — Step 6 output trimmed to end-user steps only: `--check-inventory` and `--check-llm`

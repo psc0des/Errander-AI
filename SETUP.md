@@ -589,8 +589,13 @@ ERRANDER_SLACK_CHANNEL_ID=C0123456789
 ```bash
 # Verify inventory parses correctly (no env vars needed)
 uv run python -m errander --check-inventory
+```
 
-# Verify LLM connection (load .env first)
+If you ran `configure.sh`, the LLM connection was already verified as part of setup. To re-verify manually:
+
+```bash
+# Load env vars first — --check-llm needs ERRANDER_LLM_API_KEY
+[ -f ~/.errander.key ] && source ~/.errander.key   # load secrets key if encryption is enabled
 export $(grep -v '^#' .env | xargs)
 uv run python -m errander --check-llm
 ```

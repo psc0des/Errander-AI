@@ -698,6 +698,14 @@ curl -LsSf https://raw.githubusercontent.com/psc0des/Errander-AI/main/scripts/bo
 **What**: Added `--force --force-reason "initial dry-run validation"` to the suggested dry-run command in configure.sh summary and SETUP.md Step 7.
 **Why**: First dry-run blocked by maintenance window on a weekend — `--force` bypasses the window so first-run validation always works.
 
+### 2026-05-10 — configure.sh secrets hardening
+
+**What**: Three security improvements to configure.sh:
+1. `chmod 600 .env` applied on every write — was missing entirely
+2. Optional Fernet encryption: generates key to `~/.errander.key` (chmod 600, separate file), encrypts LLM_API_KEY / UI_PASSWORD / SLACK_BOT_TOKEN as `enc:v1:` blobs in .env; re-run safe (existing `enc:v1:` values passed through unchanged)
+3. Web UI username + password now prompted explicitly on fresh install with confirmation loop; re-run shows existing values as defaults; `changeme` can no longer silently reach production
+**Why**: Open source project — default security posture must be production-safe out of the box.
+
 ### 2026-05-10 — configure.sh + SETUP.md 9-bug audit and fix
 
 **What**: Fixed 9 bugs found in deep audit of configure.sh and SETUP.md:

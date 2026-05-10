@@ -310,6 +310,13 @@ None.
 - `SETUP.md` — H: quick path description updated — "SSH key" → "verify your SSH key path"
 - `SETUP.md` — I: added password change warning in Web UI section and `.env` template comment
 
+## Files Changed (2026-05-10 — secrets hardening + UI credential prompt)
+### Modified
+- `scripts/configure.sh` — `chmod 600 .env` applied on every write (was missing entirely)
+- `scripts/configure.sh` — optional Fernet encryption: generates key to `~/.errander.key` (chmod 600, separate from .env), encrypts LLM_API_KEY / UI_PASSWORD / SLACK_BOT_TOKEN as `enc:v1:` blobs; re-run safe (already-encrypted values passed through unchanged)
+- `scripts/configure.sh` — web UI username + password prompted explicitly on fresh install (with confirmation loop); re-run shows existing values as defaults; `changeme` can never silently reach production
+- `scripts/bootstrap.sh` — completion message corrected: step numbers updated, configure.sh quick path surfaced
+
 ## Files Changed (This Session)
 ### Modified
 - `errander/agent/decisions.py` — LLM wired in: all decision functions accept optional llm_client, fall back to hardcoded

@@ -146,15 +146,15 @@ esac
 ok "LLM: $LLM_BASE_URL  model=$LLM_MODEL"
 
 # ── 2. Target VMs ─────────────────────────────────────────────────────────────
-step "2/5" "Target VMs"
-echo ""
-
 KEEP_INVENTORY=false
 TARGETS_YAML=""
 VM_COUNT=0
+_add_vms="y"
 
-# If inventory.yaml exists, silently reuse env/SSH settings and skip those prompts
 if [ -f "inventory.yaml" ]; then
+    # Re-run: read existing settings silently and reuse them
+    step "2/5" "Target VMs"
+    echo ""
     _existing_vms=$(grep -c "^\s*- host:" inventory.yaml 2>/dev/null || echo 0)
     ENV_NAME=$(grep -m1 "^environments:" -A1 inventory.yaml | tail -1 | tr -d ' :')
     ENV_NAME="${ENV_NAME:-dev}"
@@ -176,21 +176,37 @@ if [ -f "inventory.yaml" ]; then
           *)    KEEP_INVENTORY=true ;;
         esac
     fi
+    echo ""
+    printf "  Do you want to add target VMs now? (Y/n): "
+    read -r _add_vms || true
+    echo ""
 else
-    prompt_val "Environment name" "dev"
-    ENV_NAME="$REPLY"
+    # Fresh install: ask first, show section header only if they say yes
+    echo ""
+    printf "  [2/5] Do you want to add target VMs now? (Y/n): "
+    read -r _add_vms || true
+    echo ""
 
-    prompt_val "SSH user on target VMs" "errander"
-    SSH_USER="$REPLY"
-
-    prompt_val "SSH key path" "~/.ssh/errander_prod"
-    SSH_KEY_PATH="$REPLY"
+    case "${_add_vms,,}" in
+      n|no)
+        ENV_NAME="dev"
+        prompt_val "SSH user on target VMs" "errander"
+        SSH_USER="$REPLY"
+        prompt_val "SSH key path" "~/.ssh/errander_prod"
+        SSH_KEY_PATH="$REPLY"
+        ;;
+      *)
+        step "2/5" "Target VMs"
+        echo ""
+        prompt_val "Environment name" "dev"
+        ENV_NAME="$REPLY"
+        prompt_val "SSH user on target VMs" "errander"
+        SSH_USER="$REPLY"
+        prompt_val "SSH key path" "~/.ssh/errander_prod"
+        SSH_KEY_PATH="$REPLY"
+        ;;
+    esac
 fi
-
-echo ""
-printf "  Do you want to add target VMs now? (Y/n): "
-read -r _add_vms || true
-echo ""
 
 case "${_add_vms,,}" in
   n|no)

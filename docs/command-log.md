@@ -628,6 +628,15 @@ uv run python -m errander --check-llm
 **What**: Tests LLM connection using inline env vars rather than loading from .env.
 **Why**: .env doesn't exist yet during Step 4 — inline vars verify credentials before Step 5 creates the file.
 
+### 2026-05-10 — configure.sh UX fix (VM prompt order)
+
+```bash
+# Ran configure.sh interactively to observe the UX issue
+bash scripts/configure.sh
+```
+**What**: Fixed prompt ordering in `[2/5] Target VMs` — "Do you want to add VMs?" now appears before the section header on fresh installs; the header only renders if user says yes.
+**Why**: Showing `[2/5] Target VMs` before asking whether to add VMs implied the step was mandatory — misleading UX.
+
 ### 2026-05-10 — scripts/bootstrap.ps1 (Windows bootstrap)
 
 ```powershell

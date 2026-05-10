@@ -285,6 +285,10 @@ None.
 - `tests/safety/test_deferred.py` — 15 tests for `DeferredExecutionStore`
 - `docs/learning/24-deferred-execution.md` — learning doc
 
+## Files Changed (2026-05-10 — configure.sh UX fix)
+### Modified
+- `scripts/configure.sh` — moved "Do you want to add target VMs?" prompt before section header on fresh install; section header only shown after user confirms; re-run path (existing inventory.yaml) unchanged
+
 ## Files Changed (This Session)
 ### Modified
 - `errander/agent/decisions.py` — LLM wired in: all decision functions accept optional llm_client, fall back to hardcoded

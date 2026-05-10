@@ -378,10 +378,7 @@ if [ "$VM_COUNT" -eq 0 ]; then
     echo ""
 fi
 
-echo -e "  ${BOLD}Before running the agent:${NC}"
-echo "  Complete SETUP.md Steps 2-3 on each target VM (errander user + sudo)."
-echo ""
-echo "  Then run a dry-run:"
+echo "  Next — run a dry-run:"
 echo "    export \$(grep -v '^#' .env | xargs)"
 echo "    uv run python -m errander --run-now --env ${ENV_NAME} --inventory inventory.yaml --dry-run"
 echo ""

@@ -683,6 +683,11 @@ curl -LsSf https://raw.githubusercontent.com/psc0des/Errander-AI/main/scripts/bo
 **What**: Split "Keep existing VMs and just add more? (Y/n)" into two separate prompts: "Keep these VMs? (Y/n)" and "Add more VMs? (y/N)".
 **Why**: A single question covering two distinct decisions (keep vs. add) was ambiguous — Y implied both, N implied neither, which is misleading.
 
+### 2026-05-10 — configure.sh UX fix (final summary cleanup)
+
+**What**: Removed "Complete SETUP.md Steps 2-3 on each target VM" from the final summary. Replaced "Before running the agent:" block with a direct "Next — run a dry-run:" line.
+**Why**: configure.sh covers Steps 4–6; Steps 2-3 must be done before reaching configure.sh. Reminding users to do prior steps in the completion summary is noise and implies they may not have been done.
+
 ## Debugging
 
 ### 2026-03-21 — uv sync timeout issues

@@ -362,3 +362,19 @@ echo "    uv run python -m errander --check-inventory"
 ```
 
 **Rule**: any command shown in a script's final summary must be short enough to fit on one terminal line (~80 chars). If it doesn't fit, add a CLI flag for it.
+
+---
+
+## Phase 1.8 — `set -euo pipefail` + bare `grep` = silent script death
+
+**Lesson**: `set -e` makes any non-zero exit code kill the script immediately, with no error message. `grep` exits 1 when it finds no match — which is a normal, expected outcome. A bare `grep` inside a `$()` subshell or pipeline under `set -e` silently kills the script the moment it finds nothing.
+
+```bash
+# WRONG — kills the script silently if grep finds no match
+ENV_NAME=$(grep -m1 "^environments:" inventory.yaml | tail -1 | tr -d ' :')
+
+# CORRECT — || true makes no-match a non-fatal outcome
+ENV_NAME=$(grep -m1 "^environments:" inventory.yaml | tail -1 | tr -d ' :' || true)
+```
+
+**Rule**: every `grep` call in a `set -e` script must end with `|| true` unless you explicitly *want* a no-match to be fatal. This includes calls inside `$()`, pipelines, and `if` conditions (the `if` form is already safe — `if grep ...` doesn't trigger `set -e`).

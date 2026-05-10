@@ -775,3 +775,13 @@ git status && git log --oneline -4   # post-push verification
 ```
 **What**: Added `--check-inventory` CLI flag to `main.py` + `run_inventory_check()`. Replaced 200-char `python -c` one-liner in `configure.sh` Step 6 with the new short command.
 **Why**: Long `echo` one-liners wrap in terminals; users copy the truncated visible text and get an open `>` shell prompt because the string isn't closed.
+
+### 2026-05-10 — configure.sh set -e grep fixes
+
+```bash
+git add scripts/configure.sh STATUS.md tasks/lessons.md docs/command-log.md
+git commit -m "fix: guard all bare grep calls with || true in configure.sh"
+git push origin main
+```
+**What**: Added `|| true` to every bare `grep` call inside `$()` subshells in `configure.sh` — lines 159, 161, 163, 169, 302, 303, 349. Also fixed the key-line grep in the encryption section (primary bug).
+**Why**: `set -euo pipefail` is active at the top of the script. `grep` exits 1 on no-match, which `set -e` treats as fatal — silently killing the script with no error message. The encryption section failed immediately after "Generating encryption key..." because the `grep "^ERRANDER_SECRETS_KEY="` pipe had no `|| true`.

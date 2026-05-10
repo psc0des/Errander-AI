@@ -244,6 +244,10 @@ The approval flow is now fully decoupled from execution. A dry-run scan can happ
 ## Blockers
 None.
 
+## Files Changed (2026-05-10 — configure.sh set -e grep fixes)
+### Modified
+- `scripts/configure.sh` — added `|| true` to all bare `grep` calls inside `$()` subshells; `set -euo pipefail` was silently killing the script when `grep` found no match (exit 1 treated as fatal)
+
 ## Files Changed (2026-05-10 — --check-inventory CLI flag)
 ### Modified
 - `errander/main.py` — added `--check-inventory` flag + `run_inventory_check()`: validates inventory.yaml and prints env/target summary; wired into `async_main` early-exit path

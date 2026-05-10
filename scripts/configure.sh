@@ -156,17 +156,17 @@ if [ -f "inventory.yaml" ]; then
     step "2/5" "Target VMs"
     echo ""
     _existing_vms=$(grep -c "^\s*- host:" inventory.yaml 2>/dev/null || echo 0)
-    ENV_NAME=$(grep -m1 "^environments:" -A1 inventory.yaml | tail -1 | tr -d ' :')
+    ENV_NAME=$(grep -m1 "^environments:" -A1 inventory.yaml | tail -1 | tr -d ' :' || true)
     ENV_NAME="${ENV_NAME:-dev}"
-    SSH_USER=$(grep -m1 "ssh_user:" inventory.yaml | awk '{print $2}')
+    SSH_USER=$(grep -m1 "ssh_user:" inventory.yaml | awk '{print $2}' || true)
     SSH_USER="${SSH_USER:-errander}"
-    SSH_KEY_PATH=$(grep -m1 "ssh_key_path:" inventory.yaml | awk '{print $2}')
+    SSH_KEY_PATH=$(grep -m1 "ssh_key_path:" inventory.yaml | awk '{print $2}' || true)
     SSH_KEY_PATH="${SSH_KEY_PATH:-~/.ssh/errander_prod}"
     VM_COUNT=$_existing_vms
     ok "Reusing settings from existing inventory.yaml  (env=${ENV_NAME}, ssh_user=${SSH_USER})"
     if [ "$_existing_vms" -gt 0 ]; then
         echo "  Current VMs:"
-        grep -E "host:|name:" inventory.yaml | grep -v "ssh_" | sed 's/^/    /'
+        grep -E "host:|name:" inventory.yaml | grep -v "ssh_" | sed 's/^/    /' || true
         echo ""
         printf "  Keep these VMs? (Y/n): "
         read -r _keep || true
@@ -299,8 +299,8 @@ echo ""
 _existing_ui_user="admin"
 _existing_ui_pass=""
 if [ -f ".env" ]; then
-    _u=$(grep "^ERRANDER_UI_USER=" .env 2>/dev/null | cut -d= -f2-)
-    _p=$(grep "^ERRANDER_UI_PASSWORD=" .env 2>/dev/null | cut -d= -f2-)
+    _u=$(grep "^ERRANDER_UI_USER=" .env 2>/dev/null | cut -d= -f2- || true)
+    _p=$(grep "^ERRANDER_UI_PASSWORD=" .env 2>/dev/null | cut -d= -f2- || true)
     [ -n "$_u" ] && _existing_ui_user="$_u"
     [ -n "$_p" ] && _existing_ui_pass="$_p"
 fi
@@ -346,7 +346,7 @@ KEY_FILE="${HOME}/.errander.key"
 case "${_enc_choice,,}" in
   y|yes)
     warn "Generating encryption key..."
-    _key_line=$(uv run python -m errander --generate-secrets-key 2>/dev/null | grep "^ERRANDER_SECRETS_KEY=")
+    _key_line=$(uv run python -m errander --generate-secrets-key 2>/dev/null | grep "^ERRANDER_SECRETS_KEY=" || true)
     SECRETS_KEY="${_key_line#ERRANDER_SECRETS_KEY=}"
     if [ -z "$SECRETS_KEY" ]; then
         warn "Key generation failed — writing .env with plaintext values"

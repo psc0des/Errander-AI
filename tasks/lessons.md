@@ -433,3 +433,11 @@ fi
 ```
 
 **Rule**: a secrets key is stable infrastructure — treat it like a signing certificate. Rotate it deliberately (with re-encryption of all stored blobs), never accidentally on re-run.
+
+---
+
+## Phase 1.8 — bootstrap.sh must use `uv sync --extra dev`, not bare `uv sync`
+
+**Lesson**: `pytest`, `ruff`, and `mypy` live under `[project.optional-dependencies] dev`. A bare `uv sync` installs only the core runtime deps and leaves those tools absent. The verify step (`uv run pytest`) then fails with "No such file or directory" — no indication that deps are the cause.
+
+**Rule**: any bootstrap or setup script that expects `pytest`/`ruff`/`mypy` to be available must run `uv sync --extra dev`. Surface this command explicitly in every place that lists verify steps (bootstrap.sh, configure.sh Step 6 output, SETUP.md).

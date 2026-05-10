@@ -168,7 +168,7 @@ if [ -f "inventory.yaml" ]; then
         echo "  Current VMs:"
         grep -E "host:|name:" inventory.yaml | grep -v "ssh_" | sed 's/^/    /'
         echo ""
-        printf "  Keep existing VMs and just add more? (Y/n): "
+        printf "  Keep these VMs? (Y/n): "
         read -r _keep || true
         echo ""
         case "${_keep,,}" in
@@ -177,7 +177,7 @@ if [ -f "inventory.yaml" ]; then
         esac
     fi
     echo ""
-    printf "  Do you want to add target VMs now? (Y/n): "
+    printf "  Add more VMs? (y/N): "
     read -r _add_vms || true
     echo ""
 else

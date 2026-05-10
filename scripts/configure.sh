@@ -248,14 +248,13 @@ esac
 [ "$VM_COUNT" -gt 0 ] && ok "$VM_COUNT VM(s) in environment '${ENV_NAME}'"
 
 # ── 3. SSH key ────────────────────────────────────────────────────────────────
-step "3/5" "SSH key pair"
-
 SSH_KEY_EXPANDED="${SSH_KEY_PATH/#\~/$HOME}"
 
 _key_is_new=false
 if [ -f "$SSH_KEY_EXPANDED" ]; then
-    ok "Key already exists at $SSH_KEY_EXPANDED — reusing"
+    ok "[3/5] SSH key already exists at $SSH_KEY_EXPANDED — skipping"
 else
+    step "3/5" "SSH key pair"
     warn "Generating new key pair at $SSH_KEY_EXPANDED ..."
     mkdir -p "$(dirname "$SSH_KEY_EXPANDED")"
     ssh-keygen -t ed25519 -f "$SSH_KEY_EXPANDED" -C "errander-agent" -N ""

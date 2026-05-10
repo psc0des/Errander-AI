@@ -121,6 +121,18 @@ async def assess_node(
     pkg_mgr = get_package_manager_by_name(os_family)
     exclude_patterns = state.get("exclude_patterns", list(MANDATORY_KERNEL_EXCLUDES))
 
+    # Refresh local package index so upgradable list reflects current upstream state.
+    # Without this, a VM that has never run apt update returns an empty or stale list.
+    refresh = await executor.execute(
+        vm_id, target["hostname"], target["username"], target["key_path"],
+        command=pkg_mgr.refresh_package_lists(),
+    )
+    if not refresh.success:
+        logger.warning(
+            "Package list refresh failed on %s (continuing with cached lists): %s",
+            vm_id, refresh.stderr[:200],
+        )
+
     # List upgradable packages
     result = await executor.execute(
         vm_id, target["hostname"], target["username"], target["key_path"],

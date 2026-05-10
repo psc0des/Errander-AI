@@ -136,7 +136,8 @@ class TestAssessNode:
             "nginx/focal-updates 1.18.0 amd64 [upgradable from: 1.17.0]\n"
             "curl/focal-updates 7.68.0 amd64 [upgradable from: 7.67.0]\n"
         )
-        execute_mock = AsyncMock(return_value=_make_result(apt_output))
+        # First call: refresh_package_lists; second call: list_upgradable
+        execute_mock = AsyncMock(side_effect=[_make_result(""), _make_result(apt_output)])
 
         with patch.object(executor, "execute", execute_mock):
             state = _base_state()
@@ -153,7 +154,7 @@ class TestAssessNode:
             "nginx/focal 1.18.0 amd64 [upgradable from: 1.17.0]\n"
             "linux-image-5.15.0/focal 5.15.0 amd64 [upgradable from: 5.14.0]\n"
         )
-        execute_mock = AsyncMock(return_value=_make_result(apt_output))
+        execute_mock = AsyncMock(side_effect=[_make_result(""), _make_result(apt_output)])
 
         with patch.object(executor, "execute", execute_mock):
             state = _base_state()
@@ -164,7 +165,7 @@ class TestAssessNode:
 
     async def test_nothing_to_do_when_up_to_date(self) -> None:
         executor = _make_executor(dry_run=True)
-        execute_mock = AsyncMock(return_value=_make_result("Listing... Done\n"))
+        execute_mock = AsyncMock(side_effect=[_make_result(""), _make_result("Listing... Done\n")])
 
         with patch.object(executor, "execute", execute_mock):
             state = _base_state()
@@ -179,7 +180,7 @@ class TestAssessNode:
             "Listing... Done\n"
             "linux-image-5.15.0/focal 5.15.0 amd64 [upgradable from: 5.14.0]\n"
         )
-        execute_mock = AsyncMock(return_value=_make_result(apt_output))
+        execute_mock = AsyncMock(side_effect=[_make_result(""), _make_result(apt_output)])
 
         with patch.object(executor, "execute", execute_mock):
             state = _base_state()
@@ -346,12 +347,15 @@ class TestBuildSubgraph:
             nonlocal call_count
             call_count += 1
             if call_count == 1:
+                # refresh_package_lists
+                return _make_result("")
+            if call_count == 2:
                 # list_upgradable
                 return _make_result(
                     "Listing... Done\n"
                     "nginx/focal 1.18.0 amd64 [upgradable from: 1.17.0]\n"
                 )
-            if call_count == 2:
+            if call_count == 3:
                 # list_installed_versions (snapshot)
                 return _make_result("nginx=1.17.0\n")
             # simulate_upgrade

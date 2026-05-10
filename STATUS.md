@@ -382,6 +382,12 @@ None.
 - `errander/integrations/secrets.py` — improved `DecryptionError` message to explain the key-mismatch cause and tell the user to re-run configure.sh and re-enter the affected secret
 - `tasks/lessons.md` — added lesson: configure.sh must reuse existing key, not regenerate on every run
 
+## Files Changed (2026-05-10 — patching: run apt-get update before listing upgrades)
+### Modified
+- `errander/execution/commands.py` — added `refresh_package_lists()` abstract method to `PackageManager`; `AptManager` returns `apt-get update -qq`, `DnfManager` returns `dnf makecache --quiet 2>/dev/null || true`
+- `errander/agent/subgraphs/patching.py` — `assess_node` now calls `refresh_package_lists()` before `list_upgradable()`; refresh failure is non-fatal (logs warning, continues with stale index)
+- `tests/agent/subgraphs/test_patching.py` — all `assess_node` and integration tests updated to mock refresh call (now 2 executor calls in assess: refresh + list); 34/34 passing
+
 ## Files Changed (This Session)
 ### Modified
 - `errander/agent/decisions.py` — LLM wired in: all decision functions accept optional llm_client, fall back to hardcoded

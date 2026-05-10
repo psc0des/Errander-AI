@@ -4,6 +4,16 @@ Self-improvement log. Updated after corrections, mistakes, and surprises.
 
 ---
 
+## 2026-05-10 — apt list --upgradable needs apt-get update first
+
+**`apt list --upgradable` on a fresh VM returns zero results without a prior `apt-get update`** — the local package index starts stale (or empty). Without refreshing it, `list_upgradable` correctly reports nothing upgradable, but only because it hasn't checked upstream yet. This was caught during live dry-run validation: a freshly provisioned Azure VM showed 0 pending updates when the real answer was dozens.
+
+Fix: `assess_node` must call `refresh_package_lists()` (`apt-get update -qq`) before `list_upgradable()`. Failure of the refresh is non-fatal — log a warning and continue with the stale index (better than blocking the whole batch on a transient network blip).
+
+**When mocking a node that now makes 2 executor calls instead of 1, all test mocks must shift** — unit tests using `side_effect=[result]` need to become `side_effect=[refresh_result, list_result]`. Integration tests using `call_count` need their branch numbering shifted up by 1. The compiler will not catch this; only running the tests will.
+
+---
+
 ## 2026-05-10 — configure.sh UX and Security Lessons
 
 **Bash case `*` catches empty string** — when a prompt has a (Y/n) default, reading the value and immediately using `*` as the "yes" catch-all works in the first case block. But if a second case block later requires explicit `y|yes`, pressing Enter (empty) falls to the wrong branch. Fix: normalize with `VAR="${VAR:-y}"` immediately after `read` so both blocks see a consistent value.

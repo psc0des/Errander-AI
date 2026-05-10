@@ -23,6 +23,10 @@ class PackageManager(ABC):
     """
 
     @abstractmethod
+    def refresh_package_lists(self) -> str:
+        """Return command to refresh the local package index from upstream repos."""
+
+    @abstractmethod
     def list_upgradable(self) -> str:
         """Return command to list packages with available updates."""
 
@@ -63,6 +67,9 @@ class PackageManager(ABC):
 class AptManager(PackageManager):
     """Package manager for Debian/Ubuntu systems (apt)."""
 
+    def refresh_package_lists(self) -> str:
+        return "apt-get update -qq"
+
     def list_upgradable(self) -> str:
         return "apt list --upgradable 2>/dev/null"
 
@@ -100,6 +107,9 @@ class AptManager(PackageManager):
 
 class DnfManager(PackageManager):
     """Package manager for RHEL systems (dnf)."""
+
+    def refresh_package_lists(self) -> str:
+        return "dnf makecache --quiet 2>/dev/null || true"
 
     def list_upgradable(self) -> str:
         return "dnf check-update --quiet 2>/dev/null || true"

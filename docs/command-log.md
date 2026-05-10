@@ -757,3 +757,21 @@ git push origin main
 ```
 **What**: Updated `docs/SECRETS.md` — added `ERRANDER_UI_PASSWORD` to `.env` example, expanded key rotation into two procedures (key available vs. lost), added per-secret runtime notes.
 **Why**: Users asked how encryption/decryption works for these two variables and whether docs cover key loss recovery.
+
+### 2026-05-10 — --check-inventory CLI flag
+
+```bash
+# Smoke-test the new flag against the example inventory
+uv run python -m errander --check-inventory --inventory example/inventory.yaml
+
+# Verify error path (missing file)
+uv run python -m errander --check-inventory --inventory nonexistent.yaml
+
+git add errander/main.py scripts/configure.sh STATUS.md
+git commit -m "fix: replace long inventory one-liner with --check-inventory CLI flag"
+git push origin main
+
+git status && git log --oneline -4   # post-push verification
+```
+**What**: Added `--check-inventory` CLI flag to `main.py` + `run_inventory_check()`. Replaced 200-char `python -c` one-liner in `configure.sh` Step 6 with the new short command.
+**Why**: Long `echo` one-liners wrap in terminals; users copy the truncated visible text and get an open `>` shell prompt because the string isn't closed.

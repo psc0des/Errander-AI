@@ -344,3 +344,21 @@ page.goto("/ui/settings")
 ```
 
 OR use `with page.expect_navigation():` around the click for an explicit navigation wait.
+
+---
+
+## Phase 1.8 — Long echo One-Liners Break on Terminal Copy-Paste
+
+**Lesson**: A shell `echo "..."` with a 200+ character string prints the full string, but the terminal wraps it visually. Users who copy the visible text get a truncated string — if it cuts mid-quote, the shell shows `>` waiting for the closing quote. The command silently fails.
+
+Fix: never put long commands in terminal output. Instead, add a dedicated CLI flag and print the short flag:
+
+```bash
+# WRONG — wraps at terminal width, breaks on copy
+echo "    uv run python -c \"from errander.config.schema import validate_inventory; from pathlib import Path; inv = validate_inventory(Path('inventory.yaml')); print('Targets:', sum(len(e.targets) for e in inv.environments.values()))\""
+
+# CORRECT — short, safe to copy regardless of terminal width
+echo "    uv run python -m errander --check-inventory"
+```
+
+**Rule**: any command shown in a script's final summary must be short enough to fit on one terminal line (~80 chars). If it doesn't fit, add a CLI flag for it.

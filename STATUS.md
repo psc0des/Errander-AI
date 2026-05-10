@@ -293,6 +293,9 @@ None.
 - `scripts/configure.sh` — split combined "Keep existing VMs and just add more?" into two separate prompts: "Keep these VMs? (Y/n)" and "Add more VMs? (y/N)"
 - `scripts/configure.sh` — removed stale "Complete SETUP.md Steps 2-3" reminder from final summary; replaced with direct "Next — run a dry-run:" line
 - `scripts/configure.sh` — final summary now shows Step 6 (verify inventory + pytest) before Step 7 (dry-run), matching SETUP.md order
+- `scripts/configure.sh` — Step 7 dry-run command now includes `--force --force-reason "initial dry-run validation"` to bypass maintenance window on first run
+- `SETUP.md` — Step 7 commands updated with `--force --force-reason`; added note explaining `--force` bypasses the window for first-run validation
+- `errander/agent/graph.py` — approval gate now auto-approves dry-run batches immediately; approval only required for live runs with HIGH/CRITICAL risk tier
 
 ## Files Changed (This Session)
 ### Modified

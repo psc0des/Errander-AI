@@ -693,6 +693,19 @@ curl -LsSf https://raw.githubusercontent.com/psc0des/Errander-AI/main/scripts/bo
 **What**: Final summary now lists Step 6 (verify inventory + `uv run pytest`) before Step 7 (dry-run), matching SETUP.md order exactly.
 **Why**: Previous summary jumped straight to dry-run, skipping the verify step — inconsistent with SETUP.md and confusing for users following the guide.
 
+### 2026-05-10 — dry-run --force fix (configure.sh + SETUP.md Step 7)
+
+**What**: Added `--force --force-reason "initial dry-run validation"` to the suggested dry-run command in configure.sh summary and SETUP.md Step 7.
+**Why**: First dry-run blocked by maintenance window on a weekend — `--force` bypasses the window so first-run validation always works.
+
+### 2026-05-10 — fix approval gate skipping for dry-run batches
+
+```bash
+uv run python -m pytest tests/agent/test_graph.py -q  # 33 passed
+```
+**What**: `approval_gate_node` in `errander/agent/graph.py` now auto-approves immediately when `dry_run=True`, skipping the `await_dual_approval` call entirely.
+**Why**: Dry-run executes nothing on target VMs — requiring human approval blocked the first validation run indefinitely with no way to proceed without a web UI or Slack.
+
 ## Debugging
 
 ### 2026-03-21 — uv sync timeout issues

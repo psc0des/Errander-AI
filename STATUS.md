@@ -336,6 +336,10 @@ None.
 - `scripts/configure.sh` — encryption key auto-wired: exported into current session, appended to `~/.bashrc`/`~/.zshrc` (idempotent), and injected into systemd service EnvironmentFile if service already installed — no manual steps required
 - `scripts/bootstrap.sh` — completion message corrected: step numbers updated, configure.sh quick path surfaced
 
+## Files Changed (2026-05-10 — fix SETUP.md Step 6: remove env export before pytest, add sync/playwright)
+### Modified
+- `SETUP.md` — Step 6 rewritten: removed `export $(grep -v '^#' .env | xargs)` (poisons pytest), replaced long one-liner with `--check-inventory`, added `uv sync --extra dev` + `playwright install chromium` steps, added warning note; Step 7 Linux/Windows blocks aligned — both now show the load-env step explicitly before `--run-now`
+
 ## Files Changed (2026-05-10 — fix test failures on VM: stale dates, env leakage, Playwright)
 ### Modified
 - `tests/safety/test_deferred.py` — WINDOW_START changed from hardcoded 2026-04-26 to `now+30d`; expiry_at was already in the past on the VM, causing get_pending() to return nothing

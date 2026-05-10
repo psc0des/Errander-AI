@@ -586,37 +586,24 @@ ERRANDER_SLACK_CHANNEL_ID=C0123456789
 
 ## Step 6 — Verify everything
 
-### Load env vars
-
-**Windows PowerShell:**
-```powershell
-Get-Content .env | Where-Object { $_ -notmatch "^#" -and $_ -ne "" } | ForEach-Object {
-    $parts = $_ -split "=", 2
-    [System.Environment]::SetEnvironmentVariable($parts[0], $parts[1], "Process")
-}
-```
-
-**Windows Command Prompt / Git Bash / Linux:**
 ```bash
-export $(grep -v '^#' .env | xargs)
-```
+# 1. Install dev tools (pytest, ruff, mypy) — skip if bootstrap.sh already ran
+uv sync --extra dev
 
-### Run checks
+# 2. Install Chromium browser for UI tests — skip if already done
+uv run playwright install chromium
 
-```bash
-# 1. Verify inventory parses correctly
-uv run python -c "
-from errander.config.schema import validate_inventory
-from pathlib import Path
-inv = validate_inventory(Path('inventory.yaml'))
-print('Environments:', list(inv.environments.keys()))
-print('Targets:', sum(len(e.targets) for e in inv.environments.values()))
-"
+# 3. Verify inventory parses correctly — no env vars needed
+uv run python -m errander --check-inventory
 
-# 2. Run the full test suite
+# 4. Run the full test suite
+#    Do NOT export .env before this step — exported secrets pollute the test
+#    environment and cause settings/secrets tests to fail. Tests are self-contained.
 uv run pytest
 # Expected: all tests pass
 ```
+
+> **Note:** Do not run `export $(grep -v '^#' .env | xargs)` before `uv run pytest`. The test suite manages its own environment via pytest fixtures. Export env vars only when running agent CLI commands (Steps 7+).
 
 ---
 
@@ -624,14 +611,20 @@ uv run pytest
 
 Replace `<your-env-name>` with the environment name from your `inventory.yaml` (e.g. `dev`, `dr`, `production`).
 
-**Windows PowerShell** (load env first, see Step 6):
-```powershell
-uv run python -m errander --run-now --env <your-env-name> --inventory inventory.yaml --dry-run --force --force-reason "initial dry-run validation"
-```
+The agent reads credentials from environment variables — load `.env` first, then run.
 
 **Linux / Git Bash:**
 ```bash
 export $(grep -v '^#' .env | xargs)
+uv run python -m errander --run-now --env <your-env-name> --inventory inventory.yaml --dry-run --force --force-reason "initial dry-run validation"
+```
+
+**Windows PowerShell:**
+```powershell
+Get-Content .env | Where-Object { $_ -notmatch "^#" -and $_ -ne "" } | ForEach-Object {
+    $parts = $_ -split "=", 2
+    [System.Environment]::SetEnvironmentVariable($parts[0], $parts[1], "Process")
+}
 uv run python -m errander --run-now --env <your-env-name> --inventory inventory.yaml --dry-run --force --force-reason "initial dry-run validation"
 ```
 

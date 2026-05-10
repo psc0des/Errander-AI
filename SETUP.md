@@ -295,7 +295,7 @@ Once you have your LLM endpoint URL, model name, and API key ready, run the inte
 bash scripts/configure.sh
 ```
 
-It will prompt you for everything — LLM, target VMs, SSH key, optional Slack — then write `.env` and `inventory.yaml` and verify the LLM connection. Skip to [Step 6 — Verify everything](#step-6--verify-everything) when done.
+It will prompt you for LLM credentials, target VMs, verify your SSH key path (create it first in Step 2 if you haven't), and optional Slack — then write `.env` and `inventory.yaml` and verify the LLM connection. Skip to [Step 6 — Verify everything](#step-6--verify-everything) when done.
 
 > **Windows note:** `configure.sh` runs in Git Bash (installed with Git for Windows). Open **Git Bash** (not PowerShell) and run the command above from inside the `errander\` folder.
 >
@@ -352,8 +352,8 @@ Note them down — you'll paste them into your `.env` in Step 5.
 
 Your three values:
 ```
-BASE_URL  = https://<your-resource>.openai.azure.com/openai/v1/   ← trailing / required
-MODEL     = <your-deployment-name>                                 ← deployment name, not model ID
+BASE_URL  = https://<your-resource>.cognitiveservices.azure.com/openai/v1/   ← trailing / required
+MODEL     = <your-deployment-name>                                             ← deployment name, not model ID
 API_KEY   = <key from Keys and Endpoint blade>
 ```
 
@@ -497,7 +497,7 @@ ERRANDER_LLM_API_KEY=<api-key-from-step-4>
 
 ERRANDER_AUDIT_DB_URL=errander.sqlite
 
-# Web UI auth (recommended — remove to leave UI open)
+# Web UI auth — change these before going to production
 ERRANDER_UI_USER=admin
 ERRANDER_UI_PASSWORD=changeme
 
@@ -545,6 +545,8 @@ cp example/settings.yaml settings.yaml
 ### Web UI
 
 The agent exposes a web UI at `http://<master-vm-ip>:9090/ui` (port 9090 — see Prerequisites for NSG setup). The `ERRANDER_UI_USER` / `ERRANDER_UI_PASSWORD` env vars in the `.env` template above enable HTTP Basic Auth on it.
+
+> **Change the default password** — `changeme` is a placeholder. Update `ERRANDER_UI_PASSWORD` in `.env` before exposing the UI on any network.
 
 The UI covers:
 - `/ui/` — batch run history, event log, pending approvals
@@ -620,15 +622,17 @@ uv run pytest
 
 ## Step 7 — First run (dry-run)
 
+Replace `<your-env-name>` with the environment name from your `inventory.yaml` (e.g. `dev`, `dr`, `production`).
+
 **Windows PowerShell** (load env first, see Step 6):
 ```powershell
-uv run python -m errander --run-now --env dev --inventory inventory.yaml --dry-run --force --force-reason "initial dry-run validation"
+uv run python -m errander --run-now --env <your-env-name> --inventory inventory.yaml --dry-run --force --force-reason "initial dry-run validation"
 ```
 
 **Linux / Git Bash:**
 ```bash
 export $(grep -v '^#' .env | xargs)
-uv run python -m errander --run-now --env dev --inventory inventory.yaml --dry-run --force --force-reason "initial dry-run validation"
+uv run python -m errander --run-now --env <your-env-name> --inventory inventory.yaml --dry-run --force --force-reason "initial dry-run validation"
 ```
 
 > `--force` bypasses the maintenance window so this first validation run always succeeds regardless of day or time. Remove it once you've confirmed the setup works and set your maintenance window in `inventory.yaml`.
@@ -643,10 +647,10 @@ What happens:
 
 ## Step 8 — Live run
 
-Once dry-run looks correct:
+Once dry-run looks correct (replace `<your-env-name>` as above):
 
 ```bash
-uv run python -m errander --run-now --env dev --inventory inventory.yaml --live
+uv run python -m errander --run-now --env <your-env-name> --inventory inventory.yaml --live
 ```
 
 Real commands execute on the target VMs.
@@ -657,20 +661,26 @@ Real commands execute on the target VMs.
 
 ### Linux controller — systemd
 
+Run this from inside the `errander/` directory — it auto-fills your username and install path:
+
 ```bash
-sudo tee /etc/systemd/system/errander.service << 'EOF'
+# Run from inside the errander/ directory
+INSTALL_DIR=$(pwd)
+INSTALL_USER=$(whoami)
+
+sudo tee /etc/systemd/system/errander.service << EOF
 [Unit]
 Description=Errander-AI autonomous maintenance agent
 After=network.target
 
 [Service]
 Type=simple
-User=errander
-WorkingDirectory=/home/errander/errander
-EnvironmentFile=/home/errander/errander/.env
-ExecStart=/home/errander/errander/.venv/bin/python -m errander \
-  --inventory /home/errander/errander/inventory.yaml \
-  --config /home/errander/errander/settings.yaml
+User=${INSTALL_USER}
+WorkingDirectory=${INSTALL_DIR}
+EnvironmentFile=${INSTALL_DIR}/.env
+ExecStart=${INSTALL_DIR}/.venv/bin/python -m errander \\
+  --inventory ${INSTALL_DIR}/inventory.yaml \\
+  --config ${INSTALL_DIR}/settings.yaml
 Restart=on-failure
 RestartSec=30
 

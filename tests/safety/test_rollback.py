@@ -36,16 +36,15 @@ class TestRollback:
         assert "re-pull" in detail.lower()
 
     @pytest.mark.asyncio
-    async def test_patching_not_yet_implemented(self) -> None:
-        snapshot = {"packages": {"curl": "7.81.0", "nginx": "1.18.0"}}
+    async def test_patching_rollback_requires_executor(self) -> None:
+        """Patching rollback fails gracefully when no SSH executor is provided."""
+        snapshot = {"curl": "7.81.0", "nginx": "1.18.0"}
         success, detail = await rollback_action(ActionType.PATCHING, "vm-01", snapshot)
         assert not success
-        assert "not yet implemented" in detail.lower()
+        assert "executor" in detail.lower()
 
     @pytest.mark.asyncio
-    async def test_patching_rollback_receives_snapshot(self) -> None:
-        """Ensure pre_snapshot is passed through (will matter when implemented)."""
-        snapshot = {"packages": {"vim": "2:8.2.0"}}
-        success, detail = await rollback_action(ActionType.PATCHING, "vm-01", snapshot)
-        # For now it fails gracefully, but the snapshot was accepted
+    async def test_patching_rollback_empty_snapshot_fails(self) -> None:
+        """Patching rollback with empty snapshot fails gracefully (no versions to restore)."""
+        success, detail = await rollback_action(ActionType.PATCHING, "vm-01", {})
         assert not success

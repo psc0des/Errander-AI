@@ -89,6 +89,11 @@ class Settings:
     metrics_port: int = 9090
     dry_run_default: bool = True
 
+    # Audit mode: "strict" (fail-closed on write error for live actions) or
+    # "best_effort" (log and continue). Default strict so production batches
+    # are never silently under-audited (finding #13).
+    audit_mode: str = "strict"
+
     # UI auth (env-only — bootstrap credentials must not live in DB)
     ui_user: str = ""
     ui_password: str = ""

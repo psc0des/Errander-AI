@@ -560,7 +560,7 @@ class TestRunVmNodeExceptionSafety:
 # ---------------------------------------------------------------------------
 
 class TestApprovalGateDeferred:
-    """Dry-run approval outside window → defer; inside window or live → execute."""
+    """Deferred execution: live runs outside window → defer; dry-run always immediate."""
 
     def _make_approval_state(
         self,
@@ -576,8 +576,8 @@ class TestApprovalGateDeferred:
         )
 
     @pytest.mark.asyncio
-    async def test_dry_run_outside_window_defers(self) -> None:
-        """Dry-run approval while outside window saves to deferred_store."""
+    async def test_dry_run_outside_window_never_deferred(self) -> None:
+        """Dry-run is always auto-approved immediately, never deferred regardless of window."""
         from datetime import datetime, timezone
         from unittest.mock import patch
 
@@ -587,15 +587,14 @@ class TestApprovalGateDeferred:
         window = MaintenanceWindow(
             days=["monday"], start_hour=2, end_hour=6, timezone="UTC"
         )
-        # 2030-01-07 is a Monday; 10:00 UTC is outside window [02:00, 06:00).
-        # Next window = 2030-01-14 02:00, expiry = 2030-01-21 — safely in the future.
+        # Monday outside window — dry-run should still NOT be deferred
         monday_10am = datetime(2030, 1, 7, 10, 0, 0, tzinfo=timezone.utc)
 
         deferred_store = DeferredExecutionStore(":memory:")
         await deferred_store.initialize()
 
         try:
-            state = self._make_approval_state()
+            state = self._make_approval_state(dry_run=True)
             with patch("errander.agent.graph.datetime") as mock_dt:
                 mock_dt.now.return_value = monday_10am
                 result = await approval_gate_node(
@@ -604,10 +603,10 @@ class TestApprovalGateDeferred:
                     deferred_store=deferred_store,
                 )
 
-            assert result.get("deferred") is True
+            assert result.get("deferred") is False
             assert result.get("approved") is True
             pending = await deferred_store.get_pending("production")
-            assert len(pending) == 1
+            assert len(pending) == 0
         finally:
             await deferred_store.close()
 
@@ -644,8 +643,8 @@ class TestApprovalGateDeferred:
             await deferred_store.close()
 
     @pytest.mark.asyncio
-    async def test_live_run_not_deferred_regardless_of_window(self) -> None:
-        """Live run is never deferred, even when outside window."""
+    async def test_live_run_deferred_when_outside_window(self) -> None:
+        """Live run approved while outside maintenance window is deferred to next window."""
         from datetime import datetime, timezone
         from unittest.mock import patch
 
@@ -655,7 +654,8 @@ class TestApprovalGateDeferred:
         window = MaintenanceWindow(
             days=["monday"], start_hour=2, end_hour=6, timezone="UTC"
         )
-        monday_10am = datetime(2026, 4, 6, 10, 0, 0, tzinfo=timezone.utc)
+        # 2030-01-07 is a Monday at 10:00 UTC — outside [02:00, 06:00).
+        monday_10am = datetime(2030, 1, 7, 10, 0, 0, tzinfo=timezone.utc)
 
         deferred_store = DeferredExecutionStore(":memory:")
         await deferred_store.initialize()
@@ -670,7 +670,10 @@ class TestApprovalGateDeferred:
                     deferred_store=deferred_store,
                 )
 
-            assert result.get("deferred") is False
+            assert result.get("deferred") is True
+            assert result.get("approved") is True
+            pending = await deferred_store.get_pending("production")
+            assert len(pending) == 1
         finally:
             await deferred_store.close()
 
@@ -695,8 +698,8 @@ class TestApprovalGateDeferred:
             await deferred_store.close()
 
     @pytest.mark.asyncio
-    async def test_dry_run_outside_window_notifies_slack(self) -> None:
-        """When deferring, Slack gets a notification with the window time."""
+    async def test_live_run_outside_window_notifies_slack(self) -> None:
+        """When deferring a live run, Slack gets a notification with the window time."""
         from datetime import datetime, timezone
         from unittest.mock import AsyncMock, patch
 
@@ -715,7 +718,7 @@ class TestApprovalGateDeferred:
         await deferred_store.initialize()
 
         try:
-            state = self._make_approval_state()
+            state = self._make_approval_state(dry_run=False)
             with patch("errander.agent.graph.datetime") as mock_dt:
                 mock_dt.now.return_value = monday_10am
                 await approval_gate_node(
@@ -732,8 +735,8 @@ class TestApprovalGateDeferred:
             await deferred_store.close()
 
     @pytest.mark.asyncio
-    async def test_dry_run_outside_window_logs_audit_event(self) -> None:
-        """Deferral logs an EXECUTION_DEFERRED audit event."""
+    async def test_live_run_outside_window_logs_audit_event(self) -> None:
+        """Deferral of a live run logs an EXECUTION_DEFERRED audit event."""
         from datetime import datetime, timezone
         from unittest.mock import patch
 
@@ -752,7 +755,7 @@ class TestApprovalGateDeferred:
 
         async with AuditStore(":memory:") as audit_store:
             try:
-                state = self._make_approval_state()
+                state = self._make_approval_state(dry_run=False)
                 with patch("errander.agent.graph.datetime") as mock_dt:
                     mock_dt.now.return_value = monday_10am
                     await approval_gate_node(

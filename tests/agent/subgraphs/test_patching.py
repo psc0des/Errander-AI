@@ -294,9 +294,9 @@ class TestRouting:
         state = _base_state(status=ActionStatus.DRY_RUN_OK.value)
         assert route_after_execute(state) == "__end__"
 
-    def test_route_after_execute_finishes_on_failure(self) -> None:
+    def test_route_after_execute_routes_failure_to_rollback(self) -> None:
         state = _base_state(status=ActionStatus.FAILED.value)
-        assert route_after_execute(state) == "__end__"
+        assert route_after_execute(state) == "rollback"
 
     def test_route_after_execute_verifies_live(self) -> None:
         state = _base_state(status=ActionStatus.SUCCESS.value)

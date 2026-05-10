@@ -172,14 +172,16 @@ async def execute_node(
     """
     vm_id = state["vm_id"]
     target = _get_connection_params(state)
+    dry_run = state.get("dry_run", True)
 
     result = await executor.execute(
         vm_id, target["hostname"], target["username"], target["key_path"],
         command="docker system prune -af 2>&1",
         simulate_command="docker system df 2>/dev/null",
+        dry_run=dry_run,
     )
 
-    status = ActionStatus.DRY_RUN_OK if executor.dry_run else ActionStatus.SUCCESS
+    status = ActionStatus.DRY_RUN_OK if dry_run else ActionStatus.SUCCESS
     return {
         "prune_output": result.stdout.strip(),
         "status": status.value,

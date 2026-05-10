@@ -234,14 +234,16 @@ async def execute_node(
     pkg_mgr = get_package_manager_by_name(os_family)
     exclude_patterns = state.get("exclude_patterns", list(MANDATORY_KERNEL_EXCLUDES))
 
+    dry_run = state.get("dry_run", True)
     result = await executor.execute(
         vm_id, target["hostname"], target["username"], target["key_path"],
         command=pkg_mgr.upgrade_all(exclude_patterns=exclude_patterns),
         simulate_command=pkg_mgr.simulate_upgrade(),
+        dry_run=dry_run,
     )
 
-    status = ActionStatus.DRY_RUN_OK if executor.dry_run else ActionStatus.SUCCESS
-    if not result.success and not executor.dry_run:
+    status = ActionStatus.DRY_RUN_OK if dry_run else ActionStatus.SUCCESS
+    if not result.success and not dry_run:
         status = ActionStatus.FAILED
 
     return {
@@ -366,10 +368,58 @@ def route_after_assess(state: PatchingGraphState) -> str:
     return "snapshot"
 
 
+async def rollback_node(
+    state: PatchingGraphState,
+    *,
+    executor: SandboxExecutor,
+) -> dict[str, Any]:
+    """Attempt to rollback a failed patching operation (finding #5).
+
+    Uses the version_snapshot captured before upgrade to restore previous
+    package versions via apt-get install --allow-downgrades.
+    Always sets status=FAILED (the upgrade itself failed); error details
+    include rollback outcome for the audit trail.
+    """
+    from errander.safety.rollback import rollback_action
+    from errander.models.actions import ActionType as _AT
+
+    vm_id = state["vm_id"]
+    target = _get_connection_params(state)
+    snapshot = state.get("version_snapshot", {})
+
+    success, detail = await rollback_action(
+        _AT.PATCHING,
+        vm_id,
+        snapshot,
+        executor=executor,
+        hostname=target["hostname"],
+        username=target["username"],
+        key_path=target["key_path"],
+    )
+
+    if success:
+        logger.info("Patching rollback succeeded for %s: %s", vm_id, detail)
+    else:
+        logger.error(
+            "CRITICAL: Patching rollback FAILED for %s: %s — manual intervention required",
+            vm_id, detail,
+        )
+
+    original_error = state.get("error") or "upgrade failed"
+    rollback_outcome = "succeeded" if success else "FAILED — MANUAL INTERVENTION REQUIRED"
+    return {
+        "status": ActionStatus.FAILED.value,
+        "error": f"{original_error} | rollback {rollback_outcome}: {detail}",
+    }
+
+
 def route_after_execute(state: PatchingGraphState) -> str:
-    """Route after execution: verify (live) or finish (dry-run)."""
-    if state.get("status") in (ActionStatus.DRY_RUN_OK.value, ActionStatus.FAILED.value):
+    """Route after execution: verify (success), rollback (failure), or finish (dry-run)."""
+    status = state.get("status")
+    if status == ActionStatus.DRY_RUN_OK.value:
         return END
+    if status == ActionStatus.FAILED.value:
+        return "rollback"
     return "verify"
 
 
@@ -400,18 +450,23 @@ def build_patching_subgraph(
     async def _verify(state: PatchingGraphState) -> dict[str, Any]:
         return await verify_node(state, executor=executor)
 
+    async def _rollback(state: PatchingGraphState) -> dict[str, Any]:
+        return await rollback_node(state, executor=executor)
+
     builder.add_node("validate", validate_node)
     builder.add_node("assess", _assess)
     builder.add_node("snapshot", _snapshot)
     builder.add_node("execute", _execute)
     builder.add_node("verify", _verify)
+    builder.add_node("rollback", _rollback)
 
     builder.set_entry_point("validate")
 
     builder.add_conditional_edges("validate", route_after_validate, ["assess", END])
     builder.add_conditional_edges("assess", route_after_assess, ["snapshot", END])
     builder.add_edge("snapshot", "execute")
-    builder.add_conditional_edges("execute", route_after_execute, ["verify", END])
+    builder.add_conditional_edges("execute", route_after_execute, ["verify", "rollback", END])
     builder.add_edge("verify", END)
+    builder.add_edge("rollback", END)
 
     return builder

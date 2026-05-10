@@ -23,6 +23,15 @@ from errander.models.events import AuditEvent, EventType
 
 logger = logging.getLogger(__name__)
 
+
+class AuditWriteError(RuntimeError):
+    """Raised when an audit write fails in strict mode (finding #13).
+
+    In strict mode, live production actions abort rather than continue
+    silently with a missing audit trail.
+    """
+
+
 #: SQL to create the audit_events table.
 _CREATE_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS audit_events (
@@ -65,9 +74,10 @@ class AuditStore:
     For testing, use ":memory:" as the database path.
     """
 
-    def __init__(self, db_path: str) -> None:
+    def __init__(self, db_path: str, strict_mode: bool = True) -> None:
         self._db_path = db_path
         self._db: aiosqlite.Connection | None = None
+        self._strict_mode = strict_mode
 
     async def initialize(self) -> None:
         """Open the database and create tables if needed."""
@@ -96,15 +106,20 @@ class AuditStore:
             raise RuntimeError(msg)
         return self._db
 
-    async def log_event(self, event: AuditEvent) -> None:
+    async def log_event(self, event: AuditEvent, dry_run: bool = False) -> None:
         """Write an audit event to the persistent store.
 
-        Audit writes are best-effort: a single retry on transient db-locked
-        or disk-full errors. If both attempts fail the error is logged and
-        swallowed so a database hiccup never aborts a live maintenance batch.
+        In strict mode (default): raises AuditWriteError after retry exhaustion
+        for live actions so the caller can abort rather than continue silently
+        with a missing audit trail (finding #13).
+
+        In best-effort mode (dry_run=True or strict_mode=False): logs the
+        error and continues — acceptable for sandbox runs where the audit trail
+        is informational only.
 
         Args:
             event: The audit event to record.
+            dry_run: When True, always uses best-effort (never raises).
         """
         db = self._ensure_connected()
         metadata_json = json.dumps(event.metadata, default=str, ensure_ascii=False)
@@ -118,6 +133,7 @@ class AuditStore:
             timestamp_iso,
             metadata_json,
         )
+        fail_closed = self._strict_mode and not dry_run
 
         for attempt in (1, 2):
             try:
@@ -130,9 +146,17 @@ class AuditStore:
                     await asyncio.sleep(0.1)
                     continue
                 logger.error("Audit write failed after retry: %s", exc)
+                if fail_closed:
+                    raise AuditWriteError(
+                        f"Audit write failed in strict mode — aborting live action: {exc}"
+                    ) from exc
                 return
             except aiosqlite.Error as exc:
                 logger.error("Audit write failed: %s", exc)
+                if fail_closed:
+                    raise AuditWriteError(
+                        f"Audit write failed in strict mode — aborting live action: {exc}"
+                    ) from exc
                 return
 
     async def get_events(

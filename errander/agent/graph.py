@@ -30,8 +30,9 @@ from typing import Annotated, Any, TypedDict
 from langgraph.graph import END, StateGraph
 from langgraph.types import Send
 
-from errander.agent.decisions import generate_report
+from errander.agent.decisions import generate_report, prioritize_actions
 from errander.agent.vm_graph import VMGraphState, build_vm_graph
+from errander.execution.os_detection import detect_os
 from errander.execution.sandbox import SandboxExecutor
 from errander.execution.ssh import SSHConnectionManager, SSHResult
 from errander.integrations.slack import SlackClient
@@ -51,13 +52,21 @@ from errander.scheduling.windows import (
 logger = logging.getLogger(__name__)
 
 
-# --- Result accumulator reducer ---
+# --- Result accumulator reducers ---
 
 def _merge_vm_results(
     existing: list[dict[str, object]],
     incoming: list[dict[str, object]],
 ) -> list[dict[str, object]]:
-    """Append-only reducer for aggregating per-VM results."""
+    """Append-only reducer for aggregating per-VM execution results."""
+    return [*existing, *incoming]
+
+
+def _merge_vm_plans(
+    existing: list[dict[str, object]],
+    incoming: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    """Append-only reducer for aggregating per-VM planning results."""
     return [*existing, *incoming]
 
 
@@ -79,6 +88,13 @@ class BatchGraphState(TypedDict, total=False):
     healthy_targets: list[dict[str, object]]
     failed_targets: list[dict[str, object]]
 
+    # Per-VM plans from the planning phase (append-only via reducer)
+    vm_plans: Annotated[list[dict[str, object]], _merge_vm_plans]
+
+    # Plan artifact (set by generate_plan_artifact_node)
+    plan_id: str
+    plan_hash: str
+
     # Aggregated results from all VM graphs (append-only via reducer)
     vm_results: Annotated[list[dict[str, object]], _merge_vm_results]
 
@@ -86,7 +102,7 @@ class BatchGraphState(TypedDict, total=False):
     report: str
     error: str | None
 
-    # Approval
+    # Approval (set by approval_gate_node, gates wave dispatch)
     approved: bool | None
 
     # Rolling update state
@@ -455,6 +471,87 @@ async def generate_report_node(state: BatchGraphState) -> dict[str, Any]:
     return {"report": report}
 
 
+# --- Planning phase nodes ---
+
+async def plan_vm_node(
+    state: dict[str, Any],
+    *,
+    ssh_manager: SSHConnectionManager,
+) -> dict[str, Any]:
+    """Plan actions for a single VM without any execution.
+
+    Runs OS detection + action prioritization via SSH (read-only), then
+    returns the planned actions for inclusion in the ImmutableBatchPlan.
+    No package upgrades, no file changes — purely informational SSH calls.
+    """
+    vm_id = str(state.get("vm_id", ""))
+    hostname = str(state.get("hostname", ""))
+    ssh_user = str(state.get("ssh_user", ""))
+    key_path = str(state.get("ssh_key_path", ""))
+
+    try:
+        vm_info = await detect_os(
+            vm_id=vm_id,
+            hostname=hostname,
+            username=ssh_user,
+            key_path=key_path,
+            ssh_manager=ssh_manager,
+        )
+    except (ValueError, ConnectionError, OSError) as exc:
+        logger.warning("Planning SSH failed for %s: %s — VM excluded from plan", vm_id, exc)
+        return {"vm_plans": []}
+
+    actions = await prioritize_actions(vm_info)
+
+    return {
+        "vm_plans": [{
+            "vm_id": vm_id,
+            "planned_actions": [
+                {"action_type": a.action_type.value, "risk_tier": a.risk_tier.value}
+                for a in actions
+            ],
+            "os_family": vm_info.os_family.value,
+        }],
+    }
+
+
+async def collect_plans_node(state: BatchGraphState) -> dict[str, Any]:
+    """Log collected planning results. (Passthrough — reducer handles merge.)"""
+    vm_plans = state.get("vm_plans", [])
+    batch_id = state.get("batch_id", "unknown")
+    logger.info("Batch %s collected plans for %d VMs", batch_id, len(vm_plans))
+    return {}
+
+
+async def generate_plan_artifact_node(state: BatchGraphState) -> dict[str, Any]:
+    """Build ImmutableBatchPlan from collected VM plans and compute hash.
+
+    The plan_hash is stored in state and included in the Slack approval
+    request. Live execution validates hash stability (finding #3).
+    """
+    import hashlib
+    import json
+    import uuid
+
+    vm_plans = state.get("vm_plans", [])
+    batch_id = state.get("batch_id", "unknown")
+    env_name = state.get("env_name", "")
+    plan_id = f"plan-{uuid.uuid4().hex[:12]}"
+
+    canonical = json.dumps(
+        {"batch_id": batch_id, "env_name": env_name, "vm_plans": vm_plans},
+        sort_keys=True,
+        default=str,
+    )
+    plan_hash = hashlib.sha256(canonical.encode()).hexdigest()
+
+    logger.info(
+        "Plan %s generated: hash=%s, %d VMs planned",
+        plan_id, plan_hash[:12], len(vm_plans),
+    )
+    return {"plan_id": plan_id, "plan_hash": plan_hash}
+
+
 # --- Approval gate ---
 
 def _max_risk_tier_from_results(vm_results: list[dict[str, object]]) -> RiskTier:
@@ -473,6 +570,41 @@ def _max_risk_tier_from_results(vm_results: list[dict[str, object]]) -> RiskTier
     return max_tier
 
 
+def _max_risk_tier_from_plans(vm_plans: list[dict[str, object]]) -> RiskTier:
+    """Determine the highest risk tier across all planned actions (finding #3)."""
+    max_tier = RiskTier.LOW
+    tier_order = {RiskTier.LOW: 0, RiskTier.MEDIUM: 1, RiskTier.HIGH: 2, RiskTier.CRITICAL: 3}
+    for plan in vm_plans:
+        for action in plan.get("planned_actions", []):
+            try:
+                tier = RiskTier(str(action.get("risk_tier", "low")))
+                if tier_order.get(tier, 0) > tier_order.get(max_tier, 0):
+                    max_tier = tier
+            except ValueError:
+                continue
+    return max_tier
+
+
+def _format_plan_for_approval(
+    vm_plans: list[dict[str, object]],
+    batch_id: str,
+    plan_id: str,
+    plan_hash: str,
+) -> str:
+    """Format an ImmutableBatchPlan for the Slack approval message."""
+    lines = [
+        f"Batch `{batch_id}` — Live Execution Plan",
+        f"Plan: {plan_id} | Hash: `{plan_hash[:12]}`",
+        f"{len(vm_plans)} VM(s):",
+    ]
+    for plan in vm_plans:
+        vm_id = plan.get("vm_id", "?")
+        actions = [a.get("action_type", "?") for a in plan.get("planned_actions", [])]
+        lines.append(f"  • `{vm_id}`: {', '.join(actions) or 'no actions planned'}")
+    lines.extend(["", "Reply :white_check_mark: to approve or :x: to reject (timeout -> auto-REJECT)"])
+    return "\n".join(lines)
+
+
 async def approval_gate_node(
     state: BatchGraphState,
     *,
@@ -482,35 +614,44 @@ async def approval_gate_node(
     window: MaintenanceWindow | None = None,
     deferred_store: DeferredExecutionStore | None = None,
 ) -> dict[str, Any]:
-    """Check if approval is needed and wait for it.
+    """Gate live execution behind Slack approval of the ImmutableBatchPlan.
 
-    If the highest risk tier across all actions is HIGH or above and
-    an approval_manager is available, posts the report for approval
-    and waits. Otherwise auto-approves.
+    Approval now happens BEFORE execution (finding #3):
+    - Dry-run: auto-approve — sandbox execution is always safe.
+    - Live HIGH/CRITICAL: require Slack dual-approval on the plan.
+    - Live LOW/MEDIUM: auto-approve (policy enforcement is Phase 2).
 
-    For dry-run batches approved while outside the maintenance window,
+    For live batches approved while outside the maintenance window,
     execution is deferred: a record is saved to DeferredExecutionStore
     and the window-opener scheduler job picks it up at window start.
+    Dry-run batches always execute immediately regardless of window.
     """
-    vm_results = state.get("vm_results", [])
+    vm_plans = state.get("vm_plans", [])
     batch_id = state.get("batch_id", "unknown")
     env_name = state.get("env_name", "unknown")
-    report = state.get("report", "")
+    plan_id = state.get("plan_id", "unknown")
+    plan_hash = state.get("plan_hash", "")
     dry_run = state.get("dry_run", True)
 
-    max_tier = _max_risk_tier_from_results(vm_results)
+    max_tier = _max_risk_tier_from_plans(vm_plans)
 
     if dry_run:
+        # Sandbox execution is safe — no operator approval needed.
+        # Graduating dry-run → live is a separate operator-initiated action (finding #4).
         approved = True
         approver = None
-        logger.info("Batch %s dry-run — approval skipped (max risk tier: %s)", batch_id, max_tier.value)
-    elif max_tier in (RiskTier.HIGH, RiskTier.CRITICAL) and approval_manager is not None:
         logger.info(
-            "Batch %s requires approval (max risk tier: %s)",
+            "Batch %s dry-run — proceeding to sandbox execution (max risk tier: %s)",
+            batch_id, max_tier.value,
+        )
+    elif max_tier in (RiskTier.HIGH, RiskTier.CRITICAL) and approval_manager is not None:
+        plan_summary = _format_plan_for_approval(vm_plans, batch_id, plan_id, plan_hash)
+        logger.info(
+            "Batch %s requires live approval before execution (max risk tier: %s)",
             batch_id, max_tier.value,
         )
         approved, approver = await await_dual_approval(
-            approval_manager, slack_client, batch_id, report,
+            approval_manager, slack_client, batch_id, plan_summary,
         )
         logger.info(
             "Batch %s %s by %s",
@@ -521,10 +662,14 @@ async def approval_gate_node(
     else:
         approved = True
         approver = None
-        logger.info("Batch %s auto-approved (max risk tier: %s)", batch_id, max_tier.value)
+        logger.info(
+            "Batch %s live auto-approved (max risk tier: %s)",
+            batch_id, max_tier.value,
+        )
 
-    # Dry-run approval outside window → defer execution to next window start.
-    if approved and dry_run and window is not None:
+    # Live approved outside window → defer execution to next window start.
+    # Dry-run always runs immediately (sandbox is window-agnostic).
+    if approved and not dry_run and window is not None:
         now = datetime.now(tz=timezone.utc)
         if not check_window_from_config(now, window):
             next_open = next_window_open(now, window)
@@ -543,13 +688,14 @@ async def approval_gate_node(
                     metadata={
                         "window_start": next_open.isoformat(),
                         "approved_by": approver,
+                        "plan_hash": plan_hash[:12],
                     },
                 ))
             if slack_client is not None:
                 approver_label = approver or "auto"
                 await slack_client.post_alert(
                     f"Batch `{batch_id}` approved by {approver_label}.\n"
-                    f"Outside maintenance window - execution scheduled for "
+                    f"Outside maintenance window — execution scheduled for "
                     f"{next_open.strftime('%Y-%m-%d %H:%M UTC')}"
                 )
             logger.info(
@@ -589,13 +735,13 @@ def route_after_window(state: BatchGraphState) -> str:
     return "validate_targets"
 
 
-def route_after_report(state: BatchGraphState) -> str:
-    """Route to approval gate if any action requires approval."""
-    vm_results = state.get("vm_results", [])
-    max_tier = _max_risk_tier_from_results(vm_results)
-    if max_tier in (RiskTier.HIGH, RiskTier.CRITICAL):
-        return "approval_gate"
-    return END
+def route_after_approval(state: BatchGraphState) -> str:
+    """Route after plan approval: execute (approved), report (rejected), end (deferred)."""
+    if state.get("deferred"):
+        return END
+    if not state.get("approved"):
+        return "generate_report"
+    return "prepare_waves"
 
 
 def make_fan_out_router(
@@ -727,17 +873,23 @@ def build_batch_graph(
 ) -> StateGraph:
     """Construct the batch orchestrator graph.
 
+    New plan/apply flow (finding #3):
+      init_batch → validate_window → validate_targets
+      → plan_vm (fan-out) → collect_plans → generate_plan_artifact
+      → approval_gate (BEFORE execution)
+      → prepare_waves → dispatch_wave → run_vm (fan-out)
+      → check_wave_health → collect_results → generate_report → END
+
     Args:
         executor: SandboxExecutor for SSH command execution.
         locker: FileLocker for VM-level locking.
         audit_store: AuditStore for audit trail.
         ssh_manager: SSHConnectionManager for SSH connections.
-        window: Optional maintenance window. If provided, batches outside
-            the window are blocked unless force=True in the initial state.
-        approval_manager: Optional ApprovalManager for dual-channel approval.
-            When provided, HIGH-risk batches wait for approval after report.
+        window: Optional maintenance window.
+        approval_manager: Optional ApprovalManager for Slack approval.
         slack_client: Optional SlackClient for approval notifications.
         settings: Optional Settings instance for rolling/canary/drift config.
+        deferred_store: Optional store for deferred batch execution.
 
     Returns:
         StateGraph for the batch orchestrator (call .compile() to use).
@@ -746,6 +898,8 @@ def build_batch_graph(
     _settings: _Settings = settings if settings is not None else _Settings()
 
     builder: StateGraph = StateGraph(BatchGraphState)
+
+    # --- Closures capturing injected dependencies ---
 
     async def _init_batch(state: BatchGraphState) -> dict[str, Any]:
         return await init_batch_node(state, settings=_settings)
@@ -757,6 +911,9 @@ def build_batch_graph(
         return await validate_targets_node(
             state, ssh_manager=ssh_manager, audit_store=audit_store,
         )
+
+    async def _plan_vm(state: dict[str, Any]) -> dict[str, Any]:
+        return await plan_vm_node(state, ssh_manager=ssh_manager)
 
     async def _check_wave_health(state: BatchGraphState) -> dict[str, Any]:
         return await check_wave_health_node(
@@ -781,23 +938,56 @@ def build_batch_graph(
     async def _run_vm(state: VMGraphState) -> dict[str, Any]:
         return await run_vm_node(state, vm_compiled=vm_compiled)
 
+    # Fan-out router: Send one plan_vm invocation per healthy target
+    def _route_plan_vms(state: BatchGraphState) -> str | list[Send]:
+        healthy = state.get("healthy_targets", [])
+        if not healthy:
+            return "generate_report"
+        batch_id = state.get("batch_id", "unknown")
+        return [
+            Send("plan_vm", {
+                "vm_id": str(t["vm_id"]),
+                "hostname": str(t["hostname"]),
+                "ssh_user": str(t["ssh_user"]),
+                "ssh_key_path": str(t["ssh_key_path"]),
+                "batch_id": batch_id,
+            })
+            for t in healthy
+        ]
+
+    # --- Nodes ---
     builder.add_node("init_batch", _init_batch)
     builder.add_node("validate_window", _validate_window)
     builder.add_node("validate_targets", _validate_targets)
+    builder.add_node("plan_vm", _plan_vm)
+    builder.add_node("collect_plans", collect_plans_node)
+    builder.add_node("generate_plan_artifact", generate_plan_artifact_node)
+    builder.add_node("approval_gate", _approval_gate)
     builder.add_node("prepare_waves", prepare_waves_node)
     builder.add_node("dispatch_wave", lambda state: {})   # no-op — routing does the work
     builder.add_node("run_vm", _run_vm)
     builder.add_node("check_wave_health", _check_wave_health)
     builder.add_node("collect_results", collect_results_node)
     builder.add_node("generate_report", generate_report_node)
-    builder.add_node("approval_gate", _approval_gate)
 
+    # --- Edges ---
     builder.set_entry_point("init_batch")
     builder.add_edge("init_batch", "validate_window")
     builder.add_conditional_edges(
         "validate_window", route_after_window, ["validate_targets", "generate_report"],
     )
-    builder.add_edge("validate_targets", "prepare_waves")
+    # Planning fan-out: one plan_vm per healthy target, then collect
+    builder.add_conditional_edges(
+        "validate_targets", _route_plan_vms, ["plan_vm", "generate_report"],
+    )
+    builder.add_edge("plan_vm", "collect_plans")
+    builder.add_edge("collect_plans", "generate_plan_artifact")
+    # Approval happens BEFORE execution (finding #3)
+    builder.add_edge("generate_plan_artifact", "approval_gate")
+    builder.add_conditional_edges(
+        "approval_gate", route_after_approval, ["prepare_waves", "generate_report", END],
+    )
+    # Execution: wave-based fan-out
     builder.add_conditional_edges(
         "prepare_waves", route_after_prepare_waves, ["dispatch_wave", "generate_report"],
     )
@@ -809,9 +999,7 @@ def build_batch_graph(
         "check_wave_health", route_after_wave_health, ["dispatch_wave", "collect_results"],
     )
     builder.add_edge("collect_results", "generate_report")
-    builder.add_conditional_edges(
-        "generate_report", route_after_report, ["approval_gate", END],
-    )
-    builder.add_edge("approval_gate", END)
+    # Report is the terminal node — no post-execution approval (finding #3)
+    builder.add_edge("generate_report", END)
 
     return builder

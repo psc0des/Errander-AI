@@ -212,6 +212,7 @@ async def execute_node(
     paths = state.get("whitelist_paths", list(ALLOWED_CLEANUP_PATHS))
     age_days = state.get("tmp_age_days", 7)
     journal_days = state.get("journal_vacuum_days", 7)
+    dry_run = state.get("dry_run", True)
 
     output: dict[str, str] = {}
 
@@ -221,6 +222,7 @@ async def execute_node(
                 vm_id, target["hostname"], target["username"], target["key_path"],
                 command=_tmp_cleanup_cmd(age_days),
                 simulate_command=_tmp_assess_cmd(age_days),
+                dry_run=dry_run,
             )
             output["/tmp"] = result.stdout.strip()
 
@@ -229,6 +231,7 @@ async def execute_node(
                 vm_id, target["hostname"], target["username"], target["key_path"],
                 command=pkg_mgr.clean_cache(),
                 simulate_command=pkg_mgr.cache_size(),
+                dry_run=dry_run,
             )
             output[path] = result.stdout.strip()
 
@@ -237,6 +240,7 @@ async def execute_node(
                 vm_id, target["hostname"], target["username"], target["key_path"],
                 command=_journal_vacuum_cmd(journal_days),
                 simulate_command=_journal_size_cmd(),
+                dry_run=dry_run,
             )
             output["journal"] = result.stdout.strip()
 
@@ -249,10 +253,11 @@ async def execute_node(
                 vm_id, target["hostname"], target["username"], target["key_path"],
                 command=pkg_mgr.autoremove(),
                 simulate_command=sim_cmd,
+                dry_run=dry_run,
             )
             output["orphaned-deps"] = result.stdout.strip()
 
-    status = ActionStatus.DRY_RUN_OK if executor.dry_run else ActionStatus.SUCCESS
+    status = ActionStatus.DRY_RUN_OK if dry_run else ActionStatus.SUCCESS
     return {
         "cleanup_output": output,
         "status": status.value,

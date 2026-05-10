@@ -240,7 +240,8 @@ class TestExecuteNode:
         async def capture_execute(vm_id: str, hostname: str, username: str,
                                    key_path: str, command: str,
                                    simulate_command: str | None = None,
-                                   timeout: int | None = None) -> SSHResult:
+                                   timeout: int | None = None,
+                                   dry_run: bool | None = None) -> SSHResult:
             actual_cmd = command if not executor.dry_run else (simulate_command or command)
             calls.append(actual_cmd)
             return _make_result("ok")

@@ -259,7 +259,7 @@ class TestAuditStoreResilience:
         #  but no exception means the retry + swallow logic ran correctly)
 
     async def test_log_event_swallows_persistent_error(self) -> None:
-        """Both retry attempts raise OperationalError; log_event returns without exception."""
+        """Both retry attempts raise OperationalError; best-effort mode swallows."""
         from unittest.mock import patch
 
         import aiosqlite
@@ -270,11 +270,11 @@ class TestAuditStoreResilience:
                 "execute",
                 side_effect=aiosqlite.OperationalError("disk full"),
             ):
-                # Must not raise
-                await store.log_event(_make_event())
+                # Must not raise in dry_run (best-effort) mode
+                await store.log_event(_make_event(), dry_run=True)
 
     async def test_log_event_swallows_generic_sqlite_error(self) -> None:
-        """Generic aiosqlite.Error is swallowed so the batch is not aborted."""
+        """Generic aiosqlite.Error is swallowed in dry_run/best-effort mode."""
         from unittest.mock import patch
 
         import aiosqlite
@@ -285,4 +285,4 @@ class TestAuditStoreResilience:
                 "execute",
                 side_effect=aiosqlite.Error("schema mismatch"),
             ):
-                await store.log_event(_make_event())
+                await store.log_event(_make_event(), dry_run=True)

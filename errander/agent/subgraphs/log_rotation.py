@@ -167,6 +167,7 @@ async def execute_node(
     target = _get_connection_params(state)
     large_files = state.get("large_files", [])
     compress = state.get("compress", True)
+    dry_run = state.get("dry_run", True)
 
     output: dict[str, str] = {}
 
@@ -178,6 +179,7 @@ async def execute_node(
         vm_id, target["hostname"], target["username"], target["key_path"],
         command=logrotate_cmd,
         simulate_command=logrotate_sim,
+        dry_run=dry_run,
     )
 
     if result.success:
@@ -199,10 +201,11 @@ async def execute_node(
                 vm_id, target["hostname"], target["username"], target["key_path"],
                 command=live_cmd,
                 simulate_command=sim_cmd,
+                dry_run=dry_run,
             )
             output[filepath] = file_result.stdout.strip()
 
-    status = ActionStatus.DRY_RUN_OK if executor.dry_run else ActionStatus.SUCCESS
+    status = ActionStatus.DRY_RUN_OK if dry_run else ActionStatus.SUCCESS
     return {
         "rotation_output": output,
         "status": status.value,

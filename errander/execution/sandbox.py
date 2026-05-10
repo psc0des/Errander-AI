@@ -90,6 +90,7 @@ class SandboxExecutor:
         command: str,
         simulate_command: str | None = None,
         timeout: int | None = None,
+        dry_run: bool | None = None,
     ) -> SSHResult:
         """Execute a command or its dry-run equivalent.
 
@@ -102,11 +103,15 @@ class SandboxExecutor:
             simulate_command: Alternative command for dry-run mode.
                 If None and dry_run=True, returns a synthetic result.
             timeout: Command timeout in seconds.
+            dry_run: Per-call override. Callers should pass state["dry_run"]
+                so graph state is the single source of truth (finding #2).
+                Falls back to the instance default when None.
 
         Returns:
             SSHResult from real execution or simulation.
         """
-        if self._dry_run:
+        effective_dry_run = self._dry_run if dry_run is None else dry_run
+        if effective_dry_run:
             result = await self._execute_dry_run(
                 vm_id, hostname, username, key_path,
                 command, simulate_command, timeout,
@@ -119,8 +124,8 @@ class SandboxExecutor:
 
         record = CommandRecord(
             command=command,
-            dry_run=self._dry_run,
-            simulate_command=simulate_command if self._dry_run else None,
+            dry_run=effective_dry_run,
+            simulate_command=simulate_command if effective_dry_run else None,
             result=result,
             vm_id=vm_id,
         )

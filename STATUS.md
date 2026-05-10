@@ -351,6 +351,29 @@ None.
 - `scripts/bootstrap.sh` — reverted to bare `uv sync` (no `--extra dev`, no playwright — dev tools not needed for deployment)
 - `SETUP.md` — Step 6 is now end-user only (inventory check + LLM check); pytest/playwright/ruff/mypy moved to new "For developers" section at the bottom
 
+## Files Changed (2026-05-11 — Phase 0 SRE audit remediation)
+
+### Modified (source)
+- `errander/agent/graph.py` — new plan/apply flow: `plan_vm` fan-out, `collect_plans`, `generate_plan_artifact`, `approval_gate` before execution; ImmutableBatchPlan with SHA-256 hash; deferred logic inverted (live runs outside window defer, dry-run always immediate); `_route_plan_vms` fan-out; `vm_plans` reducer
+- `errander/agent/subgraphs/patching.py` — `execute_node` reads `dry_run` from state; `rollback_node` with real dpkg rollback; `route_after_execute` routes FAILED → rollback; graph wired with rollback node
+- `errander/agent/subgraphs/disk_cleanup.py` — `execute_node` reads `dry_run` from state, passes per-call override to `executor.execute()`
+- `errander/agent/subgraphs/docker_prune.py` — same `dry_run` state read fix
+- `errander/agent/subgraphs/log_rotation.py` — same `dry_run` state read fix
+- `errander/execution/sandbox.py` — `execute()` accepts `dry_run: bool | None = None` per-call override; `effective_dry_run` logic
+- `errander/main.py` — `--unsafe-legacy-live` guard blocks live mode until Phase 0 complete
+- `errander/models/plans.py` — `ImmutablePlan` dataclass with SHA-256 `plan_hash` and `short_hash()`
+- `errander/safety/audit.py` — `AuditWriteError`, `strict_mode: bool = True`, `log_event(dry_run=False)` fail-closed in strict mode
+- `errander/safety/rollback.py` — full Option A patching rollback: dpkg snapshot → apt-get --allow-downgrades → verify versions
+- `errander/config/settings.py` — `audit_mode: str = "strict"` field
+
+### Modified (tests)
+- `tests/agent/subgraphs/test_disk_cleanup.py` — `capture_execute` mock updated with `dry_run` param
+- `tests/agent/subgraphs/test_patching.py` — `test_route_after_execute_finishes_on_failure` → `test_route_after_execute_routes_failure_to_rollback`
+- `tests/agent/test_graph.py` — 4 deferred tests updated to reflect new behavior (dry-run never deferred; live outside window IS deferred)
+- `tests/agent/test_load.py` — wave abort SSH mock count updated (12 validate + 12 plan_vm + 3 health = 27)
+- `tests/safety/test_audit.py` — swallow tests use `dry_run=True` (best-effort mode)
+- `tests/safety/test_rollback.py` — patching rollback tests updated to reflect implemented behavior
+
 ## Files Changed (2026-05-10 — fix SETUP.md Step 6: remove env export before pytest, add sync/playwright)
 ### Modified
 - `SETUP.md` — Step 6 rewritten: removed `export $(grep -v '^#' .env | xargs)` (poisons pytest), replaced long one-liner with `--check-inventory`, added `uv sync --extra dev` + `playwright install chromium` steps, added warning note; Step 7 Linux/Windows blocks aligned — both now show the load-env step explicitly before `--run-now`
@@ -473,3 +496,15 @@ None.
 
 ## Test Count
 878 tests passing (853 unit/integration + 25 Playwright UI tests).
+
+### Phase 0: SRE Audit Remediation (complete)
+
+Implemented 5 ship-stopper fixes from `ai_sre_remediation_plan.md`:
+
+- **Finding #2 (dry_run single source of truth)**: `SandboxExecutor.execute()` now accepts per-call `dry_run` override. All sub-graphs read `state["dry_run"]` instead of `executor.dry_run`.
+- **Finding #3 (plan/apply before execution)**: New planning phase fan-out (`plan_vm` → `collect_plans` → `generate_plan_artifact`) between `validate_targets` and execution. Approval gate acts on the plan hash BEFORE any execution. `ImmutablePlan` with SHA-256 `plan_hash`.
+- **Finding #5 (patching rollback — Option A)**: `rollback_node` in patching sub-graph implements real dpkg snapshot + `apt-get install --allow-downgrades` + post-rollback verification. Activated on `FAILED` execution status.
+- **Finding #13 (audit fail-closed)**: `AuditWriteError` raised after retry exhaustion in strict mode for live actions. Dry-run always best-effort.
+- **Phase 0 gate**: `--unsafe-legacy-live` guard blocks live mode until Phase 0 is marked complete.
+
+All 767 unit/integration tests pass (111 skipped = Playwright UI tests, excluded without Chromium).

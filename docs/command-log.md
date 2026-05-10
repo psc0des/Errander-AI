@@ -698,6 +698,14 @@ curl -LsSf https://raw.githubusercontent.com/psc0des/Errander-AI/main/scripts/bo
 **What**: Added `--force --force-reason "initial dry-run validation"` to the suggested dry-run command in configure.sh summary and SETUP.md Step 7.
 **Why**: First dry-run blocked by maintenance window on a weekend — `--force` bypasses the window so first-run validation always works.
 
+### 2026-05-10 — configure.sh auto-wire encryption key
+
+**What**: After generating the encryption key, configure.sh now automatically:
+1. Exports `ERRANDER_SECRETS_KEY` into the current shell session (so LLM verify works immediately)
+2. Appends `source ~/.errander.key` to `~/.bashrc` or `~/.zshrc` (idempotent — guarded by marker comment)
+3. Injects `EnvironmentFile=~/.errander.key` into `/etc/systemd/system/errander.service` if it exists, then runs `daemon-reload`
+**Why**: Previous version printed manual instructions users had to follow themselves — no one reads those. Wiring it automatically is the only reliable path.
+
 ### 2026-05-10 — configure.sh secrets hardening
 
 **What**: Three security improvements to configure.sh:

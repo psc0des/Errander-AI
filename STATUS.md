@@ -315,6 +315,7 @@ None.
 - `scripts/configure.sh` — `chmod 600 .env` applied on every write (was missing entirely)
 - `scripts/configure.sh` — optional Fernet encryption: generates key to `~/.errander.key` (chmod 600, separate from .env), encrypts LLM_API_KEY / UI_PASSWORD / SLACK_BOT_TOKEN as `enc:v1:` blobs; re-run safe (already-encrypted values passed through unchanged)
 - `scripts/configure.sh` — web UI username + password prompted explicitly on fresh install (with confirmation loop); re-run shows existing values as defaults; `changeme` can never silently reach production
+- `scripts/configure.sh` — encryption key auto-wired: exported into current session, appended to `~/.bashrc`/`~/.zshrc` (idempotent), and injected into systemd service EnvironmentFile if service already installed — no manual steps required
 - `scripts/bootstrap.sh` — completion message corrected: step numbers updated, configure.sh quick path surfaced
 
 ## Files Changed (This Session)

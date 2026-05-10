@@ -18,6 +18,7 @@
 - [x] Prompt for web UI username + password explicitly (with confirmation loop)
 - [x] Add optional Fernet encryption — key to ~/.errander.key, enc:v1: blobs in .env
 - [x] chmod 600 .env always on write
+- [x] Auto-wire encryption key to shell RC and systemd — no manual steps
 
 ### SETUP.md fixes
 - [x] Step 7 and Step 8 --env dev → --env <your-env-name>

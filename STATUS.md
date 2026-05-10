@@ -336,6 +336,12 @@ None.
 - `scripts/configure.sh` — encryption key auto-wired: exported into current session, appended to `~/.bashrc`/`~/.zshrc` (idempotent), and injected into systemd service EnvironmentFile if service already installed — no manual steps required
 - `scripts/bootstrap.sh` — completion message corrected: step numbers updated, configure.sh quick path surfaced
 
+## Files Changed (2026-05-10 — fix DecryptionError on configure.sh re-run)
+### Modified
+- `scripts/configure.sh` — reuse existing `~/.errander.key` on re-run instead of generating a new key; new key generated only when the file is absent; prevents `enc:v1:` blobs in `.env` becoming unreadable after re-run
+- `errander/integrations/secrets.py` — improved `DecryptionError` message to explain the key-mismatch cause and tell the user to re-run configure.sh and re-enter the affected secret
+- `tasks/lessons.md` — added lesson: configure.sh must reuse existing key, not regenerate on every run
+
 ## Files Changed (This Session)
 ### Modified
 - `errander/agent/decisions.py` — LLM wired in: all decision functions accept optional llm_client, fall back to hardcoded

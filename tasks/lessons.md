@@ -412,3 +412,24 @@ if args.check_inventory:
     return run_inventory_check(args.inventory)
 settings = load_settings(...)
 ```
+
+---
+
+## Phase 1.8 — configure.sh must reuse the existing secrets key, not regenerate it
+
+**Lesson**: Generating a new `ERRANDER_SECRETS_KEY` on every re-run of `configure.sh` invalidates all `enc:v1:` values previously written to `.env`. The `encrypt_val` helper correctly passes through already-encrypted values unchanged, but those blobs were encrypted with the *old* key — the new key can't decrypt them.
+
+```bash
+# WRONG — new key every re-run; old enc:v1: values in .env become unreadable
+_key_line=$(uv run python -m errander --generate-secrets-key ...)
+SECRETS_KEY="${_key_line#ERRANDER_SECRETS_KEY=}"
+
+# CORRECT — reuse existing key if one is already on disk; generate only when absent
+if [ -f "$KEY_FILE" ]; then
+    _existing=$(grep "^ERRANDER_SECRETS_KEY=" "$KEY_FILE" | cut -d= -f2-)
+    [ -n "$_existing" ] && SECRETS_KEY="$_existing" && _encrypt=true
+fi
+[ -z "$SECRETS_KEY" ] && SECRETS_KEY=$(generate_new_key)
+```
+
+**Rule**: a secrets key is stable infrastructure — treat it like a signing certificate. Rotate it deliberately (with re-encryption of all stored blobs), never accidentally on re-run.

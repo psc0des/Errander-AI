@@ -345,48 +345,62 @@ KEY_FILE="${HOME}/.errander.key"
 
 case "${_enc_choice,,}" in
   y|yes)
-    warn "Generating encryption key..."
-    _key_line=$(uv run python -m errander --generate-secrets-key 2>/dev/null | grep "^ERRANDER_SECRETS_KEY=" || true)
-    SECRETS_KEY="${_key_line#ERRANDER_SECRETS_KEY=}"
+    # Reuse the existing key if one is already on disk — generating a new key
+    # every re-run would make all previously-encrypted .env values unreadable.
+    if [ -f "$KEY_FILE" ]; then
+        _existing_key_line=$(grep "^ERRANDER_SECRETS_KEY=" "$KEY_FILE" 2>/dev/null || true)
+        SECRETS_KEY="${_existing_key_line#ERRANDER_SECRETS_KEY=}"
+        if [ -n "$SECRETS_KEY" ]; then
+            _encrypt=true
+            export ERRANDER_SECRETS_KEY="${SECRETS_KEY}"
+            ok "Reusing existing encryption key from ${KEY_FILE}"
+        fi
+    fi
+
     if [ -z "$SECRETS_KEY" ]; then
-        warn "Key generation failed — writing .env with plaintext values"
-    else
-        _encrypt=true
-        # Write key to a separate file — never stored in .env itself
-        echo "ERRANDER_SECRETS_KEY=${SECRETS_KEY}" > "$KEY_FILE"
-        chmod 600 "$KEY_FILE"
-        ok "Encryption key saved to ${KEY_FILE}  (chmod 600)"
-
-        # Wire key into shell RC so every new session loads it automatically
-        SHELL_RC="${HOME}/.bashrc"
-        [ -f "${HOME}/.zshrc" ] && SHELL_RC="${HOME}/.zshrc"
-        _marker="# errander secrets key"
-        if ! grep -q "$_marker" "$SHELL_RC" 2>/dev/null; then
-            printf '\n%s\n[ -f "%s" ] && set -a && source "%s" && set +a\n' \
-                "$_marker" "$KEY_FILE" "$KEY_FILE" >> "$SHELL_RC"
-            ok "Key auto-load added to ${SHELL_RC}"
+        warn "Generating new encryption key..."
+        _key_line=$(uv run python -m errander --generate-secrets-key 2>/dev/null | grep "^ERRANDER_SECRETS_KEY=" || true)
+        SECRETS_KEY="${_key_line#ERRANDER_SECRETS_KEY=}"
+        if [ -z "$SECRETS_KEY" ]; then
+            warn "Key generation failed — writing .env with plaintext values"
         else
-            ok "Key auto-load already present in ${SHELL_RC}"
-        fi
-        # Export into the current session too so the LLM verify step works now
-        export ERRANDER_SECRETS_KEY="${SECRETS_KEY}"
+            _encrypt=true
+            # Write key to a separate file — never stored in .env itself
+            echo "ERRANDER_SECRETS_KEY=${SECRETS_KEY}" > "$KEY_FILE"
+            chmod 600 "$KEY_FILE"
+            ok "Encryption key saved to ${KEY_FILE}  (chmod 600)"
 
-        # Wire into systemd service file if already installed
-        _svc="/etc/systemd/system/errander.service"
-        if [ -f "$_svc" ]; then
-            if ! grep -q "$KEY_FILE" "$_svc"; then
-                sudo sed -i "s|EnvironmentFile=.*\.env|EnvironmentFile=${KEY_FILE}\nEnvironmentFile=$(pwd)/.env|" "$_svc"
-                sudo systemctl daemon-reload
-                ok "Systemd service updated — key EnvironmentFile injected"
+            # Wire key into shell RC so every new session loads it automatically
+            SHELL_RC="${HOME}/.bashrc"
+            [ -f "${HOME}/.zshrc" ] && SHELL_RC="${HOME}/.zshrc"
+            _marker="# errander secrets key"
+            if ! grep -q "$_marker" "$SHELL_RC" 2>/dev/null; then
+                printf '\n%s\n[ -f "%s" ] && set -a && source "%s" && set +a\n' \
+                    "$_marker" "$KEY_FILE" "$KEY_FILE" >> "$SHELL_RC"
+                ok "Key auto-load added to ${SHELL_RC}"
             else
-                ok "Systemd service already references ${KEY_FILE}"
+                ok "Key auto-load already present in ${SHELL_RC}"
             fi
-        fi
+            # Export into the current session too so the LLM verify step works now
+            export ERRANDER_SECRETS_KEY="${SECRETS_KEY}"
 
-        echo ""
-        echo -e "  ${BOLD}Back up this key — losing it means losing all encrypted credentials:${NC}"
-        echo "  ERRANDER_SECRETS_KEY=${SECRETS_KEY}"
-        echo ""
+            # Wire into systemd service file if already installed
+            _svc="/etc/systemd/system/errander.service"
+            if [ -f "$_svc" ]; then
+                if ! grep -q "$KEY_FILE" "$_svc"; then
+                    sudo sed -i "s|EnvironmentFile=.*\.env|EnvironmentFile=${KEY_FILE}\nEnvironmentFile=$(pwd)/.env|" "$_svc"
+                    sudo systemctl daemon-reload
+                    ok "Systemd service updated — key EnvironmentFile injected"
+                else
+                    ok "Systemd service already references ${KEY_FILE}"
+                fi
+            fi
+
+            echo ""
+            echo -e "  ${BOLD}Back up this key — losing it means losing all encrypted credentials:${NC}"
+            echo "  ERRANDER_SECRETS_KEY=${SECRETS_KEY}"
+            echo ""
+        fi
     fi
     ;;
 esac

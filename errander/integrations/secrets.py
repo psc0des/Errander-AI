@@ -104,7 +104,13 @@ class SecretsManager:
         try:
             return self._fernet.decrypt(token.encode()).decode()
         except InvalidToken as exc:
-            msg = "Decryption failed — ciphertext is corrupted or key is wrong"
+            msg = (
+                "Decryption failed — ERRANDER_SECRETS_KEY does not match the key "
+                "used to encrypt this value. If you re-ran configure.sh and it "
+                "generated a new key, re-run configure.sh again and re-enter the "
+                "affected secret (e.g. UI password) so it is re-encrypted with the "
+                "current key."
+            )
             raise DecryptionError(msg) from exc
 
     def is_encrypted(self, value: str) -> bool:

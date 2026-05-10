@@ -622,14 +622,16 @@ uv run pytest
 
 **Windows PowerShell** (load env first, see Step 6):
 ```powershell
-uv run python -m errander --run-now --env dev --inventory inventory.yaml --dry-run
+uv run python -m errander --run-now --env dev --inventory inventory.yaml --dry-run --force --force-reason "initial dry-run validation"
 ```
 
 **Linux / Git Bash:**
 ```bash
 export $(grep -v '^#' .env | xargs)
-uv run python -m errander --run-now --env dev --inventory inventory.yaml --dry-run
+uv run python -m errander --run-now --env dev --inventory inventory.yaml --dry-run --force --force-reason "initial dry-run validation"
 ```
+
+> `--force` bypasses the maintenance window so this first validation run always succeeds regardless of day or time. Remove it once you've confirmed the setup works and set your maintenance window in `inventory.yaml`.
 
 What happens:
 1. SSH connects to each target VM and detects OS + disk state

@@ -464,4 +464,12 @@ fi
 
 **Lesson**: `uv sync --extra dev` installs `pytest-playwright` (the Python package) but NOT the Chromium binary. Running `uv run pytest` then ERRORs with "Executable doesn't exist" — the error message is cryptic and looks like a broken install. The binary requires a separate `uv run playwright install chromium` step (~150 MB download).
 
-**Rule**: (1) run `playwright install chromium` in bootstrap.sh so any fresh VM has the binary; (2) add a `tests/ui/conftest.py` that skips playwright tests with a clear message when the binary is absent, so CI and servers without a browser don't error — they skip.
+**Rule**: (1) add a `tests/ui/conftest.py` that skips playwright tests with a clear message when the binary is absent; (2) keep playwright install out of bootstrap.sh — end users don't need it.
+
+---
+
+## Phase 1.8 — Setup docs must distinguish end users from developers
+
+**Lesson**: Setup steps that mix end-user deployment steps (check-inventory, dry-run) with developer steps (pytest, playwright, ruff) confuse both audiences. An end user who runs `uv run playwright install chromium` downloads 150 MB they'll never use. A developer who skips the dev section misses the test suite.
+
+**Rule**: keep a single linear path for end users (Steps 1–N) covering only what's needed to run the agent in production. Add a separate "For developers" section at the bottom for the test/lint/type-check workflow. Scripts (bootstrap.sh, configure.sh) follow the same split — no dev tools in the end-user path.

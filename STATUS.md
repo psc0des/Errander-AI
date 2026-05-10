@@ -336,6 +336,12 @@ None.
 - `scripts/configure.sh` — encryption key auto-wired: exported into current session, appended to `~/.bashrc`/`~/.zshrc` (idempotent), and injected into systemd service EnvironmentFile if service already installed — no manual steps required
 - `scripts/bootstrap.sh` — completion message corrected: step numbers updated, configure.sh quick path surfaced
 
+## Files Changed (2026-05-10 — add --extra dev to uv sync in bootstrap and docs)
+### Modified
+- `scripts/bootstrap.sh` — `uv sync` → `uv sync --extra dev` so pytest/ruff/mypy are installed during bootstrap
+- `scripts/configure.sh` — Step 6 output now includes `uv sync --extra dev` as the first verify command
+- `SETUP.md` — both manual-clone code blocks updated to `uv sync --extra dev`
+
 ## Files Changed (2026-05-10 — move --check-llm before load_settings)
 ### Modified
 - `errander/main.py` — `run_llm_check()` now reads LLM env vars directly (no Settings param); moved before `load_settings()` in `async_main` so a decryption error in `ERRANDER_UI_PASSWORD` never blocks LLM connectivity verification

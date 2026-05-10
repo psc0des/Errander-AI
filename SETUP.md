@@ -111,7 +111,7 @@ pip install uv
 # 3. Clone and install
 git clone https://github.com/psc0des/Errander-AI.git errander
 cd errander
-uv sync
+uv sync --extra dev
 
 # 4. Verify
 uv run python -c "import errander; print('OK')"
@@ -151,7 +151,7 @@ uv python install 3.12
 # Clone and install
 git clone https://github.com/psc0des/Errander-AI.git errander
 cd errander
-uv sync
+uv sync --extra dev
 
 # Verify
 uv run python -c "import errander; print('OK')"

@@ -209,10 +209,7 @@ else
 fi
 
 case "${_add_vms,,}" in
-  n|no)
-    warn "No VMs added — you can add them later by editing inventory.yaml"
-    ;;
-  *)
+  y|yes)
     while true; do
         prompt_val "  VM hostname or private IP" ""
         VM_HOST="$REPLY"
@@ -242,6 +239,9 @@ case "${_add_vms,,}" in
           *) break ;;
         esac
     done
+    ;;
+  *)
+    warn "No VMs added — you can add them later by editing inventory.yaml"
     ;;
 esac
 

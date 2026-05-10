@@ -244,6 +244,11 @@ The approval flow is now fully decoupled from execution. A dry-run scan can happ
 ## Blockers
 None.
 
+## Files Changed (2026-05-10 — --check-inventory CLI flag)
+### Modified
+- `errander/main.py` — added `--check-inventory` flag + `run_inventory_check()`: validates inventory.yaml and prints env/target summary; wired into `async_main` early-exit path
+- `scripts/configure.sh` — Step 6 verify command replaced with `uv run python -m errander --check-inventory` (was a 200-char one-liner that wrapped in terminals and broke on copy-paste)
+
 ## Files Changed (2026-05-10 — SECRETS.md key rotation docs)
 ### Modified
 - `docs/SECRETS.md` — added `ERRANDER_UI_PASSWORD` to `.env` example; split key rotation into two sections (old key available vs. key lost); added per-variable notes explaining runtime behaviour

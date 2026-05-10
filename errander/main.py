@@ -102,6 +102,13 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Log level (default: INFO)",
     )
 
+    # Inventory check mode
+    parser.add_argument(
+        "--check-inventory",
+        action="store_true",
+        help="Validate inventory.yaml and print a target summary, then exit",
+    )
+
     # LLM health check mode
     parser.add_argument(
         "--check-llm",
@@ -273,6 +280,29 @@ def run_encrypt(value: str) -> int:
         return 1
 
     print(sm.encrypt(value))
+    return 0
+
+
+# ---------------------------------------------------------------------------
+# Inventory check
+# ---------------------------------------------------------------------------
+
+def run_inventory_check(inventory_path: Path) -> int:
+    """Validate inventory.yaml and print a target summary."""
+    if not inventory_path.exists():
+        print(f"Error: inventory file not found: {inventory_path}")
+        return 1
+    try:
+        inv = validate_inventory(inventory_path)
+    except Exception as exc:  # noqa: BLE001
+        print(f"Error: inventory validation failed: {exc}")
+        return 1
+
+    total = sum(len(e.targets) for e in inv.environments.values())
+    print(f"Inventory OK — {len(inv.environments)} environment(s), {total} target(s)")
+    for env_name, env in inv.environments.items():
+        hosts = ", ".join(t.host for t in env.targets)
+        print(f"  {env_name}: {hosts or '(no targets)'}")
     return 0
 
 
@@ -623,6 +653,10 @@ async def async_main(args: argparse.Namespace) -> int:
 
     if args.encrypt is not None:
         return run_encrypt(args.encrypt)
+
+    # --- Inventory check mode: validate and print summary, then exit ---
+    if args.check_inventory:
+        return run_inventory_check(args.inventory)
 
     # --- LLM check mode: verify endpoint and exit ---
     if args.check_llm:

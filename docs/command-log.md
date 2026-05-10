@@ -678,6 +678,11 @@ curl -LsSf https://raw.githubusercontent.com/psc0des/Errander-AI/main/scripts/bo
 **What**: Single command that detects distro, installs git/curl/uv/Python 3.12, clones repo, runs uv sync, verifies import.
 **Why**: Manual step-by-step approach in SETUP.md had implicit steps that tripped up real users (PATH export, Python 3.12 not in apt on Ubuntu 22.04).
 
+### 2026-05-10 — configure.sh UX fix (keep/add VM prompts)
+
+**What**: Split "Keep existing VMs and just add more? (Y/n)" into two separate prompts: "Keep these VMs? (Y/n)" and "Add more VMs? (y/N)".
+**Why**: A single question covering two distinct decisions (keep vs. add) was ambiguous — Y implied both, N implied neither, which is misleading.
+
 ## Debugging
 
 ### 2026-03-21 — uv sync timeout issues

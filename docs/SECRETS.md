@@ -66,6 +66,7 @@ In `.env`:
 ```bash
 ERRANDER_SLACK_BOT_TOKEN=enc:v1:gAAAAA...
 ERRANDER_LLM_API_KEY=enc:v1:gBBBBB...
+ERRANDER_UI_PASSWORD=enc:v1:gCCCCC...   # Web UI HTTP Basic Auth password
 ERRANDER_SECRETS_KEY=your-44-char-key   # this one stays plaintext
 ```
 
@@ -80,27 +81,100 @@ Plaintext values always work — encryption is optional per-field.
 
 ---
 
-## Key rotation
+## Key rotation (old key still available)
 
-The `v1:` prefix in ciphertext enables future key rotation:
+Use this path when you want to rotate the master key proactively — you still
+have the old key and can decrypt existing ciphertexts.
 
-1. Generate a new key: `--generate-secrets-key`
-2. Re-encrypt each value with the new key: `--encrypt <plaintext>`
-3. Replace `enc:v1:...` blobs in your config
-4. Update `ERRANDER_SECRETS_KEY`
+**Step 1 — stop the agent**
+```bash
+sudo systemctl stop errander
+```
+
+**Step 2 — decrypt all current encrypted values using the old key**
+
+For each `enc:v1:` blob in your `.env` and `settings.yaml`, run:
+```bash
+ERRANDER_SECRETS_KEY=<old-key> uv run python -m errander --decrypt "enc:v1:gAAAAA..."
+# → xoxb-your-slack-token
+```
+Note the plaintext for every encrypted variable.
+
+**Step 3 — generate a new key**
+```bash
+uv run python -m errander --generate-secrets-key
+# → ERRANDER_SECRETS_KEY=<new-key>
+```
+
+**Step 4 — re-encrypt every value with the new key**
+```bash
+ERRANDER_SECRETS_KEY=<new-key> uv run python -m errander --encrypt "xoxb-your-slack-token"
+# → enc:v1:hBBBBB...
+```
+Repeat for each secret.
+
+**Step 5 — update your config files**
+
+Replace every old `enc:v1:...` blob in `.env` and `settings.yaml` with the new
+ciphertexts, and update `ERRANDER_SECRETS_KEY` to the new key.
+
+**Step 6 — restart the agent and verify**
+```bash
+sudo systemctl start errander
+uv run python -m errander --check-llm    # verify LLM key decrypts correctly
+```
 
 There is no automated rotation tooling yet — it is deferred to the v2 Vault integration.
 
 ---
 
-## What happens if the master key is lost?
+## Key rotation (master key lost)
 
-All values encrypted with that key are **permanently unrecoverable**. You must:
-1. Rotate all affected secrets (Slack tokens, API keys, etc.)
-2. Re-encrypt with a new key
+If `ERRANDER_SECRETS_KEY` is lost, all `enc:v1:` ciphertexts are
+**permanently unrecoverable** — Fernet provides no backdoor. You must treat
+every encrypted secret as compromised and rotate it at the source.
 
-Recommendation: back up `ERRANDER_SECRETS_KEY` alongside your infrastructure
-credentials in a password manager or secrets vault.
+**Step 1 — stop the agent immediately**
+```bash
+sudo systemctl stop errander
+```
+
+**Step 2 — revoke and reissue every encrypted secret**
+
+| Variable | Where to rotate |
+|---|---|
+| `ERRANDER_SLACK_BOT_TOKEN` | Slack → Your App → OAuth & Permissions → Regenerate token |
+| `ERRANDER_LLM_API_KEY` | Your LLM provider's API key dashboard |
+| `ERRANDER_UI_PASSWORD` | Choose a new password (it is yours to set) |
+
+Any other `enc:v1:` values in your `.env` or `settings.yaml` must also be
+treated as unknown — rotate them too.
+
+**Step 3 — generate a new master key**
+```bash
+uv run python -m errander --generate-secrets-key
+# → ERRANDER_SECRETS_KEY=<new-key>
+```
+
+**Step 4 — encrypt the new secrets with the new key**
+```bash
+ERRANDER_SECRETS_KEY=<new-key> uv run python -m errander --encrypt "xoxb-new-slack-token"
+ERRANDER_SECRETS_KEY=<new-key> uv run python -m errander --encrypt "sk-new-llm-key"
+ERRANDER_SECRETS_KEY=<new-key> uv run python -m errander --encrypt "my-new-ui-password"
+```
+
+**Step 5 — replace all config values and restart**
+
+Update `.env` with new `enc:v1:` blobs and the new `ERRANDER_SECRETS_KEY`,
+then restart:
+```bash
+sudo systemctl start errander
+uv run python -m errander --check-llm
+```
+
+**Prevention:** back up `ERRANDER_SECRETS_KEY` in a password manager or
+secrets vault alongside your other infrastructure credentials. Losing it
+requires rotating every secret it protected.
 
 ---
 
@@ -110,3 +184,15 @@ Only secrets benefit from encryption. Operational config (model IDs, timeouts,
 hostnames, ssh usernames) stays plaintext for debuggability. The agent never
 encrypts data in the SQLite audit trail — use filesystem encryption (LUKS,
 dm-crypt) if the audit DB contains sensitive detail.
+
+### Notes on specific secrets
+
+**`ERRANDER_LLM_API_KEY`** — passed as a Bearer token to the OpenAI-compatible
+endpoint. Decrypted at startup by `settings.py`; handed to the OpenAI SDK.
+
+**`ERRANDER_UI_PASSWORD`** — decrypted at startup and held in memory as
+plaintext. On every `/ui/*` request the server compares the provided password
+against this value using `secrets.compare_digest()` (timing-safe). The password
+is never hashed at rest — encryption via `enc:v1:` is its protection at rest.
+If you set `ERRANDER_UI_USER` without `ERRANDER_UI_PASSWORD` (or vice versa),
+Basic Auth is disabled entirely and a warning is logged on startup.

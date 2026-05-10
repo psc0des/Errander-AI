@@ -244,6 +244,10 @@ The approval flow is now fully decoupled from execution. A dry-run scan can happ
 ## Blockers
 None.
 
+## Files Changed (2026-05-10 — SECRETS.md key rotation docs)
+### Modified
+- `docs/SECRETS.md` — added `ERRANDER_UI_PASSWORD` to `.env` example; split key rotation into two sections (old key available vs. key lost); added per-variable notes explaining runtime behaviour
+
 ## Files Changed (2026-05-10 — SETUP.md continued)
 
 ### Modified

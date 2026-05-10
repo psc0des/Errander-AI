@@ -745,3 +745,15 @@ uv run python -m pytest tests/agent/test_graph.py -q  # 33 passed
 **Root cause**: `uv` was downloading and installing 68 packages which took longer than the default tool timeout.
 **Resolution**: All three completed successfully. The `.venv/` was created and all packages installed. Used `ls .venv/Scripts/python.exe` to verify the venv existed before proceeding.
 **Lesson**: Use longer timeouts for package installation commands, or check for the venv's existence rather than waiting for the install command output.
+
+## 2026-05-10 — SECRETS.md key rotation docs
+
+```bash
+git diff --stat               # confirm only docs/SECRETS.md changed
+git status                    # verify branch state before commit
+git add docs/SECRETS.md STATUS.md docs/command-log.md
+git commit -m "docs: expand SECRETS.md with UI_PASSWORD example and key rotation steps"
+git push origin main
+```
+**What**: Updated `docs/SECRETS.md` — added `ERRANDER_UI_PASSWORD` to `.env` example, expanded key rotation into two procedures (key available vs. lost), added per-secret runtime notes.
+**Why**: Users asked how encryption/decryption works for these two variables and whether docs cover key loss recovery.

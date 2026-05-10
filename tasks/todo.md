@@ -1,5 +1,34 @@
 # Errander-AI — Task Tracking
 
+## Phase 1.8 — End-to-End Validation + configure.sh Polish (2026-05-10)
+
+### configure.sh UX fixes
+- [x] Ask "Do you want to add VMs?" before showing section header (fresh install)
+- [x] Suppress SSH key step header when key already exists
+- [x] Remove SSH key generation — script now verifies only; users own key creation (SETUP.md Step 2)
+- [x] Split "Keep existing VMs and add more?" into two separate prompts
+- [x] Remove stale "Complete Steps 2-3" reminder from final summary
+- [x] Final summary shows Step 6 verify before Step 7 dry-run, matching SETUP.md order
+- [x] Add --force --force-reason to dry-run command in summary and SETUP.md Step 7
+- [x] Fix approval gate — dry-run batches auto-approved, no human gate needed
+- [x] Fix "Add more VMs? (y/N)" defaulting to yes on Enter — flip case branches
+- [x] Fix fresh install Enter on "Add VMs?" silently adding no VMs
+- [x] Fix "Keep + Add more" silently dropping new VMs (append TARGETS_YAML)
+- [x] Fix re-run resetting UI password — read existing creds from .env first
+- [x] Prompt for web UI username + password explicitly (with confirmation loop)
+- [x] Add optional Fernet encryption — key to ~/.errander.key, enc:v1: blobs in .env
+- [x] chmod 600 .env always on write
+
+### SETUP.md fixes
+- [x] Step 7 and Step 8 --env dev → --env <your-env-name>
+- [x] Azure Foundry URL: openai.azure.com → cognitiveservices.azure.com
+- [x] systemd service: hardcoded errander user → $(whoami) + $(pwd)
+- [x] Quick path description: "SSH key" → "verify your SSH key path"
+- [x] Add UI password change warning
+
+### bootstrap.sh
+- [x] Correct step numbers in completion message; surface configure.sh quick path
+
 ## Phase 1: Scaffold + First Action End-to-End (disk_cleanup)
 
 ### 1.1 Project Foundation

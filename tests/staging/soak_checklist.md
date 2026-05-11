@@ -72,7 +72,7 @@ uv run python -m errander --run-now --env staging-soak --dry-run
 
 ## Step 4 — Live run (one action type at a time)
 
-Run with `--unsafe-legacy-live` removed (Phase 0 gate lifted after soak):
+Live mode is now fully unblocked (`--unsafe-legacy-live` guard removed in re-audit Blocker 3):
 
 ```bash
 # Start with lowest-risk action only

@@ -86,15 +86,6 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Enable live execution (overrides --dry-run)",
     )
     parser.add_argument(
-        "--unsafe-legacy-live",
-        action="store_true",
-        help=(
-            "UNSAFE: bypass Phase 0 live-mode guard. "
-            "Live execution is gated until plan/apply and patching rollback are complete. "
-            "Only use for local testing of individual fixes."
-        ),
-    )
-    parser.add_argument(
         "--force",
         action="store_true",
         help="Bypass maintenance window check",
@@ -521,7 +512,7 @@ def _print_audit_table(rows: list[tuple[str, ...]]) -> None:
 
 async def run_audit_query(args: argparse.Namespace, settings: Settings) -> int:
     """Run an audit query and print results to stdout."""
-    audit_store = AuditStore(settings.audit_db_url)
+    audit_store = AuditStore(settings.audit_db_url, strict_mode=False)
     await audit_store.__aenter__()
     try:
         if args.batches:
@@ -844,18 +835,6 @@ async def async_main(args: argparse.Namespace) -> int:
 
     dry_run = not args.live  # --live overrides --dry-run
 
-    # Phase 0 gate: live mode is blocked until plan/apply (finding #3) and
-    # patching rollback (finding #5) land. Pass --unsafe-legacy-live to
-    # override — document the justification in audit, never use in production.
-    if not dry_run and not getattr(args, "unsafe_legacy_live", False):
-        logger.error(
-            "Live execution blocked (Phase 0). "
-            "Plan/apply and patching rollback are not yet in place — "
-            "running live against real VMs risks unrecoverable failures. "
-            "Pass --unsafe-legacy-live alongside --live only for isolated local testing."
-        )
-        return 1
-
     force = args.force
     force_reason = args.force_reason
 
@@ -880,7 +859,10 @@ async def async_main(args: argparse.Namespace) -> int:
         env_name = None
 
     # --- Audit store ---
-    audit_store = AuditStore(settings.audit_db_url)
+    audit_store = AuditStore(
+        settings.audit_db_url,
+        strict_mode=(settings.audit_mode == "strict"),
+    )
     await audit_store.__aenter__()
 
     # --- Deferred execution store (same DB file, separate table) ---

@@ -4,6 +4,20 @@ Self-improvement log. Updated after corrections, mistakes, and surprises.
 
 ---
 
+## 2026-05-12 — frozenset iteration makes BOTH cache variants execute, not just one
+
+**`ALLOWED_CLEANUP_PATHS` contains both `"apt-cache"` AND `"yum-cache"`. The assess loop iterates ALL paths via `path in ("apt-cache", "yum-cache")` — but both paths execute the SAME `pkg_mgr.cache_size()` command.** This means disk_cleanup makes 11 SSH calls (6 assess: df + 5 paths, 5 execute: simulate per path), not 9. Tests that only mocked 9 responses passed spuriously because the `_run_disk_cleanup` broad `except Exception` swallowed `StopAsyncIteration` from the exhausted mock and returned FAILED status, which some tests don't assert on.
+
+**Rule**: when counting expected SSH calls in integration tests, iterate ALL paths in `ALLOWED_CLEANUP_PATHS` (frozenset, order varies) including duplicates like both cache paths. Always use an explicit counting script (`counting_execute`) before finalizing test mock sizes.
+
+## 2026-05-12 — LangGraph conditional edges must enumerate ALL possible return values
+
+**`route_after_drift_check` was added to return `"dispatch_action"` (skip re-planning when pre-approved plan exists), but the graph was wired as `add_conditional_edges("drift_check", ..., ["plan_actions", "audit_results"])`.** LangGraph validates returned strings against the `ends` dict. Returning `"dispatch_action"` raised `KeyError: 'dispatch_action'` at runtime.
+
+**Rule**: whenever a routing function's return set expands, update the `add_conditional_edges` call to include ALL possible return values. Check both the function body AND the edges registration together.
+
+---
+
 ## 2026-05-11 — Patch the module where a symbol is used, not where it is defined
 
 **When a function does a deferred `from X import Y` inside its body (like `rollback_node` doing `from errander.safety.rollback import rollback_action`), patching `errander.safety.rollback.rollback_action` patches the source but the function still gets the original via its local import.** The correct patch target is always where the name is *looked up*, not where it is *defined*. For deferred imports, that means patching `errander.safety.rollback.rollback_action` which IS the source module — and since the import happens at call time, patching the source module works. The failure mode here was the reverse: patching `errander.agent.subgraphs.patching.rollback_action` when the symbol is never bound at module level in that file (it's imported inline), so `patch` raises `AttributeError: module does not have attribute`.

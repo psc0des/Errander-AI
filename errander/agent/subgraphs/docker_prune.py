@@ -94,10 +94,13 @@ async def assess_node(
     vm_id = state["vm_id"]
     target = _get_connection_params(state)
 
+    # Assessment calls always use dry_run=False — must inspect real Docker state.
+
     # Check docker is actually reachable
     docker_check = await executor.execute(
         vm_id, target["hostname"], target["username"], target["key_path"],
         command="docker info >/dev/null 2>&1 && echo ok",
+        dry_run=False,
     )
     if not docker_check.success or "ok" not in docker_check.stdout:
         return {
@@ -110,6 +113,7 @@ async def assess_node(
     df_result = await executor.execute(
         vm_id, target["hostname"], target["username"], target["key_path"],
         command="docker system df 2>/dev/null",
+        dry_run=False,
     )
     system_df = df_result.stdout.strip() if df_result.success else ""
 
@@ -117,6 +121,7 @@ async def assess_node(
     dangling_result = await executor.execute(
         vm_id, target["hostname"], target["username"], target["key_path"],
         command="docker images -f dangling=true -q 2>/dev/null | wc -l",
+        dry_run=False,
     )
     if dangling_result.success and not dangling_result.stdout.strip():
         return {
@@ -130,6 +135,7 @@ async def assess_node(
     stopped_result = await executor.execute(
         vm_id, target["hostname"], target["username"], target["key_path"],
         command="docker ps -a -f status=exited -q 2>/dev/null | wc -l",
+        dry_run=False,
     )
     if stopped_result.success and not stopped_result.stdout.strip():
         return {
@@ -225,6 +231,7 @@ async def verify_node(
     result = await executor.execute(
         vm_id, target["hostname"], target["username"], target["key_path"],
         command="docker system df 2>/dev/null",
+        dry_run=False,
     )
 
     if not result.success:

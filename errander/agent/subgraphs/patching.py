@@ -123,9 +123,11 @@ async def assess_node(
 
     # Refresh local package index so upgradable list reflects current upstream state.
     # Without this, a VM that has never run apt update returns an empty or stale list.
+    # dry_run=False: assessment must always inspect real VM state.
     refresh = await executor.execute(
         vm_id, target["hostname"], target["username"], target["key_path"],
         command=pkg_mgr.refresh_package_lists(),
+        dry_run=False,
     )
     if not refresh.success:
         logger.warning(
@@ -133,10 +135,11 @@ async def assess_node(
             vm_id, refresh.stderr[:200],
         )
 
-    # List upgradable packages
+    # List upgradable packages — always read real state.
     result = await executor.execute(
         vm_id, target["hostname"], target["username"], target["key_path"],
         command=pkg_mgr.list_upgradable(),
+        dry_run=False,
     )
 
     if not result.success:
@@ -192,9 +195,11 @@ async def snapshot_node(
     if not pending:
         return {"version_snapshot": {}}
 
+    # dry_run=False: snapshot must read real installed versions even in dry-run mode.
     result = await executor.execute(
         vm_id, target["hostname"], target["username"], target["key_path"],
         command=pkg_mgr.list_installed_versions(pending),
+        dry_run=False,
     )
 
     if not result.success:
@@ -260,6 +265,8 @@ async def verify_node(
 ) -> dict[str, Any]:
     """Verify packages were updated by comparing with snapshot.
 
+    Sets status=FAILED on any verification failure so route_after_verify
+    can route to rollback (blocker #5).
     Only runs in live mode.
     """
     if state.get("status") == ActionStatus.DRY_RUN_OK.value:
@@ -275,17 +282,23 @@ async def verify_node(
     if not pending:
         return {}
 
+    # dry_run=False: always read real post-patch versions from the VM.
     result = await executor.execute(
         vm_id, target["hostname"], target["username"], target["key_path"],
         command=pkg_mgr.list_installed_versions(pending),
+        dry_run=False,
     )
 
     if not result.success:
-        return {"error": "Failed to verify package versions after patching"}
+        logger.error("Post-patch version check SSH failed on %s — triggering rollback", vm_id)
+        return {
+            "status": ActionStatus.FAILED.value,
+            "error": "Failed to verify package versions after patching",
+        }
 
     current_versions = _parse_versions(result.stdout)
 
-    # Compare with snapshot
+    # Compare with snapshot — if no packages changed, the upgrade likely failed silently.
     changed: dict[str, str] = {}
     for pkg, new_ver in current_versions.items():
         old_ver = snapshot.get(pkg, "unknown")
@@ -295,7 +308,16 @@ async def verify_node(
     if changed:
         logger.info("Updated %d packages on %s: %s", len(changed), vm_id, changed)
     else:
-        logger.info("No version changes detected on %s after patching", vm_id)
+        logger.warning(
+            "No version changes detected on %s after patching — upgrade may have silently failed",
+            vm_id,
+        )
+        # Only treat as failure if we expected changes (had a non-empty snapshot)
+        if snapshot:
+            return {
+                "status": ActionStatus.FAILED.value,
+                "error": "Patching verification failed: no package versions changed after upgrade",
+            }
 
     return {"updated_versions": current_versions}
 
@@ -395,6 +417,7 @@ async def rollback_node(
         hostname=target["hostname"],
         username=target["username"],
         key_path=target["key_path"],
+        os_family=state.get("os_family", "ubuntu"),
     )
 
     if success:
@@ -421,6 +444,13 @@ def route_after_execute(state: PatchingGraphState) -> str:
     if status == ActionStatus.FAILED.value:
         return "rollback"
     return "verify"
+
+
+def route_after_verify(state: PatchingGraphState) -> str:
+    """Route after verify: rollback if verification failed, otherwise done (blocker #5)."""
+    if state.get("status") == ActionStatus.FAILED.value or state.get("error"):
+        return "rollback"
+    return END
 
 
 # --- Graph builder ---
@@ -466,7 +496,7 @@ def build_patching_subgraph(
     builder.add_conditional_edges("assess", route_after_assess, ["snapshot", END])
     builder.add_edge("snapshot", "execute")
     builder.add_conditional_edges("execute", route_after_execute, ["verify", "rollback", END])
-    builder.add_edge("verify", END)
+    builder.add_conditional_edges("verify", route_after_verify, ["rollback", END])
     builder.add_edge("rollback", END)
 
     return builder

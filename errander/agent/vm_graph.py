@@ -798,6 +798,14 @@ def route_after_discover(state: VMGraphState) -> str:
 def route_after_drift_check(state: VMGraphState) -> str:
     if state.get("error"):
         return "audit_results"
+    # If the batch-level approved plan was injected, skip re-planning (blocker #1).
+    # The VM graph executes exactly what the operator approved.
+    if state.get("planned_actions"):
+        logger.info(
+            "VM %s using pre-approved plan (%d actions) — skipping re-plan",
+            state.get("vm_id"), len(state.get("planned_actions", [])),
+        )
+        return "dispatch_action"
     return "plan_actions"
 
 
@@ -890,7 +898,7 @@ def build_vm_graph(
         "discover", route_after_discover, ["drift_check", "audit_results"],
     )
     builder.add_conditional_edges(
-        "drift_check", route_after_drift_check, ["plan_actions", "audit_results"],
+        "drift_check", route_after_drift_check, ["plan_actions", "audit_results", "dispatch_action"],
     )
     builder.add_edge("plan_actions", "dispatch_action")
     builder.add_edge("dispatch_action", "check_more_actions")

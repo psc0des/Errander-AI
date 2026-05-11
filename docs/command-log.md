@@ -897,3 +897,24 @@ git add errander/agent/graph.py errander/main.py tests/agent/test_plan_apply_flo
 git commit -m "feat: Phase 0 gaps — hash verify at execution, policy-based approval thresholds, plan/apply tests"
 git push origin main
 ```
+
+### 2026-05-12 — Re-audit: 7 production blockers remediated
+
+```bash
+uv run pytest tests/agent/test_vm_graph.py::TestBuildVMGraph::test_full_dry_run_disk_cleanup tests/agent/test_graph.py::TestBuildBatchGraph::test_full_dry_run_single_vm -v   # 2 failures before fix
+uv run python -c "from errander.agent.subgraphs.disk_cleanup import ALLOWED_CLEANUP_PATHS; print(list(ALLOWED_CLEANUP_PATHS))"   # audit frozenset order and SSH call count
+uv run python -c "...counting_execute script..."   # confirm 11 SSH calls for disk_cleanup
+uv run pytest tests/agent/ -v --tb=no              # 2 failed, 331 passed before fix
+uv run pytest tests/agent/test_vm_graph.py::TestBuildVMGraph::test_full_dry_run_disk_cleanup tests/agent/test_graph.py::TestBuildBatchGraph::test_full_dry_run_single_vm -v   # 2 passed after fix
+uv run pytest --tb=no -q                           # 918 passed, 111 skipped, 0 failed
+```
+**What**: Fixed all 7 production blockers from the 2026-05-11 re-audit of ai_sre_audit.md. (1) Blocker 1 — VM graph bypasses re-planning when `planned_actions` pre-populated; (2) Blocker 2 — LLM called during batch planning in `plan_vm_node`; (3) Blocker 3 — `--unsafe-legacy-live` removed, live mode unblocked; (4) Blocker 4 — all assess/snapshot/verify nodes use `dry_run=False`; (5) Blocker 5 — `verify_node` in patching sets FAILED + `route_after_verify` routes to rollback; (6) Blocker 6 — `_rollback_patching_dnf` added for RHEL/CentOS; (7) Blocker 7 — `AuditStore` constructed with `strict_mode=(settings.audit_mode == "strict")`.
+**Why**: 7 blockers identified in re-audit were not yet addressed; production safety required all 7 fixed before staging soak.
+
+**Root cause of 2 test failures**: disk_cleanup iterates all 5 ALLOWED_CLEANUP_PATHS (including both `apt-cache` AND `yum-cache`) — 6 assess SSH calls (df + 5 paths) + 5 execute simulate calls = 11 total. Tests only provided 9. Plus `drift_check` conditional edges didn't include `"dispatch_action"` as a valid target (needed for pre-approved plan bypass).
+
+```bash
+git add errander/agent/graph.py errander/agent/vm_graph.py errander/agent/subgraphs/patching.py errander/agent/subgraphs/disk_cleanup.py errander/agent/subgraphs/docker_prune.py errander/agent/subgraphs/log_rotation.py errander/agent/subgraphs/backup_verify.py errander/main.py errander/safety/rollback.py tests/agent/test_graph.py tests/agent/test_vm_graph.py STATUS.md tasks/todo.md tasks/lessons.md docs/command-log.md
+git commit -m "feat: re-audit 7 blockers — approved plan enforcement, LLM planning, live mode, dry_run=False reads, verify→rollback, DNF rollback, audit strict mode"
+git push origin main
+```

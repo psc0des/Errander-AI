@@ -1,7 +1,7 @@
 # Errander-AI — Project Status
 
 ## Last Updated
-2026-05-11
+2026-05-12
 
 ## Current Phase
 **SRE Remediation — ALL PHASES COMPLETE (0–4). ai_sre_remediation_plan.md fully implemented.**
@@ -207,7 +207,6 @@ The approval flow is now fully decoupled from execution. A dry-run scan can happ
 
 ## Next Up
 - Run staging soak (`tests/staging/soak_checklist.md`) against real VMs to validate end-to-end before any production deployment
-- Remove `--unsafe-legacy-live` guard from `main.py` once staging soak passes
 - Wire `generate_report` and `analyze_failure` decisions through `ai_decision_store` (currently only `prioritize_actions` is audited)
 
 
@@ -558,7 +557,7 @@ None.
 - **`_name` temporary field pattern**: YAML target dicts get `_name` injected for filter lookup, then `del`-ed before the list reaches the graph. Avoids passing unknown fields into graph state.
 
 ## Test Count
-878 tests passing (853 unit/integration + 25 Playwright UI tests).
+918 passed, 111 skipped (Playwright UI tests, excluded without Chromium browser).
 
 ### Phase 0: SRE Audit Remediation (complete)
 
@@ -573,3 +572,20 @@ Implemented all Phase 0 fixes from `ai_sre_remediation_plan.md`:
 - **Phase 0 gate**: `--unsafe-legacy-live` guard blocks live mode until Phase 0 is marked complete.
 
 All 787 unit/integration tests pass (111 skipped = Playwright UI tests, excluded without Chromium). Includes 20 new `test_plan_apply_flow.py` tests.
+
+## Files Changed (2026-05-12 — Re-audit: 7 production blockers)
+
+### Modified (source)
+- `errander/agent/graph.py` — `plan_vm_node` passes `llm_client`, `ai_decision_store`, `env_policy`, `batch_id`, `vm_id` to `prioritize_actions()`; `_plan_vm` closure captures both; `_route_plan_vms` injects `env_policy` into Send; `dispatch_current_wave` builds `vm_id_to_approved_actions` lookup and passes `planned_actions` per-VM
+- `errander/agent/vm_graph.py` — `route_after_drift_check` returns `"dispatch_action"` when `planned_actions` pre-populated (skip re-planning); `drift_check` conditional edges extended to include `"dispatch_action"`
+- `errander/agent/subgraphs/patching.py` — `assess_node`: `dry_run=False` on `refresh_package_lists()` and `list_upgradable()`; `snapshot_node`: `dry_run=False`; `verify_node`: `dry_run=False`, sets `status=FAILED` on SSH failure or no version changes; `route_after_verify` routes FAILED to rollback; `rollback_node` passes `os_family`; graph wired with `add_conditional_edges("verify", route_after_verify, ["rollback", END])`
+- `errander/agent/subgraphs/disk_cleanup.py` — `assess_node` and `verify_node`: all SSH calls use `dry_run=False`
+- `errander/agent/subgraphs/docker_prune.py` — `assess_node` and `verify_node`: all SSH calls use `dry_run=False`
+- `errander/agent/subgraphs/log_rotation.py` — `assess_node`: `dry_run=False`
+- `errander/agent/subgraphs/backup_verify.py` — `assess_node`: `dry_run=False`
+- `errander/main.py` — `--unsafe-legacy-live` removed; live guard block removed; `AuditStore` constructed with `strict_mode=(settings.audit_mode == "strict")`; `run_audit_query` uses `strict_mode=False`
+- `errander/safety/rollback.py` — `os_family` param added to `rollback_action` and all `_rollback_*` helpers; `_rollback_patching` dispatches to `_rollback_patching_apt` or `_rollback_patching_dnf`; `_rollback_patching_dnf` uses `dnf downgrade` + `rpm -q`
+
+### Modified (tests)
+- `tests/agent/test_vm_graph.py` — `test_full_dry_run_disk_cleanup`: 10→12 SSH responses (added yum-cache assess + yum-cache execute simulate)
+- `tests/agent/test_graph.py` — `test_full_dry_run_single_vm`: same 10→12 SSH responses

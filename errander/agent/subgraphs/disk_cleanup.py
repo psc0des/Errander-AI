@@ -138,10 +138,11 @@ async def assess_node(
     paths = state.get("whitelist_paths", list(ALLOWED_CLEANUP_PATHS))
     age_days = state.get("tmp_age_days", 7)
 
-    # Get disk usage before cleanup
+    # Get disk usage before cleanup — dry_run=False: always read real VM state.
     df_result = await executor.execute(
         vm_id, target["hostname"], target["username"], target["key_path"],
         command="df -h",
+        dry_run=False,
     )
     if df_result.success and not df_result.stdout.strip():
         return {
@@ -158,6 +159,7 @@ async def assess_node(
             result = await executor.execute(
                 vm_id, target["hostname"], target["username"], target["key_path"],
                 command=_tmp_assess_cmd(age_days),
+                dry_run=False,
             )
             space["/tmp"] = result.stdout.strip() if result.success else "unknown"
 
@@ -166,6 +168,7 @@ async def assess_node(
             result = await executor.execute(
                 vm_id, target["hostname"], target["username"], target["key_path"],
                 command=cmd,
+                dry_run=False,
             )
             space[path] = result.stdout.strip() if result.success else "unknown"
 
@@ -173,6 +176,7 @@ async def assess_node(
             result = await executor.execute(
                 vm_id, target["hostname"], target["username"], target["key_path"],
                 command=_journal_size_cmd(),
+                dry_run=False,
             )
             space["journal"] = result.stdout.strip() if result.success else "unknown"
 
@@ -185,6 +189,7 @@ async def assess_node(
             result = await executor.execute(
                 vm_id, target["hostname"], target["username"], target["key_path"],
                 command=sim_cmd,
+                dry_run=False,
             )
             space["orphaned-deps"] = result.stdout.strip() if result.success else "unknown"
 
@@ -282,6 +287,7 @@ async def verify_node(
     result = await executor.execute(
         vm_id, target["hostname"], target["username"], target["key_path"],
         command="df -h",
+        dry_run=False,
     )
 
     if not result.success:

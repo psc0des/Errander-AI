@@ -99,10 +99,12 @@ async def assess_node(
             })
             continue
         # stat -c '%s %Y %n' gives: size_bytes epoch_mtime filename
+        # dry_run=False: backup verification is read-only — always check real VM state.
         cmd = f"stat -c '%s %Y %n' {quoted} 2>/dev/null || echo 'MISSING {quoted}'"
         result = await executor.execute(
             vm_id, target["hostname"], target["username"], target["key_path"],
             command=cmd,
+            dry_run=False,
         )
 
         output = result.stdout.strip()

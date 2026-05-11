@@ -113,9 +113,11 @@ async def assess_node(
             f"find {log_dir} -type f -size +{threshold_mb}M "
             f"-exec ls -lh {{}} \\; 2>/dev/null"
         )
+        # dry_run=False: assessment must always scan real VM log state.
         result = await executor.execute(
             vm_id, target["hostname"], target["username"], target["key_path"],
             command=cmd,
+            dry_run=False,
         )
 
         if not result.success:

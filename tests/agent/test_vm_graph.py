@@ -449,17 +449,21 @@ class TestBuildVMGraph:
 
         df_output = "Filesystem Size Used Avail Use% Mounted on\n/dev/sda1 20G 10G 10G 50% /\n"
         ssh_responses = [
-            # assess: df, /tmp, apt-cache, journal, orphaned-deps
+            # assess: df + 5 paths (both apt-cache AND yum-cache, frozenset order varies)
             _make_ssh_result(df_output),
             _make_ssh_result("1.0M\ttotal"),
             _make_ssh_result("500K"),
             _make_ssh_result("200M"),
             _make_ssh_result("0 packages"),
-            # execute: /tmp, apt-cache, journal, orphaned-deps
+            _make_ssh_result("500K"),   # 6th assess: second cache path (yum-cache or apt-cache)
+            # execute: 5 paths × simulate_command (dry_run=True)
             _make_ssh_result("done"),
             _make_ssh_result("done"),
             _make_ssh_result("done"),
             _make_ssh_result("done"),
+            _make_ssh_result("done"),   # 5th execute: second cache path
+            # log_rotation assess (dry_run=False): find large files — none found → nothing_to_do
+            _make_ssh_result(""),
         ]
 
         with patch(

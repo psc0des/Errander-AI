@@ -445,29 +445,40 @@ class TestBuildBatchGraph:
             ssh_main, "execute",
             AsyncMock(return_value=_make_ssh_result(os_release)),
         ):
+            # patch graph.detect_os so plan_vm_node plans disk_cleanup (disk=55%)
             with patch(
-                "errander.agent.vm_graph.detect_os",
+                "errander.agent.graph.detect_os",
                 AsyncMock(return_value=vm_info),
             ):
-                disk_cleanup_responses = [
-                    _make_ssh_result(df_output),       # assess: df
-                    _make_ssh_result("1.0M\ttotal"),    # assess: /tmp
-                    _make_ssh_result("500K"),            # assess: apt-cache
-                    _make_ssh_result("200M"),            # assess: journal
-                    _make_ssh_result("0 packages"),     # assess: orphaned-deps
-                    _make_ssh_result("done"),            # execute: /tmp
-                    _make_ssh_result("done"),            # execute: apt-cache
-                    _make_ssh_result("done"),            # execute: journal
-                    _make_ssh_result("done"),            # execute: orphaned-deps
-                ]
-                with patch.object(
-                    executor._ssh, "execute",
-                    AsyncMock(side_effect=disk_cleanup_responses),
+                with patch(
+                    "errander.agent.vm_graph.detect_os",
+                    AsyncMock(return_value=vm_info),
                 ):
-                    compiled = build_batch_graph(
-                        executor, locker, audit_store, ssh_main,
-                    ).compile()
-                    final = await compiled.ainvoke(_base_state())
+                    disk_cleanup_responses = [
+                        # assess: df + 5 paths (both apt-cache AND yum-cache, frozenset order varies)
+                        _make_ssh_result(df_output),
+                        _make_ssh_result("1.0M\ttotal"),
+                        _make_ssh_result("500K"),
+                        _make_ssh_result("200M"),
+                        _make_ssh_result("0 packages"),
+                        _make_ssh_result("500K"),    # 6th assess: second cache path
+                        # execute: 5 paths × simulate_command (dry_run=True)
+                        _make_ssh_result("done"),
+                        _make_ssh_result("done"),
+                        _make_ssh_result("done"),
+                        _make_ssh_result("done"),
+                        _make_ssh_result("done"),    # 5th execute: second cache path
+                        # log_rotation assess (dry_run=False): no large files → nothing_to_do
+                        _make_ssh_result(""),
+                    ]
+                    with patch.object(
+                        executor._ssh, "execute",
+                        AsyncMock(side_effect=disk_cleanup_responses),
+                    ):
+                        compiled = build_batch_graph(
+                            executor, locker, audit_store, ssh_main,
+                        ).compile()
+                        final = await compiled.ainvoke(_base_state())
 
         assert final.get("batch_id", "").startswith("batch-")
         assert len(final.get("healthy_targets", [])) == 1

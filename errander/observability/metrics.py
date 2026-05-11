@@ -40,6 +40,13 @@ _OVERRIDES_STORE_KEY: web.AppKey[OverridesStore | None] = web.AppKey("overrides_
 _UI_USER_KEY: web.AppKey[str] = web.AppKey("ui_user")
 _UI_PASSWORD_KEY: web.AppKey[str] = web.AppKey("ui_password")
 
+#: CSRF secret key (generated fresh per server start — stateless double-submit pattern)
+_CSRF_SECRET_KEY: web.AppKey[str] = web.AppKey("csrf_secret")
+
+_CSRF_COOKIE = "errander_csrf"
+_CSRF_HEADER = "X-CSRF-Token"
+_CSRF_FIELD = "_csrf_token"
+
 logger = logging.getLogger(__name__)
 
 #: Shared registry — all metrics in one place, easy to pass to tests.
@@ -599,6 +606,125 @@ async def _basic_auth_middleware(
         headers={"WWW-Authenticate": 'Basic realm="Errander-AI"'},
         text="Unauthorized",
     )
+
+
+async def _csrf_middleware(
+    request: web.Request,
+    handler: web.RequestHandler,
+) -> web.StreamResponse:
+    """Enforce CSRF double-submit cookie on all /ui/* POST requests (finding #14)."""
+    if request.method == "POST" and request.path.startswith("/ui"):
+        if not await _csrf_verify(request):
+            logger.warning("CSRF check failed for %s %s", request.method, request.path)
+            raise web.HTTPForbidden(reason="CSRF token missing or invalid")
+    return await handler(request)
+
+
+# ---------------------------------------------------------------------------
+# CSRF — double-submit cookie pattern (finding #14)
+# ---------------------------------------------------------------------------
+
+def _csrf_token(request: web.Request) -> str:
+    """Return the per-session CSRF token, creating it if absent.
+
+    Uses the double-submit cookie pattern: a signed HMAC token is set in a
+    cookie (HttpOnly=False so JS can read it if needed, SameSite=Strict) and
+    must also appear in the POST body or X-CSRF-Token header.
+    """
+    import hashlib
+    import hmac
+    import os
+
+    secret = request.app.get(_CSRF_SECRET_KEY, "")
+    # Per-session nonce stored in the cookie
+    cookie_val = request.cookies.get(_CSRF_COOKIE, "")
+    if not cookie_val:
+        cookie_val = os.urandom(16).hex()
+    # HMAC of nonce with server secret — the value the client submits
+    token = hmac.new(
+        secret.encode(),
+        cookie_val.encode(),
+        hashlib.sha256,
+    ).hexdigest()
+    return token
+
+
+def _csrf_cookie_value(request: web.Request) -> str:
+    """Return the raw nonce stored in the CSRF cookie."""
+    return request.cookies.get(_CSRF_COOKIE, "")
+
+
+async def _csrf_verify(request: web.Request) -> bool:
+    """Verify the CSRF token on a POST request.
+
+    Checks both the X-CSRF-Token header and the _csrf_token form field.
+    Returns True if valid, False if missing or wrong.
+    """
+    import hashlib
+    import hmac
+
+    secret = request.app.get(_CSRF_SECRET_KEY, "")
+    cookie_val = request.cookies.get(_CSRF_COOKIE, "")
+    if not cookie_val or not secret:
+        return False
+
+    expected = hmac.new(
+        secret.encode(),
+        cookie_val.encode(),
+        hashlib.sha256,
+    ).hexdigest()
+
+    # Check header first (for AJAX), then form field
+    submitted = request.headers.get(_CSRF_HEADER, "")
+    if not submitted:
+        try:
+            data = await request.post()
+            submitted = str(data.get(_CSRF_FIELD, ""))
+        except Exception:
+            return False
+
+    return secrets.compare_digest(submitted, expected)
+
+
+def _set_csrf_cookie(response: web.Response, nonce: str) -> None:
+    """Attach the CSRF nonce cookie to a response (SameSite=Strict)."""
+    response.set_cookie(
+        _CSRF_COOKIE,
+        nonce,
+        httponly=False,   # client JS may need to read it
+        samesite="Strict",
+        secure=False,     # TLS handled by reverse proxy
+    )
+
+
+def _inject_csrf(request: web.Request, html: str) -> tuple[str, str]:
+    """Return (token, nonce) and inject a hidden CSRF field into all <form> tags.
+
+    The nonce is returned so it can be set as a cookie on the response.
+    """
+    import os
+    import hashlib
+    import hmac
+
+    secret = request.app.get(_CSRF_SECRET_KEY, "")
+    nonce = request.cookies.get(_CSRF_COOKIE, "") or os.urandom(16).hex()
+    token = hmac.new(
+        secret.encode(),
+        nonce.encode(),
+        hashlib.sha256,
+    ).hexdigest()
+    hidden = f'<input type="hidden" name="{_CSRF_FIELD}" value="{token}">'
+    html = html.replace("<form ", f'<form data-csrf="{token}" ', 1)
+    # Inject into every <form ...> → <form ...> + hidden field after first >
+    import re as _re
+    html = _re_inject_csrf(html, hidden)
+    return token, nonce
+
+
+def _re_inject_csrf(html: str, hidden_field: str) -> str:
+    """Insert a hidden CSRF field after the opening tag of every HTML form."""
+    import re as _re
+    return _re.sub(r"(<form\b[^>]*>)", r"\1" + hidden_field, html)
 
 
 # ---------------------------------------------------------------------------
@@ -1328,6 +1454,7 @@ async def start_metrics_server(
     overrides_store: OverridesStore | None = None,
     ui_user: str = "",
     ui_password: str = "",
+    bind_address: str = "127.0.0.1",
 ) -> web.AppRunner:
     """Start the Prometheus metrics, health, and web UI HTTP server.
 
@@ -1361,19 +1488,33 @@ async def start_metrics_server(
     Returns:
         Running AppRunner — call runner.cleanup() on shutdown.
     """
+    # Finding #14: auth is mandatory when binding to a non-loopback address.
+    _is_loopback = bind_address in ("127.0.0.1", "::1", "localhost")
+    if not _is_loopback and (not ui_user or not ui_password):
+        msg = (
+            f"UI is configured to bind on {bind_address} (non-loopback) "
+            f"but ERRANDER_UI_USER / ERRANDER_UI_PASSWORD are not set. "
+            f"Set credentials or restrict bind to 127.0.0.1."
+        )
+        raise RuntimeError(msg)
+
     if ui_user and ui_password:
-        logger.info("UI auth enabled for /ui/* routes")
+        logger.info("UI auth enabled for /ui/* routes (bind=%s)", bind_address)
     else:
         logger.warning(
             "UI auth disabled — set ERRANDER_UI_USER and ERRANDER_UI_PASSWORD to enable"
         )
 
-    app = web.Application(middlewares=[_basic_auth_middleware])
+    import os as _os
+    csrf_secret = _os.urandom(32).hex()  # fresh per server start
+
+    app = web.Application(middlewares=[_basic_auth_middleware, _csrf_middleware])
     app[_AUDIT_STORE_KEY] = audit_store
     app[_APPROVAL_MANAGER_KEY] = approval_manager
     app[_OVERRIDES_STORE_KEY] = overrides_store
     app[_UI_USER_KEY] = ui_user
     app[_UI_PASSWORD_KEY] = ui_password
+    app[_CSRF_SECRET_KEY] = csrf_secret
 
     app.router.add_get("/metrics", _metrics_handler)
     app.router.add_get("/health", _health_handler)
@@ -1397,10 +1538,10 @@ async def start_metrics_server(
 
     runner = web.AppRunner(app, access_log=None)
     await runner.setup()
-    site = web.TCPSite(runner, host="0.0.0.0", port=port)
+    site = web.TCPSite(runner, host=bind_address, port=port)
     await site.start()
     logger.info(
-        "Server listening on :%d (/metrics, /health, /ui)",
-        port,
+        "Server listening on %s:%d (/metrics, /health, /ui)",
+        bind_address, port,
     )
     return runner

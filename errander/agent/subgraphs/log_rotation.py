@@ -18,6 +18,7 @@ from typing import Any, TypedDict
 
 from langgraph.graph import END, StateGraph
 
+from errander.execution.command_builder import CommandBuildError, safe_path
 from errander.execution.sandbox import SandboxExecutor
 from errander.models.actions import ActionStatus
 
@@ -188,14 +189,21 @@ async def execute_node(
         # Logrotate not available or failed — manual rotation per file
         logger.info("logrotate unavailable on %s, falling back to manual rotation", vm_id)
         for filepath in large_files:
+            try:
+                qp = safe_path(filepath)
+                qp1 = safe_path(filepath + ".1")
+            except CommandBuildError as exc:
+                logger.error("Skipping log file with unsafe path on %s: %s", vm_id, exc)
+                output[filepath] = "[SKIPPED — unsafe path]"
+                continue
             if compress:
                 live_cmd = (
-                    f"cp {filepath} {filepath}.1 && "
-                    f"gzip {filepath}.1 && truncate -s 0 {filepath}"
+                    f"cp {qp} {qp1} && "
+                    f"gzip {qp1} && truncate -s 0 {qp}"
                 )
             else:
-                live_cmd = f"cp {filepath} {filepath}.1 && truncate -s 0 {filepath}"
-            sim_cmd = f"ls -lh {filepath}"
+                live_cmd = f"cp {qp} {qp1} && truncate -s 0 {qp}"
+            sim_cmd = f"ls -lh {qp}"
 
             file_result = await executor.execute(
                 vm_id, target["hostname"], target["username"], target["key_path"],

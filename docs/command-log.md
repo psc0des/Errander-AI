@@ -825,6 +825,20 @@ git commit -m "feat: Phase 0 SRE audit remediation — plan/apply, rollback, aud
 git push origin main
 ```
 
+### 2026-05-11 — Phase 1: Security hardening (5 findings)
+
+```bash
+uv run pytest tests -q   # 787 passed before; 846 passed after Phase 1
+```
+**What**: Implemented all 5 Phase 1 security hardening items from ai_sre_remediation_plan.md.
+**Why**: Shell injection (finding #10) is RCE on target VMs. SSH TOFU (finding #9) is MITM exposure. Docker prune -a (finding #12) destroys running-image layers. UI on 0.0.0.0 with opt-in auth (finding #14) is exposure on any public-facing server. Glob apt-mark (finding #11) silently fails to hold kernel packages.
+
+```bash
+git add errander/execution/command_builder.py errander/execution/ssh.py errander/execution/commands.py errander/agent/subgraphs/backup_verify.py errander/agent/subgraphs/log_rotation.py errander/agent/subgraphs/docker_prune.py errander/safety/rollback.py errander/config/settings.py errander/observability/metrics.py errander/main.py tests/execution/test_command_builder.py tests/execution/test_ssh_host_keys.py tests/agent/subgraphs/test_docker_prune_scope.py tests/observability/test_ui_security.py STATUS.md tasks/todo.md docs/command-log.md
+git commit -m "feat: Phase 1 security hardening — injection fix, SSH host keys, kernel exclusion, docker prune scope, UI security"
+git push origin main
+```
+
 ### 2026-05-11 — Phase 0 gaps: hash verification + policy thresholds + plan/apply tests
 
 ```bash

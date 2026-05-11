@@ -94,6 +94,18 @@ class Settings:
     # are never silently under-audited (finding #13).
     audit_mode: str = "strict"
 
+    # SSH host key verification (finding #9).
+    # known_hosts_path: path to known_hosts file.  Empty = TOFU mode (log warning per connect).
+    # ssh_strict_host_keys: when True (default), reject hosts not in known_hosts.
+    #   Set False only for dev environments where TOFU is acceptable.
+    ssh_known_hosts_path: str = ""
+    ssh_strict_host_keys: bool = True
+
+    # UI bind address (finding #14).
+    # Default 127.0.0.1 — set to 0.0.0.0 only behind a trusted reverse proxy.
+    # Auth is mandatory when bind != 127.0.0.1.
+    ui_bind_address: str = "127.0.0.1"
+
     # UI auth (env-only — bootstrap credentials must not live in DB)
     ui_user: str = ""
     ui_password: str = ""
@@ -334,6 +346,11 @@ def load_settings(
         # UI auth (env-only)
         ui_user=_load_env_str("ERRANDER_UI_USER"),
         ui_password=_load_env_str("ERRANDER_UI_PASSWORD"),
+        # SSH host key verification
+        ssh_known_hosts_path=_load_env_str("ERRANDER_SSH_KNOWN_HOSTS", ""),
+        ssh_strict_host_keys=_load_env_bool("ERRANDER_SSH_STRICT_HOST_KEYS", True),
+        # UI bind address
+        ui_bind_address=_load_env_str("ERRANDER_UI_BIND", "127.0.0.1"),
         # Source tracking
         sources=sources,
     )

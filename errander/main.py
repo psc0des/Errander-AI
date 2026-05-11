@@ -125,6 +125,17 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Check LLM endpoint connectivity, model info, and latency, then exit",
     )
 
+    # SSH known-hosts bootstrap (finding #9)
+    parser.add_argument(
+        "--bootstrap-known-hosts",
+        metavar="ENV",
+        default=None,
+        help=(
+            "Connect once to every host in ENV inventory, pin their host keys "
+            "into ERRANDER_SSH_KNOWN_HOSTS file, then exit"
+        ),
+    )
+
     # Secrets management
     parser.add_argument(
         "--generate-secrets-key",
@@ -224,6 +235,8 @@ def _build_components(settings: Settings) -> tuple[
         command_timeout=settings.ssh_command_timeout_seconds,
         reconnect_attempts=settings.ssh_reconnect_attempts,
         reconnect_backoff=settings.ssh_reconnect_backoff,
+        known_hosts_path=settings.ssh_known_hosts_path,
+        strict_host_keys=settings.ssh_strict_host_keys,
     )
 
     executor = SandboxExecutor(ssh_manager=ssh_manager, dry_run=settings.dry_run_default)
@@ -382,6 +395,105 @@ async def run_llm_check() -> int:
         return 1
 
     print("LLM endpoint is healthy.")
+    return 0
+
+
+# ---------------------------------------------------------------------------
+# SSH known-hosts bootstrap (finding #9)
+# ---------------------------------------------------------------------------
+
+async def run_bootstrap_known_hosts(env_name: str, inventory_path: Path) -> int:
+    """SSH to every host in the given environment and pin host keys.
+
+    Connects with known_hosts=None (TOFU) once, captures the server's host
+    key via asyncssh's known_hosts API, and appends it to the file pointed
+    to by ERRANDER_SSH_KNOWN_HOSTS (defaults to ~/.ssh/errander_known_hosts).
+
+    Idempotent — if a host is already pinned, the existing entry is kept.
+    After this command succeeds, set ERRANDER_SSH_STRICT_HOST_KEYS=true
+    (the default) and the agent will enforce host keys from that file.
+    """
+    import os
+
+    import asyncssh
+
+    from errander.config.inventory import load_inventory
+
+    out_path_str = os.environ.get(
+        "ERRANDER_SSH_KNOWN_HOSTS",
+        str(Path.home() / ".ssh" / "errander_known_hosts"),
+    )
+    out_path = Path(out_path_str)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Load existing pinned keys so we can deduplicate
+    existing_lines: set[str] = set()
+    if out_path.exists():
+        existing_lines = set(out_path.read_text().splitlines())
+
+    try:
+        inventory = load_inventory(inventory_path)
+    except Exception as exc:  # noqa: BLE001
+        print(f"Error loading inventory: {exc}")
+        return 1
+
+    env = inventory.environments.get(env_name)
+    if env is None:
+        print(f"Environment '{env_name}' not found in inventory")
+        return 1
+
+    targets = env.targets
+    if not targets:
+        print(f"No targets in environment '{env_name}'")
+        return 1
+
+    new_lines: list[str] = []
+    errors = 0
+
+    for target in targets:
+        hostname = target.hostname
+        ssh_user = env.ssh_user
+        key_path = str(Path(env.ssh_key_path).expanduser())
+
+        print(f"  Scanning {hostname} ... ", end="", flush=True)
+        try:
+            # One-shot connection with TOFU to retrieve server keys
+            conn = await asyncssh.connect(
+                hostname,
+                username=ssh_user,
+                client_keys=[key_path],
+                known_hosts=None,
+                password=None,
+            )
+            server_host_keys = conn.get_server_host_key()
+            conn.close()
+
+            if server_host_keys is not None:
+                # Export in OpenSSH known_hosts format
+                entry = f"{hostname} {server_host_keys.export_public_key('openssh').decode().strip()}"
+                if entry not in existing_lines:
+                    new_lines.append(entry)
+                    print("pinned")
+                else:
+                    print("already pinned")
+            else:
+                print("WARNING — no host key returned")
+                errors += 1
+        except (OSError, asyncssh.Error) as exc:
+            print(f"FAILED — {exc}")
+            errors += 1
+
+    if new_lines:
+        with out_path.open("a") as f:
+            f.write("\n".join(new_lines) + "\n")
+        out_path.chmod(0o600)
+        print(f"\nPinned {len(new_lines)} new host key(s) to {out_path}")
+
+    if errors:
+        print(f"\n{errors} host(s) failed — check network/SSH access")
+        return 1
+
+    print(f"\nDone. Set ERRANDER_SSH_KNOWN_HOSTS={out_path} in your .env")
     return 0
 
 
@@ -680,6 +792,12 @@ async def async_main(args: argparse.Namespace) -> int:
     if args.check_llm:
         return await run_llm_check()
 
+    if args.bootstrap_known_hosts:
+        return await run_bootstrap_known_hosts(
+            env_name=args.bootstrap_known_hosts,
+            inventory_path=args.inventory,
+        )
+
     # --- Configuration ---
     try:
         settings = load_settings(
@@ -770,6 +888,7 @@ async def async_main(args: argparse.Namespace) -> int:
             overrides_store=overrides_store,
             ui_user=settings.ui_user,
             ui_password=settings.ui_password,
+            bind_address=settings.ui_bind_address,
         )
 
         # --- --run-now mode: run once and exit ---

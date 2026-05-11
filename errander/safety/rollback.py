@@ -13,8 +13,9 @@ executor are passed in so rollback can run real commands on the target VM.
 from __future__ import annotations
 
 import logging
-import shlex
 from typing import TYPE_CHECKING
+
+from errander.execution.command_builder import CommandBuildError, pkg_version_spec
 
 from errander.models.actions import ActionType
 
@@ -82,14 +83,18 @@ async def _rollback_patching(
     if not pre_snapshot:
         return False, "Pre-snapshot is empty — cannot determine versions to restore"
 
-    # Build pkg=version install specs (safe quoting, no globs)
+    # Build pkg=version install specs via validated helpers (finding #10)
     install_specs: list[str] = []
     for pkg, version in pre_snapshot.items():
         pkg_str = str(pkg).strip()
         ver_str = str(version).strip()
         if not pkg_str or not ver_str:
             continue
-        install_specs.append(f"{shlex.quote(pkg_str)}={shlex.quote(ver_str)}")
+        try:
+            install_specs.append(pkg_version_spec(pkg_str, ver_str))
+        except CommandBuildError as exc:
+            logger.error("Skipping unsafe pkg=ver in rollback snapshot: %s", exc)
+            continue
 
     if not install_specs:
         return False, "No versioned packages in snapshot — cannot rollback"
@@ -117,10 +122,12 @@ async def _rollback_patching(
         )
 
     # Verification: re-query installed versions and compare to snapshot
+    from errander.execution.command_builder import safe_pkg as _safe_pkg
     pkg_names = [str(p) for p in pre_snapshot]
+    safe_names = [_safe_pkg(p) for p in pkg_names if p.strip()]
     verify_cmd = (
         "dpkg-query -W -f='${Package}=${Version}\\n' "
-        + " ".join(shlex.quote(p) for p in pkg_names)
+        + " ".join(safe_names)
     )
     verify_result = await executor.execute(
         vm_id, hostname, username, key_path,

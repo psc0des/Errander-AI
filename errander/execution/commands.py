@@ -6,13 +6,27 @@ runtime based on OS detection.
 
 This ensures action sub-graphs use a uniform interface regardless of the
 target OS.
+
+All command construction uses safe_path()/safe_pkg()/safe_ver() from
+command_builder — never raw f-strings with untrusted input (finding #10).
 """
 
 from __future__ import annotations
 
+import re
+import shlex
 from abc import ABC, abstractmethod
 
+from errander.execution.command_builder import safe_pkg, safe_ver
 from errander.models.vm import OSFamily
+
+# Kernel package patterns for Python-side filtering (finding #11).
+# These are applied to dpkg-query / rpm -q output in Python — NOT passed
+# to apt-mark as globs (apt-mark does not expand globs).
+_KERNEL_PKG_RE = re.compile(
+    r"^(linux-(image|headers|modules|generic|aws|azure|gcp|kvm|raspi|oem)|"
+    r"kernel(-core|-modules|-devel|-headers)?)"
+)
 
 
 class PackageManager(ABC):
@@ -74,21 +88,47 @@ class AptManager(PackageManager):
         return "apt list --upgradable 2>/dev/null"
 
     def upgrade_all(self, exclude_patterns: list[str] | None = None) -> str:
-        if exclude_patterns:
-            holds = " && ".join(
-                f"apt-mark hold {p}" for p in exclude_patterns
+        # Finding #11: apt-mark does not expand globs — we hold exact kernel
+        # package names queried from dpkg-query and filtered in Python.
+        # This two-step shell script queries installed kernel packages, holds
+        # them, upgrades everything else, then unholds.
+        kernel_query = (
+            "dpkg-query -W -f='${Package}\\n' 2>/dev/null"
+            " | grep -E "
+            + shlex.quote(
+                r"^(linux-(image|headers|modules|generic|aws|azure|gcp|kvm|raspi|oem)"
+                r"|kernel(-core|-modules|-devel|-headers)?)"
             )
-            return f"{holds} && apt-get upgrade -y && " + " && ".join(
-                f"apt-mark unhold {p}" for p in exclude_patterns
+        )
+        hold_cmd = (
+            f"KERNEL_PKGS=$({kernel_query}); "
+            "[ -n \"$KERNEL_PKGS\" ] && echo \"$KERNEL_PKGS\" | xargs apt-mark hold; "
+            "apt-get upgrade -y; "
+            "[ -n \"$KERNEL_PKGS\" ] && echo \"$KERNEL_PKGS\" | xargs apt-mark unhold; "
+            "true"
+        )
+        return hold_cmd
+
+    def query_kernel_packages(self) -> str:
+        """Return command that prints exact installed kernel package names (one per line)."""
+        return (
+            "dpkg-query -W -f='${Package}\\n' 2>/dev/null"
+            " | grep -E "
+            + shlex.quote(
+                r"^(linux-(image|headers|modules|generic|aws|azure|gcp|kvm|raspi|oem)"
+                r"|kernel(-core|-modules|-devel|-headers)?)"
             )
-        return "apt-get upgrade -y"
+        )
 
     def install_version(self, package: str, version: str) -> str:
-        return f"apt-get install -y --allow-downgrades {package}={version}"
+        return (
+            "DEBIAN_FRONTEND=noninteractive apt-get install -y --allow-downgrades "
+            + f"{safe_pkg(package)}={safe_ver(version)}"
+        )
 
     def list_installed_versions(self, packages: list[str]) -> str:
-        pkg_list = " ".join(packages)
-        return f"dpkg-query -W -f='${{Package}}=${{Version}}\\n' {pkg_list} 2>/dev/null"
+        quoted = " ".join(safe_pkg(p) for p in packages)
+        return f"dpkg-query -W -f='${{Package}}=${{Version}}\\n' {quoted} 2>/dev/null"
 
     def clean_cache(self) -> str:
         return "apt-get clean"
@@ -115,17 +155,38 @@ class DnfManager(PackageManager):
         return "dnf check-update --quiet 2>/dev/null || true"
 
     def upgrade_all(self, exclude_patterns: list[str] | None = None) -> str:
-        if exclude_patterns:
-            excludes = " ".join(f"--exclude={p}" for p in exclude_patterns)
-            return f"dnf upgrade -y {excludes}"
-        return "dnf upgrade -y"
+        # Finding #11: use dnf versionlock with exact kernel package names
+        # queried from rpm and filtered in Python — not glob patterns.
+        kernel_query = (
+            "rpm -qa --qf '%{NAME}\\n' 2>/dev/null"
+            " | grep -E "
+            + shlex.quote(
+                r"^(kernel(-core|-modules|-devel|-headers)?)"
+            )
+        )
+        lock_cmd = (
+            f"KERNEL_PKGS=$({kernel_query}); "
+            "[ -n \"$KERNEL_PKGS\" ] && echo \"$KERNEL_PKGS\" | xargs dnf versionlock add 2>/dev/null || true; "
+            "dnf upgrade -y; "
+            "[ -n \"$KERNEL_PKGS\" ] && echo \"$KERNEL_PKGS\" | xargs dnf versionlock delete 2>/dev/null || true; "
+            "true"
+        )
+        return lock_cmd
+
+    def query_kernel_packages(self) -> str:
+        """Return command that prints exact installed kernel package names (one per line)."""
+        return (
+            "rpm -qa --qf '%{NAME}\\n' 2>/dev/null"
+            " | grep -E "
+            + shlex.quote(r"^(kernel(-core|-modules|-devel|-headers)?)")
+        )
 
     def install_version(self, package: str, version: str) -> str:
-        return f"dnf downgrade -y {package}-{version}"
+        return f"dnf downgrade -y {safe_pkg(package)}-{safe_ver(version)}"
 
     def list_installed_versions(self, packages: list[str]) -> str:
-        pkg_list = " ".join(packages)
-        return f"rpm -q --qf '%{{NAME}}=%{{VERSION}}-%{{RELEASE}}\\n' {pkg_list} 2>/dev/null"
+        quoted = " ".join(safe_pkg(p) for p in packages)
+        return f"rpm -q --qf '%{{NAME}}=%{{VERSION}}-%{{RELEASE}}\\n' {quoted} 2>/dev/null"
 
     def clean_cache(self) -> str:
         return "dnf clean all"

@@ -62,6 +62,12 @@ class SSHConnectionManager:
         async with SSHConnectionManager() as mgr:
             result = await mgr.execute("vm-id", "10.0.1.10", "errander-ai",
                                         "~/.ssh/key", "uptime")
+
+    Host key verification (finding #9):
+        known_hosts_path  — path to a known_hosts file. Empty = TOFU mode.
+        strict_host_keys  — when True (default), reject unknown hosts.
+                            When False, connect but emit a WARNING audit log
+                            for each TOFU connection.
     """
 
     def __init__(
@@ -69,11 +75,15 @@ class SSHConnectionManager:
         command_timeout: int = 300,
         reconnect_attempts: int = 3,
         reconnect_backoff: list[int] | None = None,
+        known_hosts_path: str = "",
+        strict_host_keys: bool = True,
     ) -> None:
         self._command_timeout = command_timeout
         self._reconnect_attempts = reconnect_attempts
         self._reconnect_backoff = reconnect_backoff or [5, 15, 45]
         self._connections: dict[str, asyncssh.SSHClientConnection] = {}
+        self._known_hosts_path = known_hosts_path
+        self._strict_host_keys = strict_host_keys
 
     async def __aenter__(self) -> SSHConnectionManager:
         return self
@@ -87,18 +97,36 @@ class SSHConnectionManager:
         username: str,
         key_path: str,
     ) -> asyncssh.SSHClientConnection:
-        """Open a new SSH connection with key-based auth only."""
-        # SECURITY: known_hosts=None disables host key verification.
-        # In production, set known_hosts to a file path or use ssh-keyscan
-        # to populate. VPN mitigates MITM risk but this should be fixed.
-        logger.warning(
-            "Connecting to %s with host key verification disabled", hostname,
-        )
+        """Open a new SSH connection with key-based auth only (finding #9).
+
+        known_hosts_path set → strict host key verification against that file.
+        known_hosts_path empty + strict_host_keys True → refuse (config error).
+        known_hosts_path empty + strict_host_keys False → TOFU mode, WARNING logged.
+        """
+        if self._known_hosts_path:
+            known_hosts: str | None = self._known_hosts_path
+            logger.debug("Connecting to %s with known_hosts=%s", hostname, known_hosts)
+        elif not self._strict_host_keys:
+            known_hosts = None
+            logger.warning(
+                "SECURITY: connecting to %s in TOFU mode (host key not verified). "
+                "Set ERRANDER_SSH_KNOWN_HOSTS to enable host key pinning.",
+                hostname,
+            )
+        else:
+            msg = (
+                f"Cannot connect to {hostname}: strict host key verification is enabled "
+                f"but ERRANDER_SSH_KNOWN_HOSTS is not set. "
+                f"Run 'errander --bootstrap-known-hosts <env>' to pin host keys, "
+                f"or set ERRANDER_SSH_STRICT_HOST_KEYS=false to allow TOFU mode."
+            )
+            raise ConnectionError(msg)
+
         return await asyncssh.connect(
             hostname,
             username=username,
             client_keys=[key_path],
-            known_hosts=None,
+            known_hosts=known_hosts,
             password=None,  # key-based only
         )
 
@@ -307,7 +335,7 @@ async def check_connectivity(
             hostname,
             username=username,
             client_keys=[key_path],
-            known_hosts=None,
+            known_hosts=None,  # one-shot connectivity check only — no pooling
             password=None,
         )
         conn.close()

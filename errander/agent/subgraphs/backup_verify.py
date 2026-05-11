@@ -20,6 +20,7 @@ from typing import Any, TypedDict
 
 from langgraph.graph import END, StateGraph
 
+from errander.execution.command_builder import CommandBuildError, safe_path
 from errander.execution.sandbox import SandboxExecutor
 from errander.models.actions import ActionStatus
 
@@ -86,8 +87,19 @@ async def assess_node(
     metadata: list[dict[str, str]] = []
 
     for path in paths:
+        try:
+            quoted = safe_path(path)
+        except CommandBuildError as exc:
+            logger.error("Skipping backup path with unsafe chars on %s: %s", vm_id, exc)
+            metadata.append({
+                "path": path,
+                "size": "0",
+                "last_modified": "0",
+                "exists": "false",
+            })
+            continue
         # stat -c '%s %Y %n' gives: size_bytes epoch_mtime filename
-        cmd = f"stat -c '%s %Y %n' {path} 2>/dev/null || echo 'MISSING {path}'"
+        cmd = f"stat -c '%s %Y %n' {quoted} 2>/dev/null || echo 'MISSING {quoted}'"
         result = await executor.execute(
             vm_id, target["hostname"], target["username"], target["key_path"],
             command=cmd,

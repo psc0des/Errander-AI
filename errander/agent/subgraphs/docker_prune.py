@@ -37,6 +37,11 @@ class DockerPruneGraphState(TypedDict, total=False):
 
     docker_available: bool
 
+    # Prune scope (finding #12):
+    # aggressive=False (default) → prune dangling images + stopped containers only
+    # aggressive=True            → prune ALL unused images (-a); reclassified HIGH
+    docker_prune_aggressive: bool
+
     # Assessment results
     dangling_images: int
     stopped_containers: int
@@ -162,21 +167,35 @@ async def execute_node(
     *,
     executor: SandboxExecutor,
 ) -> dict[str, Any]:
-    """Execute docker system prune.
+    """Execute docker prune.
 
-    Live: docker system prune -af (removes dangling images, stopped
-    containers, unused networks). Does NOT prune volumes by default
-    for safety.
+    Default (aggressive=False, finding #12):
+      docker image prune -f        — dangling images only
+      docker container prune -f    — exited containers only
+      Does NOT use 'docker system prune -a' which removes ALL unused images.
 
-    Dry-run: docker system df (show what would be reclaimed).
+    Aggressive (aggressive=True, risk tier HIGH, requires approval):
+      docker system prune -af      — all unused images + containers + networks.
+
+    Dry-run: docker system df (show reclaimable space).
     """
     vm_id = state["vm_id"]
     target = _get_connection_params(state)
     dry_run = state.get("dry_run", True)
+    aggressive = state.get("docker_prune_aggressive", False)
+
+    if aggressive:
+        live_cmd = "docker system prune -af 2>&1"
+    else:
+        # Safe default: dangling images + stopped containers only
+        live_cmd = (
+            "docker image prune -f 2>&1 && "
+            "docker container prune -f 2>&1"
+        )
 
     result = await executor.execute(
         vm_id, target["hostname"], target["username"], target["key_path"],
-        command="docker system prune -af 2>&1",
+        command=live_cmd,
         simulate_command="docker system df 2>/dev/null",
         dry_run=dry_run,
     )

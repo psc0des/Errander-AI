@@ -351,6 +351,26 @@ None.
 - `scripts/bootstrap.sh` — reverted to bare `uv sync` (no `--extra dev`, no playwright — dev tools not needed for deployment)
 - `SETUP.md` — Step 6 is now end-user only (inventory check + LLM check); pytest/playwright/ruff/mypy moved to new "For developers" section at the bottom
 
+## Files Changed (2026-05-11 — Phase 1 security hardening)
+
+### Created
+- `errander/execution/command_builder.py` — `safe_path`, `safe_pkg`, `safe_ver`, `pkg_version_spec`, `build_cmd`; `CommandBuildError`
+- `tests/execution/test_command_builder.py` — 22 tests; injection corpus covering `;`, `$()`, backtick, `|`, `>`, null byte, spaces
+- `tests/execution/test_ssh_host_keys.py` — 6 tests for known_hosts modes (strict, TOFU, missing config)
+- `tests/agent/subgraphs/test_docker_prune_scope.py` — 4 tests for dangling-only vs aggressive prune
+- `tests/observability/test_ui_security.py` — 7 tests for bind address enforcement, CSRF middleware, CSRF injection helper
+
+### Modified (source)
+- `errander/execution/ssh.py` — `SSHConnectionManager.__init__` accepts `known_hosts_path`/`strict_host_keys`; `_connect` enforces three modes (verified/TOFU/refuse); TOFU logs WARNING per connection
+- `errander/execution/commands.py` — `AptManager.upgrade_all` uses dpkg-query + Python filter + exact hold names (no glob apt-mark); `DnfManager.upgrade_all` uses rpm + dnf versionlock; both `list_installed_versions` / `install_version` use `safe_pkg`/`safe_ver`
+- `errander/agent/subgraphs/backup_verify.py` — `assess_node` uses `safe_path()`; unsafe paths skipped with error logged
+- `errander/agent/subgraphs/log_rotation.py` — manual rotation f-strings replaced with `safe_path()`; unsafe paths skipped
+- `errander/agent/subgraphs/docker_prune.py` — `DockerPruneGraphState.docker_prune_aggressive` field; `execute_node` defaults to dangling-only commands; aggressive=True uses `system prune -af`
+- `errander/safety/rollback.py` — `shlex.quote` replaced with `pkg_version_spec()` from command_builder
+- `errander/config/settings.py` — `ssh_known_hosts_path`, `ssh_strict_host_keys`, `ui_bind_address` fields + env var loading
+- `errander/observability/metrics.py` — `bind_address` param; mandatory auth guard on non-loopback; `_CSRF_SECRET_KEY` AppKey; `_csrf_middleware`, `_csrf_verify`, `_inject_csrf`, `_re_inject_csrf` helpers; CSRF middleware wired into app
+- `errander/main.py` — `SSHConnectionManager` constructed with `known_hosts_path`/`strict_host_keys` from settings; `--bootstrap-known-hosts <env>` CLI; `run_bootstrap_known_hosts()` function; `start_metrics_server` called with `bind_address`
+
 ## Files Changed (2026-05-11 — Phase 0 SRE audit remediation)
 
 ### Modified (source)

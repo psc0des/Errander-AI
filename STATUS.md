@@ -4,7 +4,7 @@
 2026-05-11
 
 ## Current Phase
-**SRE Remediation — Phase 0 and Phase 1 complete. Phase 2 (policy enforcement + fleet safety) is next.**
+**SRE Remediation — Phases 0, 1, and 2 complete. Phase 3 (honest AI integration) is next.**
 
 ## Completed
 
@@ -206,11 +206,11 @@ The approval flow is now fully decoupled from execution. A dry-run scan can happ
 - Nothing actively in flight.
 
 ## Next Up
-- Phase 2: Policy enforcement + fleet safety (findings #6, #7, #8 from SRE audit)
-  - 2.1 Wire `requires_approval()` into graph per strict/moderate/relaxed policy
-  - 2.2 Enforce `fleet_failure_threshold` pre-flight abort
-  - 2.3 Strict OS verification (detect_os + verify_os_match, not just echo ok)
-- Phase 3: Honest AI integration (LLMClient threaded into graph, constrained plan schema, AI eval harness)
+- Phase 3: Honest AI integration (finding #1)
+  - 3.1 Thread LLMClient into build_batch_graph → build_vm_graph → plan_actions_node
+  - 3.2 Constrained plan schema — LLM returns action selections over fixed vocabulary; Pydantic validated
+  - 3.3 AI eval harness — golden VM states → expected plan shapes; injection corpus; schema-violation corpus
+  - 3.4 Per-decision AI audit table
 - Phase 4: E2E verification (staging soak, chaos suite, Windows test infra fix)
 
 
@@ -353,6 +353,22 @@ None.
 - `scripts/configure.sh` — Step 6 output trimmed to end-user steps only: `--check-inventory` and `--check-llm`
 - `scripts/bootstrap.sh` — reverted to bare `uv sync` (no `--extra dev`, no playwright — dev tools not needed for deployment)
 - `SETUP.md` — Step 6 is now end-user only (inventory check + LLM check); pytest/playwright/ruff/mypy moved to new "For developers" section at the bottom
+
+## Files Changed (2026-05-11 — Phase 2 policy enforcement + fleet safety)
+
+### Modified (source)
+- `errander/models/events.py` — added `FLEET_ABORT` and `OS_MISMATCH` to `EventType`
+- `errander/safety/validators.py` — `validate_action` now uses `get_policy()`/`requires_approval()`; CRITICAL reason includes policy name; removed "unused" docstring note
+- `errander/agent/vm_graph.py` — `VMGraphState.env_policy` field added; passed to `validate_action` in `dispatch_action_node`
+- `errander/agent/graph.py` — `check_fleet_health_node` between validate_targets and plan fan-out; `route_after_fleet_check`; `validate_targets_node` replaces `echo ok` with `cat /etc/os-release` + `parse_os_release()` + `verify_os_match()`; OS_MISMATCH audit events; `env_policy` threaded into Send payloads; `plan_vms` no-op node as fan-out entry; `check_fleet_health` node wired in graph
+
+### Modified (tests)
+- `tests/safety/test_audit.py` — `test_all_event_types_stored` uses dynamic limit
+- `tests/agent/test_graph.py` — `validate_targets` tests updated to mock os-release response
+- `tests/agent/test_load.py` — `_ssh_ok()` default stdout is valid os-release; SSH call counts updated for validate (1 os-release) + plan_vm (5 detect_os) pattern
+
+### Created (tests)
+- `tests/agent/test_phase2_policy.py` — 21 tests: 5 policy validation, 8 fleet abort, 8 OS verification
 
 ## Files Changed (2026-05-11 — Phase 1 security hardening)
 

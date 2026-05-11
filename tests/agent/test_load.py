@@ -52,7 +52,16 @@ def _make_targets(n: int) -> list[dict[str, object]]:
     return [_make_target(f"dev/vm-{i:03d}") for i in range(1, n + 1)]
 
 
-def _ssh_ok(stdout: str = "ok", exit_code: int = 0) -> SSHResult:
+_OS_RELEASE = 'ID=ubuntu\nVERSION_ID="22.04"\nPRETTY_NAME="Ubuntu 22.04 LTS"\n'
+
+
+def _ssh_ok(stdout: str = _OS_RELEASE, exit_code: int = 0) -> SSHResult:
+    """Return an SSH success result.
+
+    Default stdout is a valid /etc/os-release payload so validate_targets_node
+    can parse it (finding #8 — replaced 'echo ok' with os-release check).
+    Pass an explicit stdout override for health-check calls that need "ok".
+    """
     now = datetime.now(tz=UTC)
     return SSHResult(
         exit_code=exit_code, stdout=stdout, stderr="",
@@ -229,9 +238,9 @@ class TestFleetBatchGraph:
         async def _ssh(*args: object, **kwargs: object) -> SSHResult:
             nonlocal call_count
             call_count += 1
-            # 12 validate_targets + 12 plan_vm (OS detect) + 3 wave-0 health = 27 succeed
-            # wave-1 health check calls (28-30) fail
-            return _ssh_ok() if call_count <= 27 else _ssh_ok("", 1)
+            # 12 validate_targets (os-release) + 12×5 plan_vm (detect_os) + 3 wave-0 health = 75 succeed
+            # wave-1 health check calls (76-78) fail
+            return _ssh_ok() if call_count <= 75 else _ssh_ok("", 1)
 
         with (
             patch.object(ssh, "execute", side_effect=_ssh),
@@ -260,8 +269,9 @@ class TestFleetBatchGraph:
         async def _ssh(*args: object, **kwargs: object) -> SSHResult:
             nonlocal call_count
             call_count += 1
-            # 10 validate calls succeed; canary health check (call 11) fails
-            return _ssh_ok() if call_count <= 10 else _ssh_ok("", 1)
+            # 10 validate (os-release) + 10×5 plan_vm (detect_os) = 60 succeed
+            # canary health check (call 61) fails → canary wave aborts, fleet skipped
+            return _ssh_ok() if call_count <= 60 else _ssh_ok("", 1)
 
         with (
             patch.object(ssh, "execute", side_effect=_ssh),

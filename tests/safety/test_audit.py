@@ -114,10 +114,11 @@ class TestAuditStoreWrite:
             assert len(events) == 5
 
     async def test_all_event_types_stored(self) -> None:
+        all_types = list(EventType)
         async with AuditStore(":memory:") as store:
-            for et in EventType:
+            for et in all_types:
                 await store.log_event(_make_event(event_type=et))
-            events = await store.get_events(limit=20)
+            events = await store.get_events(limit=len(all_types) + 5)
             stored_types = {e.event_type for e in events}
             assert stored_types == set(EventType)
 

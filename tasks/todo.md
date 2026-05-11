@@ -1,5 +1,14 @@
 # Errander-AI — Task Tracking
 
+## Phase 2: Policy Enforcement + Fleet Safety (2026-05-11)
+
+### From ai_sre_remediation_plan.md
+- [x] 2.1 Wire `requires_approval()` into validate_action — policy param now used; CRITICAL always blocked; policy name in rejection reasons; `env_policy` threaded from BatchGraphState → VMGraphState via Send payload
+- [x] 2.2 Enforce `fleet_failure_threshold` — `check_fleet_health_node` between validate_targets and planning fan-out; FLEET_ABORT audit event; routing aborts to generate_report when threshold exceeded
+- [x] 2.3 Strict OS verification — `validate_targets_node` replaced `echo ok` with `cat /etc/os-release` + `parse_os_release()` + `verify_os_match()`; mismatches emit OS_MISMATCH audit event; detected os_family stored in target dict for downstream
+- [x] Added `FLEET_ABORT` and `OS_MISMATCH` to EventType enum
+- [x] `tests/agent/test_phase2_policy.py` — 21 tests covering all three items
+
 ## Phase 1: Security Hardening (2026-05-11)
 
 ### From ai_sre_remediation_plan.md

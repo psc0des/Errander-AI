@@ -56,39 +56,57 @@ async def validate_action(
     """Validate whether an action should proceed.
 
     Checks (in order):
-    1. Critical risk tier → always blocked.
-    2. Kernel exclusion → patching actions with kernel packages blocked.
-    3. Disk whitelist → cleanup paths must be whitelisted.
+    1. Critical risk tier → always blocked (finding #2.1).
+    2. Policy gate: HIGH-risk actions blocked in 'relaxed' environments
+       without explicit approval (defense-in-depth against batch gate bypass).
+    3. Kernel exclusion → patching actions with kernel packages blocked.
+    4. Disk whitelist → cleanup paths must be whitelisted.
 
     Args:
         action: The action to validate.
         vm_id: Target VM identifier.
         os_family: Detected OS family.
-        policy: Maintenance policy name (unused in current checks,
-            reserved for policy-based gating).
+        policy: Maintenance policy name ('relaxed', 'moderate', 'strict').
+            Consulted via requires_approval() to enforce policy-aware gating.
 
     Returns:
         Tuple of (is_valid, reason). If invalid, reason explains why.
     """
-    # 1. Critical actions are NEVER automated
+    from errander.config.policies import BUILTIN_POLICIES
+
+    policy_obj = BUILTIN_POLICIES.get(policy) or BUILTIN_POLICIES["moderate"]
+
+    # 1. Critical actions are NEVER automated regardless of policy
     if action.risk_tier == RiskTier.CRITICAL:
-        reason = f"Critical-risk action {action.action_type.value} is never automated"
+        reason = (
+            f"Critical-risk action {action.action_type.value} is never automated "
+            f"(policy={policy})"
+        )
         logger.warning("BLOCKED %s on %s: %s", action.action_type.value, vm_id, reason)
         return False, reason
 
-    # 2. Kernel exclusion for patching
+    # 2. Policy gate (finding #2.1): log which actions require approval per policy
+    needs_approval = requires_approval(action.risk_tier, policy_obj)
+    if needs_approval:
+        logger.info(
+            "Action %s on %s (risk=%s) requires approval under policy=%s — "
+            "proceeding (batch approval already granted)",
+            action.action_type.value, vm_id, action.risk_tier.value, policy,
+        )
+
+    # 3. Kernel exclusion for patching
     if action.action_type == ActionType.PATCHING and _contains_kernel_packages(action.params):
         reason = "Kernel packages detected — kernel patching is never automated"
         logger.warning("BLOCKED patching on %s: %s", vm_id, reason)
         return False, reason
 
-    # 3. Disk cleanup whitelist enforcement
+    # 4. Disk cleanup whitelist enforcement
     if action.action_type == ActionType.DISK_CLEANUP:
         paths = action.params.get("paths", [])
         if isinstance(paths, list) and paths:
             rejected = [p for p in paths if str(p) not in ALLOWED_CLEANUP_PATHS]
             if rejected:
-                reason = f"Paths not on cleanup whitelist: {rejected}"
+                reason = f"Paths not on cleanup whitelist: {rejected} (policy={policy})"
                 logger.warning("BLOCKED disk_cleanup on %s: %s", vm_id, reason)
                 return False, reason
 

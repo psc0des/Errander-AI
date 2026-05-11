@@ -201,9 +201,10 @@ class TestValidateTargetsNode:
     @pytest.mark.asyncio
     async def test_healthy_target_on_success(self) -> None:
         ssh = SSHConnectionManager()
+        os_release = 'ID=ubuntu\nVERSION_ID="22.04"\nPRETTY_NAME="Ubuntu 22.04"\n'
         async with AuditStore(":memory:") as store:
             with patch.object(
-                ssh, "execute", AsyncMock(return_value=_make_ssh_result("ok")),
+                ssh, "execute", AsyncMock(return_value=_make_ssh_result(os_release)),
             ):
                 result = await validate_targets_node(
                     _base_state(batch_id="b-001"),
@@ -213,6 +214,8 @@ class TestValidateTargetsNode:
 
         assert len(result["healthy_targets"]) == 1
         assert result["failed_targets"] == []
+        # Detected OS stored in target dict
+        assert result["healthy_targets"][0]["os_family"] == "ubuntu"
 
     @pytest.mark.asyncio
     async def test_failed_target_on_ssh_error(self) -> None:
@@ -255,9 +258,10 @@ class TestValidateTargetsNode:
             _make_target(vm_id="dev/web-01", hostname="10.0.1.10"),
             _make_target(vm_id="dev/web-02", hostname="10.0.1.11"),
         ]
+        os_release = 'ID=ubuntu\nVERSION_ID="22.04"\nPRETTY_NAME="Ubuntu 22.04"\n'
         ssh_results = [
-            _make_ssh_result("ok"),
-            _make_ssh_result("", exit_code=1),
+            _make_ssh_result(os_release),          # web-01 succeeds
+            _make_ssh_result("", exit_code=1),     # web-02 fails
         ]
         async with AuditStore(":memory:") as store:
             with patch.object(
@@ -434,11 +438,12 @@ class TestBuildBatchGraph:
             "/dev/sda1 20G 10G 10G 50% /\n"
         )
 
-        # ssh_main.execute is used by validate_targets (1 call)
+        # ssh_main.execute is used by validate_targets (1 os-release call)
         # executor._ssh.execute is used by discover + disk_cleanup sub-graph
+        os_release = 'ID=ubuntu\nVERSION_ID="22.04"\nPRETTY_NAME="Ubuntu 22.04"\n'
         with patch.object(
             ssh_main, "execute",
-            AsyncMock(return_value=_make_ssh_result("ok")),
+            AsyncMock(return_value=_make_ssh_result(os_release)),
         ):
             with patch(
                 "errander.agent.vm_graph.detect_os",

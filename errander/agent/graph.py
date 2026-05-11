@@ -208,11 +208,19 @@ async def validate_targets_node(
     ssh_manager: SSHConnectionManager,
     audit_store: AuditStore,
 ) -> dict[str, Any]:
-    """SSH-verify each target and partition into healthy/failed.
+    """SSH-verify each target: detect OS and verify it matches inventory (finding #8).
 
-    A target is healthy if SSH connects and returns exit_code 0 for
-    a simple connectivity test (echo ok).
+    Replaces the trivial 'echo ok' connectivity check with a real OS detection:
+    reads /etc/os-release, parses the OS family, and compares against the
+    declared os_family in inventory. Mismatches go to failed_targets with
+    reason OS_MISMATCH.
+
+    A successfully validated target has its detected os_family stored in the
+    target dict, so downstream nodes don't need to re-detect.
     """
+    from errander.execution.os_detection import parse_os_release, verify_os_match
+    from errander.models.vm import OSFamily
+
     batch_id = state.get("batch_id", "unknown")
     targets = state.get("targets", [])
     healthy: list[dict[str, object]] = []
@@ -223,17 +231,58 @@ async def validate_targets_node(
         hostname = str(t["hostname"])
         ssh_user = str(t["ssh_user"])
         key_path = str(t["ssh_key_path"])
+        declared_os = str(t.get("os_family", "ubuntu"))
 
         try:
-            result: SSHResult = await ssh_manager.execute(
-                vm_id, hostname, ssh_user, key_path, "echo ok",
+            result = await ssh_manager.execute(
+                vm_id, hostname, ssh_user, key_path, "cat /etc/os-release",
             )
-            if result.success:
-                healthy.append(t)
-                logger.info("Target %s validated OK", vm_id)
-            else:
+            if not result.success:
+                logger.warning("Target %s: /etc/os-release unreadable", vm_id)
                 failed.append(t)
-                logger.warning("Target %s failed connectivity check", vm_id)
+                continue
+
+            detected_family, detected_ver = parse_os_release(result.stdout)
+
+            # Verify declared matches detected
+            try:
+                declared_family = OSFamily(declared_os)
+            except ValueError:
+                declared_family = OSFamily.UBUNTU  # fallback for unknown declared
+
+            if not verify_os_match(declared_family, detected_family):
+                msg = (
+                    f"OS mismatch: inventory declares '{declared_os}' "
+                    f"but detected '{detected_family.value}' ({detected_ver})"
+                )
+                logger.warning("Target %s OS_MISMATCH: %s", vm_id, msg)
+                await audit_store.log_event(
+                    AuditEvent(
+                        event_type=EventType.OS_MISMATCH,
+                        batch_id=batch_id,
+                        vm_id=vm_id,
+                        detail=msg,
+                        timestamp=datetime.now(tz=timezone.utc),
+                        metadata={
+                            "declared": declared_os,
+                            "detected": detected_family.value,
+                            "detected_version": detected_ver,
+                        },
+                    )
+                )
+                failed.append(t)
+                continue
+
+            # Store detected OS in the target dict for downstream nodes
+            validated = dict(t)
+            validated["os_family"] = detected_family.value
+            validated["os_version"] = detected_ver
+            healthy.append(validated)
+            logger.info(
+                "Target %s validated OK (OS: %s %s)",
+                vm_id, detected_family.value, detected_ver,
+            )
+
         except (ConnectionError, OSError, TimeoutError) as exc:
             logger.error("Target %s unreachable: %s", vm_id, exc)
             failed.append(t)
@@ -246,11 +295,80 @@ async def validate_targets_node(
                     timestamp=datetime.now(tz=timezone.utc),
                 )
             )
+        except ValueError as exc:
+            # Unsupported OS detected
+            logger.warning("Target %s unsupported OS: %s", vm_id, exc)
+            failed.append(t)
+            await audit_store.log_event(
+                AuditEvent(
+                    event_type=EventType.ACTION_FAILED,
+                    batch_id=batch_id,
+                    vm_id=vm_id,
+                    detail=f"Unsupported OS: {exc}",
+                    timestamp=datetime.now(tz=timezone.utc),
+                )
+            )
 
     return {
         "healthy_targets": healthy,
         "failed_targets": failed,
     }
+
+
+async def check_fleet_health_node(
+    state: BatchGraphState,
+    *,
+    audit_store: AuditStore,
+    fleet_failure_threshold: float = 0.5,
+) -> dict[str, Any]:
+    """Abort pre-flight if too many targets failed validation (finding #7).
+
+    Compares failed/total against fleet_failure_threshold. If exceeded,
+    sets error and emits a FLEET_ABORT audit event. No actions run.
+
+    Args:
+        state: Current batch state (healthy_targets, failed_targets set by validate_targets).
+        audit_store: For the FLEET_ABORT audit event.
+        fleet_failure_threshold: Fraction of total targets that may fail before abort.
+    """
+    healthy = state.get("healthy_targets", [])
+    failed = state.get("failed_targets", [])
+    total = len(healthy) + len(failed)
+    batch_id = state.get("batch_id", "unknown")
+
+    if total == 0:
+        return {"error": "No targets in batch"}
+
+    failure_rate = len(failed) / total
+    if failure_rate > fleet_failure_threshold:
+        msg = (
+            f"Fleet pre-flight abort: {len(failed)}/{total} targets failed validation "
+            f"({failure_rate:.0%} > threshold {fleet_failure_threshold:.0%})"
+        )
+        logger.error("FLEET_ABORT batch %s: %s", batch_id, msg)
+        await audit_store.log_event(
+            AuditEvent(
+                event_type=EventType.FLEET_ABORT,
+                batch_id=batch_id,
+                detail=msg,
+                timestamp=datetime.now(tz=timezone.utc),
+                metadata={
+                    "healthy": len(healthy),
+                    "failed": len(failed),
+                    "total": total,
+                    "failure_rate": failure_rate,
+                    "threshold": fleet_failure_threshold,
+                },
+            )
+        )
+        return {"error": msg}
+
+    if failed:
+        logger.warning(
+            "Batch %s: %d/%d targets failed validation (below abort threshold %.0f%%), continuing",
+            batch_id, len(failed), total, fleet_failure_threshold * 100,
+        )
+    return {}
 
 
 # --- Wave helpers ---
@@ -795,10 +913,19 @@ def route_after_wave_health(state: BatchGraphState) -> str:
 
 
 def route_after_window(state: BatchGraphState) -> str:
-    """Block if window check sets an error (future use)."""
+    """Block if window check sets an error."""
     if state.get("error"):
         return "generate_report"
     return "validate_targets"
+
+
+def route_after_fleet_check(state: BatchGraphState) -> str:
+    """Route after fleet health check: abort (too many failures) or continue."""
+    if state.get("error"):
+        return "generate_report"
+    if not state.get("healthy_targets"):
+        return "generate_report"
+    return "plan_vms"
 
 
 def route_after_approval(state: BatchGraphState) -> str:
@@ -842,6 +969,7 @@ def make_fan_out_router(
 
         batch_id = state.get("batch_id", "unknown")
         dry_run = state.get("dry_run", True)
+        env_policy = state.get("env_policy", "moderate")
 
         return [
             Send(
@@ -854,6 +982,7 @@ def make_fan_out_router(
                     ssh_user=str(t["ssh_user"]),
                     ssh_key_path=str(t["ssh_key_path"]),
                     os_family=str(t.get("os_family", "ubuntu")),
+                    env_policy=env_policy,
                     locked=False,
                     results=[],
                     current_action_index=0,
@@ -898,6 +1027,8 @@ def make_wave_dispatcher(
             current_wave + 1, state.get("total_waves", 1), len(wave_targets),
         )
 
+        env_policy = state.get("env_policy", "moderate")
+
         return [
             Send(
                 "run_vm",
@@ -909,6 +1040,7 @@ def make_wave_dispatcher(
                     ssh_user=str(t["ssh_user"]),
                     ssh_key_path=str(t["ssh_key_path"]),
                     os_family=str(t.get("os_family", "ubuntu")),
+                    env_policy=env_policy,
                     locked=False,
                     results=[],
                     current_action_index=0,
@@ -1004,6 +1136,13 @@ def build_batch_graph(
             deferred_store=deferred_store,
         )
 
+    async def _check_fleet(state: BatchGraphState) -> dict[str, Any]:
+        return await check_fleet_health_node(
+            state,
+            audit_store=audit_store,
+            fleet_failure_threshold=_settings.fleet_failure_threshold,
+        )
+
     _dispatch_wave_fn, vm_compiled = make_wave_dispatcher(
         executor, locker, audit_store, ssh_manager,
     )
@@ -1032,6 +1171,7 @@ def build_batch_graph(
     builder.add_node("init_batch", _init_batch)
     builder.add_node("validate_window", _validate_window)
     builder.add_node("validate_targets", _validate_targets)
+    builder.add_node("check_fleet_health", _check_fleet)
     builder.add_node("plan_vm", _plan_vm)
     builder.add_node("collect_plans", collect_plans_node)
     builder.add_node("generate_plan_artifact", generate_plan_artifact_node)
@@ -1050,9 +1190,15 @@ def build_batch_graph(
     builder.add_conditional_edges(
         "validate_window", route_after_window, ["validate_targets", "generate_report"],
     )
-    # Planning fan-out: one plan_vm per healthy target, then collect
+    # Fleet health gate (finding #7): abort if too many targets failed validation
+    builder.add_edge("validate_targets", "check_fleet_health")
     builder.add_conditional_edges(
-        "validate_targets", _route_plan_vms, ["plan_vm", "generate_report"],
+        "check_fleet_health", route_after_fleet_check, ["plan_vms", "generate_report"],
+    )
+    # Planning fan-out: one plan_vm per healthy target, then collect
+    builder.add_node("plan_vms", lambda state: {})   # no-op entry point for _route_plan_vms
+    builder.add_conditional_edges(
+        "plan_vms", _route_plan_vms, ["plan_vm", "generate_report"],
     )
     builder.add_edge("plan_vm", "collect_plans")
     builder.add_edge("collect_plans", "generate_plan_artifact")

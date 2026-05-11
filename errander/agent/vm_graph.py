@@ -88,6 +88,9 @@ class VMGraphState(TypedDict, total=False):
     # Results (accumulated across dispatch iterations)
     results: list[dict[str, object]]
 
+    # Approval policy from environment config (relaxed / moderate / strict)
+    env_policy: str
+
     # Lock state
     locked: bool
     lock_acquired_at: str | None
@@ -288,7 +291,8 @@ async def dispatch_action_node(
             "results": existing,
             "current_action_index": index + 1,
         }
-    is_valid, reason = await validate_action(action_obj, vm_id, os_family)
+    env_policy = state.get("env_policy", "moderate")
+    is_valid, reason = await validate_action(action_obj, vm_id, os_family, policy=env_policy)
     if not is_valid:
         logger.warning("Validation blocked %s on %s: %s", action_type, vm_id, reason)
         result_dict = {

@@ -34,6 +34,8 @@ class EventType(StrEnum):
     INVENTORY_CHANGED = "inventory_changed"
     EXECUTION_DEFERRED = "execution_deferred"
     DEFERRED_EXECUTION_STARTED = "deferred_execution_started"
+    FLEET_ABORT = "fleet_abort"
+    OS_MISMATCH = "os_mismatch"
 
 
 @dataclass

@@ -10,6 +10,12 @@ Self-improvement log. Updated after corrections, mistakes, and surprises.
 
 Fix: always comment the call breakdown explicitly (`# 12 validate + 12 plan_vm + 3 wave-0 health = 27 succeed`) and update the threshold when new phases add SSH calls.
 
+## 2026-05-11 — SSH call counts in integration tests must account for ALL SSH layers
+
+**When a new graph node uses SSH (e.g., validate_targets switching from `echo ok` to `cat /etc/os-release`), AND a downstream node also uses SSH (plan_vm calling detect_os = 5 SSH calls), the total call count in count-based mocks changes multiplicatively.** For 10 VMs: validate_targets = 10 calls, plan_vm = 10×5 = 50 calls. A mock keyed on "first N calls succeed" needs the full N recalculated.
+
+**Always comment the breakdown explicitly**: `# 10 validate (os-release) + 10×5 plan_vm (detect_os) + 1 canary health = 61 succeed`.
+
 ## 2026-05-11 — aiohttp mock setup methods must be coroutines
 
 **When mocking `aiohttp.web.AppRunner` and `TCPSite` in tests, `setup()` and `start()` are awaited by the real code.** Using `lambda: None` (a synchronous callable) causes `TypeError: object NoneType can't be used in 'await' expression`. Always use `AsyncMock()` for async methods when patching aiohttp infrastructure.

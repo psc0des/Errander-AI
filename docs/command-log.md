@@ -839,6 +839,20 @@ git commit -m "feat: Phase 1 security hardening — injection fix, SSH host keys
 git push origin main
 ```
 
+### 2026-05-11 — Phase 2: Policy enforcement + fleet safety
+
+```bash
+uv run pytest tests -q   # 846 passed before; 867 passed after Phase 2
+```
+**What**: All three Phase 2 items from ai_sre_remediation_plan.md.
+**Why**: (2.1) `validate_action` silently ignored its `policy` param — CRITICAL reason now includes policy name, `env_policy` threaded into VMGraphState. (2.2) `fleet_failure_threshold` setting existed but nothing ever checked it pre-flight — `check_fleet_health_node` now aborts with FLEET_ABORT audit event when exceeded. (2.3) `echo ok` in validate_targets told us nothing about OS — replaced with `/etc/os-release` + `parse_os_release()` + `verify_os_match()`; OS_MISMATCH audit event on mismatch.
+
+```bash
+git add errander/models/events.py errander/safety/validators.py errander/agent/vm_graph.py errander/agent/graph.py tests/safety/test_audit.py tests/agent/test_graph.py tests/agent/test_load.py tests/agent/test_phase2_policy.py STATUS.md tasks/todo.md tasks/lessons.md
+git commit -m "feat: Phase 2 policy enforcement — fleet abort, OS verification, policy-aware validation"
+git push origin main
+```
+
 ### 2026-05-11 — Phase 0 gaps: hash verification + policy thresholds + plan/apply tests
 
 ```bash

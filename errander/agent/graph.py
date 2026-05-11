@@ -105,6 +105,9 @@ class BatchGraphState(TypedDict, total=False):
     # Approval (set by approval_gate_node, gates wave dispatch)
     approved: bool | None
 
+    # Approval policy from environment config (relaxed / moderate / strict)
+    env_policy: str
+
     # Rolling update state
     rolling_update_percentage: int
     wave_failure_threshold: float
@@ -618,8 +621,10 @@ async def approval_gate_node(
 
     Approval now happens BEFORE execution (finding #3):
     - Dry-run: auto-approve — sandbox execution is always safe.
-    - Live HIGH/CRITICAL: require Slack dual-approval on the plan.
-    - Live LOW/MEDIUM: auto-approve (policy enforcement is Phase 2).
+    - Live: approval threshold depends on env_policy (finding #6):
+        strict   → MEDIUM, HIGH, CRITICAL require approval
+        moderate → HIGH, CRITICAL require approval (default)
+        relaxed  → CRITICAL only (and CRITICAL is blocked by design)
 
     For live batches approved while outside the maintenance window,
     execution is deferred: a record is saved to DeferredExecutionStore
@@ -629,11 +634,22 @@ async def approval_gate_node(
     vm_plans = state.get("vm_plans", [])
     batch_id = state.get("batch_id", "unknown")
     env_name = state.get("env_name", "unknown")
+    env_policy = state.get("env_policy", "moderate")
     plan_id = state.get("plan_id", "unknown")
     plan_hash = state.get("plan_hash", "")
     dry_run = state.get("dry_run", True)
 
     max_tier = _max_risk_tier_from_plans(vm_plans)
+
+    # Determine which risk tiers require operator approval based on policy
+    if env_policy == "strict":
+        _approval_tiers: frozenset[RiskTier] = frozenset({
+            RiskTier.MEDIUM, RiskTier.HIGH, RiskTier.CRITICAL,
+        })
+    elif env_policy == "relaxed":
+        _approval_tiers = frozenset({RiskTier.CRITICAL})
+    else:  # moderate (default)
+        _approval_tiers = frozenset({RiskTier.HIGH, RiskTier.CRITICAL})
 
     if dry_run:
         # Sandbox execution is safe — no operator approval needed.
@@ -644,11 +660,11 @@ async def approval_gate_node(
             "Batch %s dry-run — proceeding to sandbox execution (max risk tier: %s)",
             batch_id, max_tier.value,
         )
-    elif max_tier in (RiskTier.HIGH, RiskTier.CRITICAL) and approval_manager is not None:
+    elif max_tier in _approval_tiers and approval_manager is not None:
         plan_summary = _format_plan_for_approval(vm_plans, batch_id, plan_id, plan_hash)
         logger.info(
-            "Batch %s requires live approval before execution (max risk tier: %s)",
-            batch_id, max_tier.value,
+            "Batch %s requires live approval before execution (policy=%s, max risk tier: %s)",
+            batch_id, env_policy, max_tier.value,
         )
         approved, approver = await await_dual_approval(
             approval_manager, slack_client, batch_id, plan_summary,
@@ -663,8 +679,8 @@ async def approval_gate_node(
         approved = True
         approver = None
         logger.info(
-            "Batch %s live auto-approved (max risk tier: %s)",
-            batch_id, max_tier.value,
+            "Batch %s live auto-approved (policy=%s, max risk tier: %s)",
+            batch_id, env_policy, max_tier.value,
         )
 
     # Live approved outside window → defer execution to next window start.
@@ -707,6 +723,56 @@ async def approval_gate_node(
     return {"approved": approved, "deferred": False}
 
 
+async def verify_plan_hash_node(state: BatchGraphState) -> dict[str, Any]:
+    """Re-verify plan hash hasn't drifted between approval and execution (finding #3).
+
+    Dry-run is exempt — sandbox execution is always safe regardless of hash.
+    For live runs, re-computes SHA-256 from current state and compares to
+    the hash that was approved. Any mismatch aborts execution cleanly.
+    """
+    import hashlib
+    import json
+
+    dry_run = state.get("dry_run", True)
+    if dry_run:
+        return {}
+
+    stored_hash = state.get("plan_hash", "")
+    if not stored_hash:
+        logger.error("Batch %s: plan_hash missing — cannot verify integrity before execution", state.get("batch_id"))
+        return {
+            "error": "plan_hash missing — cannot verify plan integrity before execution",
+            "approved": False,
+        }
+
+    vm_plans = state.get("vm_plans", [])
+    batch_id = state.get("batch_id", "unknown")
+    env_name = state.get("env_name", "")
+
+    canonical = json.dumps(
+        {"batch_id": batch_id, "env_name": env_name, "vm_plans": vm_plans},
+        sort_keys=True,
+        default=str,
+    )
+    current_hash = hashlib.sha256(canonical.encode()).hexdigest()
+
+    if current_hash != stored_hash:
+        logger.error(
+            "PLAN HASH DRIFT on batch %s: approved=%s current=%s — aborting execution",
+            batch_id, stored_hash[:12], current_hash[:12],
+        )
+        return {
+            "error": (
+                f"plan integrity check failed: hash drifted between approval and execution "
+                f"(approved={stored_hash[:12]}, current={current_hash[:12]})"
+            ),
+            "approved": False,
+        }
+
+    logger.info("Plan hash verified for batch %s (%s)", batch_id, stored_hash[:12])
+    return {}
+
+
 # --- Routing ---
 
 def route_after_prepare_waves(state: BatchGraphState) -> str:
@@ -736,10 +802,17 @@ def route_after_window(state: BatchGraphState) -> str:
 
 
 def route_after_approval(state: BatchGraphState) -> str:
-    """Route after plan approval: execute (approved), report (rejected), end (deferred)."""
+    """Route after plan approval: verify hash (approved), report (rejected), end (deferred)."""
     if state.get("deferred"):
         return END
     if not state.get("approved"):
+        return "generate_report"
+    return "verify_plan_hash"
+
+
+def route_after_hash_verify(state: BatchGraphState) -> str:
+    """Route after hash verification: execute (ok), report (drift detected)."""
+    if state.get("error") or state.get("approved") is False:
         return "generate_report"
     return "prepare_waves"
 
@@ -963,6 +1036,7 @@ def build_batch_graph(
     builder.add_node("collect_plans", collect_plans_node)
     builder.add_node("generate_plan_artifact", generate_plan_artifact_node)
     builder.add_node("approval_gate", _approval_gate)
+    builder.add_node("verify_plan_hash", verify_plan_hash_node)
     builder.add_node("prepare_waves", prepare_waves_node)
     builder.add_node("dispatch_wave", lambda state: {})   # no-op — routing does the work
     builder.add_node("run_vm", _run_vm)
@@ -985,7 +1059,10 @@ def build_batch_graph(
     # Approval happens BEFORE execution (finding #3)
     builder.add_edge("generate_plan_artifact", "approval_gate")
     builder.add_conditional_edges(
-        "approval_gate", route_after_approval, ["prepare_waves", "generate_report", END],
+        "approval_gate", route_after_approval, ["verify_plan_hash", "generate_report", END],
+    )
+    builder.add_conditional_edges(
+        "verify_plan_hash", route_after_hash_verify, ["prepare_waves", "generate_report"],
     )
     # Execution: wave-based fan-out
     builder.add_conditional_edges(

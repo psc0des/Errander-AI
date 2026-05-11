@@ -824,3 +824,18 @@ git add errander/agent/graph.py errander/agent/subgraphs/patching.py errander/ag
 git commit -m "feat: Phase 0 SRE audit remediation — plan/apply, rollback, audit fail-closed"
 git push origin main
 ```
+
+### 2026-05-11 — Phase 0 gaps: hash verification + policy thresholds + plan/apply tests
+
+```bash
+uv run pytest tests/agent/test_plan_apply_flow.py -v   # new tests: 19/20 initial, 20/20 after router fix
+uv run pytest tests -q                                  # 787 passed, 111 skipped, 0 failed
+```
+**What**: Closed two Phase 0 gaps: (1) `verify_plan_hash_node` re-verifies SHA-256 before dispatching execution waves; (2) `env_policy` threaded from `EnvironmentSchema` into `BatchGraphState`, approval gate now enforces strict/moderate/relaxed thresholds; (3) `tests/agent/test_plan_apply_flow.py` with 20 tests.
+**Why**: Phase 0.2 specified hash re-verification at execution time and policy-based approval — both were absent. Test file was called for in the remediation plan but never created.
+
+```bash
+git add errander/agent/graph.py errander/main.py tests/agent/test_plan_apply_flow.py STATUS.md tasks/todo.md docs/command-log.md
+git commit -m "feat: Phase 0 gaps — hash verify at execution, policy-based approval thresholds, plan/apply tests"
+git push origin main
+```

@@ -564,6 +564,7 @@ async def run_env_batch(
         "force_reason": force_reason,
         "vm_results": [],
         "env_name": env_name,
+        "env_policy": env_schema.approval_policy,
     }
 
     logger.info(

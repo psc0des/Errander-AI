@@ -499,12 +499,14 @@ None.
 
 ### Phase 0: SRE Audit Remediation (complete)
 
-Implemented 5 ship-stopper fixes from `ai_sre_remediation_plan.md`:
+Implemented all Phase 0 fixes from `ai_sre_remediation_plan.md`:
 
 - **Finding #2 (dry_run single source of truth)**: `SandboxExecutor.execute()` now accepts per-call `dry_run` override. All sub-graphs read `state["dry_run"]` instead of `executor.dry_run`.
 - **Finding #3 (plan/apply before execution)**: New planning phase fan-out (`plan_vm` → `collect_plans` → `generate_plan_artifact`) between `validate_targets` and execution. Approval gate acts on the plan hash BEFORE any execution. `ImmutablePlan` with SHA-256 `plan_hash`.
+- **Finding #3 (hash re-verification)**: `verify_plan_hash_node` re-computes SHA-256 from current state at execution time. Any drift between approval and execution aborts the batch and routes to `generate_report`. Wired between `approval_gate` and `prepare_waves`.
 - **Finding #5 (patching rollback — Option A)**: `rollback_node` in patching sub-graph implements real dpkg snapshot + `apt-get install --allow-downgrades` + post-rollback verification. Activated on `FAILED` execution status.
+- **Finding #6 (policy-based approval thresholds)**: `env_policy` threaded from `EnvironmentSchema.approval_policy` → `initial_state` → `BatchGraphState`. `approval_gate_node` now enforces: strict = MEDIUM/HIGH/CRITICAL require approval; moderate = HIGH/CRITICAL; relaxed = CRITICAL only.
 - **Finding #13 (audit fail-closed)**: `AuditWriteError` raised after retry exhaustion in strict mode for live actions. Dry-run always best-effort.
 - **Phase 0 gate**: `--unsafe-legacy-live` guard blocks live mode until Phase 0 is marked complete.
 
-All 767 unit/integration tests pass (111 skipped = Playwright UI tests, excluded without Chromium).
+All 787 unit/integration tests pass (111 skipped = Playwright UI tests, excluded without Chromium). Includes 20 new `test_plan_apply_flow.py` tests.

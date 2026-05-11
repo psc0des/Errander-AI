@@ -1,10 +1,10 @@
 # Errander-AI — Project Status
 
 ## Last Updated
-2026-05-10
+2026-05-11
 
 ## Current Phase
-**Phase 1.8 — End-to-end validation in progress. Azure VMs provisioned (2× Standard_B2ls_v2). LLM: Azure AI Foundry. Bootstrap script created. Master VM setup underway.**
+**SRE Remediation — Phase 0 and Phase 1 complete. Phase 2 (policy enforcement + fleet safety) is next.**
 
 ## Completed
 
@@ -203,12 +203,15 @@ The approval flow is now fully decoupled from execution. A dry-run scan can happ
 - **Total: 878 tests passing**
 
 ## In Progress
-- **Phase 1.8: End-to-End Validation** — Master VM bootstrap in progress (uv + Python 3.12 installed). Next: SSH key setup → errander user on Target → .env + inventory.yaml → first dry-run.
+- Nothing actively in flight.
 
 ## Next Up
-- Complete Phase 1.8 dry-run validation on Azure VMs
-- Verify audit trail, metrics endpoint, web UI approvals end-to-end
-- Live run once dry-run is confirmed clean
+- Phase 2: Policy enforcement + fleet safety (findings #6, #7, #8 from SRE audit)
+  - 2.1 Wire `requires_approval()` into graph per strict/moderate/relaxed policy
+  - 2.2 Enforce `fleet_failure_threshold` pre-flight abort
+  - 2.3 Strict OS verification (detect_os + verify_os_match, not just echo ok)
+- Phase 3: Honest AI integration (LLMClient threaded into graph, constrained plan schema, AI eval harness)
+- Phase 4: E2E verification (staging soak, chaos suite, Windows test infra fix)
 
 
 

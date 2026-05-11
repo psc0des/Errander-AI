@@ -10,6 +10,14 @@ Self-improvement log. Updated after corrections, mistakes, and surprises.
 
 Fix: always comment the call breakdown explicitly (`# 12 validate + 12 plan_vm + 3 wave-0 health = 27 succeed`) and update the threshold when new phases add SSH calls.
 
+## 2026-05-11 — aiohttp mock setup methods must be coroutines
+
+**When mocking `aiohttp.web.AppRunner` and `TCPSite` in tests, `setup()` and `start()` are awaited by the real code.** Using `lambda: None` (a synchronous callable) causes `TypeError: object NoneType can't be used in 'await' expression`. Always use `AsyncMock()` for async methods when patching aiohttp infrastructure.
+
+## 2026-05-11 — shlex.quote behaviour is platform-dependent in tests
+
+**`shlex.quote` on Windows does not wrap strings that contain no shell metacharacters** — it returns the original string unchanged. Tests that assert `result != original_string` to verify quoting was applied will fail on Windows even though the implementation is correct. The right test is: validate that metacharacter inputs raise, and that safe inputs pass through without error — not that the output is wrapped in quotes.
+
 ## 2026-05-11 — Deferred execution semantics: dry-run vs live
 
 **Dry-run and live have opposite deferral semantics.** Old behavior was: dry-run outside window → defer (schedule for later). New (correct) behavior: dry-run is always immediate (sandbox, window-agnostic); live runs outside window → defer. Tests written for the old semantics needed to be inverted — a test named "dry run outside window defers" became "dry run outside window never defers", and "live run not deferred regardless of window" became "live run deferred when outside window".

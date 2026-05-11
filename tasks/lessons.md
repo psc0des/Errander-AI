@@ -10,6 +10,10 @@ Self-improvement log. Updated after corrections, mistakes, and surprises.
 
 Fix: always comment the call breakdown explicitly (`# 12 validate + 12 plan_vm + 3 wave-0 health = 27 succeed`) and update the threshold when new phases add SSH calls.
 
+## 2026-05-11 — MagicMock(spec=...) does not auto-populate attribute values
+
+**`MagicMock(spec=Settings)` creates a mock that only allows access to attributes defined on `Settings`, but it does NOT give those attributes meaningful values — accessing `settings.audit_db_url` returns another `MagicMock`, not a string.** When new code accesses a real attribute of a mocked object for the first time (e.g. to create a database connection), the test crashes with a type error or DB path error. Fix: explicitly set the needed attribute values on the mock (`settings.audit_db_url = ":memory:"`).
+
 ## 2026-05-11 — SSH call counts in integration tests must account for ALL SSH layers
 
 **When a new graph node uses SSH (e.g., validate_targets switching from `echo ok` to `cat /etc/os-release`), AND a downstream node also uses SSH (plan_vm calling detect_os = 5 SSH calls), the total call count in count-based mocks changes multiplicatively.** For 10 VMs: validate_targets = 10 calls, plan_vm = 10×5 = 50 calls. A mock keyed on "first N calls succeed" needs the full N recalculated.

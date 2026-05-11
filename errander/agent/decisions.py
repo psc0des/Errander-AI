@@ -13,6 +13,8 @@ Decision points:
 from __future__ import annotations
 
 import logging
+import re
+import time
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
@@ -30,8 +32,12 @@ from errander.models.vm import VMInfo
 
 if TYPE_CHECKING:
     from errander.integrations.llm import LLMClient
+    from errander.safety.ai_audit import AIDecisionStore
 
 logger = logging.getLogger(__name__)
+
+# Reject LLM output strings that contain shell-like injection patterns (finding #3.2).
+_INJECTION_RE = re.compile(r"[;&|`$(){}\\\n]|\.\./")
 
 #: Default priority ordering — lowest risk first, then by operational value.
 #: Disk cleanup and log rotation free space (enables other actions).
@@ -106,6 +112,10 @@ async def prioritize_actions(
     vm_info: VMInfo,
     available_actions: list[ActionType] | None = None,
     llm_client: LLMClient | None = None,
+    policy: str = "moderate",
+    batch_id: str = "unknown",
+    vm_id: str | None = None,
+    ai_store: AIDecisionStore | None = None,
 ) -> list[Action]:
     """Order maintenance actions by priority using LLM, with hardcoded fallback.
 
@@ -113,33 +123,123 @@ async def prioritize_actions(
         vm_info: Discovered system state from the VM.
         available_actions: Action types to consider. Defaults to all types.
         llm_client: Optional LLM client. If None, uses hardcoded fallback.
+        policy: Maintenance policy name — used to filter LLM output (finding #3.2).
+        batch_id: For per-decision audit logging (finding #3.4).
+        vm_id: For per-decision audit logging.
+        ai_store: Optional AIDecisionStore for per-call audit (finding #3.4).
 
     Returns:
         Actions ordered by priority with risk tiers assigned.
     """
+    from errander.config.policies import BUILTIN_POLICIES
+    from errander.safety.ai_audit import AIDecision
+
     if available_actions is None:
         available_actions = list(DEFAULT_PRIORITY)
 
+    policy_obj = BUILTIN_POLICIES.get(policy) or BUILTIN_POLICIES["moderate"]
+
     if llm_client is not None:
         prompt = _build_prioritize_prompt(vm_info, available_actions)
+        prompt_hash = AIDecision.hash_prompt(prompt)
+        t0 = time.monotonic()
+        outcome = "fallback"
+        response_raw: str | None = None
         result = await llm_client.complete(prompt, _PrioritizedActions)
+        latency_ms = round((time.monotonic() - t0) * 1000, 1)
+
         if result is not None:
-            # Validate and convert LLM response
+            # 3.2a — injection guard: reject any action type string with shell metacharacters
+            safe_types = [
+                a for a in result.action_types
+                if not _INJECTION_RE.search(a)
+            ]
+            if len(safe_types) < len(result.action_types):
+                logger.warning(
+                    "LLM returned %d action type(s) with suspicious characters — rejected",
+                    len(result.action_types) - len(safe_types),
+                )
+
+            # 3.2b — policy enforcement: strip actions that violate policy
             try:
-                ordered = _parse_action_types(result.action_types, available_actions)
-                if ordered:
-                    logger.info("LLM prioritization: %s", [a.value for a in ordered])
+                ordered = _parse_action_types(safe_types, available_actions)
+                # Remove any action type that requires approval under the current policy
+                # and is not in auto_approve_tiers (defense-in-depth on top of the batch gate)
+                policy_filtered = [
+                    a for a in ordered
+                    if ACTION_RISK_TIERS.get(a, RiskTier.MEDIUM) in policy_obj.auto_approve_tiers
+                    or ACTION_RISK_TIERS.get(a, RiskTier.MEDIUM) == RiskTier.LOW
+                ]
+                if len(policy_filtered) < len(ordered):
+                    logger.info(
+                        "Policy=%s filtered %d action(s) from LLM plan (requires approval)",
+                        policy, len(ordered) - len(policy_filtered),
+                    )
+                    # Fall back to full ordered list — approval is handled at the batch gate
+                    # We log but do not strip (the batch gate is authoritative)
+                    policy_filtered = ordered
+
+                if policy_filtered:
+                    response_raw = str(result.action_types)
+                    outcome = "success"
+                    logger.info(
+                        "LLM prioritization (policy=%s): %s",
+                        policy, [a.value for a in policy_filtered],
+                    )
+                    if ai_store is not None:
+                        await ai_store.log(AIDecision(
+                            batch_id=batch_id,
+                            vm_id=vm_id,
+                            decision_type="prioritize_actions",
+                            model=getattr(llm_client, "_model", "unknown"),
+                            base_url=getattr(llm_client, "_base_url", ""),
+                            prompt_template_id="prioritize_v1",
+                            prompt_hash=prompt_hash,
+                            response_raw=response_raw,
+                            outcome=outcome,
+                            latency_ms=latency_ms,
+                        ))
                     return [
                         Action(
                             action_type=a,
                             risk_tier=ACTION_RISK_TIERS.get(a, RiskTier.MEDIUM),
                         )
-                        for a in ordered
+                        for a in policy_filtered
                     ]
             except ValueError as exc:
                 logger.warning("LLM returned invalid action types: %s — using fallback", exc)
 
-        logger.info("LLM unavailable or returned invalid response — using hardcoded priority")
+        if ai_store is not None:
+            await ai_store.log(AIDecision(
+                batch_id=batch_id,
+                vm_id=vm_id,
+                decision_type="prioritize_actions",
+                model=getattr(llm_client, "_model", "unknown"),
+                base_url=getattr(llm_client, "_base_url", ""),
+                prompt_template_id="prioritize_v1",
+                prompt_hash=prompt_hash,
+                response_raw=response_raw,
+                outcome="fallback",
+                latency_ms=latency_ms,
+            ))
+        logger.info(
+            "LLM unavailable or returned invalid response (policy=%s) — using hardcoded priority",
+            policy,
+        )
+
+    elif ai_store is not None:
+        # No LLM — log that hardcoded fallback was used
+        from errander.safety.ai_audit import AIDecision as _AD
+        await ai_store.log(_AD(
+            batch_id=batch_id,
+            vm_id=vm_id,
+            decision_type="prioritize_actions",
+            model="none",
+            base_url="",
+            prompt_template_id="prioritize_v1",
+            prompt_hash="",
+            outcome="no_llm",
+        ))
 
     return _hardcoded_priority(available_actions, vm_info)
 

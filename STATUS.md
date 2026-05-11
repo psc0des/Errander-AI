@@ -4,7 +4,7 @@
 2026-05-11
 
 ## Current Phase
-**SRE Remediation — Phases 0, 1, and 2 complete. Phase 3 (honest AI integration) is next.**
+**SRE Remediation — Phases 0–3 complete. Phase 4 (E2E verification) is next.**
 
 ## Completed
 
@@ -206,12 +206,10 @@ The approval flow is now fully decoupled from execution. A dry-run scan can happ
 - Nothing actively in flight.
 
 ## Next Up
-- Phase 3: Honest AI integration (finding #1)
-  - 3.1 Thread LLMClient into build_batch_graph → build_vm_graph → plan_actions_node
-  - 3.2 Constrained plan schema — LLM returns action selections over fixed vocabulary; Pydantic validated
-  - 3.3 AI eval harness — golden VM states → expected plan shapes; injection corpus; schema-violation corpus
-  - 3.4 Per-decision AI audit table
-- Phase 4: E2E verification (staging soak, chaos suite, Windows test infra fix)
+- Phase 4: E2E verification
+  - 4.1 Staging soak — 3 disposable VMs (Ubuntu 22.04, Debian 12, RHEL 9); nightly dry-run → approve → live → verify
+  - 4.2 Chaos suite — SSH drop mid-action, dpkg lock held, disk full, audit DB locked, Slack unreachable, LLM unreachable
+  - 4.3 Test infra fix — Windows tempdir permission failures in 124 tests; sweep conftest.py and sqlite-creating tests
 
 
 
@@ -353,6 +351,22 @@ None.
 - `scripts/configure.sh` — Step 6 output trimmed to end-user steps only: `--check-inventory` and `--check-llm`
 - `scripts/bootstrap.sh` — reverted to bare `uv sync` (no `--extra dev`, no playwright — dev tools not needed for deployment)
 - `SETUP.md` — Step 6 is now end-user only (inventory check + LLM check); pytest/playwright/ruff/mypy moved to new "For developers" section at the bottom
+
+## Files Changed (2026-05-11 — Phase 3 honest AI integration)
+
+### Created
+- `errander/safety/ai_audit.py` — `AIDecisionStore` + `AIDecision` dataclass; `ai_decisions` SQLite table with indexes; per-call audit: model, base_url, prompt_template_id, prompt_hash, response_raw, outcome, latency_ms, token counts
+- `tests/ai_evals/__init__.py`
+- `tests/ai_evals/test_golden_plans.py` — 32 eval tests: golden plans (7), injection corpus (10), schema-violation corpus (6), per-decision audit (5), additional integration (4)
+
+### Modified (source)
+- `errander/agent/decisions.py` — `_INJECTION_RE` injection guard; `prioritize_actions` accepts `policy`, `batch_id`, `vm_id`, `ai_store`; per-call audit logging; policy-aware filtering log; injection rejection; fallback audit event
+- `errander/agent/vm_graph.py` — `VMGraphState.ai_db_path` field; `plan_actions_node` accepts `llm_client` + `ai_decision_store`; `build_vm_graph` accepts both; `_plan_actions` closure wires them
+- `errander/agent/graph.py` — `BatchGraphState.ai_db_path` field; `make_wave_dispatcher` + `build_batch_graph` accept `llm_client` + `ai_decision_store`; `ai_db_path` threaded through Send payload
+- `errander/main.py` — `run_env_batch` accepts `llm_client`; `AIDecisionStore` initialized per batch with same SQLite file; `ai_db_path` in initial batch state; all 3 run_env_batch call sites pass `llm_client`; `_window_opener` accepts `llm_client`
+
+### Modified (tests)
+- `tests/agent/test_inventory_merge.py` — `settings.audit_db_url = ":memory:"` on mock Settings
 
 ## Files Changed (2026-05-11 — Phase 2 policy enforcement + fleet safety)
 

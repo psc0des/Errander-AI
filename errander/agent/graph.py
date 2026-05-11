@@ -130,6 +130,9 @@ class BatchGraphState(TypedDict, total=False):
     env_name: str
     deferred: bool
 
+    # Per-decision AI audit DB path (finding #3.4) — serializable for Send()
+    ai_db_path: str
+
 
 # --- Node functions ---
 
@@ -1003,13 +1006,19 @@ def make_wave_dispatcher(
     locker: FileLocker,
     audit_store: AuditStore,
     ssh_manager: SSHConnectionManager,
+    llm_client: Any = None,
+    ai_decision_store: Any = None,
 ) -> tuple[Any, Any]:
     """Build the wave dispatch routing function.
 
     Returns (dispatch_fn, vm_compiled). The dispatch_fn emits
     Send() for only the current wave's targets.
     """
-    vm_compiled = build_vm_graph(executor, locker, audit_store, ssh_manager).compile()
+    vm_compiled = build_vm_graph(
+        executor, locker, audit_store, ssh_manager,
+        llm_client=llm_client,
+        ai_decision_store=ai_decision_store,
+    ).compile()
 
     def dispatch_current_wave(state: BatchGraphState) -> str | list[Send]:
         current_wave = state.get("current_wave", 0)
@@ -1028,6 +1037,7 @@ def make_wave_dispatcher(
         )
 
         env_policy = state.get("env_policy", "moderate")
+        ai_db_path = state.get("ai_db_path", "")
 
         return [
             Send(
@@ -1041,6 +1051,7 @@ def make_wave_dispatcher(
                     ssh_key_path=str(t["ssh_key_path"]),
                     os_family=str(t.get("os_family", "ubuntu")),
                     env_policy=env_policy,
+                    ai_db_path=ai_db_path,
                     locked=False,
                     results=[],
                     current_action_index=0,
@@ -1075,6 +1086,8 @@ def build_batch_graph(
     slack_client: SlackClient | None = None,
     settings: Any = None,
     deferred_store: DeferredExecutionStore | None = None,
+    llm_client: Any = None,
+    ai_decision_store: Any = None,
 ) -> StateGraph:
     """Construct the batch orchestrator graph.
 
@@ -1145,6 +1158,8 @@ def build_batch_graph(
 
     _dispatch_wave_fn, vm_compiled = make_wave_dispatcher(
         executor, locker, audit_store, ssh_manager,
+        llm_client=llm_client,
+        ai_decision_store=ai_decision_store,
     )
 
     async def _run_vm(state: VMGraphState) -> dict[str, Any]:

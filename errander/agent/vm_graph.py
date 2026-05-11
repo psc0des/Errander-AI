@@ -23,6 +23,7 @@ from typing import Any, TypedDict
 from langgraph.graph import END, StateGraph
 
 from errander.agent.decisions import prioritize_actions
+from errander.safety.ai_audit import AIDecisionStore
 from errander.safety.drift import compare_states, load_baseline, save_baseline
 from errander.agent.subgraphs.backup_verify import (
     BackupVerifyGraphState,
@@ -90,6 +91,10 @@ class VMGraphState(TypedDict, total=False):
 
     # Approval policy from environment config (relaxed / moderate / strict)
     env_policy: str
+
+    # Per-decision AI audit (finding #3.4) — passed through from batch state
+    # We store the db_path string rather than the store object (TypedDict must be serializable)
+    ai_db_path: str
 
     # Lock state
     locked: bool
@@ -160,10 +165,17 @@ async def discover_node(
     }
 
 
-async def plan_actions_node(state: VMGraphState) -> dict[str, Any]:
+async def plan_actions_node(
+    state: VMGraphState,
+    *,
+    llm_client: Any = None,
+    ai_decision_store: AIDecisionStore | None = None,
+) -> dict[str, Any]:
     """Plan and prioritize actions based on discovered state.
 
-    Uses hardcoded priority ordering (LLM integration Phase 1.6).
+    Calls prioritize_actions() with optional LLMClient (finding #3.1).
+    Falls back to hardcoded priority when LLM is unavailable.
+    Per-decision audit logged to ai_decisions table (finding #3.4).
     """
     from errander.models.vm import OSFamily, VMInfo
 
@@ -177,7 +189,14 @@ async def plan_actions_node(state: VMGraphState) -> dict[str, Any]:
         uptime_seconds=float(vm_info_dict.get("uptime_seconds", 0.0)),
     )
 
-    actions = await prioritize_actions(vm_info)
+    actions = await prioritize_actions(
+        vm_info,
+        llm_client=llm_client,
+        policy=state.get("env_policy", "moderate"),
+        batch_id=state.get("batch_id", "unknown"),
+        vm_id=state.get("vm_id"),
+        ai_store=ai_decision_store,
+    )
 
     return {
         "planned_actions": [
@@ -797,6 +816,8 @@ def build_vm_graph(
     locker: FileLocker,
     audit_store: AuditStore,
     ssh_manager: SSHConnectionManager,
+    llm_client: Any = None,
+    ai_decision_store: AIDecisionStore | None = None,
 ) -> StateGraph:
     """Construct the per-VM maintenance graph.
 
@@ -847,7 +868,14 @@ def build_vm_graph(
     builder.add_node("acquire_lock", _acquire)
     builder.add_node("discover", _discover)
     builder.add_node("drift_check", _drift_check)
-    builder.add_node("plan_actions", plan_actions_node)
+    async def _plan_actions(state: VMGraphState) -> dict[str, Any]:
+        return await plan_actions_node(
+            state,
+            llm_client=llm_client,
+            ai_decision_store=ai_decision_store,
+        )
+
+    builder.add_node("plan_actions", _plan_actions)
     builder.add_node("dispatch_action", _dispatch)
     builder.add_node("check_more_actions", lambda state: {})
     builder.add_node("audit_results", _audit)

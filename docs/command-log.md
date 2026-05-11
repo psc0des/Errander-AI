@@ -839,6 +839,21 @@ git commit -m "feat: Phase 1 security hardening — injection fix, SSH host keys
 git push origin main
 ```
 
+### 2026-05-11 — Phase 3: Honest AI integration
+
+```bash
+uv run pytest tests -q                      # 867 before; 899 after Phase 3
+uv run pytest tests/ai_evals/ -v            # 32 eval tests all passing
+```
+**What**: Implemented all 4 Phase 3 items from ai_sre_remediation_plan.md.
+**Why**: (3.1) LLMClient existed but was never passed into the graph — `plan_actions_node` always used hardcoded ordering. (3.2) LLM output had no injection guard or policy enforcement — raw strings went to `_parse_action_types` unvalidated. (3.3) No eval harness to verify safety properties of LLM output. (3.4) No per-decision audit — impossible to reconstruct why the agent chose a plan.
+
+```bash
+git add errander/safety/ai_audit.py errander/agent/decisions.py errander/agent/vm_graph.py errander/agent/graph.py errander/main.py tests/ai_evals/__init__.py tests/ai_evals/test_golden_plans.py tests/agent/test_inventory_merge.py STATUS.md tasks/todo.md docs/command-log.md
+git commit -m "feat: Phase 3 honest AI integration — LLM threading, injection guard, AI eval harness, per-decision audit"
+git push origin main
+```
+
 ### 2026-05-11 — Phase 2: Policy enforcement + fleet safety
 
 ```bash

@@ -599,6 +599,7 @@ async def run_env_batch(
     slack_client: SlackClient | None = None,
     overrides_store: OverridesStore | None = None,
     deferred_store: DeferredExecutionStore | None = None,
+    llm_client: LLMClient | None = None,
 ) -> None:
     """Run a full maintenance batch for one environment.
 
@@ -608,6 +609,12 @@ async def run_env_batch(
     from errander.agent.graph import build_batch_graph
 
     window = _build_maintenance_window(env_schema)
+
+    from errander.safety.ai_audit import AIDecisionStore
+
+    ai_db_path = settings.audit_db_url  # share same SQLite file
+    ai_decision_store = AIDecisionStore(ai_db_path)
+    await ai_decision_store.initialize()
 
     graph = build_batch_graph(
         executor=executor,
@@ -619,6 +626,8 @@ async def run_env_batch(
         slack_client=slack_client,
         settings=settings,
         deferred_store=deferred_store,
+        llm_client=llm_client,
+        ai_decision_store=ai_decision_store,
     ).compile()
 
     # Build effective target list: YAML base, apply DB overrides (disable/add)
@@ -677,6 +686,7 @@ async def run_env_batch(
         "vm_results": [],
         "env_name": env_name,
         "env_policy": env_schema.approval_policy,
+        "ai_db_path": ai_db_path,
     }
 
     logger.info(
@@ -687,7 +697,10 @@ async def run_env_batch(
         force=force,
     )
 
-    final = await graph.ainvoke(initial_state)
+    try:
+        final = await graph.ainvoke(initial_state)
+    finally:
+        await ai_decision_store.close()
 
     logger.info(
         "Batch complete",
@@ -719,6 +732,7 @@ async def _window_opener(
     approval_manager: ApprovalManager,
     slack_client: SlackClient | None,
     overrides_store: OverridesStore,
+    llm_client: LLMClient | None = None,
 ) -> None:
     """Execute pending deferred batches when a maintenance window opens."""
     from errander.models.events import AuditEvent, EventType as _ET
@@ -761,6 +775,7 @@ async def _window_opener(
                 slack_client=slack_client,
                 overrides_store=overrides_store,
                 deferred_store=deferred_store,
+                llm_client=llm_client,
             )
         finally:
             await deferred_store.mark_done(record.batch_id)
@@ -909,6 +924,7 @@ async def async_main(args: argparse.Namespace) -> int:
                 slack_client=slack,
                 overrides_store=overrides_store,
                 deferred_store=deferred_store,
+                llm_client=llm,
             )
             return 0
 
@@ -942,6 +958,7 @@ async def async_main(args: argparse.Namespace) -> int:
                     slack_client=slack,
                     overrides_store=overrides_store,
                     deferred_store=deferred_store,
+                    llm_client=llm,
                 )
 
             scheduler.add_maintenance_job(_run, cron, job_id=f"maint-{env_name}")
@@ -967,6 +984,7 @@ async def async_main(args: argparse.Namespace) -> int:
                         approval_manager=approval_manager,
                         slack_client=slack,
                         overrides_store=overrides_store,
+                        llm_client=llm,
                     )
 
                 scheduler.add_maintenance_job(

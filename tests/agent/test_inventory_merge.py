@@ -50,6 +50,7 @@ async def _call_run_env_batch(
     from errander.safety.locking import FileLocker
 
     settings = MagicMock(spec=Settings)
+    settings.audit_db_url = ":memory:"
 
     captured: dict[str, Any] = {}
 

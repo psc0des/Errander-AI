@@ -4,6 +4,16 @@ Self-improvement log. Updated after corrections, mistakes, and surprises.
 
 ---
 
+## 2026-05-11 — Patch the module where a symbol is used, not where it is defined
+
+**When a function does a deferred `from X import Y` inside its body (like `rollback_node` doing `from errander.safety.rollback import rollback_action`), patching `errander.safety.rollback.rollback_action` patches the source but the function still gets the original via its local import.** The correct patch target is always where the name is *looked up*, not where it is *defined*. For deferred imports, that means patching `errander.safety.rollback.rollback_action` which IS the source module — and since the import happens at call time, patching the source module works. The failure mode here was the reverse: patching `errander.agent.subgraphs.patching.rollback_action` when the symbol is never bound at module level in that file (it's imported inline), so `patch` raises `AttributeError: module does not have attribute`.
+
+Rule: if the function imports inside its body, patch the *origin* module. If the function imports at module level (`from X import Y` at the top), patch the *consumer* module.
+
+## 2026-05-11 — ApprovalManager.decide() removes the entry — wait before decide, not after
+
+**`ApprovalManager.decide()` pops the batch from `_pending`. If you call `decide()` before `wait_for_decision()`, the waiter raises `KeyError` because the entry is gone.** The correct test pattern: call `wait_for_decision()` first (it awaits the event), then decide from a background task that runs concurrently. Use `asyncio.create_task()` to schedule the decide call before awaiting the wait.
+
 ## 2026-05-11 — Test mocks that count SSH calls break when a new phase adds more calls
 
 **When a new architectural phase adds SSH calls to the graph (e.g., a planning fan-out), integration tests that track `call_count` to decide success/failure per call silently shift meaning.** In `test_wave_abort_stops_fleet_at_boundary`, the mock was `_ssh_ok() if call_count <= 15 else _ssh_ok("", 1)`. Adding the 12-VM planning phase added 12 SSH calls between validate_targets and the health checks, so the original 15-call threshold was hit mid-planning, causing wave 0's health check to fail instead of wave 1.

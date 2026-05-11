@@ -166,7 +166,7 @@ class TestValidateWindowNode:
         assert "error" in result
 
     @pytest.mark.asyncio
-    async def test_build_graph_with_window_blocks_outside(self) -> None:
+    async def test_build_graph_with_window_blocks_outside(self, tmp_path: Path) -> None:
         """build_batch_graph with window wires it into the node."""
         from datetime import datetime, timezone
         from unittest.mock import patch
@@ -178,7 +178,7 @@ class TestValidateWindowNode:
 
         ssh_mgr = SSHConnectionManager()
         executor = _make_executor()
-        locker = FileLocker(lock_dir=Path("/tmp/test-locks"))
+        locker = FileLocker(lock_dir=tmp_path / "locks")
         async with AuditStore(":memory:") as store:
             graph = build_batch_graph(
                 executor, locker, store, ssh_mgr, window=window,

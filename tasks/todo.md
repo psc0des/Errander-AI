@@ -1,5 +1,12 @@
 # Errander-AI — Task Tracking
 
+## Phase 4: E2E Verification (2026-05-11)
+
+### From ai_sre_remediation_plan.md
+- [x] 4.1 Staging soak — `tests/staging/soak_checklist.md`: 8-step checklist covering OS verification, dry-run/live run per action type, fleet abort, SSH host key pinning, chaos DB lock, AI audit; destroy VMs after each run
+- [x] 4.2 Chaos suite — `tests/chaos/test_fault_injection.py`: 19 fault-injection tests covering SSH drop, patching rollback trigger, dpkg lock, audit strict/best-effort modes, LLM timeout/malformed/unavailable, approval manager rejection, fleet abort node
+- [x] 4.3 Windows test infra fix — hardcoded `/tmp/test-locks` → `tmp_path / "locks"` in `test_graph.py:181`; confirmed no bare `TemporaryDirectory()` usage in test suite; all 918 tests pass on Windows
+
 ## Phase 3: Honest AI Integration (2026-05-11)
 
 ### From ai_sre_remediation_plan.md

@@ -839,6 +839,21 @@ git commit -m "feat: Phase 1 security hardening — injection fix, SSH host keys
 git push origin main
 ```
 
+### 2026-05-11 — Phase 4: E2E verification (chaos suite, staging soak, Windows fix)
+
+```bash
+uv run pytest tests/chaos/ tests/ai_evals/ -q   # 51 passed (after 3 fix rounds)
+uv run pytest tests -q                           # 918 passed, 111 skipped, 0 failed
+```
+**What**: Phase 4 from ai_sre_remediation_plan.md — chaos/fault-injection tests (4.2), staging soak checklist (4.1), Windows temp path fix (4.3).
+**Why**: (4.1) No runbook existed for validating the agent against real VMs before production. (4.2) No tests verified behavior under fault conditions — SSH drop, DB lock, dpkg lock, LLM unavailable, etc. (4.3) Hardcoded `/tmp/test-locks` breaks on Windows; test at `test_graph.py:181` used it.
+
+```bash
+git add tests/chaos/__init__.py tests/chaos/test_fault_injection.py tests/staging/__init__.py tests/staging/soak_checklist.md tests/agent/test_graph.py STATUS.md tasks/todo.md docs/command-log.md
+git commit -m "feat: Phase 4 E2E verification — chaos suite, staging soak checklist, Windows path fix"
+git push origin main
+```
+
 ### 2026-05-11 — Phase 3: Honest AI integration
 
 ```bash

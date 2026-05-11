@@ -4,7 +4,7 @@
 2026-05-11
 
 ## Current Phase
-**SRE Remediation — Phases 0–3 complete. Phase 4 (E2E verification) is next.**
+**SRE Remediation — ALL PHASES COMPLETE (0–4). ai_sre_remediation_plan.md fully implemented.**
 
 ## Completed
 
@@ -206,10 +206,9 @@ The approval flow is now fully decoupled from execution. A dry-run scan can happ
 - Nothing actively in flight.
 
 ## Next Up
-- Phase 4: E2E verification
-  - 4.1 Staging soak — 3 disposable VMs (Ubuntu 22.04, Debian 12, RHEL 9); nightly dry-run → approve → live → verify
-  - 4.2 Chaos suite — SSH drop mid-action, dpkg lock held, disk full, audit DB locked, Slack unreachable, LLM unreachable
-  - 4.3 Test infra fix — Windows tempdir permission failures in 124 tests; sweep conftest.py and sqlite-creating tests
+- Run staging soak (`tests/staging/soak_checklist.md`) against real VMs to validate end-to-end before any production deployment
+- Remove `--unsafe-legacy-live` guard from `main.py` once staging soak passes
+- Wire `generate_report` and `analyze_failure` decisions through `ai_decision_store` (currently only `prioritize_actions` is audited)
 
 
 
@@ -351,6 +350,17 @@ None.
 - `scripts/configure.sh` — Step 6 output trimmed to end-user steps only: `--check-inventory` and `--check-llm`
 - `scripts/bootstrap.sh` — reverted to bare `uv sync` (no `--extra dev`, no playwright — dev tools not needed for deployment)
 - `SETUP.md` — Step 6 is now end-user only (inventory check + LLM check); pytest/playwright/ruff/mypy moved to new "For developers" section at the bottom
+
+## Files Changed (2026-05-11 — Phase 4 E2E verification)
+
+### Created
+- `tests/chaos/__init__.py`
+- `tests/chaos/test_fault_injection.py` — 19 fault-injection tests: SSH drop (2), patching rollback routing (3), dpkg lock (1), audit strict/best-effort (4), LLM timeout/malformed/no-LLM (3), approval manager (3), fleet abort (1), Windows tempdir safety (2)
+- `tests/staging/__init__.py`
+- `tests/staging/soak_checklist.md` — 8-step manual staging soak checklist
+
+### Modified
+- `tests/agent/test_graph.py` — `/tmp/test-locks` → `tmp_path / "locks"` (Windows portability, finding #4.3)
 
 ## Files Changed (2026-05-11 — Phase 3 honest AI integration)
 

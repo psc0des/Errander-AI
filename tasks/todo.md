@@ -1,5 +1,13 @@
 # Errander-AI — Task Tracking
 
+## Third-Round Audit: 2 Blockers + 2 High Risks (2026-05-12)
+
+### From ai_sre_audit.md third re-audit (2026-05-12)
+- [x] Blocker 1 — Empty approved plan distinguisher: added `pre_approved_plan_set: bool` sentinel to `VMGraphState`; `route_after_drift_check` routes empty approved plan → audit_results (not re-plan)
+- [x] Blocker 2 — Missing approved plan fail-closed: live mode VM not in `vm_id_to_approved_actions` → injects `error` + `pre_approved_plan_set=True`; never falls back to re-planning after approval
+- [x] High Risk 1 — Log rotation verify real read: `verify_node` in `log_rotation.py` now passes `dry_run=False`
+- [x] High Risk 2 — DNF rollback version comparison: `_rollback_patching_dnf` now parses rpm output and compares each package version against snapshot; returns failure on any mismatch
+
 ## Re-Audit: 7 Production Blockers (2026-05-12)
 
 ### From ai_sre_audit.md re-audit (2026-05-11)

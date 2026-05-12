@@ -280,11 +280,36 @@ async def _rollback_patching_dnf(
             f"({len(downgrade_specs)} packages) but version verification SSH failed",
         )
 
+    # Parse post-rollback versions from rpm output (NAME=VERSION-RELEASE per line).
+    post_versions: dict[str, str] = {}
+    for line in verify_result.stdout.strip().splitlines():
+        if "=" in line:
+            parts = line.strip().split("=", 1)
+            if len(parts) == 2:
+                post_versions[parts[0]] = parts[1]
+
+    mismatches = [
+        f"{pkg} expected={ver} got={post_versions.get(str(pkg), 'missing')}"
+        for pkg, ver in pre_snapshot.items()
+        if post_versions.get(str(pkg)) != str(ver)
+    ]
+
+    if mismatches:
+        logger.error(
+            "CRITICAL: DNF rollback verification failed on %s — %d packages do not match snapshot: %s",
+            vm_id, len(mismatches), mismatches[:5],
+        )
+        return (
+            False,
+            f"DNF rollback verification mismatch on {vm_id}: "
+            f"{len(mismatches)} packages wrong after rollback: {mismatches[:3]}",
+        )
+
     logger.info(
-        "DNF rollback verified: %d packages downgraded on %s",
+        "DNF rollback verified: %d packages downgraded on %s — versions match snapshot",
         len(downgrade_specs), vm_id,
     )
-    return True, f"Rolled back {len(downgrade_specs)} packages on {vm_id} via dnf — verified"
+    return True, f"Rolled back {len(downgrade_specs)} packages on {vm_id} via dnf — versions verified"
 
 
 async def _rollback_docker_prune(

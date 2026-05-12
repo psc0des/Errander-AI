@@ -621,6 +621,28 @@ class TestRoutingDriftCheck:
         state = _base_state(error="Drift detected, aborting")
         assert route_after_drift_check(state) == "audit_results"
 
+    def test_route_after_drift_check_pre_approved_non_empty_dispatches(self) -> None:
+        """Pre-approved non-empty plan skips re-planning and goes straight to dispatch."""
+        state = _base_state(
+            pre_approved_plan_set=True,
+            planned_actions=[{"action_type": "disk_cleanup", "risk_tier": "low", "params": {}}],
+        )
+        assert route_after_drift_check(state) == "dispatch_action"
+
+    def test_route_after_drift_check_pre_approved_empty_goes_to_audit(self) -> None:
+        """Approved empty plan means 'do nothing' — should skip to audit, not re-plan."""
+        state = _base_state(pre_approved_plan_set=True, planned_actions=[])
+        assert route_after_drift_check(state) == "audit_results"
+
+    def test_route_after_drift_check_pre_approved_error_goes_to_audit(self) -> None:
+        """Error always wins — even with pre-approved plan, error routes to audit."""
+        state = _base_state(
+            pre_approved_plan_set=True,
+            planned_actions=[{"action_type": "disk_cleanup", "risk_tier": "low", "params": {}}],
+            error="VM not in approved plan",
+        )
+        assert route_after_drift_check(state) == "audit_results"
+
     def test_route_after_discover_goes_to_drift_check(self) -> None:
         state = _base_state()
         assert route_after_discover(state) == "drift_check"

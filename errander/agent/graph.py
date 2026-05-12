@@ -1053,41 +1053,61 @@ def make_wave_dispatcher(
         env_policy = state.get("env_policy", "moderate")
         ai_db_path = state.get("ai_db_path", "")
 
-        # Build approved plan lookup: vm_id → planned_actions (blocker #1).
+        # Build approved plan lookup: vm_id → planned_actions.
         # Execution MUST follow the approved plan — the VM graph skips re-planning
-        # when planned_actions is non-empty.
+        # when pre_approved_plan_set=True.
         vm_id_to_approved_actions: dict[str, list[dict[str, object]]] = {
             str(p["vm_id"]): list(p.get("planned_actions", []))
             for p in state.get("vm_plans", [])
         }
 
-        return [
-            Send(
-                "run_vm",
-                VMGraphState(
-                    vm_id=str(t["vm_id"]),
-                    batch_id=batch_id,
-                    dry_run=dry_run,
-                    hostname=str(t["hostname"]),
-                    ssh_user=str(t["ssh_user"]),
-                    ssh_key_path=str(t["ssh_key_path"]),
-                    os_family=str(t.get("os_family", "ubuntu")),
-                    env_policy=env_policy,
-                    ai_db_path=ai_db_path,
-                    locked=False,
-                    results=[],
-                    current_action_index=0,
-                    # Pass approved actions so execution follows the approved plan exactly.
-                    # If the VM was not in the plan (shouldn't happen), fall back to empty
-                    # which triggers normal planning — logged as a warning downstream.
-                    planned_actions=vm_id_to_approved_actions.get(str(t["vm_id"]), []),
-                    error=None,
-                    drift_detection_enabled=state.get("drift_detection_enabled", False),
-                    drift_abort_on_detection=state.get("drift_abort_on_detection", False),
-                ),
+        sends: list[Send] = []
+        for t in wave_targets:
+            vm_id_str = str(t["vm_id"])
+            if vm_id_str in vm_id_to_approved_actions:
+                approved_actions = vm_id_to_approved_actions[vm_id_str]
+                vm_error: str | None = None
+            elif not dry_run:
+                # Live mode: VM missing from approved plan — fail closed.
+                # Never allow re-planning after the operator approved a specific plan.
+                logger.error(
+                    "VM %s not in approved plan — failing closed (live run requires approved plan)",
+                    vm_id_str,
+                )
+                approved_actions = []
+                vm_error = "VM not in approved plan — cannot execute without approval"
+            else:
+                # Dry-run: allow normal re-planning (no approved plan yet).
+                approved_actions = []
+                vm_error = None
+
+            sends.append(
+                Send(
+                    "run_vm",
+                    VMGraphState(
+                        vm_id=vm_id_str,
+                        batch_id=batch_id,
+                        dry_run=dry_run,
+                        hostname=str(t["hostname"]),
+                        ssh_user=str(t["ssh_user"]),
+                        ssh_key_path=str(t["ssh_key_path"]),
+                        os_family=str(t.get("os_family", "ubuntu")),
+                        env_policy=env_policy,
+                        ai_db_path=ai_db_path,
+                        locked=False,
+                        results=[],
+                        current_action_index=0,
+                        planned_actions=approved_actions,
+                        # Mark plan as explicitly set so VM graph never re-plans after approval.
+                        # False only when dry-run without an approved plan (pre-approval phase).
+                        pre_approved_plan_set=(vm_id_str in vm_id_to_approved_actions or not dry_run),
+                        error=vm_error,
+                        drift_detection_enabled=state.get("drift_detection_enabled", False),
+                        drift_abort_on_detection=state.get("drift_abort_on_detection", False),
+                    ),
+                )
             )
-            for t in wave_targets
-        ]
+        return sends
 
     return dispatch_current_wave, vm_compiled
 

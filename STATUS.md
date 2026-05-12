@@ -4,7 +4,7 @@
 2026-05-12
 
 ## Current Phase
-**SRE Remediation — ALL PHASES COMPLETE (0–4). ai_sre_remediation_plan.md fully implemented.**
+**Third-round SRE audit remediation — 2 hard blockers + 2 high risks from 2026-05-12 re-audit fixed.**
 
 ## Completed
 
@@ -589,3 +589,19 @@ All 787 unit/integration tests pass (111 skipped = Playwright UI tests, excluded
 ### Modified (tests)
 - `tests/agent/test_vm_graph.py` — `test_full_dry_run_disk_cleanup`: 10→12 SSH responses (added yum-cache assess + yum-cache execute simulate)
 - `tests/agent/test_graph.py` — `test_full_dry_run_single_vm`: same 10→12 SSH responses
+
+## Files Changed (2026-05-12 — Third-round audit: 2 blockers + 2 high risks)
+
+### Modified (source)
+- `errander/agent/vm_graph.py` — Added `pre_approved_plan_set: bool` to `VMGraphState`; `route_after_drift_check` now distinguishes "approved empty plan" (→ audit_results, no re-plan) from "no plan yet" (→ plan_actions); uses sentinel instead of truthiness check on `planned_actions`
+- `errander/agent/graph.py` — `dispatch_current_wave` converted from list comprehension to for-loop; injects `pre_approved_plan_set=True` for all VMs with approved plan; live mode + VM missing from approved plan → `error` set + `pre_approved_plan_set=True` (fail closed); dry-run + missing plan → `pre_approved_plan_set=False` (allow re-planning)
+- `errander/agent/subgraphs/log_rotation.py` — `verify_node`: added `dry_run=False` to SSH call (was missing — verification could use synthetic dry-run output instead of real VM state)
+- `errander/safety/rollback.py` — `_rollback_patching_dnf`: added version comparison after `rpm -q` (parse output line-by-line, compare against snapshot, return `False` on any mismatch — mirrors APT rollback verification)
+
+### Modified (tests)
+- `tests/agent/test_vm_graph.py` — 3 new `TestRoutingDriftCheck` tests: pre_approved_non_empty→dispatch_action, pre_approved_empty→audit_results, pre_approved_with_error→audit_results
+- `tests/agent/subgraphs/test_log_rotation.py` — 1 new `TestVerifyNode` test: asserts `dry_run=False` is passed even when executor is in dry-run mode
+- `tests/safety/test_rollback.py` — `TestDnfRollbackVersionVerification` class: 3 tests (version match, version mismatch, package missing from rpm output)
+
+## Test Count
+925 passed, 111 skipped (Playwright UI tests, excluded without Chromium).

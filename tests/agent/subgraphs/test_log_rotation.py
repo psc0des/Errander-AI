@@ -183,6 +183,23 @@ class TestVerifyNode:
 
         assert "error" not in result or result.get("error") is None
 
+    async def test_verify_forces_real_read_regardless_of_executor_mode(self) -> None:
+        """Verification must read real VM state even when executor is in dry-run mode."""
+        executor = _make_executor(dry_run=True)
+        captured_kwargs: dict[str, object] = {}
+
+        async def capture_execute(*args: object, **kwargs: object) -> object:
+            captured_kwargs.update(kwargs)
+            return _make_result("0")
+
+        with patch.object(executor, "execute", side_effect=capture_execute):
+            state = _base_state(status=ActionStatus.SUCCESS.value)
+            await verify_node(state, executor=executor)
+
+        assert captured_kwargs.get("dry_run") is False, (
+            "verify_node must pass dry_run=False so verification always inspects real VM state"
+        )
+
 
 # --- Routing tests ---
 

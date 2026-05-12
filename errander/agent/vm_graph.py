@@ -84,6 +84,9 @@ class VMGraphState(TypedDict, total=False):
 
     # Planning
     planned_actions: list[dict[str, object]]  # serialized Action objects
+    # True when batch-level approved plan was explicitly injected — distinguishes
+    # "approved empty plan" (execute nothing) from "no plan yet" (re-plan allowed).
+    pre_approved_plan_set: bool
     current_action_index: int
 
     # Results (accumulated across dispatch iterations)
@@ -798,14 +801,18 @@ def route_after_discover(state: VMGraphState) -> str:
 def route_after_drift_check(state: VMGraphState) -> str:
     if state.get("error"):
         return "audit_results"
-    # If the batch-level approved plan was injected, skip re-planning (blocker #1).
-    # The VM graph executes exactly what the operator approved.
-    if state.get("planned_actions"):
-        logger.info(
-            "VM %s using pre-approved plan (%d actions) — skipping re-plan",
-            state.get("vm_id"), len(state.get("planned_actions", [])),
-        )
-        return "dispatch_action"
+    if state.get("pre_approved_plan_set"):
+        # Approved plan was explicitly injected — never re-plan after approval.
+        # Empty approved plan means operator approved "do nothing" for this VM.
+        actions = state.get("planned_actions") or []
+        if actions:
+            logger.info(
+                "VM %s using pre-approved plan (%d actions) — skipping re-plan",
+                state.get("vm_id"), len(actions),
+            )
+            return "dispatch_action"
+        logger.info("VM %s: approved plan has zero actions — skipping to audit", state.get("vm_id"))
+        return "audit_results"
     return "plan_actions"
 
 

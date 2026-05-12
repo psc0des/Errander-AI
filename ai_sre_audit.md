@@ -562,3 +562,192 @@ Minimum signoff criteria:
 8. Full test suite runs cleanly in CI.
 
 Until those are done, this is still not an optimal production solution. It is closer, but the control plane still has holes exactly where a live AI SRE system cannot afford holes.
+
+---
+
+# Re-Audit After Second Dev Fixes - 2026-05-12
+
+## Executive Verdict
+
+The team fixed several of the previous hard blockers. This is now much closer to a credible AI-assisted SRE control plane.
+
+Most importantly:
+
+- Batch-level planning now passes `llm_client`, environment policy, batch ID, VM ID, and AI decision store into `prioritize_actions(...)`.
+- Wave dispatch now passes approved actions into the VM graph instead of always sending `planned_actions=[]`.
+- The VM graph now skips re-planning when pre-approved actions are present.
+- Patch verification failure now routes to rollback.
+- Audit strict mode is now wired from `settings.audit_mode`.
+- The unsafe live-mode bypass appears to have been removed.
+- DNF/YUM-family rollback support has been added in principle.
+
+That said, I still would not call this fully production-ready. The old blockers are mostly reduced, but a few important SRE-grade issues remain.
+
+## What Is Now Fixed Or Mostly Fixed
+
+1. **LLM planning is now wired into batch-level approval planning**
+   - `plan_vm_node(...)` now passes `llm_client`, policy, batch ID, VM ID, and AI decision store to `prioritize_actions(...)`.
+   - This fixes the previous problem where the approval plan was fallback logic while execution could use LLM logic.
+
+2. **Approved actions are now injected into VM execution**
+   - `make_wave_dispatcher(...)` now builds a VM-to-approved-actions lookup from `vm_plans`.
+   - VM execution receives those actions through `planned_actions`.
+
+3. **VM graph avoids re-planning when approved actions exist**
+   - `route_after_drift_check(...)` now skips `plan_actions` when `planned_actions` is non-empty.
+
+4. **Patch verification failure now routes to rollback**
+   - `verify_node(...)` now sets failed status on verification failure.
+   - `route_after_verify(...)` routes failed/error states to rollback.
+
+5. **Read-only execution improved in several subgraphs**
+   - Patching, disk cleanup, docker prune, and backup verification now mostly force `dry_run=False` for real state reads.
+
+6. **Audit mode is now wired**
+   - `AuditStore(...)` is now constructed with `strict_mode=(settings.audit_mode == "strict")`.
+
+7. **The unsafe live CLI bypass appears removed**
+   - I no longer see `--unsafe-legacy-live` or the Phase 0 live block in `main.py`.
+
+## Remaining Blockers / Risks
+
+### Blocker 1: Empty Approved Plan Still Triggers Re-Planning
+
+The VM graph uses this condition:
+
+```python
+if state.get("planned_actions"):
+    return "dispatch_action"
+return "plan_actions"
+```
+
+That means an empty approved plan is treated the same as no approved plan.
+
+Impact:
+
+- If the approved plan for a VM is intentionally empty, execution can re-plan and run actions anyway.
+- If batch planning fails for one VM and returns no plan, that VM can still be included in waves and re-plan during execution.
+- This weakens the plan/apply immutability guarantee.
+
+Required fix:
+
+- Distinguish between "approved plan present with zero actions" and "approved plan missing."
+- Live mode must never fall back to re-planning after approval.
+- A VM with an approved empty plan must execute zero actions.
+- A VM missing from the approved plan must be skipped or fail closed.
+
+### Blocker 2: Missing Approved Plan Falls Back To Re-Planning
+
+`make_wave_dispatcher(...)` still does:
+
+```python
+planned_actions=vm_id_to_approved_actions.get(str(t["vm_id"]), [])
+```
+
+The comment says this fallback "triggers normal planning."
+
+That is not acceptable for live plan/apply.
+
+Required fix:
+
+- For live execution, missing approved plan must be a hard failure for that VM or the whole batch.
+- No fallback re-plan after approval.
+
+### High Risk 1: Log Rotation Verification Still Does Not Force Real Read
+
+`log_rotation.verify_node(...)` still calls `executor.execute(...)` without `dry_run=False`.
+
+Impact:
+
+- Verification can use synthetic dry-run behavior instead of real VM state.
+- This is lower risk than patching but still violates the "verification always reads reality" rule.
+
+Required fix:
+
+- Set `dry_run=False` on log rotation verification reads.
+- Add a regression test for this exact behavior.
+
+### High Risk 2: DNF Rollback Verification Is Too Weak
+
+DNF rollback now exists, which is progress.
+
+But the verification path only runs `rpm -q` and treats command success as verified. It does not compare installed versions against the pre-patch snapshot the way the apt path does.
+
+Impact:
+
+- Rollback can report success even if the target versions were not restored.
+
+Required fix:
+
+- Parse RPM output and compare every package/version against the snapshot.
+- If any version mismatches, return rollback failure and require manual intervention.
+
+### Medium Risk 1: Plan Artifact Does Not Include Full Action Parameters
+
+The approved `vm_plans` currently serialize only:
+
+```python
+{"action_type": ..., "risk_tier": ...}
+```
+
+The `Action` model supports `params`, but batch planning drops them.
+
+Impact:
+
+- If future actions need package lists, paths, thresholds, exclusions, or other parameters, the approval artifact will not capture exactly what execution intends to do.
+
+Required fix:
+
+- Include validated `params` in the plan hash and approval summary.
+- Ensure execution consumes only those approved params.
+
+### Medium Risk 2: Plan Model Exists But Graph Uses Raw Dicts
+
+`errander/models/plans.py` defines `ImmutablePlan`, but the graph hand-builds plan hashes with raw dictionaries.
+
+This is not immediately broken, but it creates two sources of truth for plan hashing.
+
+Required fix:
+
+- Use the `ImmutablePlan` model directly in the graph or delete it.
+- Keep exactly one canonical plan hashing implementation.
+
+## Test Results
+
+Focused tests that do not depend on broken Windows temp fixtures passed:
+
+```text
+127 passed, 1 warning
+```
+
+Broader focused run:
+
+```text
+177 passed, 12 errors, 1 warning
+```
+
+The 12 errors were all Windows temp-directory permission errors around pytest `tmp_path` / basetemp cleanup, not assertion failures. This environment still cannot provide a clean full regression result.
+
+## Updated Approval Recommendation
+
+The project is significantly improved.
+
+I would now classify it as:
+
+> A serious pre-production AI-assisted SRE automation platform.
+
+I still would not approve it as:
+
+> A production-ready autonomous AI SRE agent for live heterogeneous VM remediation.
+
+Minimum remaining signoff items:
+
+1. Empty approved plan must mean "execute nothing."
+2. Missing approved plan must fail closed in live mode.
+3. No re-planning after approval in live mode, ever.
+4. Log rotation verification must force real VM reads.
+5. DNF rollback must compare actual restored versions against the snapshot.
+6. Plan artifact must include action params or explicitly forbid param-bearing actions.
+7. CI must produce a clean full test result outside this local temp-permission issue.
+
+My current SRE verdict: **much better, but still not final.** The team is moving in the right direction, but the last remaining issues are exactly the kind that matter when software is allowed to touch live machines.

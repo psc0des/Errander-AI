@@ -242,9 +242,11 @@ async def verify_node(
     remaining_large: list[str] = []
     for log_dir in paths:
         cmd = f"find {log_dir} -type f -size +{threshold_mb}M -ls 2>/dev/null | wc -l"
+        # dry_run=False: verification always reads real VM state, not synthetic dry-run output.
         result = await executor.execute(
             vm_id, target["hostname"], target["username"], target["key_path"],
             command=cmd,
+            dry_run=False,
         )
         if result.success:
             try:

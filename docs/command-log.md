@@ -918,3 +918,15 @@ git add errander/agent/graph.py errander/agent/vm_graph.py errander/agent/subgra
 git commit -m "feat: re-audit 7 blockers — approved plan enforcement, LLM planning, live mode, dry_run=False reads, verify→rollback, DNF rollback, audit strict mode"
 git push origin main
 ```
+
+### 2026-05-12 — Third-round audit: 2 blockers + 2 high risks
+
+```bash
+uv run pytest tests/agent/test_vm_graph.py::TestRoutingDriftCheck tests/agent/subgraphs/test_log_rotation.py::TestVerifyNode tests/safety/test_rollback.py -v   # 19 passed
+uv run pytest --basetemp=.pytest-tmp -q                                                                                                                            # 925 passed, 111 skipped
+git add errander/agent/vm_graph.py errander/agent/graph.py errander/agent/subgraphs/log_rotation.py errander/safety/rollback.py tests/agent/test_vm_graph.py tests/agent/subgraphs/test_log_rotation.py tests/safety/test_rollback.py README.md STATUS.md tasks/todo.md tasks/lessons.md docs/command-log.md
+git commit -m "feat: third-round audit — empty plan sentinel, live fail-closed, log rotation verify dry_run=False, DNF rollback version comparison"
+git push origin main
+```
+**What**: Fixed 2 hard blockers + 2 high risks from the 2026-05-12 third-round SRE re-audit: (1) Blocker 1 — `pre_approved_plan_set` sentinel distinguishes empty approved plan from no plan; (2) Blocker 2 — live mode VM missing from approved plan fails closed instead of re-planning; (3) High Risk 1 — `log_rotation.verify_node` passes `dry_run=False`; (4) High Risk 2 — `_rollback_patching_dnf` compares every rpm version against snapshot.
+**Why**: Audit identified that empty approved plan was falsy → re-planned after approval (plan/apply violation); missing VM in live mode silently re-planned; verify_node could return synthetic data; DNF rollback declared success without verifying versions.

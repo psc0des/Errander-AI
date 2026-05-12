@@ -4,6 +4,12 @@ Self-improvement log. Updated after corrections, mistakes, and surprises.
 
 ---
 
+## 2026-05-12 — Empty list is falsy: use an explicit sentinel for "plan was set"
+
+**`if state.get("planned_actions"):` is `False` for both `None` and `[]`.** When the batch-level approved plan is an empty list (operator approved "do nothing" for this VM), the VM graph treated it the same as "no plan injected" and fell back to re-planning — violating plan/apply immutability.
+
+**Rule**: never use truthiness of a list to distinguish "value was explicitly set to empty" from "value was never set." Use an explicit boolean sentinel (`pre_approved_plan_set: bool`) or `Optional[list]` where `None` means "not set" and `[]` means "set to empty."
+
 ## 2026-05-12 — frozenset iteration makes BOTH cache variants execute, not just one
 
 **`ALLOWED_CLEANUP_PATHS` contains both `"apt-cache"` AND `"yum-cache"`. The assess loop iterates ALL paths via `path in ("apt-cache", "yum-cache")` — but both paths execute the SAME `pkg_mgr.cache_size()` command.** This means disk_cleanup makes 11 SSH calls (6 assess: df + 5 paths, 5 execute: simulate per path), not 9. Tests that only mocked 9 responses passed spuriously because the `_run_disk_cleanup` broad `except Exception` swallowed `StopAsyncIteration` from the exhausted mock and returned FAILED status, which some tests don't assert on.

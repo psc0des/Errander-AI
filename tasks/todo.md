@@ -1,5 +1,10 @@
 # Errander-AI — Task Tracking
 
+## Fourth-Round Audit: Action Params in Plan Artifact (2026-05-12)
+
+### From ai_sre_audit.md fourth re-audit (2026-05-12)
+- [x] Medium Risk — Batch plan includes action params: `plan_vm_node` now serializes `"params": a.params`; plan hash covers params; Slack summary shows non-empty params; 4 regression tests added
+
 ## Third-Round Audit: 2 Blockers + 2 High Risks (2026-05-12)
 
 ### From ai_sre_audit.md third re-audit (2026-05-12)

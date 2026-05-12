@@ -590,6 +590,14 @@ All 787 unit/integration tests pass (111 skipped = Playwright UI tests, excluded
 - `tests/agent/test_vm_graph.py` — `test_full_dry_run_disk_cleanup`: 10→12 SSH responses (added yum-cache assess + yum-cache execute simulate)
 - `tests/agent/test_graph.py` — `test_full_dry_run_single_vm`: same 10→12 SSH responses
 
+## Files Changed (2026-05-12 — Fourth-round audit: action params in plan artifact)
+
+### Modified (source)
+- `errander/agent/graph.py` — `plan_vm_node`: added `"params": a.params` to serialized `planned_actions` so params are included in plan hash and wave dispatch; `_format_plan_for_approval`: surfaces non-empty action params (up to 3 key=value pairs) in Slack summary so operators see exactly what will run
+
+### Modified (tests)
+- `tests/agent/test_plan_apply_flow.py` — `TestActionParamsSurvivePlanning` class: 4 tests proving params affect plan hash, empty params hash stability, params surface in Slack approval summary, params survive to wave dispatch
+
 ## Files Changed (2026-05-12 — Third-round audit: 2 blockers + 2 high risks)
 
 ### Modified (source)
@@ -604,4 +612,4 @@ All 787 unit/integration tests pass (111 skipped = Playwright UI tests, excluded
 - `tests/safety/test_rollback.py` — `TestDnfRollbackVersionVerification` class: 3 tests (version match, version mismatch, package missing from rpm output)
 
 ## Test Count
-925 passed, 111 skipped (Playwright UI tests, excluded without Chromium).
+929 passed, 111 skipped (Playwright UI tests, excluded without Chromium).

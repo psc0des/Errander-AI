@@ -645,7 +645,11 @@ async def plan_vm_node(
         "vm_plans": [{
             "vm_id": vm_id,
             "planned_actions": [
-                {"action_type": a.action_type.value, "risk_tier": a.risk_tier.value}
+                {
+                    "action_type": a.action_type.value,
+                    "risk_tier": a.risk_tier.value,
+                    "params": a.params,  # included in plan hash and wave dispatch
+                }
                 for a in actions
             ],
             "os_family": vm_info.os_family.value,
@@ -737,8 +741,15 @@ def _format_plan_for_approval(
     ]
     for plan in vm_plans:
         vm_id = plan.get("vm_id", "?")
-        actions = [a.get("action_type", "?") for a in plan.get("planned_actions", [])]
-        lines.append(f"  • `{vm_id}`: {', '.join(actions) or 'no actions planned'}")
+        action_summaries: list[str] = []
+        for a in plan.get("planned_actions", []):
+            label = str(a.get("action_type", "?"))
+            params = a.get("params") or {}
+            if isinstance(params, dict) and params:
+                param_str = ", ".join(f"{k}={v}" for k, v in list(params.items())[:3])
+                label = f"{label}({param_str})"
+            action_summaries.append(label)
+        lines.append(f"  • `{vm_id}`: {', '.join(action_summaries) or 'no actions planned'}")
     lines.extend(["", "Reply :white_check_mark: to approve or :x: to reject (timeout -> auto-REJECT)"])
     return "\n".join(lines)
 

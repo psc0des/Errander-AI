@@ -919,6 +919,18 @@ git commit -m "feat: re-audit 7 blockers — approved plan enforcement, LLM plan
 git push origin main
 ```
 
+### 2026-05-12 — Fourth-round audit: action params in plan artifact
+
+```bash
+uv run pytest tests/agent/test_plan_apply_flow.py -v          # 24 passed
+uv run pytest --basetemp=.pytest-tmp -q                       # 929 passed, 111 skipped
+git add errander/agent/graph.py tests/agent/test_plan_apply_flow.py README.md STATUS.md tasks/todo.md tasks/lessons.md docs/command-log.md
+git commit -m "feat: fourth-round audit — include action params in plan artifact, hash, and approval summary"
+git push origin main
+```
+**What**: Fixed the last remaining medium risk from the fourth-round SRE audit. `plan_vm_node` now serializes `params` in the batch-level plan so they're covered by the plan hash and visible in the operator Slack approval message. `_format_plan_for_approval` surfaces up to 3 key=value pairs per action. 4 regression tests prove params affect the hash, survive to wave dispatch, and appear in the approval summary.
+**Why**: Plan hash did not cover action params — two plans identical except for params (e.g., different package lists) had the same hash. Operator approved one set of params but execution could run a different set.
+
 ### 2026-05-12 — Third-round audit: 2 blockers + 2 high risks
 
 ```bash

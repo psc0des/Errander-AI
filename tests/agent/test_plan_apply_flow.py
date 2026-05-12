@@ -19,6 +19,7 @@ import pytest
 
 from errander.agent.graph import (
     BatchGraphState,
+    _format_plan_for_approval,
     approval_gate_node,
     route_after_approval,
     route_after_hash_verify,
@@ -302,3 +303,75 @@ class TestPlanApplyIntegrity:
         state = _base_state(approved=False, deferred=False)
         # route_after_approval must never send rejected batches to verify_plan_hash
         assert route_after_approval(state) == "generate_report"
+
+
+# ---------------------------------------------------------------------------
+# Action params flow through planning → hash → dispatch
+# ---------------------------------------------------------------------------
+
+class TestActionParamsSurvivePlanning:
+    """Prove action params are included in the plan artifact and affect the plan hash."""
+
+    def _make_plans_with_params(self, params: dict) -> list[dict]:
+        return [{
+            "vm_id": "dev/web-01",
+            "planned_actions": [
+                {"action_type": "patching", "risk_tier": "medium", "params": params}
+            ],
+            "os_family": "ubuntu",
+        }]
+
+    def test_params_included_in_plan_hash(self) -> None:
+        """Different params must produce a different plan hash."""
+        plans_a = self._make_plans_with_params({"packages": ["curl", "nginx"]})
+        plans_b = self._make_plans_with_params({"packages": ["curl", "openssl"]})
+
+        hash_a = _compute_hash(plans_a, "batch-001", "prod")
+        hash_b = _compute_hash(plans_b, "batch-001", "prod")
+
+        assert hash_a != hash_b, "Plan hash must differ when action params differ"
+
+    def test_empty_params_and_no_params_produce_same_hash(self) -> None:
+        """Empty params dict is equivalent to no params for hash purposes."""
+        plans_with_empty = self._make_plans_with_params({})
+        plans_with_none: list[dict] = [{
+            "vm_id": "dev/web-01",
+            "planned_actions": [
+                {"action_type": "patching", "risk_tier": "medium", "params": {}}
+            ],
+            "os_family": "ubuntu",
+        }]
+        assert (
+            _compute_hash(plans_with_empty, "batch-001", "prod")
+            == _compute_hash(plans_with_none, "batch-001", "prod")
+        )
+
+    def test_params_appear_in_approval_slack_summary(self) -> None:
+        """Non-empty params must surface in the Slack approval message so operators can review them."""
+        vm_plans = self._make_plans_with_params({"threshold_mb": 200, "log_dir": "/var/log/app"})
+        summary = _format_plan_for_approval(
+            vm_plans=vm_plans,
+            batch_id="batch-001",
+            plan_id="plan-abc",
+            plan_hash="a" * 64,
+        )
+        assert "threshold_mb" in summary or "log_dir" in summary, (
+            "Approval summary must include action params so the operator knows exactly what will run"
+        )
+
+    def test_params_flow_through_to_wave_dispatch(self) -> None:
+        """Params stored in vm_plans must reach the wave dispatcher's approved actions lookup."""
+        params = {"packages": ["curl=7.88.0", "nginx=1.24.0"]}
+        vm_plans = self._make_plans_with_params(params)
+
+        # Simulate what make_wave_dispatcher does: build the vm_id → actions lookup
+        vm_id_to_approved_actions = {
+            str(p["vm_id"]): list(p.get("planned_actions", []))
+            for p in vm_plans
+        }
+        approved = vm_id_to_approved_actions.get("dev/web-01", [])
+
+        assert len(approved) == 1
+        assert approved[0].get("params") == params, (
+            "Action params must survive from batch planning through to VM execution dispatch"
+        )

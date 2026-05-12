@@ -4,6 +4,12 @@ Self-improvement log. Updated after corrections, mistakes, and surprises.
 
 ---
 
+## 2026-05-12 — Plan hash must cover action params, not just action types
+
+**`plan_vm_node` serialized only `{"action_type": ..., "risk_tier": ...}` — dropping `params`.** This meant two plans that differ only in params (e.g., different package lists, different thresholds) produced the same hash. The operator approved a hash but execution could run with different parameters than what was shown.
+
+**Rule**: every field that affects what the agent actually does on a live VM must be included in the plan artifact, the plan hash, and the operator approval summary. Omitting any field from the hash weakens the immutability guarantee.
+
 ## 2026-05-12 — Empty list is falsy: use an explicit sentinel for "plan was set"
 
 **`if state.get("planned_actions"):` is `False` for both `None` and `[]`.** When the batch-level approved plan is an empty list (operator approved "do nothing" for this VM), the VM graph treated it the same as "no plan injected" and fell back to re-planning — violating plan/apply immutability.

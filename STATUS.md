@@ -340,6 +340,19 @@ Three remaining items from `ai_sre_implementation_plan.md` audit:
 ## Blockers
 None.
 
+## Files Changed (2026-05-14 — SRE production wiring fix)
+### Modified
+- `errander/agent/subgraphs/patching.py` — Added `batch_id: str` to `PatchingGraphState`; `reboot_check_node` and `service_health_post_node` now read `batch_id` from state (not from compile-time closure) so audit events carry the correct id across all batches.
+- `errander/agent/vm_graph.py` — Added `critical_services: list[str]` and `vm_state_store` param to `build_vm_graph`; `build_patching_subgraph` now receives `audit_store` + `vm_state_store`; `_run_patching` passes `batch_id` and `critical_services` into `PatchingGraphState`.
+- `errander/agent/graph.py` — `make_wave_dispatcher` and `build_batch_graph` accept 6 new SRE params (disk/baseline/vm_state stores + settings) and forward them to `build_vm_graph`; both `Send()` paths include `critical_services`.
+- `errander/main.py` — `VMDiskHistoryStore`, `BaselineStore`, `VMStateStore` initialized in `async_main` and closed in `finally`; passed through `run_env_batch`, `_window_opener`, and both scheduler closures; `yaml_targets` now includes `critical_services` from inventory; `db_additions` gets `critical_services: []`.
+- `errander/execution/failed_logins.py` — Removed `authentication failure` from grep (regex can't parse PAM format; honest removal beats silent under-count).
+- `tests/agent/test_inventory_merge.py` — Added `settings.sre_signals = SRESignalSettings()` to mock setup.
+
+### Created
+- `tests/agent/test_sre_wiring.py` — 10 wiring tests proving full dependency chain from `make_wave_dispatcher` → `build_vm_graph` → patching subgraph, `critical_services` in `Send()` payloads, and `run_env_batch` passing stores to `build_batch_graph`.
+- `docs/learning/32-sre-production-wiring.md` — Learning doc: dependency injection chain, silent no-op pattern, batch_id-in-state fix, critical_services flow, how to wire new dependencies correctly.
+
 ## Files Changed (2026-05-14 — SRE UI audit remediation)
 ### Modified
 - `errander/observability/metrics.py` — 7 findings fixed: (1) Added `@web.middleware` to `_csrf_middleware` — was missing, causing 500 on POST; (2) Fixed `_inject_csrf` to return `(modified_html, nonce)` not `(token, nonce)` — modified html was discarded; (3) Wired `_inject_csrf` + `_set_csrf_cookie` into `_page()` via optional `request=` param, called from settings/inventory/approvals GET handlers; (4) Applied `html.escape()` (`_esc`) to all untrusted DB/URL fields in batch detail, VM detail, inventory rows, flash messages, and settings input values; (5) Added "takes effect after restart" warning to settings page; (6) Converted `test-llm` from GET to POST so API keys never appear in URLs/logs; (7) Narrowed `_VALID_OS_FAMILIES` to `{"ubuntu","debian","rhel"}` matching `OSFamily` enum.

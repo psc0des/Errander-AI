@@ -37,3 +37,4 @@ Index of all learning docs created during development. Each doc explains what wa
 | 29 | [Disk Growth Trend Detection](29-disk-growth-trend.md) | SRE-1.4 | `29-disk-growth-trend.md` |
 | 30 | [Configuration Drift Detection + Failed SSH Logins](30-drift-detection.md) | SRE-2 | `30-drift-detection.md` |
 | 31 | [SRE Signal Aggregation + BatchReport Rendering](31-sre-signal-aggregation.md) | SRE-2 | `31-sre-signal-aggregation.md` |
+| 32 | [SRE Production Wiring: Making Signal Stores Active](32-sre-production-wiring.md) | SRE-audit | `32-sre-production-wiring.md` |

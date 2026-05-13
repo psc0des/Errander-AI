@@ -751,3 +751,421 @@ Minimum remaining signoff items:
 7. CI must produce a clean full test result outside this local temp-permission issue.
 
 My current SRE verdict: **much better, but still not final.** The team is moving in the right direction, but the last remaining issues are exactly the kind that matter when software is allowed to touch live machines.
+
+---
+
+# Re-Audit After Third Dev Fixes - 2026-05-12
+
+## Executive Verdict
+
+The dev team fixed most of the remaining hard safety issues from the previous review.
+
+This is now a materially stronger implementation. The plan/apply path is no longer obviously broken, rollback verification is stronger, and verification reads are more consistently forced against real VM state.
+
+I would now move the project from:
+
+> Blocked for architectural safety reasons
+
+to:
+
+> Conditionally acceptable for controlled staging and pre-production validation
+
+I still would not approve unrestricted production autonomy yet, but the project has crossed an important line: the previous plan/apply blockers are mostly addressed.
+
+## What Is Now Fixed
+
+1. **Approved empty plan now means "do nothing"**
+   - `VMGraphState` now has `pre_approved_plan_set`.
+   - The VM graph distinguishes between an explicitly approved empty plan and no plan.
+   - If `pre_approved_plan_set=True` and `planned_actions=[]`, the VM routes to audit instead of re-planning.
+
+2. **Missing approved plan now fails closed in live mode**
+   - Wave dispatch now detects VMs missing from the approved plan.
+   - In live mode, it sets an error instead of allowing normal re-planning.
+   - This fixes the previous high-risk "missing plan becomes re-plan" issue.
+
+3. **Log rotation verification now forces real reads**
+   - Log verification now calls `executor.execute(..., dry_run=False)`.
+   - This closes the previous dry-run verification weakness for log rotation.
+
+4. **DNF rollback verification now compares versions**
+   - DNF rollback now parses `rpm -q` output and compares installed versions to the pre-patch snapshot.
+   - Version mismatch now returns rollback failure instead of false success.
+
+5. **Regression tests were added for key fixes**
+   - VM graph routing tests cover pre-approved non-empty and empty plans.
+   - DNF rollback tests cover matching and mismatched versions.
+
+## Remaining Risk
+
+### Medium Risk: Batch Plan Still Drops Action Params
+
+The per-VM graph planning path now serializes:
+
+```python
+{
+  "action_type": ...,
+  "risk_tier": ...,
+  "params": ...
+}
+```
+
+But the batch-level planning artifact still serializes only:
+
+```python
+{
+  "action_type": ...,
+  "risk_tier": ...
+}
+```
+
+Impact:
+
+- Today this may be harmless because most generated actions appear to have empty params.
+- But the `Action` model supports params, validators inspect params, and backup verification already consumes action params.
+- If future AI planning starts attaching package lists, backup paths, cleanup paths, thresholds, or exclusions, those details may not be captured in the approved plan hash.
+
+Required fix:
+
+- Include `params` in batch-level `vm_plans`.
+- Include params in the plan hash.
+- Include meaningful params in the approval summary where operator judgment depends on them.
+- Add a test proving params survive planning, approval hashing, and execution dispatch.
+
+## Test Results
+
+Clean focused subset:
+
+```text
+97 passed, 1 warning
+```
+
+VM graph routing/dispatch subset:
+
+```text
+13 passed, 33 deselected, 1 warning
+```
+
+Broader focused run:
+
+```text
+133 passed, 10 errors, 1 warning
+```
+
+The 10 errors were the same local Windows `tmp_path` permission issue seen in previous audits, not assertion failures.
+
+## Updated Approval Recommendation
+
+This is now much closer.
+
+I would approve the project for:
+
+- controlled staging tests,
+- disposable VM environment validation,
+- limited non-production live runs,
+- deeper AI evaluation,
+- operator workflow testing.
+
+I would not yet approve:
+
+- fully autonomous production remediation,
+- broad heterogeneous fleet rollout,
+- production patching without staging soak evidence,
+- marketing claims of a finished autonomous AI SRE agent.
+
+Remaining signoff criteria:
+
+1. Batch plan artifact includes action params.
+2. CI runs cleanly outside this local Windows temp-permission issue.
+3. Staging soak tests pass against Ubuntu/Debian and RHEL-like VMs.
+4. A human operator validates approval UX with real plan summaries.
+5. AI evals prove malformed, unsafe, or prompt-injected LLM outputs cannot escape validators.
+
+Current SRE verdict:
+
+> This is no longer a toy or a broken prototype. It is a serious pre-production AI SRE automation system. It still needs staging proof and one more plan-artifact hardening pass before I would call it production-ready.
+
+---
+
+# Clarification On Windows `tmp_path` Test Failures - 2026-05-12
+
+The dev team's explanation is mostly fair, with one important qualification.
+
+## What I Verified
+
+1. The hardcoded `/tmp/test-locks` bug appears fixed.
+   - I no longer found `FileLocker(lock_dir=Path("/tmp/test-locks"))`.
+   - The relevant tests now use `tmp_path / "locks"`.
+
+2. The remaining `/tmp` strings I found are not the same bug.
+   - Some are Linux target paths for disk cleanup.
+   - Some are command-injection test inputs.
+   - `tests/conftest.py` still contains `/tmp/test_key`, but that is a fake SSH key path value in test config, not a file operation.
+
+3. The full test suite still does not pass in my current execution sandbox.
+   - Running:
+
+```text
+.venv\Scripts\python.exe -m pytest tests -q -p no:cacheprovider --basetemp .pytest-tmp
+```
+
+   still produced:
+
+```text
+798 passed, 111 skipped, 127 errors
+```
+
+4. The failure is not normal assertion failure.
+   - Pytest fails while creating/removing/listing temp directories.
+   - The stack traces are still Windows `PermissionError: [WinError 5] Access is denied`.
+
+5. I reproduced the environment problem outside the project tests.
+   - A direct Python check showed that a directory created with restrictive mode can become unreadable in this environment:
+
+```python
+Path("pycreates700").mkdir(mode=0o700, exist_ok=True)
+list(Path("pycreates700").iterdir())
+```
+
+   This failed with:
+
+```text
+PermissionError: [WinError 5] Access is denied
+```
+
+That strongly suggests this sandbox/toolchain has a Windows ACL behavior around Python-created restrictive temp directories. Pytest uses restrictive temp directory permissions, so this explains why `tmp_path` tests fail here even after code fixes.
+
+## Was My Earlier Call Wrong?
+
+Not wrong, but incomplete.
+
+Correct:
+
+- I correctly said the errors were not product assertion failures.
+- I correctly treated them as a test-environment blocker for local signoff.
+
+Incomplete:
+
+- I did not initially separate the old hardcoded `/tmp/test-locks` bug from the broader Windows temp-dir cleanup/ACL behavior.
+- I also cannot reproduce the dev team's claimed `925 passed, 111 skipped, 0 errors` in this sandbox because pytest temp directories become inaccessible here.
+
+## Updated Test Signoff Position
+
+I accept that the old hardcoded `/tmp/test-locks` issue was a real bug and appears fixed.
+
+I also accept that the remaining `tmp_path` failures in my environment are not evidence of broken SRE product logic.
+
+However, I cannot personally certify the `925 passed, 111 skipped, 0 errors` claim from this sandbox. For final signoff, require the dev team to provide a CI artifact or terminal transcript from a clean environment showing:
+
+```text
+925 passed, 111 skipped, 0 errors
+```
+
+That CI run should include:
+
+- OS name and version,
+- Python version,
+- pytest version,
+- exact command,
+- full summary output,
+- confirmation that it ran from a clean checkout or clean test temp directory.
+
+Current position:
+
+> Treat the local `tmp_path` failures as environmental in this sandbox, not as evidence of product failure. But require a clean CI run before production approval.
+
+---
+
+# Audit After Latest Dev Fix Claim - 2026-05-12
+
+## Executive Verdict
+
+The dev team appears to have fixed the last application-level blocker I previously identified: action `params` are now included in the batch-level approved plan.
+
+That is a real fix, not cosmetic.
+
+However, the full pytest suite still cannot be independently verified from this sandbox because the Python/Windows temp-directory ACL issue remains reproducible here.
+
+## What I Verified As Fixed
+
+### Action Params Now Flow Through The Approved Plan
+
+Previous concern:
+
+- The batch plan included only `action_type` and `risk_tier`.
+- It dropped `params`.
+- That meant operator approval and plan hashing might not include package lists, paths, thresholds, or exclusions.
+
+Current state:
+
+- `plan_vm_node(...)` now serializes `params` into each planned action.
+- `generate_plan_artifact_node(...)` hashes `vm_plans`, so params now affect `plan_hash`.
+- `_format_plan_for_approval(...)` includes non-empty params in the Slack approval summary.
+- Wave dispatch passes the approved planned action dicts through to VM execution.
+
+This closes the previous medium-risk blocker.
+
+## Tests Run
+
+Focused plan/apply, params, rollback, log verification, and command-builder tests:
+
+```text
+101 passed, 1 warning
+```
+
+Focused VM planning/routing/dispatch tests:
+
+```text
+13 passed, 33 deselected, 1 warning
+```
+
+These are the most relevant tests for the previous safety blockers, and they passed.
+
+## Full Suite Status
+
+I still cannot reproduce a clean full-suite run in this sandbox.
+
+The command:
+
+```text
+.venv\Scripts\python.exe -m pytest tests -q -p no:cacheprovider --basetemp .pytest-tmp
+```
+
+still failed locally with temp-directory permission errors, not assertion failures.
+
+I also re-tested the underlying environment issue directly:
+
+```python
+Path("acl_probe_latest").mkdir(mode=0o700, exist_ok=True)
+list(Path("acl_probe_latest").iterdir())
+```
+
+This still fails here with:
+
+```text
+PermissionError [WinError 5] Access is denied
+```
+
+That means the local test environment remains unsuitable for full `tmp_path`-based verification. This is not proof of product failure, but it also means I cannot independently certify the dev team's claimed full-suite result from this sandbox.
+
+## Current Approval Position
+
+The core application-level issues I previously raised are now mostly addressed:
+
+1. Approved plan is injected into execution.
+2. Empty approved plan does not re-plan.
+3. Missing live plan fails closed.
+4. LLM planning is wired into batch planning.
+5. Audit store is used for AI decisions.
+6. Patching rollback exists for apt and dnf paths.
+7. Rollback verification compares package versions.
+8. Read-only verification is mostly forced to real VM reads.
+9. Action params are now part of the approved plan/hash path.
+
+Remaining signoff requirements:
+
+1. Provide clean CI proof of the full suite:
+
+```text
+925 passed, 111 skipped, 0 errors
+```
+
+2. Run staging soak tests against disposable Ubuntu/Debian and RHEL-like VMs.
+3. Capture real approval artifacts showing params, plan hash, and executed actions.
+4. Prove live execution follows the approved artifact exactly in staging.
+5. Run AI safety evals for malformed LLM output, prompt injection, unsafe action requests, and schema violations.
+
+## Updated SRE Verdict
+
+I no longer see a major code-level reason to block controlled staging.
+
+I would approve:
+
+- controlled staging validation,
+- disposable VM live tests,
+- operator approval workflow testing,
+- CI-based full regression review.
+
+I would still not approve:
+
+- unrestricted production autonomy,
+- production patching across heterogeneous fleets,
+- external marketing as a finished autonomous AI SRE agent,
+- final signoff without a clean CI artifact and staging evidence.
+
+Current label:
+
+> Strong pre-production AI-assisted SRE automation system, pending CI and staging proof.
+
+---
+
+# AI Evals And CI Evidence Clarification - 2026-05-12
+
+## AI Evals Status
+
+The dev team is correct that AI eval coverage exists.
+
+I inspected `tests/ai_evals/test_golden_plans.py`. It covers the right safety classes:
+
+- injection payloads in LLM action output,
+- unknown or unsafe action names,
+- schema-violation fallback behavior,
+- LLM unavailable / malformed response fallback,
+- action applicability filtering,
+- AI decision audit logging,
+- deterministic prompt hashing.
+
+I ran:
+
+```text
+.venv\Scripts\python.exe -m pytest tests\ai_evals -q -p no:cacheprovider
+```
+
+Result:
+
+```text
+32 passed
+```
+
+Updated position:
+
+> The AI evals concern is addressed at unit/eval-test level.
+
+This does not replace staging validation against real VMs, but it does satisfy the previous request for AI safety eval coverage around malformed and unsafe LLM output.
+
+## CI Transcript Status
+
+I have not independently verified the claimed full-suite CI result from this sandbox.
+
+If the dev team has a CI transcript showing:
+
+```text
+925 passed, 111 skipped, 0 errors
+```
+
+then that should be accepted only if it includes:
+
+- exact command,
+- OS and runner type,
+- Python version,
+- pytest version,
+- commit SHA,
+- full final pytest summary,
+- proof it ran from a clean checkout or clean workspace.
+
+Because this local sandbox still has a reproducible Windows ACL issue around Python-created restrictive temp directories, I cannot use this environment to confirm or deny that CI result.
+
+## Updated Bottom Line
+
+The dev team's latest summary is mostly accurate:
+
+- I have no new major code findings.
+- The AI evals are present and passing.
+- The remaining signoff items are operational/infrastructure:
+  - clean CI evidence,
+  - staging soak on real disposable VMs,
+  - production-readiness review of the operator workflow.
+
+Current verdict remains:
+
+> Strong pre-production AI-assisted SRE automation system, pending CI and staging proof.

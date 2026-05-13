@@ -100,6 +100,9 @@ class PatchingGraphState(TypedDict, total=False):
     service_pre_snapshot: dict[str, str]    # {name: state} before execute
     service_regressions: list[str]          # services that regressed post-execute
 
+    # Batch context (passed from VMGraphState so audit events carry the right batch_id)
+    batch_id: str
+
 
 # --- Node functions ---
 
@@ -436,6 +439,8 @@ async def reboot_check_node(
         os_family,
     )
 
+    effective_batch_id = state.get("batch_id") or batch_id or ""
+
     if not status.needs_reboot:
         logger.debug("No reboot required on %s after patching", vm_id)
         return {"reboot_status_detected": False}
@@ -455,7 +460,7 @@ async def reboot_check_node(
     if audit_store is not None:
         await audit_store.log_event(AuditEvent(
             event_type=EventType.REBOOT_REQUIRED_DETECTED,
-            batch_id=batch_id,
+            batch_id=effective_batch_id,
             vm_id=vm_id,
             action_type="patching",
             detail=f"Reboot required: {status.reason}",
@@ -533,13 +538,15 @@ async def service_health_post_node(
 
     regressions = find_regressions(pre, post)
 
+    effective_batch_id = state.get("batch_id") or batch_id or ""
+
     if regressions:
         detail = f"Services down after patching: {', '.join(regressions)}"
         logger.warning("SERVICE_HEALTH_REGRESSION on %s: %s", vm_id, detail)
         if audit_store is not None:
             await audit_store.log_event(AuditEvent(
                 event_type=EventType.SERVICE_HEALTH_REGRESSION,
-                batch_id=batch_id,
+                batch_id=effective_batch_id,
                 vm_id=vm_id,
                 action_type="patching",
                 detail=detail,

@@ -49,8 +49,10 @@ async def _call_run_env_batch(
     from errander.safety.audit import AuditStore
     from errander.safety.locking import FileLocker
 
+    from errander.config.settings import SRESignalSettings
     settings = MagicMock(spec=Settings)
     settings.audit_db_url = ":memory:"
+    settings.sre_signals = SRESignalSettings()
 
     captured: dict[str, Any] = {}
 

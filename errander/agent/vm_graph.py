@@ -119,6 +119,9 @@ class VMGraphState(TypedDict, total=False):
     # Per-VM opt-out: skip failed SSH login probe for this VM (e.g., honeypots).
     disable_failed_login_check: bool
 
+    # Critical services monitored pre/post patching for health regressions.
+    critical_services: list[str]
+
 
 # --- Node functions ---
 
@@ -585,6 +588,8 @@ async def _run_patching(
         "hostname": state.get("hostname", ""),  # type: ignore[typeddict-item]
         "username": state.get("ssh_user", ""),  # type: ignore[typeddict-item]
         "key_path": state.get("ssh_key_path", ""),  # type: ignore[typeddict-item]
+        "batch_id": state.get("batch_id", ""),  # type: ignore[typeddict-item]
+        "critical_services": list(state.get("critical_services") or []),  # type: ignore[typeddict-item]
     }
 
     try:
@@ -1100,6 +1105,7 @@ def build_vm_graph(
     baseline_store: object = None,
     sre_drift_settings: object = None,
     sre_failed_logins_settings: object = None,
+    vm_state_store: object = None,
 ) -> StateGraph:
     """Construct the per-VM maintenance graph.
 
@@ -1118,7 +1124,11 @@ def build_vm_graph(
     disk_cleanup_compiled = build_disk_cleanup_subgraph(executor).compile()
     log_rotation_compiled = build_log_rotation_subgraph(executor).compile()
     docker_prune_compiled = build_docker_prune_subgraph(executor).compile()
-    patching_compiled = build_patching_subgraph(executor).compile()
+    patching_compiled = build_patching_subgraph(
+        executor,
+        audit_store=audit_store,
+        vm_state_store=vm_state_store,  # type: ignore[arg-type]
+    ).compile()
     backup_verify_compiled = build_backup_verify_subgraph(executor).compile()
 
     async def _acquire(state: VMGraphState) -> dict[str, Any]:

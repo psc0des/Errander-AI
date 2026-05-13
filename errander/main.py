@@ -591,6 +591,9 @@ async def run_env_batch(
     overrides_store: OverridesStore | None = None,
     deferred_store: DeferredExecutionStore | None = None,
     llm_client: LLMClient | None = None,
+    disk_history_store: object = None,
+    baseline_store: object = None,
+    vm_state_store: object = None,
 ) -> None:
     """Run a full maintenance batch for one environment.
 
@@ -607,6 +610,7 @@ async def run_env_batch(
     ai_decision_store = AIDecisionStore(ai_db_path)
     await ai_decision_store.initialize()
 
+    sre = settings.sre_signals
     graph = build_batch_graph(
         executor=executor,
         locker=locker,
@@ -619,6 +623,15 @@ async def run_env_batch(
         deferred_store=deferred_store,
         llm_client=llm_client,
         ai_decision_store=ai_decision_store,
+        disk_history_store=disk_history_store if sre.disk_growth_trend.enabled else None,
+        sre_disk_settings=sre.disk_growth_trend if sre.disk_growth_trend.enabled else None,
+        baseline_store=baseline_store if (
+            sre.drift.sudoers or sre.drift.authorized_keys
+            or sre.drift.listening_ports or sre.drift.scheduled_jobs
+        ) else None,
+        sre_drift_settings=sre.drift,
+        sre_failed_logins_settings=sre.failed_ssh_logins if sre.failed_ssh_logins.enabled else None,
+        vm_state_store=vm_state_store,
     ).compile()
 
     # Build effective target list: YAML base, apply DB overrides (disable/add)
@@ -630,6 +643,7 @@ async def run_env_batch(
             "ssh_key_path": t.ssh_key_path or env_schema.ssh_key_path,
             "os_family": t.os_family,
             "disable_failed_login_check": t.disable_failed_login_check,
+            "critical_services": list(t.critical_services),
             "_name": t.name,
         }
         for t in env_schema.targets
@@ -660,6 +674,7 @@ async def run_env_batch(
             "ssh_user": str(row["ssh_user"] or env_schema.ssh_user),
             "ssh_key_path": str(row["ssh_key_path"] or env_schema.ssh_key_path),
             "os_family": str(row["os_family"] or "ubuntu"),
+            "critical_services": [],  # DB-added VMs have no inventory schema
         })
 
     yaml_count = len(env_schema.targets)
@@ -725,6 +740,9 @@ async def _window_opener(
     slack_client: SlackClient | None,
     overrides_store: OverridesStore,
     llm_client: LLMClient | None = None,
+    disk_history_store: object = None,
+    baseline_store: object = None,
+    vm_state_store: object = None,
 ) -> None:
     """Execute pending deferred batches when a maintenance window opens."""
     from errander.models.events import AuditEvent, EventType as _ET
@@ -768,6 +786,9 @@ async def _window_opener(
                 overrides_store=overrides_store,
                 deferred_store=deferred_store,
                 llm_client=llm_client,
+                disk_history_store=disk_history_store,
+                baseline_store=baseline_store,
+                vm_state_store=vm_state_store,
             )
         finally:
             await deferred_store.mark_done(record.batch_id)
@@ -874,6 +895,20 @@ async def async_main(args: argparse.Namespace) -> int:
     overrides_store = OverridesStore(settings.audit_db_url)
     await overrides_store.initialize()
 
+    # --- SRE signal stores (same DB file, separate tables created by migrations) ---
+    from errander.safety.disk_history import VMDiskHistoryStore
+    from errander.safety.baselines import BaselineStore
+    from errander.safety.vm_state import VMStateStore as _VMStateStore
+
+    disk_history_store = VMDiskHistoryStore(settings.audit_db_url)
+    await disk_history_store.initialize()
+
+    baseline_store = BaselineStore(settings.audit_db_url)
+    await baseline_store.initialize()
+
+    vm_state_store = _VMStateStore(settings.audit_db_url)
+    await vm_state_store.initialize()
+
     # --- Approval manager (shared between graph and web UI) ---
     approval_manager = ApprovalManager()
 
@@ -908,6 +943,9 @@ async def async_main(args: argparse.Namespace) -> int:
                 overrides_store=overrides_store,
                 deferred_store=deferred_store,
                 llm_client=llm,
+                disk_history_store=disk_history_store,
+                baseline_store=baseline_store,
+                vm_state_store=vm_state_store,
             )
             return 0
 
@@ -942,6 +980,9 @@ async def async_main(args: argparse.Namespace) -> int:
                     overrides_store=overrides_store,
                     deferred_store=deferred_store,
                     llm_client=llm,
+                    disk_history_store=disk_history_store,
+                    baseline_store=baseline_store,
+                    vm_state_store=vm_state_store,
                 )
 
             scheduler.add_maintenance_job(_run, cron, job_id=f"maint-{env_name}")
@@ -968,6 +1009,9 @@ async def async_main(args: argparse.Namespace) -> int:
                         slack_client=slack,
                         overrides_store=overrides_store,
                         llm_client=llm,
+                        disk_history_store=disk_history_store,
+                        baseline_store=baseline_store,
+                        vm_state_store=vm_state_store,
                     )
 
                 scheduler.add_maintenance_job(
@@ -1010,6 +1054,9 @@ async def async_main(args: argparse.Namespace) -> int:
     finally:
         if slack is not None:
             await slack.close()
+        await vm_state_store.close()
+        await baseline_store.close()
+        await disk_history_store.close()
         await overrides_store.close()
         await deferred_store.close()
         await audit_store.__aexit__(None, None, None)

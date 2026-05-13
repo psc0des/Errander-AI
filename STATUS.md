@@ -1,10 +1,10 @@
 # Errander-AI — Project Status
 
 ## Last Updated
-2026-05-13
+2026-05-14
 
 ## Current Phase
-**Operations Hub UI complete — all 8 routes wired, nav active-state bug fixed.**
+**SRE wiring complete — all signal stores active in production path.**
 
 ## Completed
 
@@ -280,6 +280,18 @@ Three correctness/docs gaps identified in PR-1.5/PR-2 post-review:
 - **Gap 2 (docs debt)** — `example/settings.yaml` now contains the full `sre_signals:` block with annotated comments for all 10 tuneable fields (`preflight_lock_check`, `reboot_required_check`, `service_health_check`, `disk_growth_trend.*`, `drift.*`, `failed_ssh_logins.*`). Operators now have a reference config.
 - **Gap 3 (missing feature)** — `disable_failed_login_check: bool = False` per-VM inventory tag wired through: `TargetSchema` → `yaml_targets` dict → `VMGraphState` → `failed_logins_node` early-exit. Set `disable_failed_login_check: true` in inventory.yaml to skip the failed login probe for honeypots/bastions. Documented in `example/inventory.yaml` header comment.
 - **1287 tests passing** (no regressions, 4 new listening_ports tests).
+
+## Recent Fix: SRE Production Wiring (2026-05-14)
+
+SRE validation audit found all signal stores were implemented as library code but never reached the production path. Fixed:
+
+- **`VMDiskHistoryStore`, `BaselineStore`, `VMStateStore`** initialized in `async_main` and threaded through `run_env_batch` → `build_batch_graph` → `make_wave_dispatcher` → `build_vm_graph`. Previously these were library code only; now active in every production run.
+- **`vm_state_store` + `audit_store`** passed to `build_patching_subgraph` so `reboot_check_node` persists reboot flags and `service_health_post_node` emits `SERVICE_HEALTH_REGRESSION` audit events with correct batch_id.
+- **`batch_id` to `PatchingGraphState`**: patching nodes now read `batch_id` from state (passed from `VMGraphState`) so audit events carry the right batch_id across all runs, not just the first.
+- **`critical_services`** threaded from `TargetSchema` → `yaml_targets` dict → `VMGraphState.critical_services` → `PatchingGraphState.critical_services` via both `Send()` paths. Service health regression checks now actually use the configured service list.
+- **`authentication failure` grep removed** from `failed_logins_command`: grep was fetching lines the regex couldn't parse; removed to match what we actually count.
+- **10 new wiring tests** in `tests/agent/test_sre_wiring.py`: proves stores reach `make_wave_dispatcher`, `build_vm_graph`, patching subgraph, and `run_env_batch`.
+- **1303 tests passing** (10 new).
 
 ## Recent Fix: Plan Gap Closure Round 2 (2026-05-14)
 

@@ -45,8 +45,8 @@ def failed_logins_command(window_hours: int = 24) -> str:
         "{ journalctl -u ssh -u sshd"
         f' --since "{window_hours} hours ago"'
         " --no-pager --output=short-unix 2>/dev/null"
-        " | grep -E 'Failed password|Invalid user|authentication failure';"
-        " grep -h -E 'Failed password|Invalid user|authentication failure'"
+        " | grep -E 'Failed password|Invalid user';"
+        " grep -h -E 'Failed password|Invalid user'"
         " /var/log/auth.log /var/log/secure 2>/dev/null | tail -5000;"
         " } 2>/dev/null || true"
     )

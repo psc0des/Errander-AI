@@ -4,6 +4,24 @@ Self-improvement log. Updated after corrections, mistakes, and surprises.
 
 ---
 
+## 2026-05-14 — Library code ≠ production feature: stores must be wired through every layer
+
+All SRE signal stores (`VMDiskHistoryStore`, `BaselineStore`, `VMStateStore`) were implemented with tests, but `async_main` never initialized them and the graph builder chain never received them. Nodes silently no-op when stores are `None` — no errors, just silent non-execution.
+
+**Rule**: for every new optional dependency injected into a node, trace the full path from `async_main` to the node and write a wiring test on the same commit. Silent no-ops are the hardest bugs to notice.
+
+## 2026-05-14 — Per-VM config fields need to flow through TargetSchema → target dict → VMGraphState
+
+`critical_services` was in `TargetSchema` and `PatchingGraphState`, but the `yaml_targets` dict literal never included it. Tests that injected it directly passed; production inventory never carried it.
+
+**Rule**: when adding a field to `TargetSchema`, grep all `yaml_targets` dict literals in `main.py` and add it there too. Also add a default for `db_additions` (those have no inventory schema).
+
+## 2026-05-14 — Grep patterns must match what the parser can actually consume
+
+`failed_logins_command` included `'authentication failure'` in grep, but `_FAIL_RE` couldn't parse PAM-format lines. Lines were fetched but never counted — silent under-report.
+
+**Rule**: every grep pattern in a command string must have a corresponding regex branch in the parser. Don't fetch what you can't count.
+
 ## 2026-05-14 — `@web.middleware` decorator is mandatory — omitting it causes 500 on every request
 
 **`_csrf_middleware` was defined as `async def` without `@web.middleware`.** aiohttp requires the decorator to register a function as middleware. Without it, the function is a plain coroutine, not a `Middleware` object, and passing it in `middlewares=[...]` fails with `AttributeError: 'Application' object has no attribute 'method'` on every request.

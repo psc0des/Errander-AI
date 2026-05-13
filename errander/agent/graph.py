@@ -1085,6 +1085,7 @@ def make_fan_out_router(
                     drift_detection_enabled=state.get("drift_detection_enabled", False),
                     drift_abort_on_detection=state.get("drift_abort_on_detection", False),
                     disable_failed_login_check=bool(t.get("disable_failed_login_check", False)),
+                    critical_services=list(t.get("critical_services") or []),
                 ),
             )
             for t in healthy
@@ -1100,6 +1101,12 @@ def make_wave_dispatcher(
     ssh_manager: SSHConnectionManager,
     llm_client: Any = None,
     ai_decision_store: Any = None,
+    disk_history_store: object = None,
+    sre_disk_settings: object = None,
+    baseline_store: object = None,
+    sre_drift_settings: object = None,
+    sre_failed_logins_settings: object = None,
+    vm_state_store: object = None,
 ) -> tuple[Any, Any]:
     """Build the wave dispatch routing function.
 
@@ -1110,6 +1117,12 @@ def make_wave_dispatcher(
         executor, locker, audit_store, ssh_manager,
         llm_client=llm_client,
         ai_decision_store=ai_decision_store,
+        disk_history_store=disk_history_store,
+        sre_disk_settings=sre_disk_settings,
+        baseline_store=baseline_store,
+        sre_drift_settings=sre_drift_settings,
+        sre_failed_logins_settings=sre_failed_logins_settings,
+        vm_state_store=vm_state_store,
     ).compile()
 
     def dispatch_current_wave(state: BatchGraphState) -> str | list[Send]:
@@ -1183,6 +1196,7 @@ def make_wave_dispatcher(
                         drift_detection_enabled=state.get("drift_detection_enabled", False),
                         drift_abort_on_detection=state.get("drift_abort_on_detection", False),
                         disable_failed_login_check=bool(t.get("disable_failed_login_check", False)),
+                        critical_services=list(t.get("critical_services") or []),
                     ),
                 )
             )
@@ -1212,6 +1226,12 @@ def build_batch_graph(
     deferred_store: DeferredExecutionStore | None = None,
     llm_client: Any = None,
     ai_decision_store: Any = None,
+    disk_history_store: object = None,
+    sre_disk_settings: object = None,
+    baseline_store: object = None,
+    sre_drift_settings: object = None,
+    sre_failed_logins_settings: object = None,
+    vm_state_store: object = None,
 ) -> StateGraph:
     """Construct the batch orchestrator graph.
 
@@ -1289,6 +1309,12 @@ def build_batch_graph(
         executor, locker, audit_store, ssh_manager,
         llm_client=llm_client,
         ai_decision_store=ai_decision_store,
+        disk_history_store=disk_history_store,
+        sre_disk_settings=sre_disk_settings,
+        baseline_store=baseline_store,
+        sre_drift_settings=sre_drift_settings,
+        sre_failed_logins_settings=sre_failed_logins_settings,
+        vm_state_store=vm_state_store,
     )
 
     async def _run_vm(state: VMGraphState) -> dict[str, Any]:

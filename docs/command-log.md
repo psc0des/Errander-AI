@@ -1,5 +1,15 @@
 # Errander-AI Command Log
 
+## SRE Production Wiring Fix (2026-05-14)
+
+```bash
+# Run new wiring tests (10 tests)
+uv run pytest tests/agent/test_sre_wiring.py -v   # 10 passed
+
+# Full suite after all wiring changes
+uv run pytest --tb=short -q   # 1303 passed, 111 skipped
+```
+
 ## SRE UI Audit Remediation (2026-05-14)
 
 ```bash

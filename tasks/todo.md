@@ -1,5 +1,13 @@
 # Errander-AI — Task Tracking
 
+## SRE Production Wiring Fix (2026-05-14)
+
+- [x] High 1 — Wire `VMDiskHistoryStore`, `BaselineStore`, `VMStateStore` through `async_main` → `run_env_batch` → `build_batch_graph` → `make_wave_dispatcher` → `build_vm_graph`
+- [x] High 2 — Thread `critical_services` from `TargetSchema` → `yaml_targets` → `VMGraphState` → `PatchingGraphState` via both `Send()` paths
+- [x] High 3 — Pass `audit_store` + `vm_state_store` to `build_patching_subgraph`; add `batch_id` to `PatchingGraphState` so nodes read correct id from state
+- [x] Medium 4 — Remove `authentication failure` from `failed_logins_command` grep (regex couldn't parse it — honest fix)
+- [x] New test file `tests/agent/test_sre_wiring.py` — 10 tests proving full wiring chain; 1,303 total passing
+
 ## SRE UI Audit Remediation (2026-05-14)
 
 - [x] Critical 1 — Add `@web.middleware` to `_csrf_middleware` (was missing → HTTP 500 on all POST /ui/* routes)

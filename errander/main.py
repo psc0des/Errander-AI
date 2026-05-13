@@ -826,7 +826,7 @@ async def async_main(args: argparse.Namespace) -> int:
             inventory_path=args.inventory,
         )
 
-    # --- Configuration ---
+    # --- Configuration (first pass: no DB overrides yet) ---
     try:
         settings = load_settings(
             settings_path=args.config if args.config.exists() else None,
@@ -852,7 +852,18 @@ async def async_main(args: argparse.Namespace) -> int:
 
     inventory = validate_inventory(inventory_path)
 
-    # --- Shared components ---
+    # --- Overrides store: must be initialized before building components so
+    #     DB-persisted LLM settings are applied on restart (finding #4). ---
+    _early_overrides_store = OverridesStore(settings.audit_db_url)
+    await _early_overrides_store.initialize()
+    _db_overrides = await _early_overrides_store.get_settings_overrides()
+    if _db_overrides:
+        settings = load_settings(
+            settings_path=args.config if args.config.exists() else None,
+            db_overrides=_db_overrides,
+        )
+
+    # --- Shared components (built after DB overrides applied) ---
     ssh_manager, executor, locker, slack, llm = _build_components(settings)
 
     dry_run = not args.live  # --live overrides --dry-run
@@ -892,8 +903,7 @@ async def async_main(args: argparse.Namespace) -> int:
     await deferred_store.initialize()
 
     # --- Overrides store (same DB, separate tables) ---
-    overrides_store = OverridesStore(settings.audit_db_url)
-    await overrides_store.initialize()
+    overrides_store = _early_overrides_store  # already initialized above
 
     # --- SRE signal stores (same DB file, separate tables created by migrations) ---
     from errander.safety.disk_history import VMDiskHistoryStore

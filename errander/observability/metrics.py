@@ -527,7 +527,7 @@ def _page(
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   {refresh_tag}
-  <title>Errander-AI \u2014 {title}</title>
+  <title>Errander-AI \u2014 {_esc(title)}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="{_FONTS}" rel="stylesheet">
@@ -567,7 +567,7 @@ def _page(
 </aside>
 <div class="wrap">
   <header class="topbar">
-    <span class="tb-title">{title}</span>
+    <span class="tb-title">{_esc(title)}</span>
     <span class="tb-time">{ts}</span>
   </header>
   <main class="page">
@@ -1205,11 +1205,11 @@ async def _ui_dashboard(request: web.Request) -> web.Response:
     # ── Recent batches table ─────────────────────────────────────────────────
     rows = [
         [
-            f'<a class="id-a" href="/ui/batches/{b["batch_id"]}">{b["batch_id"]}</a>',
+            f'<a class="id-a" href="/ui/batches/{_esc(str(b["batch_id"]))}">{_esc(str(b["batch_id"]))}</a>',
             f'<span class="mono">{str(b["started_at"])[:19]}</span>',
             str(b["event_count"]),
             ", ".join(
-                f'<a href="/ui/vms/{v}">{v}</a>'
+                f'<a href="/ui/vms/{_esc(v)}">{_esc(v)}</a>'
                 for v in b["vm_ids"]  # type: ignore[union-attr]
             ) or '<span style="color:var(--t3)">—</span>',
         ]
@@ -1238,11 +1238,11 @@ async def _ui_batches(request: web.Request) -> web.Response:
     batches = await store.get_recent_batches(limit=100)
     rows = [
         [
-            f'<a class="id-a" href="/ui/batches/{b["batch_id"]}">{b["batch_id"]}</a>',
+            f'<a class="id-a" href="/ui/batches/{_esc(str(b["batch_id"]))}">{_esc(str(b["batch_id"]))}</a>',
             f'<span class="mono">{str(b["started_at"])[:19]}</span>',
             str(b["event_count"]),
             ", ".join(
-                f'<a href="/ui/vms/{v}">{v}</a>'
+                f'<a href="/ui/vms/{_esc(v)}">{_esc(v)}</a>'
                 for v in b["vm_ids"]  # type: ignore[union-attr]
             ) or '<span style="color:var(--t3)">—</span>',
         ]
@@ -1364,17 +1364,17 @@ async def _ui_approvals(request: web.Request) -> web.Response:
             )
             cards.append(
                 f'<div class="apv">'
-                f'<div class="apv-id">{p.batch_id}</div>'
+                f'<div class="apv-id">{_esc(p.batch_id)}</div>'
                 f'<div class="apv-meta">{elapsed_min}m ago &nbsp;&bull;&nbsp; {channel}</div>'
                 f'<details class="apv-report">'
                 f'<summary>View dry-run report</summary>'
                 f'<pre class="apv-pre">{rpt}</pre>'
                 f'</details>'
                 f'<div class="apv-btns">'
-                f'<form method="POST" action="/ui/approvals/{p.batch_id}/approve">'
+                f'<form method="POST" action="/ui/approvals/{_esc(p.batch_id)}/approve">'
                 f'<button type="submit" class="btn btn-ok">&#10003; Approve</button>'
                 f'</form>'
-                f'<form method="POST" action="/ui/approvals/{p.batch_id}/reject">'
+                f'<form method="POST" action="/ui/approvals/{_esc(p.batch_id)}/reject">'
                 f'<button type="submit" class="btn btn-no">&#10007; Reject</button>'
                 f'</form>'
                 f'</div>'
@@ -1395,7 +1395,7 @@ async def _ui_approvals(request: web.Request) -> web.Response:
     if history:
         rows = [
             [
-                f'<a class="id-a" href="/ui/batches/{h.batch_id}">{h.batch_id}</a>',
+                f'<a class="id-a" href="/ui/batches/{_esc(h.batch_id)}">{_esc(h.batch_id)}</a>',
                 f'<span class="mono">{h.posted_at.strftime("%Y-%m-%d %H:%M:%S")}</span>',
                 (
                     '<span class="dec-ok">&#10003; Approved</span>'

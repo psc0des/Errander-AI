@@ -328,6 +328,10 @@ Three remaining items from `ai_sre_implementation_plan.md` audit:
 ## Blockers
 None.
 
+## Files Changed (2026-05-14 — SRE UI audit remediation)
+### Modified
+- `errander/observability/metrics.py` — 7 findings fixed: (1) Added `@web.middleware` to `_csrf_middleware` — was missing, causing 500 on POST; (2) Fixed `_inject_csrf` to return `(modified_html, nonce)` not `(token, nonce)` — modified html was discarded; (3) Wired `_inject_csrf` + `_set_csrf_cookie` into `_page()` via optional `request=` param, called from settings/inventory/approvals GET handlers; (4) Applied `html.escape()` (`_esc`) to all untrusted DB/URL fields in batch detail, VM detail, inventory rows, flash messages, and settings input values; (5) Added "takes effect after restart" warning to settings page; (6) Converted `test-llm` from GET to POST so API keys never appear in URLs/logs; (7) Narrowed `_VALID_OS_FAMILIES` to `{"ubuntu","debian","rhel"}` matching `OSFamily` enum.
+
 ## Files Changed (2026-05-13 — UI nav active-state bug fix)
 ### Modified
 - `errander/web/server.py` — Removed duplicate "Active Batch" nav item (both it and "Batch History" pointed to `/batches`, causing both to highlight simultaneously). Deleted dead `sidebar()` and `_sidebar_nav()` functions that were never called by `layout()`. All 8 routes verified returning 200 with exactly one active nav item per page.

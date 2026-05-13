@@ -4,6 +4,30 @@ Self-improvement log. Updated after corrections, mistakes, and surprises.
 
 ---
 
+## 2026-05-14 — `@web.middleware` decorator is mandatory — omitting it causes 500 on every request
+
+**`_csrf_middleware` was defined as `async def` without `@web.middleware`.** aiohttp requires the decorator to register a function as middleware. Without it, the function is a plain coroutine, not a `Middleware` object, and passing it in `middlewares=[...]` fails with `AttributeError: 'Application' object has no attribute 'method'` on every request.
+
+**Rule**: every aiohttp middleware must have `@web.middleware`. After writing or copying a middleware function, always check the decorator is present before registering it.
+
+## 2026-05-14 — CSRF injection helper that modifies a local variable is a silent no-op
+
+**`_inject_csrf` modified `html` as a local variable and returned `(token, nonce)`.** The caller received the token but the modified HTML (with hidden `<input>` fields injected) was thrown away. Forms were rendered without CSRF tokens — every POST after fixing the middleware would have been rejected with 403.
+
+**Rule**: when a helper modifies a string and the caller needs the result, the function must return the modified string. Verify the return type covers every output the caller depends on. `str` is immutable — mutating a local alias does nothing to the caller's copy.
+
+## 2026-05-14 — API keys must never appear in GET query params
+
+**`/ui/settings/test-llm` accepted `api_key` as a GET query parameter.** Query params land in server access logs, browser history, proxy logs, and `Referer` headers. Any of these leaks the key to unintended parties.
+
+**Rule**: any endpoint that accepts a secret (API key, token, password) must use POST with a request body. Never put secrets in URLs, even for "convenience" test endpoints.
+
+## 2026-05-14 — All untrusted data must be escaped before HTML interpolation
+
+**Batch detail, VM detail, inventory rows, and flash messages interpolated raw DB values and URL query params directly into HTML.** A crafted `vm_id`, `detail`, or `flash` param could inject arbitrary HTML/JS into operator pages — including approval and settings pages.
+
+**Rule**: apply `html.escape()` to every value that came from outside the trusted code path (DB, URL params, form fields, SSH output) before it enters an HTML string. Add a module-level alias `_esc = html.escape` so escaping is one character shorter to type than skipping it.
+
 ## 2026-05-13 — Duplicate URL in NAV_ITEMS causes both items to highlight as active
 
 **Two nav items ("Active Batch" and "Batch History") pointed to the same URL `/batches`.** The active-state check `url == active_url` matched both, so visiting `/batches` highlighted two items simultaneously — confusing and unprofessional.

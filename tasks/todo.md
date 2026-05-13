@@ -1,5 +1,15 @@
 # Errander-AI — Task Tracking
 
+## SRE UI Audit Remediation (2026-05-14)
+
+- [x] Critical 1 — Add `@web.middleware` to `_csrf_middleware` (was missing → HTTP 500 on all POST /ui/* routes)
+- [x] Critical 2 — Fix `_inject_csrf` return value (returned token not modified html); wire into `_page()` via `request=` param; call from settings/inventory/approvals GET handlers
+- [x] High 1 — XSS: apply `html.escape` to all untrusted DB/URL fields (batch_id, vm_id, action_type, detail, env_name, vm_name, host, os_family, flash messages, settings display_val)
+- [x] High 2 — Settings "restart required" note: added amber warning that LLM settings take effect after agent restart
+- [x] Medium 1 — test-llm endpoint: GET→POST so API keys never appear in URLs/access logs/browser history
+- [x] Medium 2 — `_VALID_OS_FAMILIES` narrowed to `{"ubuntu","debian","rhel"}` matching core `OSFamily` enum
+- [x] 1303 tests passing, 111 skipped — no regressions
+
 ## UI Nav Bug Fix (2026-05-13)
 
 - [x] Audit all UI route wiring — found duplicate `/batches` in NAV_ITEMS causing both "Active Batch" and "Batch History" to highlight simultaneously

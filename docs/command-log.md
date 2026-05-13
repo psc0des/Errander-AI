@@ -1,5 +1,27 @@
 # Errander-AI Command Log
 
+## SRE UI Audit Remediation (2026-05-14)
+
+```bash
+# Locate all middleware definitions, CSRF helpers, and XSS-prone interpolations
+grep -n "@web.middleware\|def _csrf_middleware\|def _inject_csrf\|html\.escape" errander/observability/metrics.py
+
+# Run UI + observability tests after each fix
+uv run pytest tests/ui/ tests/observability/ --basetemp=.pytest-tmp -q --tb=short
+
+# Full type-check (15 pre-existing errors → 12 after fixes)
+uv run mypy errander/observability/metrics.py --no-error-summary
+
+# Full suite (1303 passed, 111 skipped)
+uv run pytest --basetemp=.pytest-tmp -q
+
+git add errander/observability/metrics.py
+git commit -m "fix: SRE UI audit — CSRF decorator, CSRF injection wiring, XSS escaping, test-llm GET→POST, OS family validation"
+git push origin main
+```
+**What**: Remediated all 7 findings from `ai_sre_ui_audit.md`: missing `@web.middleware` on CSRF middleware (→ 500 on all POSTs), `_inject_csrf` discarding modified HTML (→ forms rendered without CSRF tokens), no `html.escape` on DB/URL values (XSS), test-llm accepting API key via GET (secret leakage), `_VALID_OS_FAMILIES` containing unsupported OS types, settings page not warning about restart requirement.
+**Why**: SRE audit flagged production `/ui/*` server in `metrics.py` as not production-ready.
+
 ## UI Nav Bug Fix (2026-05-13)
 
 ```bash

@@ -7,10 +7,15 @@ from unittest.mock import AsyncMock, patch
 from errander.agent.subgraphs.patching import (
     MANDATORY_KERNEL_EXCLUDES,
     PatchingGraphState,
+    _filter_kernel_packages,
+    _is_kernel_package,
+    _parse_upgradable,
+    _parse_versions,
     assess_node,
     build_patching_subgraph,
     execute_node,
     preflight_lock_node,
+    reboot_check_node,
     route_after_assess,
     route_after_execute,
     route_after_preflight_lock,
@@ -18,15 +23,10 @@ from errander.agent.subgraphs.patching import (
     snapshot_node,
     validate_node,
     verify_node,
-    _filter_kernel_packages,
-    _is_kernel_package,
-    _parse_upgradable,
-    _parse_versions,
 )
 from errander.execution.sandbox import SandboxExecutor
 from errander.execution.ssh import SSHConnectionManager, SSHResult
 from errander.models.actions import ActionStatus
-
 
 # --- Helpers ---
 
@@ -567,3 +567,204 @@ class TestBuildSubgraphWithLockCheck:
         assert result["status"] == ActionStatus.SKIPPED.value
         assert result.get("lock_holder_pid") is None
         assert call_count >= 3  # lock check + refresh + list_upgradable
+
+
+# --- Reboot check node tests (1.2) ---
+
+class TestRebootCheckNode:
+    """Tests for reboot_check_node and its integration into the patching subgraph."""
+
+    async def test_reboot_needed_sets_flag(self) -> None:
+        executor = _make_executor(dry_run=False)
+        with patch.object(
+            executor, "execute",
+            AsyncMock(return_value=_make_result("REBOOT=1\nlibc6\n")),
+        ):
+            result = await reboot_check_node(
+                _base_state(status=ActionStatus.SUCCESS.value),
+                executor=executor,
+            )
+        assert result["reboot_status_detected"] is True
+
+    async def test_no_reboot_clears_flag(self) -> None:
+        executor = _make_executor(dry_run=False)
+        with patch.object(
+            executor, "execute",
+            AsyncMock(return_value=_make_result("REBOOT=0\n")),
+        ):
+            result = await reboot_check_node(
+                _base_state(status=ActionStatus.SUCCESS.value),
+                executor=executor,
+            )
+        assert result["reboot_status_detected"] is False
+
+    async def test_calls_vm_state_store_when_reboot_needed(self) -> None:
+        from errander.safety.vm_state import VMStateStore
+
+        executor = _make_executor(dry_run=False)
+        vm_state_store = AsyncMock(spec=VMStateStore)
+        vm_state_store.set_needs_reboot = AsyncMock()
+
+        with patch.object(
+            executor, "execute",
+            AsyncMock(return_value=_make_result("REBOOT=1\nlibc6\n")),
+        ):
+            await reboot_check_node(
+                _base_state(vm_id="dev/web-01", status=ActionStatus.SUCCESS.value),
+                executor=executor,
+                vm_state_store=vm_state_store,
+            )
+
+        vm_state_store.set_needs_reboot.assert_called_once()
+        call_args = vm_state_store.set_needs_reboot.call_args
+        assert call_args[0][0] == "dev/web-01"
+
+    async def test_skips_vm_state_store_when_not_needed(self) -> None:
+        from errander.safety.vm_state import VMStateStore
+
+        executor = _make_executor(dry_run=False)
+        vm_state_store = AsyncMock(spec=VMStateStore)
+        vm_state_store.set_needs_reboot = AsyncMock()
+
+        with patch.object(
+            executor, "execute",
+            AsyncMock(return_value=_make_result("REBOOT=0\n")),
+        ):
+            await reboot_check_node(
+                _base_state(status=ActionStatus.SUCCESS.value),
+                executor=executor,
+                vm_state_store=vm_state_store,
+            )
+
+        vm_state_store.set_needs_reboot.assert_not_called()
+
+    async def test_no_vm_state_store_no_error(self) -> None:
+        executor = _make_executor(dry_run=False)
+        with patch.object(
+            executor, "execute",
+            AsyncMock(return_value=_make_result("REBOOT=1\nlibc6\n")),
+        ):
+            # Should not raise even without vm_state_store
+            result = await reboot_check_node(
+                _base_state(status=ActionStatus.SUCCESS.value),
+                executor=executor,
+                vm_state_store=None,
+            )
+        assert result["reboot_status_detected"] is True
+
+    async def test_emits_audit_event_when_reboot_detected(self) -> None:
+        from errander.models.events import EventType
+        from errander.safety.audit import AuditStore
+
+        executor = _make_executor(dry_run=False)
+        audit_store = AsyncMock(spec=AuditStore)
+        audit_store.log_event = AsyncMock()
+
+        with patch.object(
+            executor, "execute",
+            AsyncMock(return_value=_make_result("REBOOT=1\nlibc6\n")),
+        ):
+            await reboot_check_node(
+                _base_state(status=ActionStatus.SUCCESS.value),
+                executor=executor,
+                audit_store=audit_store,
+                batch_id="batch-42",
+            )
+
+        audit_store.log_event.assert_called_once()
+        call_args = audit_store.log_event.call_args[0][0]
+        assert call_args.event_type == EventType.REBOOT_REQUIRED_DETECTED
+        assert call_args.batch_id == "batch-42"
+
+    async def test_no_audit_event_when_no_reboot(self) -> None:
+        from errander.safety.audit import AuditStore
+
+        executor = _make_executor(dry_run=False)
+        audit_store = AsyncMock(spec=AuditStore)
+        audit_store.log_event = AsyncMock()
+
+        with patch.object(
+            executor, "execute",
+            AsyncMock(return_value=_make_result("REBOOT=0\n")),
+        ):
+            await reboot_check_node(
+                _base_state(status=ActionStatus.SUCCESS.value),
+                executor=executor,
+                audit_store=audit_store,
+            )
+
+        audit_store.log_event.assert_not_called()
+
+    async def test_rhel_reboot_stores_state(self) -> None:
+        from errander.safety.vm_state import VMStateStore
+
+        executor = _make_executor(dry_run=False)
+        vm_state_store = AsyncMock(spec=VMStateStore)
+        vm_state_store.set_needs_reboot = AsyncMock()
+
+        with patch.object(
+            executor, "execute",
+            AsyncMock(return_value=_make_result("EXIT=1\n")),
+        ):
+            result = await reboot_check_node(
+                _base_state(os_family="rhel", status=ActionStatus.SUCCESS.value),
+                executor=executor,
+                vm_state_store=vm_state_store,
+            )
+
+        assert result["reboot_status_detected"] is True
+        vm_state_store.set_needs_reboot.assert_called_once()
+
+
+class TestBuildSubgraphWithRebootCheck:
+    """Integration tests: sre_reboot_check wiring in build_patching_subgraph."""
+
+    def test_graph_builds_with_reboot_check_enabled(self) -> None:
+        executor = _make_executor(dry_run=True)
+        graph = build_patching_subgraph(executor, sre_reboot_check=True)
+        compiled = graph.compile()
+        assert compiled is not None
+
+    def test_graph_builds_with_reboot_check_disabled(self) -> None:
+        executor = _make_executor(dry_run=True)
+        graph = build_patching_subgraph(executor, sre_reboot_check=False)
+        compiled = graph.compile()
+        assert compiled is not None
+
+    async def test_dry_run_skips_reboot_check(self) -> None:
+        """DRY_RUN_OK exits before verify/reboot_check — reboot_status_detected absent."""
+        executor = _make_executor(dry_run=True)
+        call_count = 0
+
+        async def mock_execute(*args: object, **kwargs: object) -> SSHResult:
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return _make_result("")   # no lock
+            if call_count == 2:
+                return _make_result("")   # refresh_package_lists
+            if call_count == 3:
+                return _make_result(
+                    "Listing... Done\n"
+                    "nginx/focal 1.18.0 amd64 [upgradable from: 1.17.0]\n"
+                )
+            if call_count == 4:
+                return _make_result("nginx=1.17.0\n")  # snapshot
+            return _make_result("simulated upgrade output")  # dry-run execute
+
+        with patch.object(executor, "execute", side_effect=mock_execute):
+            graph = build_patching_subgraph(executor, sre_reboot_check=True)
+            compiled = graph.compile()
+            initial_state: PatchingGraphState = {
+                "vm_id": "dev/web-01",
+                "os_family": "ubuntu",
+                "dry_run": True,
+                "hostname": "10.0.1.10",  # type: ignore[typeddict-item]
+                "username": "errander-ai",  # type: ignore[typeddict-item]
+                "key_path": "/key",  # type: ignore[typeddict-item]
+            }
+            result = await compiled.ainvoke(initial_state)
+
+        # DRY_RUN_OK exits before reboot check
+        assert result["status"] == ActionStatus.DRY_RUN_OK.value
+        assert result.get("reboot_status_detected") is None

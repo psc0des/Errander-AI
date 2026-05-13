@@ -4,9 +4,17 @@
 2026-05-13
 
 ## Current Phase
-**SRE Monitoring — PR-1.1 complete (pkg lock detection). Ready for 1.2 (reboot detection).**
+**SRE Monitoring — PR-1.2 complete (reboot detection). Ready for 1.3 (service health checks).**
 
 ## Completed
+
+### PR-1.2: Reboot-Required Detection (2026-05-13)
+- **`errander/execution/reboot_check.py`**: `RebootStatus` frozen dataclass; `reboot_required_command(os_family)` — Debian/Ubuntu uses `/var/run/reboot-required` flag file + pkg list; RHEL uses `needs-restarting -r` with absent-binary fallback (`EXIT=unknown` → no reboot); `parse_reboot_status()` pure parser for both OS variants; `detect_reboot_required()` SSH probe with best-effort (failure → no reboot)
+- **`reboot_check_node`** in `patching.py`: runs after verify (live success only); persists to `VMStateStore.set_needs_reboot()` when provided; emits `REBOOT_REQUIRED_DETECTED` audit event; returns `reboot_status_detected: bool`
+- **`build_patching_subgraph`** gains `vm_state_store` + `sre_reboot_check` params; local `_route_verify` closure routes success → `reboot_check` when enabled; dry-run batches exit at `DRY_RUN_OK` (never reaches reboot check)
+- **`format_reboot_required_section(vms)`** in `reporting.py`: Slack-ready section header + bullet list; truncates pkg lists > 5 with "+N more"; returns `""` for empty input
+- **46 new tests** across 3 files (test_reboot_check.py, test_patching.py TestRebootCheckNode + TestBuildSubgraphWithRebootCheck, test_reporting.py TestFormatRebootRequiredSection); 1,077 total passing
+- Learning doc: `docs/learning/27-reboot-detection.md`
 
 ### PR-1.1: Package Lock Detection (2026-05-13)
 - **`PackageManager.detect_lock()`**: new abstract method + implementations in `AptManager` (fuser-based, 3 dpkg/apt lock files) and `DnfManager` (pid-file-based, dnf.pid + yum.pid)

@@ -1,5 +1,24 @@
 # Errander-AI Command Log
 
+## SRE Monitoring — PR-1.2 Reboot-Required Detection (2026-05-13)
+
+```bash
+# Full suite after writing all PR-1.2 tests
+uv run pytest --tb=short -q   # 1077 passed, 111 skipped
+
+# mypy on new PR-1.2 source files
+uv run mypy errander/execution/reboot_check.py errander/observability/reporting.py tests/execution/test_reboot_check.py tests/observability/test_reporting.py
+
+# ruff on PR-1.2 files (new files clean; 3 pre-existing issues in patching.py unchanged)
+uv run ruff check errander/execution/reboot_check.py errander/observability/reporting.py errander/agent/subgraphs/patching.py tests/execution/test_reboot_check.py tests/agent/subgraphs/test_patching.py tests/observability/test_reporting.py
+
+# ruff --fix import sort in test_patching.py (reboot_check_node alphabetical position)
+uv run ruff check --select I001 --fix tests/agent/subgraphs/test_patching.py
+
+# PR-1.2 targeted test run
+uv run pytest tests/execution/test_reboot_check.py tests/agent/subgraphs/test_patching.py tests/observability/test_reporting.py -v --tb=short
+```
+
 ## SRE Monitoring — PR-1.1 Package Lock Detection (2026-05-13)
 
 ```bash

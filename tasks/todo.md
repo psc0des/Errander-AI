@@ -13,7 +13,7 @@
 ## SRE Phase 1 — Signal Collection
 
 - [x] 1.1 — Package lock detection pre-flight: `PackageManager.detect_lock()` + `validate_no_pkg_lock()` + `preflight_lock_node` in patching subgraph; 35 new tests; 1031 total passing
-- [ ] 1.2 — Reboot-required detection (post-patch; sets `vm_state.needs_reboot`)
+- [x] 1.2 — Reboot-required detection (post-patch): `reboot_check.py` with `RebootStatus`, `reboot_required_command()`, `parse_reboot_status()`, `detect_reboot_required()`; `reboot_check_node` after verify; `format_reboot_required_section()` in reporting; 46 new tests; 1077 total passing
 - [ ] 1.3 — Service health checks (pre/post action snapshot; fires `SERVICE_HEALTH_REGRESSION`)
 - [ ] 1.4 — Disk growth trend (records to `vm_disk_history`; fires alert when delta exceeds threshold)
 

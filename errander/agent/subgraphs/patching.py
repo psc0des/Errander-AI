@@ -23,12 +23,14 @@ from typing import TYPE_CHECKING, Any, TypedDict
 from langgraph.graph import END, StateGraph
 
 from errander.agent.subgraphs.disk_cleanup import get_package_manager_by_name
+from errander.execution.reboot_check import detect_reboot_required
 from errander.execution.sandbox import SandboxExecutor
 from errander.models.actions import ActionStatus
 from errander.safety.validators import validate_no_pkg_lock
 
 if TYPE_CHECKING:
     from errander.safety.audit import AuditStore
+    from errander.safety.vm_state import VMStateStore
 
 logger = logging.getLogger(__name__)
 
@@ -88,6 +90,9 @@ class PatchingGraphState(TypedDict, total=False):
     # Pre-flight lock detection (1.1)
     lock_holder_pid: int | None   # PID of process holding the lock, or None
     lock_holder_cmd: str | None   # command name of lock holder, or None
+
+    # Post-patch reboot detection (1.2)
+    reboot_status_detected: bool  # True when reboot required after successful patch
 
 
 # --- Node functions ---
@@ -399,6 +404,64 @@ def route_after_preflight_lock(state: PatchingGraphState) -> str:
     return "validate"
 
 
+async def reboot_check_node(
+    state: PatchingGraphState,
+    *,
+    executor: SandboxExecutor,
+    vm_state_store: VMStateStore | None = None,
+    audit_store: AuditStore | None = None,
+    batch_id: str = "",
+) -> dict[str, Any]:
+    """Probe reboot-required status after a successful upgrade.
+
+    Only runs when the upgrade succeeded — not after BLOCKED, FAILED, or
+    DRY_RUN_OK.  Persists the flag to VMStateStore and emits
+    REBOOT_REQUIRED_DETECTED when a reboot is needed.  No auto-reboot.
+    """
+    from errander.models.events import AuditEvent, EventType
+
+    vm_id = state["vm_id"]
+    os_family = state.get("os_family", "ubuntu")
+    target = _get_connection_params(state)
+
+    status = await detect_reboot_required(
+        executor, vm_id,
+        target["hostname"], target["username"], target["key_path"],
+        os_family,
+    )
+
+    if not status.needs_reboot:
+        logger.debug("No reboot required on %s after patching", vm_id)
+        return {"reboot_status_detected": False}
+
+    logger.info(
+        "Reboot required on %s: %s (pkgs: %s)",
+        vm_id, status.reason, status.pkgs_requiring,
+    )
+
+    if vm_state_store is not None:
+        await vm_state_store.set_needs_reboot(
+            vm_id,
+            status.reason or "packages require reboot",
+            status.pkgs_requiring,
+        )
+
+    if audit_store is not None:
+        await audit_store.log_event(AuditEvent(
+            event_type=EventType.REBOOT_REQUIRED_DETECTED,
+            batch_id=batch_id,
+            vm_id=vm_id,
+            action_type="patching",
+            detail=f"Reboot required: {status.reason}",
+            metadata={
+                "reason": status.reason,
+                "pkgs_requiring": list(status.pkgs_requiring),
+            },
+        ), dry_run=state.get("dry_run", True))
+
+    return {"reboot_status_detected": True}
+
+
 # --- Helpers ---
 
 def _get_connection_params(state: PatchingGraphState) -> dict[str, str]:
@@ -536,17 +599,22 @@ def build_patching_subgraph(
     executor: SandboxExecutor,
     *,
     audit_store: AuditStore | None = None,
+    vm_state_store: VMStateStore | None = None,
     batch_id: str = "",
     sre_preflight_lock_check: bool = True,
+    sre_reboot_check: bool = True,
 ) -> StateGraph:
     """Construct the patching sub-graph.
 
     Args:
         executor: SandboxExecutor for SSH command execution.
         audit_store: Optional audit store for emitting SRE signal events.
+        vm_state_store: Optional VM state store for persisting needs_reboot.
         batch_id: Batch identifier for audit events.
         sre_preflight_lock_check: When True (default), check for pkg manager
             lock before patching and BLOCK if held.
+        sre_reboot_check: When True (default), probe reboot-required status
+            after a successful upgrade.
 
     Returns:
         StateGraph for patching (call .compile() to use).
@@ -573,6 +641,12 @@ def build_patching_subgraph(
     async def _rollback(state: PatchingGraphState) -> dict[str, Any]:
         return await rollback_node(state, executor=executor)
 
+    async def _reboot_check(state: PatchingGraphState) -> dict[str, Any]:
+        return await reboot_check_node(
+            state, executor=executor,
+            vm_state_store=vm_state_store, audit_store=audit_store, batch_id=batch_id,
+        )
+
     builder.add_node("validate", validate_node)
     builder.add_node("assess", _assess)
     builder.add_node("snapshot", _snapshot)
@@ -593,7 +667,20 @@ def build_patching_subgraph(
     builder.add_conditional_edges("assess", route_after_assess, ["snapshot", END])
     builder.add_edge("snapshot", "execute")
     builder.add_conditional_edges("execute", route_after_execute, ["verify", "rollback", END])
-    builder.add_conditional_edges("verify", route_after_verify, ["rollback", END])
+
+    if sre_reboot_check:
+        builder.add_node("reboot_check", _reboot_check)
+
+        def _route_verify(state: PatchingGraphState) -> str:
+            if state.get("status") == ActionStatus.FAILED.value or state.get("error"):
+                return "rollback"
+            return "reboot_check"
+
+        builder.add_conditional_edges("verify", _route_verify, ["rollback", "reboot_check"])
+        builder.add_edge("reboot_check", END)
+    else:
+        builder.add_conditional_edges("verify", route_after_verify, ["rollback", END])
+
     builder.add_edge("rollback", END)
 
     return builder

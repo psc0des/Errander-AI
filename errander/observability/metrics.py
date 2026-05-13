@@ -19,8 +19,10 @@ import html as _html_mod
 import logging
 import secrets
 from datetime import datetime, timezone
+from urllib.parse import quote as _url_quote
 
 _esc = _html_mod.escape  # escape untrusted data before HTML interpolation
+_uq = lambda s: _url_quote(str(s), safe="")  # URL-encode path segments (no safe chars)
 
 from aiohttp import web
 from prometheus_client import (
@@ -1035,7 +1037,7 @@ async def _ui_inventory_get(request: web.Request) -> web.Response:
             delete_form = ""
             if is_adhoc:
                 delete_form = (
-                    f'<form method="POST" action="/ui/inventory/delete/{env_name_esc}/{vm_name}" style="display:inline">'
+                    f'<form method="POST" action="/ui/inventory/delete/{_uq(env_name)}/{_uq(str(vm["vm_name"]))}" style="display:inline">'
                     f'<button type="submit" class="btn-del">Delete</button>'
                     f'</form>'
                 )
@@ -1237,11 +1239,11 @@ async def _ui_dashboard(request: web.Request) -> web.Response:
     # ── Recent batches table ─────────────────────────────────────────────────
     rows = [
         [
-            f'<a class="id-a" href="/ui/batches/{_esc(str(b["batch_id"]))}">{_esc(str(b["batch_id"]))}</a>',
+            f'<a class="id-a" href="/ui/batches/{_uq(b["batch_id"])}">{_esc(str(b["batch_id"]))}</a>',
             f'<span class="mono">{str(b["started_at"])[:19]}</span>',
             str(b["event_count"]),
             ", ".join(
-                f'<a href="/ui/vms/{_esc(v)}">{_esc(v)}</a>'
+                f'<a href="/ui/vms/{_uq(v)}">{_esc(v)}</a>'
                 for v in b["vm_ids"]  # type: ignore[union-attr]
             ) or '<span style="color:var(--t3)">—</span>',
         ]
@@ -1270,11 +1272,11 @@ async def _ui_batches(request: web.Request) -> web.Response:
     batches = await store.get_recent_batches(limit=100)
     rows = [
         [
-            f'<a class="id-a" href="/ui/batches/{_esc(str(b["batch_id"]))}">{_esc(str(b["batch_id"]))}</a>',
+            f'<a class="id-a" href="/ui/batches/{_uq(b["batch_id"])}">{_esc(str(b["batch_id"]))}</a>',
             f'<span class="mono">{str(b["started_at"])[:19]}</span>',
             str(b["event_count"]),
             ", ".join(
-                f'<a href="/ui/vms/{_esc(v)}">{_esc(v)}</a>'
+                f'<a href="/ui/vms/{_uq(v)}">{_esc(v)}</a>'
                 for v in b["vm_ids"]  # type: ignore[union-attr]
             ) or '<span style="color:var(--t3)">—</span>',
         ]
@@ -1307,7 +1309,7 @@ async def _ui_batch_detail(request: web.Request) -> web.Response:
         [
             f'<span class="mono">{e.timestamp.strftime("%Y-%m-%d %H:%M:%S")}</span>',
             _event_cell(e.event_type.value),
-            f'<a class="id-a" href="/ui/vms/{_esc(e.vm_id)}">{_esc(e.vm_id)}</a>' if e.vm_id else "",
+            f'<a class="id-a" href="/ui/vms/{_uq(e.vm_id)}">{_esc(e.vm_id)}</a>' if e.vm_id else "",
             f'<span class="mono">{_esc(e.action_type)}</span>' if e.action_type else "",
             _esc(e.detail or ""),
         ]
@@ -1348,7 +1350,7 @@ async def _ui_vm(request: web.Request) -> web.Response:
         [
             f'<span class="mono">{e.timestamp.strftime("%Y-%m-%d %H:%M:%S")}</span>',
             _event_cell(e.event_type.value),
-            f'<a class="id-a" href="/ui/batches/{_esc(e.batch_id)}">{_esc(e.batch_id)}</a>',
+            f'<a class="id-a" href="/ui/batches/{_uq(e.batch_id)}">{_esc(e.batch_id)}</a>',
             f'<span class="mono">{_esc(e.action_type)}</span>' if e.action_type else "",
             _esc(e.detail or ""),
         ]
@@ -1403,10 +1405,10 @@ async def _ui_approvals(request: web.Request) -> web.Response:
                 f'<pre class="apv-pre">{rpt}</pre>'
                 f'</details>'
                 f'<div class="apv-btns">'
-                f'<form method="POST" action="/ui/approvals/{_esc(p.batch_id)}/approve">'
+                f'<form method="POST" action="/ui/approvals/{_uq(p.batch_id)}/approve">'
                 f'<button type="submit" class="btn btn-ok">&#10003; Approve</button>'
                 f'</form>'
-                f'<form method="POST" action="/ui/approvals/{_esc(p.batch_id)}/reject">'
+                f'<form method="POST" action="/ui/approvals/{_uq(p.batch_id)}/reject">'
                 f'<button type="submit" class="btn btn-no">&#10007; Reject</button>'
                 f'</form>'
                 f'</div>'
@@ -1427,7 +1429,7 @@ async def _ui_approvals(request: web.Request) -> web.Response:
     if history:
         rows = [
             [
-                f'<a class="id-a" href="/ui/batches/{_esc(h.batch_id)}">{_esc(h.batch_id)}</a>',
+                f'<a class="id-a" href="/ui/batches/{_uq(h.batch_id)}">{_esc(h.batch_id)}</a>',
                 f'<span class="mono">{h.posted_at.strftime("%Y-%m-%d %H:%M:%S")}</span>',
                 (
                     '<span class="dec-ok">&#10003; Approved</span>'

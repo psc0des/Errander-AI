@@ -15,9 +15,20 @@ import threading
 import pytest
 from playwright.sync_api import Page, expect
 
+from errander.models.vm import OSFamily, VMTarget
 from errander.observability.metrics import start_metrics_server
 from errander.safety.audit import AuditStore
 from errander.safety.overrides import OverridesStore
+
+# Base YAML fleet passed to start_metrics_server so yaml_override rows are visible.
+_YAML_FLEET: list[VMTarget] = [
+    VMTarget(vm_id="production/web-01", hostname="10.0.1.1", ssh_user="ubuntu",
+             ssh_key_path="/keys/web-01.pem", os_family=OSFamily.UBUNTU),
+    VMTarget(vm_id="production/db-01",  hostname="10.0.1.2", ssh_user="ubuntu",
+             ssh_key_path="/keys/db-01.pem",  os_family=OSFamily.RHEL),
+    VMTarget(vm_id="staging/stg-web",   hostname="10.0.2.1", ssh_user="ubuntu",
+             ssh_key_path="/keys/stg-web.pem", os_family=OSFamily.UBUNTU),
+]
 
 # ---------------------------------------------------------------------------
 # Server fixture helpers
@@ -42,7 +53,7 @@ async def _seed_inventory(store: OverridesStore) -> None:
     )
 
 
-def _start_server(seed_fn=None):  # type: ignore[no-untyped-def]
+def _start_server(seed_fn=None, base_inventory=None):  # type: ignore[no-untyped-def]
     ready = threading.Event()
     ctx: dict[str, object] = {}
 
@@ -56,6 +67,7 @@ def _start_server(seed_fn=None):  # type: ignore[no-untyped-def]
 
         runner = await start_metrics_server(
             port=0, audit_store=audit, overrides_store=overrides,
+            base_inventory=base_inventory or [],
         )
         site = list(runner.sites)[0]
         port = site._server.sockets[0].getsockname()[1]  # type: ignore[union-attr]
@@ -84,7 +96,7 @@ def _start_server(seed_fn=None):  # type: ignore[no-untyped-def]
 
 @pytest.fixture(scope="module")
 def inventory_base_url() -> str:  # type: ignore[return]
-    ctx, loop, t = _start_server(seed_fn=_seed_inventory)
+    ctx, loop, t = _start_server(seed_fn=_seed_inventory, base_inventory=_YAML_FLEET)
     yield f"http://localhost:{ctx['port']}"
     loop.call_soon_threadsafe(ctx["stop"].set)  # type: ignore[union-attr]
     t.join(timeout=5)
@@ -92,7 +104,7 @@ def inventory_base_url() -> str:  # type: ignore[return]
 
 @pytest.fixture(scope="module")
 def inventory_empty_url() -> str:  # type: ignore[return]
-    ctx, loop, t = _start_server(seed_fn=None)
+    ctx, loop, t = _start_server(seed_fn=None, base_inventory=[])
     yield f"http://localhost:{ctx['port']}"
     loop.call_soon_threadsafe(ctx["stop"].set)  # type: ignore[union-attr]
     t.join(timeout=5)
@@ -118,7 +130,7 @@ class TestInventoryPageLoad:
 
     def test_empty_state_message(self, page: Page, inventory_empty_url: str) -> None:
         page.goto(f"{inventory_empty_url}/ui/inventory")
-        expect(page.get_by_text("No inventory overrides yet")).to_be_visible()
+        expect(page.get_by_text("No VMs in inventory")).to_be_visible()
 
 
 # ---------------------------------------------------------------------------

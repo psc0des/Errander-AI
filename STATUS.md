@@ -4,9 +4,22 @@
 2026-05-13
 
 ## Current Phase
-**SRE Monitoring — PR-1.4 complete (disk growth trend). Ready for 1.5 (drift detection).**
+**SRE Monitoring — PR-1.5 complete (drift detection + failed logins). Phase 1 signal collection done.**
 
 ## Completed
+
+### PR-1.5: Configuration Drift Detection + Failed SSH Logins (2026-05-13)
+- **`errander/safety/drift_checks/authorized_keys.py`**: `authorized_keys_command()` — single-round-trip shell loop with `USER:` section delimiters; `parse_authorized_keys()` — parses user→keys sections; `capture_authorized_keys()` — SSH probe, scope_key=username (per-user independent baselines)
+- **`errander/safety/drift_checks/sudoers.py`**: concatenates `/etc/sudoers` + `sudoers.d/*` in one SSH call; strips comments/blanks, sorts
+- **`errander/safety/drift_checks/listening_ports.py`**: `ss -tlnp` with `netstat` fallback; strips header, sorts data lines
+- **`errander/safety/drift_checks/scheduled_jobs.py`**: user crontab + `/etc/crontab` + `/etc/cron.d/*`; strips comments/blanks, sorts
+- **`errander/safety/drift_checks/__init__.py`**: re-exports all four `capture_*` functions
+- **`errander/execution/failed_logins.py`**: `failed_logins_command(window_hours)` — journald + auth.log fallback; `parse_failed_logins()` — regex extracts username+IP, Counter.most_common(5); `detect_failed_logins()` — SSH probe
+- **`drift_baseline_node`** in `vm_graph.py`: runs enabled drift checks via deferred import; `compare_and_save` per capture; emits `DRIFT_KIND_CHANGED` or `DRIFT_KIND_BASELINE_SAVED`; diffs truncated to `diff_max_lines`
+- **`failed_logins_node`** in `vm_graph.py`: probes for failed SSH logins; emits `FAILED_SSH_LOGINS_OBSERVED` when total > 0
+- **Generalized SRE chain wiring** in `build_vm_graph`: `sre_snapshot_nodes` list drives discover → [disk_snapshot] → [drift_baseline] → [failed_logins] → drift_check; all nodes optional
+- **97 new tests** across 6 files; 1,245 total passing
+- Learning doc: `docs/learning/30-drift-detection.md`
 
 ### PR-1.4: Disk Growth Trend Detection (2026-05-13)
 - **`errander/execution/disk_trend.py`**: `disk_bytes_command()` — `df -B1 2>/dev/null || true`; `parse_df_bytes()` — skips pseudo-filesystems (tmpfs/devtmpfs/udev/…), non-integer values, zero-total; `compute_growth_alert(datapoints, threshold_pct)` — compares oldest→newest used%, returns `DiskGrowth` when delta ≥ threshold; `detect_growth_alerts()` — queries distinct mountpoints then window per mountpoint; `record_and_detect_disk_growth()` — SSH probe with `dry_run=False`, records batch, returns alerts

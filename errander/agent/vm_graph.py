@@ -112,6 +112,10 @@ class VMGraphState(TypedDict, total=False):
     # Disk growth trend (1.4)
     disk_growth_alerts: list[dict[str, object]]  # serialised DiskGrowth alerts
 
+    # Configuration drift baselines (1.5)
+    drift_changes: list[dict[str, object]]  # serialised DriftChange objects
+    failed_login_summary: dict[str, object] | None  # serialised FailedLoginSummary
+
 
 # --- Node functions ---
 
@@ -861,6 +865,179 @@ async def disk_snapshot_node(
     return {"disk_growth_alerts": serialised}
 
 
+async def drift_baseline_node(
+    state: VMGraphState,
+    *,
+    executor: SandboxExecutor,
+    baseline_store: object,
+    audit_store: AuditStore | None,
+    settings: object,
+) -> dict[str, Any]:
+    """Capture per-kind configuration baselines and emit drift events.
+
+    Runs after disk_snapshot (or discover when disk snapshot is disabled).
+    SSH failures per-check are best-effort — never blocks the maintenance run.
+
+    Args:
+        state: Current VM graph state.
+        executor: SandboxExecutor for SSH.
+        baseline_store: BaselineStore (typed as object for TC001).
+        audit_store: AuditStore for DRIFT_KIND_CHANGED / _BASELINE_SAVED events.
+        settings: DriftSettings (typed as object for TC001).
+    """
+    from datetime import UTC
+
+    from errander.config.settings import DriftSettings
+    from errander.safety.baselines import BaselineStore
+    from errander.safety.drift_checks import (
+        capture_authorized_keys,
+        capture_listening_ports,
+        capture_scheduled_jobs,
+        capture_sudoers,
+    )
+
+    if not isinstance(baseline_store, BaselineStore):
+        return {"drift_changes": []}
+    if not isinstance(settings, DriftSettings):
+        return {"drift_changes": []}
+
+    vm_id = state["vm_id"]
+    vm_info = state.get("vm_info") or {}
+    hostname = str(vm_info.get("hostname") or state.get("hostname", ""))
+    username = str(vm_info.get("ssh_user") or state.get("ssh_user", ""))
+    key_path = str(vm_info.get("ssh_key_path") or state.get("ssh_key_path", ""))
+    batch_id = state.get("batch_id", "")
+    dry_run = state.get("dry_run", True)
+
+    capture_fns = []
+    if settings.sudoers:
+        capture_fns.append(capture_sudoers)
+    if settings.authorized_keys:
+        capture_fns.append(capture_authorized_keys)
+    if settings.listening_ports:
+        capture_fns.append(capture_listening_ports)
+    if settings.scheduled_jobs:
+        capture_fns.append(capture_scheduled_jobs)
+
+    changes: list[dict[str, object]] = []
+
+    for capture_fn in capture_fns:
+        try:
+            captures = await capture_fn(executor, vm_id, hostname, username, key_path)
+        except Exception:
+            logger.exception("drift_baseline: %s capture failed on %s", capture_fn.__name__, vm_id)
+            continue
+
+        for capture in captures:
+            comparison = await baseline_store.compare_and_save(vm_id, capture)
+
+            if comparison.is_first_run:
+                event_type = EventType.DRIFT_KIND_BASELINE_SAVED
+                detail = f"{capture.kind}:{capture.scope_key} — first baseline saved"
+            elif comparison.changed:
+                event_type = EventType.DRIFT_KIND_CHANGED
+                detail = f"{capture.kind}:{capture.scope_key} changed"
+            else:
+                continue  # unchanged — no event, no change recorded
+
+            if audit_store is not None:
+                await audit_store.log_event(
+                    AuditEvent(
+                        event_type=event_type,
+                        batch_id=batch_id,
+                        vm_id=vm_id,
+                        detail=detail,
+                        timestamp=datetime.now(tz=UTC),
+                        metadata={
+                            "kind": capture.kind,
+                            "scope_key": capture.scope_key,
+                        },
+                    ),
+                    dry_run=dry_run,
+                )
+
+            if comparison.changed:
+                diff = comparison.unified_diff
+                diff_lines = diff.splitlines()
+                max_lines = settings.diff_max_lines
+                if len(diff_lines) > max_lines:
+                    diff = "\n".join(diff_lines[:max_lines])
+                    diff += f"\n... ({len(diff_lines) - max_lines} more lines truncated)"
+                changes.append({
+                    "vm_id": vm_id,
+                    "kind": capture.kind,
+                    "scope_key": capture.scope_key,
+                    "unified_diff": diff,
+                })
+
+    return {"drift_changes": changes}
+
+
+async def failed_logins_node(
+    state: VMGraphState,
+    *,
+    executor: SandboxExecutor,
+    audit_store: AuditStore | None,
+    settings: object,
+) -> dict[str, Any]:
+    """Probe for failed SSH logins and emit a summary audit event.
+
+    SSH failure → empty result (best-effort, never blocks maintenance).
+
+    Args:
+        state: Current VM graph state.
+        executor: SandboxExecutor for SSH.
+        audit_store: AuditStore for FAILED_SSH_LOGINS_OBSERVED events.
+        settings: FailedSSHLoginsSettings (typed as object for TC001).
+    """
+    from datetime import UTC
+
+    from errander.config.settings import FailedSSHLoginsSettings
+    from errander.execution.failed_logins import detect_failed_logins
+
+    if not isinstance(settings, FailedSSHLoginsSettings):
+        return {"failed_login_summary": None}
+
+    vm_id = state["vm_id"]
+    vm_info = state.get("vm_info") or {}
+    hostname = str(vm_info.get("hostname") or state.get("hostname", ""))
+    username = str(vm_info.get("ssh_user") or state.get("ssh_user", ""))
+    key_path = str(vm_info.get("ssh_key_path") or state.get("ssh_key_path", ""))
+    batch_id = state.get("batch_id", "")
+    dry_run = state.get("dry_run", True)
+
+    summary = await detect_failed_logins(
+        executor, vm_id, hostname, username, key_path, settings,
+    )
+    if summary is None:
+        return {"failed_login_summary": None}
+
+    if summary.total_count > 0 and audit_store is not None:
+        await audit_store.log_event(
+            AuditEvent(
+                event_type=EventType.FAILED_SSH_LOGINS_OBSERVED,
+                batch_id=batch_id,
+                vm_id=vm_id,
+                detail=(
+                    f"{summary.total_count} failed SSH logins"
+                    f" in {summary.window_hours}h window"
+                ),
+                timestamp=datetime.now(tz=UTC),
+                metadata={"total_count": str(summary.total_count)},
+            ),
+            dry_run=dry_run,
+        )
+
+    serialised: dict[str, object] = {
+        "vm_id": vm_id,
+        "window_hours": summary.window_hours,
+        "total_count": summary.total_count,
+        "top_users": [[u, c] for u, c in summary.top_users],
+        "top_source_ips": [[ip, c] for ip, c in summary.top_source_ips],
+    }
+    return {"failed_login_summary": serialised}
+
+
 # --- Routing ---
 
 def route_after_lock(state: VMGraphState) -> str:
@@ -912,6 +1089,9 @@ def build_vm_graph(
     ai_decision_store: AIDecisionStore | None = None,
     disk_history_store: object = None,
     sre_disk_settings: object = None,
+    baseline_store: object = None,
+    sre_drift_settings: object = None,
+    sre_failed_logins_settings: object = None,
 ) -> StateGraph:
     """Construct the per-VM maintenance graph.
 
@@ -980,6 +1160,11 @@ def build_vm_graph(
     builder.add_conditional_edges(
         "acquire_lock", route_after_lock, ["discover", "audit_results"],
     )
+    # Build the ordered list of optional SRE snapshot nodes to insert between
+    # discover and drift_check.  Each is only added when its store/settings
+    # are provided.
+    sre_snapshot_nodes: list[str] = []
+
     if disk_history_store is not None:
         async def _disk_snapshot(state: VMGraphState) -> dict[str, Any]:
             return await disk_snapshot_node(
@@ -990,16 +1175,43 @@ def build_vm_graph(
             )
 
         builder.add_node("disk_snapshot", _disk_snapshot)
+        sre_snapshot_nodes.append("disk_snapshot")
 
-        def _route_after_discover(state: VMGraphState) -> str:
-            if state.get("error"):
-                return "audit_results"
-            return "disk_snapshot"
+    if baseline_store is not None:
+        async def _drift_baseline(state: VMGraphState) -> dict[str, Any]:
+            return await drift_baseline_node(
+                state, executor=executor,
+                baseline_store=baseline_store,
+                audit_store=audit_store,
+                settings=sre_drift_settings,
+            )
+
+        builder.add_node("drift_baseline", _drift_baseline)
+        sre_snapshot_nodes.append("drift_baseline")
+
+    if sre_failed_logins_settings is not None:
+        async def _failed_logins(state: VMGraphState) -> dict[str, Any]:
+            return await failed_logins_node(
+                state, executor=executor,
+                audit_store=audit_store,
+                settings=sre_failed_logins_settings,
+            )
+
+        builder.add_node("failed_logins", _failed_logins)
+        sre_snapshot_nodes.append("failed_logins")
+
+    if sre_snapshot_nodes:
+        _first_sre = sre_snapshot_nodes[0]
+
+        def _route_after_discover(state: VMGraphState, *, _first: str = _first_sre) -> str:
+            return "audit_results" if state.get("error") else _first
 
         builder.add_conditional_edges(
-            "discover", _route_after_discover, ["disk_snapshot", "audit_results"],
+            "discover", _route_after_discover, sre_snapshot_nodes + ["audit_results"],
         )
-        builder.add_edge("disk_snapshot", "drift_check")
+        for _prev, _nxt in zip(sre_snapshot_nodes, sre_snapshot_nodes[1:]):
+            builder.add_edge(_prev, _nxt)
+        builder.add_edge(sre_snapshot_nodes[-1], "drift_check")
     else:
         builder.add_conditional_edges(
             "discover", route_after_discover, ["drift_check", "audit_results"],

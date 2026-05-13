@@ -1,5 +1,21 @@
 # Errander-AI Command Log
 
+## SRE Monitoring — PR-1.5 Drift Detection + Failed Logins (2026-05-13)
+
+```bash
+# Run PR-1.5 new tests (97 tests)
+uv run pytest tests/safety/drift_checks/ tests/execution/test_failed_logins.py tests/agent/test_vm_graph_drift.py -q
+
+# Full suite
+uv run pytest --tb=short -q   # 1245 passed, 111 skipped
+
+# mypy on new source files (all clean)
+uv run mypy errander/safety/drift_checks/ errander/execution/failed_logins.py
+
+# ruff on PR-1.5 files (all clean after E501+F401 fixes)
+uv run ruff check errander/safety/drift_checks/ errander/execution/failed_logins.py tests/safety/drift_checks/ tests/execution/test_failed_logins.py tests/agent/test_vm_graph_drift.py
+```
+
 ## SRE Monitoring — PR-1.4 Disk Growth Trend (2026-05-13)
 
 ```bash

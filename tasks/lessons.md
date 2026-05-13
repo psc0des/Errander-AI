@@ -4,6 +4,24 @@ Self-improvement log. Updated after corrections, mistakes, and surprises.
 
 ---
 
+## 2026-05-13 — SQLite UNIQUE constraint on timestamps breaks tests when two saves happen in the same microsecond
+
+Adding `UNIQUE(vm_id, baseline_kind, scope_key, captured_at)` to `vm_baselines` seemed reasonable to prevent duplicates, but two `await store.save()` calls within the same `async def test_*` body resolve to the same `datetime.now(UTC).isoformat()`. This causes `IntegrityError` in tests even though production code (saves spaced seconds apart) would never hit it.
+
+**Rule**: don't add UNIQUE constraints on auto-generated timestamp columns. The auto-increment `id` already ensures row uniqueness. Uniqueness on "latest per group" is enforced at query time (`ORDER BY captured_at DESC, id DESC LIMIT 1`), not at write time.
+
+## 2026-05-13 — `ORDER BY captured_at DESC LIMIT 1` is non-deterministic when rows share the same timestamp
+
+When two rows have identical `captured_at`, SQLite returns whichever it encounters first in its internal order — not necessarily the one inserted last. Tests that verify "latest capture" were flaky.
+
+**Rule**: always use `ORDER BY captured_at DESC, id DESC` so that the highest auto-increment `id` (most recently inserted) breaks timestamp ties deterministically. Apply the same tiebreaker in `DELETE ... WHERE id NOT IN (SELECT id ... ORDER BY ... LIMIT ?)`.
+
+## 2026-05-13 — aiosqlite.Row, not `object`, for row converter helpers
+
+Typing row converter helpers as `row: object` satisfies the call site (execute_fetchall returns `list[aiosqlite.Row]`) but makes mypy flag every `row[i]` access with `"Value of type 'object' is not indexable [index]"`. Changing to `row: aiosqlite.Row` resolves all indexing errors and matches the pattern used in existing helpers like `deferred.py`.
+
+**Rule**: row converter helpers take `row: aiosqlite.Row`, not `row: object`. Add `import aiosqlite` or `from aiosqlite import Row` accordingly.
+
 ## 2026-05-12 — Plan hash must cover action params, not just action types
 
 **`plan_vm_node` serialized only `{"action_type": ..., "risk_tier": ...}` — dropping `params`.** This meant two plans that differ only in params (e.g., different package lists, different thresholds) produced the same hash. The operator approved a hash but execution could run with different parameters than what was shown.

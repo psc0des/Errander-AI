@@ -4,9 +4,24 @@
 2026-05-13
 
 ## Current Phase
-**Operations Hub UI — Glossary, Inventory, Settings, and Admin pages built and wired.**
+**SRE Monitoring — PR-G groundwork complete. Ready for Phase 1 (pkg lock detection, reboot detection, service health, disk trend).**
 
 ## Completed
+
+### PR-G: SRE Groundwork (2026-05-13)
+- **`ActionStatus.BLOCKED`**: new enum value for pre-flight gate deliberate non-execution
+- **8 new EventType values**: `PREFLIGHT_LOCK_DETECTED`, `PREFLIGHT_LOCK_CLEAR`, `REBOOT_REQUIRED_DETECTED`, `SERVICE_HEALTH_REGRESSION`, `DISK_USAGE_CAPTURED`, `DRIFT_KIND_BASELINE_SAVED`, `DRIFT_KIND_CHANGED`, `FAILED_SSH_LOGINS_OBSERVED`
+- **`VMTarget.critical_services`**: `tuple[str, ...]` field with host-overrides-env inheritance
+- **`errander/safety/migrations.py`**: numbered idempotent migration runner; 4 migrations (audit_events, vm_state, vm_baselines, vm_disk_history); splits SQL by ";" for PostgreSQL portability
+- **`errander/safety/vm_state.py`**: `VMStateStore` — UPSERT-based per-VM mutable state (needs_reboot flag, uptime)
+- **`errander/safety/baselines.py`**: `BaselineStore` + `DriftCheck` Protocol — per-kind drift baselines with unified diff and configurable retention; `ORDER BY captured_at DESC, id DESC` for deterministic latest-row
+- **`errander/safety/disk_history.py`**: `VMDiskHistoryStore` — disk usage history with 90-day prune, `get_window()` for trend detection
+- **`errander/models/reports.py`**: `BatchReport` + 6 supporting frozen dataclasses (PreflightBlock, VMRebootStatus, ServiceRegression, DiskGrowth, DriftChange, FailedLoginSummary)
+- **SRE config block**: `SRESignalSettings` dataclass hierarchy (DiskGrowthSettings, DriftSettings, FailedSSHLoginsSettings) wired into `Settings`; schema validated via `SRESignalsSchema` Pydantic classes
+- **`AuditStore` migrated**: `initialize()` now calls `run_migrations()` instead of inline DDL
+- **`errander/safety/drift_checks/__init__.py`**: empty package placeholder for Phase 2
+- **84 new tests** (migrations, vm_state, baselines, disk_history, reports, critical_services inheritance); 996 total passing
+- All new files pass mypy strict + ruff
 
 ### Phase 1.1: Project Foundation
 - Full project scaffold — Option C architecture (Parent Orchestrator + Fan-Out + Sub-Graphs)

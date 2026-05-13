@@ -59,6 +59,9 @@ class TargetSchema(BaseModel):
     ssh_user: str | None = None
     ssh_key_path: str | None = None
     policy: str | None = None
+    # Services checked pre/post maintenance for health regressions (Phase 1.3).
+    # Host-level list overrides env-level list when both are set.
+    critical_services: list[str] = []
 
     @field_validator("os_family")
     @classmethod
@@ -95,6 +98,8 @@ class EnvironmentSchema(BaseModel):
     approval_policy: str = "moderate"
     ssh_user: str = "errander-ai"
     ssh_key_path: str = "~/.ssh/errander"
+    # Environment-level default; host-level list overrides when set.
+    critical_services: list[str] = []
     targets: list[TargetSchema]
 
     @field_validator("approval_policy")
@@ -219,6 +224,48 @@ class ScheduleSchema(BaseModel):
     discovery: str | None = None
 
 
+class DiskGrowthTrendSchema(BaseModel):
+    """Schema for disk growth trend settings."""
+
+    enabled: bool = True
+    threshold_pct: int = 10
+    window_days: int = 7
+    retention_days: int = 90
+
+
+class DriftSignalsSchema(BaseModel):
+    """Schema for per-kind drift detection toggles and tuning."""
+
+    sudoers: bool = True
+    authorized_keys: bool = True
+    listening_ports: bool = True
+    scheduled_jobs: bool = True
+    diff_max_lines: int = 50
+    retention_captures: int = 30
+
+
+class FailedSSHLoginsSchema(BaseModel):
+    """Schema for failed SSH login snapshot settings."""
+
+    enabled: bool = True
+    window_hours: int = 24
+
+
+class SRESignalsSchema(BaseModel):
+    """Schema for the sre_signals settings block.
+
+    All features default to enabled; set to false to opt individual VMs out
+    via inventory tags (Phase 2) or disable globally here.
+    """
+
+    preflight_lock_check: bool = True
+    reboot_required_check: bool = True
+    service_health_check: bool = True
+    disk_growth_trend: DiskGrowthTrendSchema = DiskGrowthTrendSchema()
+    drift: DriftSignalsSchema = DriftSignalsSchema()
+    failed_ssh_logins: FailedSSHLoginsSchema = FailedSSHLoginsSchema()
+
+
 class SettingsConfig(BaseModel):
     """Top-level schema for settings.yaml."""
 
@@ -226,6 +273,7 @@ class SettingsConfig(BaseModel):
     slack: SlackSettingsSchema = SlackSettingsSchema()
     llm: LLMSettingsSchema = LLMSettingsSchema()
     schedules: dict[str, ScheduleSchema] = {}
+    sre_signals: SRESignalsSchema = SRESignalsSchema()
 
 
 def validate_inventory(config_path: Path) -> InventoryConfig:

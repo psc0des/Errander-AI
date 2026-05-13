@@ -1,5 +1,22 @@
 # Errander-AI — Task Tracking
 
+## SRE Monitoring — PR-G Groundwork (2026-05-13)
+
+- [x] G1 — `ActionStatus.BLOCKED` enum value
+- [x] G2 — 8 new `EventType` values (preflight, reboot, service health, disk, drift, failed logins)
+- [x] G3 — `VMTarget.critical_services` field + inventory inheritance
+- [x] G4 — migrations framework (`errander/safety/migrations.py`, 4 migrations); `AuditStore.initialize()` delegates to `run_migrations()`
+- [x] G5 — `VMStateStore` (vm_state.py), `BaselineStore` + `DriftCheck` Protocol (baselines.py), `VMDiskHistoryStore` (disk_history.py)
+- [x] G6 — `BatchReport` model + supporting dataclasses (models/reports.py); `SRESignalSettings` config block
+- [x] All 84 new tests passing (996 total); mypy strict clean; ruff clean
+
+## Next: SRE Phase 1 — Signal Collection
+
+- [ ] 1.1 — Package lock detection pre-flight (`errander/safety/preflight.py`)
+- [ ] 1.2 — Reboot-required detection (post-patch; sets `vm_state.needs_reboot`)
+- [ ] 1.3 — Service health checks (pre/post action snapshot; fires `SERVICE_HEALTH_REGRESSION`)
+- [ ] 1.4 — Disk growth trend (records to `vm_disk_history`; fires alert when delta exceeds threshold)
+
 ## Operations Hub UI — Glossary + Inventory + Settings + Admin (2026-05-13)
 
 - [x] Glossary page: 18-term glossary grid (CORE/SAFETY/ACTIONS/INFRA categories) + animated LangGraph DAG workflow diagram with node-click modal popups

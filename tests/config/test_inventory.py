@@ -292,3 +292,113 @@ class TestValidateSSHKeys:
         )
         errors = validate_ssh_keys([target1, target2])
         assert len(errors) == 1
+
+
+class TestCriticalServicesInheritance:
+    """Tests for critical_services field in inventory loading."""
+
+    def _write_inventory(self, tmp_path: Path, data: dict) -> Path:  # noqa: ANN401
+        import yaml
+        config_file = tmp_path / "inventory.yaml"
+        config_file.write_text(yaml.dump(data))
+        return config_file
+
+    def test_critical_services_defaults_to_empty(self, tmp_path: Path) -> None:
+        path = self._write_inventory(tmp_path, {
+            "environments": {
+                "dev": {
+                    "approval_policy": "relaxed",
+                    "ssh_user": "errander-ai",
+                    "ssh_key_path": "~/.ssh/key",
+                    "targets": [
+                        {"host": "10.0.1.10", "name": "web-01", "os_family": "ubuntu"},
+                    ],
+                },
+            },
+        })
+        targets = load_inventory(path)
+        assert targets[0].critical_services == ()
+
+    def test_host_critical_services_loaded(self, tmp_path: Path) -> None:
+        path = self._write_inventory(tmp_path, {
+            "environments": {
+                "dev": {
+                    "approval_policy": "relaxed",
+                    "ssh_user": "errander-ai",
+                    "ssh_key_path": "~/.ssh/key",
+                    "targets": [
+                        {
+                            "host": "10.0.1.10",
+                            "name": "web-01",
+                            "os_family": "ubuntu",
+                            "critical_services": ["nginx", "prometheus-node-exporter"],
+                        },
+                    ],
+                },
+            },
+        })
+        targets = load_inventory(path)
+        assert "nginx" in targets[0].critical_services
+        assert "prometheus-node-exporter" in targets[0].critical_services
+
+    def test_env_critical_services_inherited_when_host_empty(self, tmp_path: Path) -> None:
+        path = self._write_inventory(tmp_path, {
+            "environments": {
+                "production": {
+                    "approval_policy": "strict",
+                    "ssh_user": "errander-ai",
+                    "ssh_key_path": "~/.ssh/key",
+                    "critical_services": ["ssh", "prometheus-node-exporter"],
+                    "targets": [
+                        {"host": "10.0.1.10", "name": "web-01", "os_family": "ubuntu"},
+                    ],
+                },
+            },
+        })
+        targets = load_inventory(path)
+        assert "ssh" in targets[0].critical_services
+        assert "prometheus-node-exporter" in targets[0].critical_services
+
+    def test_host_critical_services_override_env(self, tmp_path: Path) -> None:
+        path = self._write_inventory(tmp_path, {
+            "environments": {
+                "production": {
+                    "approval_policy": "strict",
+                    "ssh_user": "errander-ai",
+                    "ssh_key_path": "~/.ssh/key",
+                    "critical_services": ["ssh"],
+                    "targets": [
+                        {
+                            "host": "10.0.1.10",
+                            "name": "web-01",
+                            "os_family": "ubuntu",
+                            "critical_services": ["nginx", "ssh"],
+                        },
+                    ],
+                },
+            },
+        })
+        targets = load_inventory(path)
+        # Host override is used (contains nginx)
+        assert "nginx" in targets[0].critical_services
+
+    def test_critical_services_is_tuple(self, tmp_path: Path) -> None:
+        path = self._write_inventory(tmp_path, {
+            "environments": {
+                "dev": {
+                    "approval_policy": "relaxed",
+                    "ssh_user": "errander-ai",
+                    "ssh_key_path": "~/.ssh/key",
+                    "targets": [
+                        {
+                            "host": "10.0.1.10",
+                            "name": "web-01",
+                            "os_family": "ubuntu",
+                            "critical_services": ["nginx"],
+                        },
+                    ],
+                },
+            },
+        })
+        targets = load_inventory(path)
+        assert isinstance(targets[0].critical_services, tuple)

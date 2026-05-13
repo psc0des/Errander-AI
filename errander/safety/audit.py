@@ -20,6 +20,7 @@ from datetime import datetime
 import aiosqlite
 
 from errander.models.events import AuditEvent, EventType
+from errander.safety.migrations import run_migrations
 
 logger = logging.getLogger(__name__)
 
@@ -31,26 +32,6 @@ class AuditWriteError(RuntimeError):
     silently with a missing audit trail.
     """
 
-
-#: SQL to create the audit_events table.
-_CREATE_TABLE_SQL = """
-CREATE TABLE IF NOT EXISTS audit_events (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    event_type TEXT NOT NULL,
-    batch_id TEXT NOT NULL,
-    vm_id TEXT,
-    action_type TEXT,
-    detail TEXT NOT NULL DEFAULT '',
-    timestamp TEXT NOT NULL,
-    metadata TEXT NOT NULL DEFAULT '{}'
-)
-"""
-
-_CREATE_INDEX_SQL = [
-    "CREATE INDEX IF NOT EXISTS idx_audit_batch ON audit_events (batch_id)",
-    "CREATE INDEX IF NOT EXISTS idx_audit_vm ON audit_events (vm_id)",
-    "CREATE INDEX IF NOT EXISTS idx_audit_timestamp ON audit_events (timestamp DESC)",
-]
 
 _INSERT_SQL = """
 INSERT INTO audit_events (event_type, batch_id, vm_id, action_type, detail, timestamp, metadata)
@@ -80,12 +61,9 @@ class AuditStore:
         self._strict_mode = strict_mode
 
     async def initialize(self) -> None:
-        """Open the database and create tables if needed."""
+        """Open the database and apply all pending schema migrations."""
         self._db = await aiosqlite.connect(self._db_path)
-        await self._db.execute(_CREATE_TABLE_SQL)
-        for index_sql in _CREATE_INDEX_SQL:
-            await self._db.execute(index_sql)
-        await self._db.commit()
+        await run_migrations(self._db)
 
     async def close(self) -> None:
         """Close the database connection."""
@@ -284,10 +262,10 @@ class AuditStore:
 
         cursor = await db.execute(query, params)
         row = await cursor.fetchone()
-        return row[0] if row else 0  # type: ignore[index]
+        return int(row[0]) if row else 0
 
 
-def _row_to_event(row: tuple[object, ...]) -> AuditEvent:
+def _row_to_event(row: aiosqlite.Row) -> AuditEvent:
     """Convert a database row to an AuditEvent."""
     return AuditEvent(
         event_type=EventType(str(row[0])),

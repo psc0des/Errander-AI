@@ -47,6 +47,9 @@ class ActionStatus(StrEnum):
     ROLLED_BACK = "rolled_back"
     ROLLBACK_FAILED = "rollback_failed"
     NEEDS_MANUAL = "needs_manual"
+    # Pre-flight gate deliberately refused to run — not a failure, not a skip.
+    # Operator-visible: audit event ACTION_COMPLETED with status=blocked in metadata.
+    BLOCKED = "blocked"
 
 
 #: Default risk tier mapping per action type.

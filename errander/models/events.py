@@ -36,6 +36,16 @@ class EventType(StrEnum):
     DEFERRED_EXECUTION_STARTED = "deferred_execution_started"
     FLEET_ABORT = "fleet_abort"
     OS_MISMATCH = "os_mismatch"
+    # SRE signals — Phase 1
+    PREFLIGHT_LOCK_DETECTED = "preflight_lock_detected"
+    PREFLIGHT_LOCK_CLEAR = "preflight_lock_clear"
+    REBOOT_REQUIRED_DETECTED = "reboot_required_detected"
+    SERVICE_HEALTH_REGRESSION = "service_health_regression"
+    DISK_USAGE_CAPTURED = "disk_usage_captured"
+    # SRE signals — Phase 2
+    DRIFT_KIND_BASELINE_SAVED = "drift_kind_baseline_saved"
+    DRIFT_KIND_CHANGED = "drift_kind_changed"
+    FAILED_SSH_LOGINS_OBSERVED = "failed_ssh_logins_observed"
 
 
 @dataclass

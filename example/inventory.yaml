@@ -16,6 +16,10 @@
 #           policy: override environment policy for this host (optional)
 #           ssh_user: override environment ssh_user (optional)
 #           ssh_key_path: override key path (optional)
+#           critical_services: optional list of systemd service names checked pre/post
+#             maintenance for health regressions.  Any service that transitions from
+#             active → failed triggers a SERVICE_HEALTH_REGRESSION audit event.
+#             No auto-restart — detection only.  Host-level list overrides env-level.
 #
 # Note: SSH keys are referenced by path. Never inline key material.
 # The agent uses key-based auth only — passwords are not supported.
@@ -31,11 +35,20 @@ environments:
       - tuesday
       - thursday
     maintenance_timezone: UTC
+    # Environment-wide critical services — applies to all hosts unless overridden.
+    critical_services:
+      - prometheus-node-exporter
+      - ssh
     targets:
       - host: 10.0.1.10
         name: prod-web-01
         os_family: ubuntu
         tags: [web, prod, tier-1]
+        # Host-level override: monitors nginx in addition to env defaults.
+        critical_services:
+          - nginx
+          - prometheus-node-exporter
+          - ssh
 
       - host: 10.0.1.11
         name: prod-web-02
@@ -47,6 +60,10 @@ environments:
         os_family: ubuntu
         tags: [database, prod, tier-1]
         policy: strict  # explicit — no automated actions, approval required for all
+        critical_services:
+          - postgresql
+          - prometheus-node-exporter
+          - ssh
 
       - host: 10.0.2.10
         name: prod-worker-01

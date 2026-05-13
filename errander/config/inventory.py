@@ -68,6 +68,10 @@ def _resolve_single_target(
     ssh_user = target.ssh_user if target.ssh_user is not None else env.ssh_user
     ssh_key_path = target.ssh_key_path if target.ssh_key_path is not None else env.ssh_key_path
     policy = target.policy if target.policy is not None else env.approval_policy
+    # Host-level critical_services overrides env-level when non-empty
+    critical_services = tuple(
+        target.critical_services if target.critical_services else env.critical_services
+    )
 
     return VMTarget(
         vm_id=f"{env_name}/{target.name}",
@@ -77,6 +81,7 @@ def _resolve_single_target(
         os_family=OSFamily(target.os_family),
         policy=policy,
         tags={"env": env_name, **{tag: "" for tag in target.tags}},
+        critical_services=critical_services,
     )
 
 

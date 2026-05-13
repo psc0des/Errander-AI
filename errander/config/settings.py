@@ -19,6 +19,48 @@ from errander.integrations.secrets import SecretsManager
 
 
 @dataclass
+class DiskGrowthSettings:
+    """Runtime disk growth trend settings."""
+
+    enabled: bool = True
+    threshold_pct: int = 10
+    window_days: int = 7
+    retention_days: int = 90
+
+
+@dataclass
+class DriftSettings:
+    """Runtime per-kind drift detection settings."""
+
+    sudoers: bool = True
+    authorized_keys: bool = True
+    listening_ports: bool = True
+    scheduled_jobs: bool = True
+    diff_max_lines: int = 50
+    retention_captures: int = 30
+
+
+@dataclass
+class FailedSSHLoginsSettings:
+    """Runtime failed SSH login snapshot settings."""
+
+    enabled: bool = True
+    window_hours: int = 24
+
+
+@dataclass
+class SRESignalSettings:
+    """Runtime SRE signal feature flags and tuning."""
+
+    preflight_lock_check: bool = True
+    reboot_required_check: bool = True
+    service_health_check: bool = True
+    disk_growth_trend: DiskGrowthSettings = field(default_factory=DiskGrowthSettings)
+    drift: DriftSettings = field(default_factory=DriftSettings)
+    failed_ssh_logins: FailedSSHLoginsSettings = field(default_factory=FailedSSHLoginsSettings)
+
+
+@dataclass
 class Settings:
     """Global application settings.
 
@@ -110,6 +152,9 @@ class Settings:
     ui_user: str = ""
     ui_password: str = ""
 
+    # SRE signal feature flags (Phase 1 + Phase 2)
+    sre_signals: SRESignalSettings = field(default_factory=SRESignalSettings)
+
     # Source tracking: maps field name → "env" | "db" | "yaml" | "default"
     sources: dict[str, str] = field(default_factory=dict)
 
@@ -182,6 +227,42 @@ def _source(env_key: str, db_overrides: dict[str, str], yaml_value: object | Non
     return "default"
 
 
+def _build_sre_settings(sre_yaml: object | None) -> SRESignalSettings:
+    """Build SRESignalSettings from a parsed YAML block or fall back to defaults."""
+    from errander.config.schema import SRESignalsSchema  # avoid circular at module level
+
+    if sre_yaml is None or not isinstance(sre_yaml, SRESignalsSchema):
+        return SRESignalSettings()
+
+    dgt = sre_yaml.disk_growth_trend
+    dr = sre_yaml.drift
+    fsl = sre_yaml.failed_ssh_logins
+
+    return SRESignalSettings(
+        preflight_lock_check=sre_yaml.preflight_lock_check,
+        reboot_required_check=sre_yaml.reboot_required_check,
+        service_health_check=sre_yaml.service_health_check,
+        disk_growth_trend=DiskGrowthSettings(
+            enabled=dgt.enabled,
+            threshold_pct=dgt.threshold_pct,
+            window_days=dgt.window_days,
+            retention_days=dgt.retention_days,
+        ),
+        drift=DriftSettings(
+            sudoers=dr.sudoers,
+            authorized_keys=dr.authorized_keys,
+            listening_ports=dr.listening_ports,
+            scheduled_jobs=dr.scheduled_jobs,
+            diff_max_lines=dr.diff_max_lines,
+            retention_captures=dr.retention_captures,
+        ),
+        failed_ssh_logins=FailedSSHLoginsSettings(
+            enabled=fsl.enabled,
+            window_hours=fsl.window_hours,
+        ),
+    )
+
+
 def load_settings(
     settings_path: Path | None = None,
     db_overrides: dict[str, str] | None = None,
@@ -212,6 +293,7 @@ def load_settings(
     agent = yaml_settings.agent if yaml_settings else None
     slack = yaml_settings.slack if yaml_settings else None
     llm = yaml_settings.llm if yaml_settings else None
+    sre_yaml = yaml_settings.sre_signals if yaml_settings else None
 
     def _str(env_key: str, yaml_val: str | None, default: str = "") -> str:
         if os.environ.get(env_key) is not None:
@@ -351,6 +433,8 @@ def load_settings(
         ssh_strict_host_keys=_load_env_bool("ERRANDER_SSH_STRICT_HOST_KEYS", True),
         # UI bind address
         ui_bind_address=_load_env_str("ERRANDER_UI_BIND", "127.0.0.1"),
+        # SRE signals — build from YAML block, falling back to all defaults
+        sre_signals=_build_sre_settings(sre_yaml),
         # Source tracking
         sources=sources,
     )

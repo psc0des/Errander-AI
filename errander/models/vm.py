@@ -39,6 +39,9 @@ class VMTarget:
     os_family: OSFamily
     policy: str = "moderate"
     tags: dict[str, str] = field(default_factory=dict)
+    # Services monitored pre/post maintenance for health regressions (Phase 1.3).
+    # tuple because VMTarget is frozen=True.
+    critical_services: tuple[str, ...] = ()
 
 
 @dataclass

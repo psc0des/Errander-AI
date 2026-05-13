@@ -1,5 +1,18 @@
 # Errander-AI Command Log
 
+## SRE Monitoring — PR-G Groundwork (2026-05-13)
+
+```bash
+# Verify mypy clean on all 12 PR-G files
+uv run mypy errander/safety/migrations.py errander/safety/vm_state.py errander/safety/baselines.py errander/safety/disk_history.py errander/safety/audit.py errander/models/reports.py errander/models/actions.py errander/models/events.py errander/models/vm.py errander/config/schema.py errander/config/settings.py errander/config/inventory.py
+
+# Verify ruff clean on all new files
+uv run ruff check errander/safety/migrations.py errander/safety/vm_state.py errander/safety/baselines.py errander/safety/disk_history.py errander/models/reports.py tests/safety/test_migrations.py tests/safety/test_vm_state.py tests/safety/test_baselines.py tests/safety/test_disk_history.py tests/models/test_reports.py
+
+# Full test suite
+uv run pytest --tb=short -q   # 996 passed, 111 skipped
+```
+
 ## Web UI — Operations Hub Pages (2026-05-13)
 
 ```bash

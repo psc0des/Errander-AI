@@ -77,6 +77,15 @@ class PackageManager(ABC):
     def autoremove(self) -> str:
         """Return command to remove orphaned dependencies."""
 
+    @abstractmethod
+    def detect_lock(self) -> str:
+        """Return shell command that prints holder info if a pkg manager lock is held.
+
+        stdout empty  → no lock held.
+        stdout present → lock held; format: 'pid=<N> cmd=<name>'
+        Always exits 0 — never causes the caller's SSH success check to fail.
+        """
+
 
 class AptManager(PackageManager):
     """Package manager for Debian/Ubuntu systems (apt)."""
@@ -140,6 +149,21 @@ class AptManager(PackageManager):
         """Return command to simulate an upgrade (dry-run)."""
         return "apt-get --simulate upgrade"
 
+    def detect_lock(self) -> str:
+        # fuser prints the PID holding each lock file; /proc/<pid>/comm gives the name.
+        # fuser may not be installed — || true keeps stdout empty rather than erroring.
+        return (
+            "for lock in"
+            " /var/lib/dpkg/lock-frontend /var/lib/apt/lists/lock /var/lib/dpkg/lock; do"
+            ' pid=$(fuser "$lock" 2>/dev/null | tr -d \' \') || true;'
+            ' if [ -n "$pid" ]; then'
+            ' cmd=$(cat "/proc/$pid/comm" 2>/dev/null || echo unknown);'
+            ' echo "pid=$pid cmd=$cmd";'
+            " break;"
+            " fi;"
+            " done"
+        )
+
     def cache_size(self) -> str:
         """Return command to check package cache size."""
         return "du -sh /var/cache/apt 2>/dev/null || echo '0\t/var/cache/apt'"
@@ -197,6 +221,19 @@ class DnfManager(PackageManager):
     def simulate_upgrade(self) -> str:
         """Return command to simulate an upgrade (dry-run)."""
         return "dnf check-update"
+
+    def detect_lock(self) -> str:
+        # DNF/YUM write their PID to a file while running; kill -0 checks the process is alive.
+        return (
+            "for pidfile in /var/run/dnf.pid /var/run/yum.pid; do"
+            ' [ -f "$pidfile" ] || continue;'
+            ' pid=$(cat "$pidfile" 2>/dev/null) || continue;'
+            ' kill -0 "$pid" 2>/dev/null || continue;'
+            ' cmd=$(cat "/proc/$pid/comm" 2>/dev/null || echo unknown);'
+            ' echo "pid=$pid cmd=$cmd";'
+            " break;"
+            " done"
+        )
 
     def cache_size(self) -> str:
         """Return command to check package cache size."""

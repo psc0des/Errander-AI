@@ -4,16 +4,16 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, patch
 
-import pytest
-
 from errander.agent.subgraphs.patching import (
     MANDATORY_KERNEL_EXCLUDES,
     PatchingGraphState,
     assess_node,
     build_patching_subgraph,
     execute_node,
+    preflight_lock_node,
     route_after_assess,
     route_after_execute,
+    route_after_preflight_lock,
     route_after_validate,
     snapshot_node,
     validate_node,
@@ -322,7 +322,7 @@ class TestBuildSubgraph:
         execute_mock = AsyncMock(return_value=_make_result("Listing... Done\n"))
 
         with patch.object(executor, "execute", execute_mock):
-            graph = build_patching_subgraph(executor)
+            graph = build_patching_subgraph(executor, sre_preflight_lock_check=False)
             compiled = graph.compile()
 
             initial_state: PatchingGraphState = {
@@ -362,7 +362,7 @@ class TestBuildSubgraph:
             return _make_result("simulated upgrade output")
 
         with patch.object(executor, "execute", side_effect=mock_execute):
-            graph = build_patching_subgraph(executor)
+            graph = build_patching_subgraph(executor, sre_preflight_lock_check=False)
             compiled = graph.compile()
 
             initial_state: PatchingGraphState = {
@@ -401,3 +401,169 @@ class TestSnapshotNodeEmptyOutput:
         assert result["status"] == ActionStatus.FAILED.value
         assert "empty package snapshot" in result["error"]
         assert "rollback" in result["error"]
+
+
+# --- Preflight lock node tests (1.1) ---
+
+class TestPreflightLockNode:
+    """Tests for preflight_lock_node and its routing."""
+
+    async def test_clear_lock_returns_no_holder(self) -> None:
+        executor = _make_executor(dry_run=True)
+        with patch.object(executor, "execute", AsyncMock(return_value=_make_result(""))):
+            result = await preflight_lock_node(_base_state(), executor=executor)
+        assert result.get("lock_holder_pid") is None
+        assert result.get("lock_holder_cmd") is None
+        assert result.get("status") != ActionStatus.BLOCKED.value
+
+    async def test_held_lock_sets_blocked_status(self) -> None:
+        executor = _make_executor(dry_run=True)
+        with patch.object(
+            executor, "execute",
+            AsyncMock(return_value=_make_result("pid=1234 cmd=apt-get")),
+        ):
+            result = await preflight_lock_node(_base_state(), executor=executor)
+        assert result["status"] == ActionStatus.BLOCKED.value
+        assert result["lock_holder_pid"] == 1234
+        assert result["lock_holder_cmd"] == "apt-get"
+
+    async def test_held_lock_populates_error_detail(self) -> None:
+        executor = _make_executor(dry_run=True)
+        with patch.object(
+            executor, "execute",
+            AsyncMock(return_value=_make_result("pid=999 cmd=dpkg")),
+        ):
+            result = await preflight_lock_node(_base_state(), executor=executor)
+        assert "999" in result["error"]
+        assert "dpkg" in result["error"]
+
+    async def test_emits_audit_event_when_store_provided(self) -> None:
+        from errander.models.events import EventType
+        from errander.safety.audit import AuditStore
+
+        executor = _make_executor(dry_run=True)
+        audit_store = AsyncMock(spec=AuditStore)
+        audit_store.log_event = AsyncMock()
+
+        with patch.object(
+            executor, "execute",
+            AsyncMock(return_value=_make_result("pid=1234 cmd=apt-get")),
+        ):
+            await preflight_lock_node(
+                _base_state(), executor=executor,
+                audit_store=audit_store, batch_id="batch-001",
+            )
+
+        audit_store.log_event.assert_called_once()
+        call_args = audit_store.log_event.call_args[0][0]
+        assert call_args.event_type == EventType.PREFLIGHT_LOCK_DETECTED
+        assert call_args.batch_id == "batch-001"
+
+    async def test_emits_clear_audit_event_when_no_lock(self) -> None:
+        from errander.models.events import EventType
+        from errander.safety.audit import AuditStore
+
+        executor = _make_executor(dry_run=True)
+        audit_store = AsyncMock(spec=AuditStore)
+        audit_store.log_event = AsyncMock()
+
+        with patch.object(executor, "execute", AsyncMock(return_value=_make_result(""))):
+            await preflight_lock_node(
+                _base_state(), executor=executor,
+                audit_store=audit_store, batch_id="batch-001",
+            )
+
+        audit_store.log_event.assert_called_once()
+        call_args = audit_store.log_event.call_args[0][0]
+        assert call_args.event_type == EventType.PREFLIGHT_LOCK_CLEAR
+
+    async def test_no_audit_event_when_store_absent(self) -> None:
+        executor = _make_executor(dry_run=True)
+        with patch.object(
+            executor, "execute",
+            AsyncMock(return_value=_make_result("pid=1 cmd=apt-get")),
+        ):
+            # Should not raise even without audit_store
+            result = await preflight_lock_node(_base_state(), executor=executor)
+        assert result["status"] == ActionStatus.BLOCKED.value
+
+
+class TestRouteAfterPreflightLock:
+    def test_blocked_routes_to_end(self) -> None:
+        state = _base_state(status=ActionStatus.BLOCKED.value)
+        assert route_after_preflight_lock(state) == "__end__"
+
+    def test_pending_routes_to_validate(self) -> None:
+        state = _base_state(status=ActionStatus.PENDING.value)
+        assert route_after_preflight_lock(state) == "validate"
+
+    def test_no_status_routes_to_validate(self) -> None:
+        state = _base_state()
+        del state["status"]  # type: ignore[misc]
+        assert route_after_preflight_lock(state) == "validate"
+
+
+class TestBuildSubgraphWithLockCheck:
+    """Integration tests for the patching subgraph with preflight lock enabled."""
+
+    async def test_lock_held_graph_ends_blocked(self) -> None:
+        executor = _make_executor(dry_run=True)
+        call_count = 0
+
+        async def mock_execute(*args: object, **kwargs: object) -> SSHResult:
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                # preflight_lock_node → lock detected
+                return _make_result("pid=1234 cmd=apt-get")
+            # Should not be reached
+            return _make_result("")
+
+        with patch.object(executor, "execute", side_effect=mock_execute):
+            graph = build_patching_subgraph(executor, sre_preflight_lock_check=True)
+            compiled = graph.compile()
+            initial_state: PatchingGraphState = {
+                "vm_id": "dev/web-01",
+                "os_family": "ubuntu",
+                "dry_run": True,
+                "hostname": "10.0.1.10",  # type: ignore[typeddict-item]
+                "username": "errander-ai",  # type: ignore[typeddict-item]
+                "key_path": "/key",  # type: ignore[typeddict-item]
+            }
+            result = await compiled.ainvoke(initial_state)
+
+        assert result["status"] == ActionStatus.BLOCKED.value
+        assert result["lock_holder_pid"] == 1234
+        # Only 1 SSH call — upgrade was never invoked
+        assert call_count == 1
+
+    async def test_no_lock_graph_proceeds_to_assess(self) -> None:
+        executor = _make_executor(dry_run=True)
+        call_count = 0
+
+        async def mock_execute(*args: object, **kwargs: object) -> SSHResult:
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return _make_result("")  # no lock
+            if call_count == 2:
+                return _make_result("")  # refresh_package_lists
+            # list_upgradable → nothing to do
+            return _make_result("Listing... Done\n")
+
+        with patch.object(executor, "execute", side_effect=mock_execute):
+            graph = build_patching_subgraph(executor, sre_preflight_lock_check=True)
+            compiled = graph.compile()
+            initial_state: PatchingGraphState = {
+                "vm_id": "dev/web-01",
+                "os_family": "ubuntu",
+                "dry_run": True,
+                "hostname": "10.0.1.10",  # type: ignore[typeddict-item]
+                "username": "errander-ai",  # type: ignore[typeddict-item]
+                "key_path": "/key",  # type: ignore[typeddict-item]
+            }
+            result = await compiled.ainvoke(initial_state)
+
+        assert result["status"] == ActionStatus.SKIPPED.value
+        assert result.get("lock_holder_pid") is None
+        assert call_count >= 3  # lock check + refresh + list_upgradable

@@ -4,9 +4,16 @@
 2026-05-13
 
 ## Current Phase
-**SRE Monitoring — PR-G groundwork complete. Ready for Phase 1 (pkg lock detection, reboot detection, service health, disk trend).**
+**SRE Monitoring — PR-1.1 complete (pkg lock detection). Ready for 1.2 (reboot detection).**
 
 ## Completed
+
+### PR-1.1: Package Lock Detection (2026-05-13)
+- **`PackageManager.detect_lock()`**: new abstract method + implementations in `AptManager` (fuser-based, 3 dpkg/apt lock files) and `DnfManager` (pid-file-based, dnf.pid + yum.pid)
+- **`LockHolder` dataclass** + **`parse_lock_output()`** + **`validate_no_pkg_lock()`** in `validators.py`: runs detect_lock via SSH, parses `pid=N cmd=X` output; SSH failure treated as clear (best-effort)
+- **`preflight_lock_node`** in `patching.py`: async, runs before validate; BLOCKED → END (never reaches assess/upgrade); emits `PREFLIGHT_LOCK_DETECTED` or `PREFLIGHT_LOCK_CLEAR` when `audit_store` provided
+- **`build_patching_subgraph`** gains `audit_store`, `batch_id`, `sre_preflight_lock_check` params; existing callers unaffected (defaults: store=None, check=True)
+- **35 new tests** across 3 files (commands, validators, patching); 1031 total passing
 
 ### PR-G: SRE Groundwork (2026-05-13)
 - **`ActionStatus.BLOCKED`**: new enum value for pre-flight gate deliberate non-execution

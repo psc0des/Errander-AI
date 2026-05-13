@@ -10,9 +10,9 @@
 - [x] G6 — `BatchReport` model + supporting dataclasses (models/reports.py); `SRESignalSettings` config block
 - [x] All 84 new tests passing (996 total); mypy strict clean; ruff clean
 
-## Next: SRE Phase 1 — Signal Collection
+## SRE Phase 1 — Signal Collection
 
-- [ ] 1.1 — Package lock detection pre-flight (`errander/safety/preflight.py`)
+- [x] 1.1 — Package lock detection pre-flight: `PackageManager.detect_lock()` + `validate_no_pkg_lock()` + `preflight_lock_node` in patching subgraph; 35 new tests; 1031 total passing
 - [ ] 1.2 — Reboot-required detection (post-patch; sets `vm_state.needs_reboot`)
 - [ ] 1.3 — Service health checks (pre/post action snapshot; fires `SERVICE_HEALTH_REGRESSION`)
 - [ ] 1.4 — Disk growth trend (records to `vm_disk_history`; fires alert when delta exceeds threshold)

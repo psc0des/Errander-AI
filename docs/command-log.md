@@ -1,5 +1,21 @@
 # Errander-AI Command Log
 
+## SRE Monitoring — PR-1.1 Package Lock Detection (2026-05-13)
+
+```bash
+# Run affected test files
+uv run pytest tests/execution/test_commands.py tests/safety/test_validators.py tests/agent/subgraphs/test_patching.py -x --tb=short -q
+
+# mypy on new source files
+uv run mypy errander/execution/commands.py errander/safety/validators.py errander/agent/subgraphs/patching.py
+
+# ruff on all PR-1.1 files
+uv run ruff check errander/execution/commands.py errander/safety/validators.py errander/agent/subgraphs/patching.py tests/execution/test_commands.py tests/safety/test_validators.py tests/agent/subgraphs/test_patching.py
+
+# Full suite
+uv run pytest --tb=short -q   # 1031 passed, 111 skipped
+```
+
 ## SRE Monitoring — PR-G Groundwork (2026-05-13)
 
 ```bash

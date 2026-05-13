@@ -18,13 +18,17 @@ from __future__ import annotations
 
 import fnmatch
 import logging
-from typing import Any, TypedDict
+from typing import TYPE_CHECKING, Any, TypedDict
 
 from langgraph.graph import END, StateGraph
 
 from errander.agent.subgraphs.disk_cleanup import get_package_manager_by_name
 from errander.execution.sandbox import SandboxExecutor
 from errander.models.actions import ActionStatus
+from errander.safety.validators import validate_no_pkg_lock
+
+if TYPE_CHECKING:
+    from errander.safety.audit import AuditStore
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +84,10 @@ class PatchingGraphState(TypedDict, total=False):
 
     # Idempotency
     nothing_to_do: bool
+
+    # Pre-flight lock detection (1.1)
+    lock_holder_pid: int | None   # PID of process holding the lock, or None
+    lock_holder_cmd: str | None   # command name of lock holder, or None
 
 
 # --- Node functions ---
@@ -322,6 +330,75 @@ async def verify_node(
     return {"updated_versions": current_versions}
 
 
+async def preflight_lock_node(
+    state: PatchingGraphState,
+    *,
+    executor: SandboxExecutor,
+    audit_store: AuditStore | None = None,
+    batch_id: str = "",
+) -> dict[str, Any]:
+    """Check for an active package manager lock before patching begins.
+
+    If a lock is held: sets status=BLOCKED and records holder info in state.
+    If clear: returns empty dict (existing validate → assess flow continues).
+    Emits PREFLIGHT_LOCK_DETECTED / PREFLIGHT_LOCK_CLEAR audit events when
+    audit_store is provided.
+    """
+    from errander.models.events import AuditEvent, EventType
+
+    vm_id = state["vm_id"]
+    os_family = state.get("os_family", "ubuntu")
+    target = _get_connection_params(state)
+    pkg_mgr = get_package_manager_by_name(os_family)
+
+    is_clear, holder = await validate_no_pkg_lock(
+        executor, vm_id,
+        target["hostname"], target["username"], target["key_path"],
+        pkg_mgr,
+    )
+
+    if is_clear:
+        logger.debug("Package manager lock clear on %s", vm_id)
+        if audit_store is not None:
+            await audit_store.log_event(AuditEvent(
+                event_type=EventType.PREFLIGHT_LOCK_CLEAR,
+                batch_id=batch_id,
+                vm_id=vm_id,
+                action_type="patching",
+                detail="No package manager lock detected",
+            ), dry_run=state.get("dry_run", True))
+        return {"lock_holder_pid": None, "lock_holder_cmd": None}
+
+    holder_pid = holder.pid if holder else None
+    holder_cmd = holder.cmd if holder else None
+    detail = f"Package manager lock held by pid={holder_pid} cmd={holder_cmd}"
+    logger.warning("PREFLIGHT BLOCKED patching on %s: %s", vm_id, detail)
+
+    if audit_store is not None:
+        await audit_store.log_event(AuditEvent(
+            event_type=EventType.PREFLIGHT_LOCK_DETECTED,
+            batch_id=batch_id,
+            vm_id=vm_id,
+            action_type="patching",
+            detail=detail,
+            metadata={"holder_pid": holder_pid, "holder_cmd": holder_cmd},
+        ), dry_run=state.get("dry_run", True))
+
+    return {
+        "status": ActionStatus.BLOCKED.value,
+        "lock_holder_pid": holder_pid,
+        "lock_holder_cmd": holder_cmd,
+        "error": detail,
+    }
+
+
+def route_after_preflight_lock(state: PatchingGraphState) -> str:
+    """Route BLOCKED to END, otherwise continue to kernel-exclusion validate."""
+    if state.get("status") == ActionStatus.BLOCKED.value:
+        return END
+    return "validate"
+
+
 # --- Helpers ---
 
 def _get_connection_params(state: PatchingGraphState) -> dict[str, str]:
@@ -457,16 +534,29 @@ def route_after_verify(state: PatchingGraphState) -> str:
 
 def build_patching_subgraph(
     executor: SandboxExecutor,
+    *,
+    audit_store: AuditStore | None = None,
+    batch_id: str = "",
+    sre_preflight_lock_check: bool = True,
 ) -> StateGraph:
     """Construct the patching sub-graph.
 
     Args:
         executor: SandboxExecutor for SSH command execution.
+        audit_store: Optional audit store for emitting SRE signal events.
+        batch_id: Batch identifier for audit events.
+        sre_preflight_lock_check: When True (default), check for pkg manager
+            lock before patching and BLOCK if held.
 
     Returns:
         StateGraph for patching (call .compile() to use).
     """
     builder: StateGraph = StateGraph(PatchingGraphState)
+
+    async def _preflight_lock(state: PatchingGraphState) -> dict[str, Any]:
+        return await preflight_lock_node(
+            state, executor=executor, audit_store=audit_store, batch_id=batch_id,
+        )
 
     async def _assess(state: PatchingGraphState) -> dict[str, Any]:
         return await assess_node(state, executor=executor)
@@ -490,7 +580,14 @@ def build_patching_subgraph(
     builder.add_node("verify", _verify)
     builder.add_node("rollback", _rollback)
 
-    builder.set_entry_point("validate")
+    if sre_preflight_lock_check:
+        builder.add_node("preflight_lock", _preflight_lock)
+        builder.set_entry_point("preflight_lock")
+        builder.add_conditional_edges(
+            "preflight_lock", route_after_preflight_lock, ["validate", END],
+        )
+    else:
+        builder.set_entry_point("validate")
 
     builder.add_conditional_edges("validate", route_after_validate, ["assess", END])
     builder.add_conditional_edges("assess", route_after_assess, ["snapshot", END])

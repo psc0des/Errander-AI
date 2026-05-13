@@ -12,11 +12,18 @@ Validation checks include:
 
 from __future__ import annotations
 
+import contextlib
 import logging
+from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from errander.agent.subgraphs.disk_cleanup import ALLOWED_CLEANUP_PATHS
 from errander.config.policies import MaintenancePolicy
 from errander.models.actions import Action, ActionType, RiskTier
+
+if TYPE_CHECKING:
+    from errander.execution.commands import PackageManager
+    from errander.execution.sandbox import SandboxExecutor
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +36,79 @@ _KERNEL_PATTERNS: frozenset[str] = frozenset({
     "kernel-core",
     "kernel-devel",
 })
+
+
+@dataclass(frozen=True)
+class LockHolder:
+    """Structured info about the process holding a package manager lock."""
+
+    pid: int | None
+    cmd: str | None
+
+
+def parse_lock_output(output: str) -> LockHolder | None:
+    """Parse detect_lock() output into structured holder info.
+
+    Args:
+        output: stdout from detect_lock() shell command.
+
+    Returns:
+        LockHolder if a lock is held, None if output is empty (no lock).
+    """
+    stripped = output.strip()
+    if not stripped:
+        return None
+    pid: int | None = None
+    cmd: str | None = None
+    for token in stripped.split():
+        if token.startswith("pid="):
+            with contextlib.suppress(ValueError):
+                pid = int(token[4:])
+        elif token.startswith("cmd="):
+            val = token[4:]
+            cmd = val if val else None
+    return LockHolder(pid=pid, cmd=cmd)
+
+
+async def validate_no_pkg_lock(
+    executor: SandboxExecutor,
+    vm_id: str,
+    hostname: str,
+    username: str,
+    key_path: str,
+    pm: PackageManager,
+) -> tuple[bool, LockHolder | None]:
+    """Check whether a package manager lock is held on the target VM.
+
+    Runs detect_lock() via SSH.  The command always exits 0; empty stdout
+    means no lock.  On SSH failure we log a warning and treat the lock as
+    absent (best-effort — don't block patching on a probe error).
+
+    Args:
+        executor: SSH executor.
+        vm_id: VM identifier for logging.
+        hostname: SSH host.
+        username: SSH user.
+        key_path: SSH key path.
+        pm: PackageManager for the target OS (provides detect_lock() command).
+
+    Returns:
+        (is_clear, holder): is_clear=True when no lock held; holder is None
+        when clear or when lock state could not be determined.
+    """
+    result = await executor.execute(
+        vm_id, hostname, username, key_path,
+        command=pm.detect_lock(),
+        dry_run=False,
+    )
+    if not result.success:
+        logger.warning(
+            "Lock probe failed on %s (treating as clear): %s",
+            vm_id, result.stderr[:120],
+        )
+        return True, None
+    holder = parse_lock_output(result.stdout)
+    return holder is None, holder
 
 
 def _contains_kernel_packages(params: dict[str, object]) -> bool:

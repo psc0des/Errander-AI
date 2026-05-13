@@ -851,6 +851,8 @@ async def async_main(args: argparse.Namespace) -> int:
         return 1
 
     inventory = validate_inventory(inventory_path)
+    from errander.config.inventory import load_inventory as _load_inventory
+    flat_inventory = _load_inventory(inventory_path)
 
     # --- Overrides store: must be initialized before building components so
     #     DB-persisted LLM settings are applied on restart (finding #4). ---
@@ -929,6 +931,7 @@ async def async_main(args: argparse.Namespace) -> int:
             audit_store=audit_store,
             approval_manager=approval_manager,
             overrides_store=overrides_store,
+            base_inventory=flat_inventory,
             ui_user=settings.ui_user,
             ui_password=settings.ui_password,
             bind_address=settings.ui_bind_address,

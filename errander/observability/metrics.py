@@ -33,6 +33,7 @@ from prometheus_client import (
 
 from errander.models.events import EventType
 from errander.safety.approval import ApprovalManager
+from errander.models.vm import VMTarget
 from errander.safety.audit import AuditStore
 from errander.safety.overrides import OverridesStore
 
@@ -40,6 +41,7 @@ from errander.safety.overrides import OverridesStore
 _AUDIT_STORE_KEY: web.AppKey[AuditStore | None] = web.AppKey("audit_store")
 _APPROVAL_MANAGER_KEY: web.AppKey[ApprovalManager | None] = web.AppKey("approval_manager")
 _OVERRIDES_STORE_KEY: web.AppKey[OverridesStore | None] = web.AppKey("overrides_store")
+_BASE_INVENTORY_KEY: web.AppKey[list[VMTarget]] = web.AppKey("base_inventory")
 _UI_USER_KEY: web.AppKey[str] = web.AppKey("ui_user")
 _UI_PASSWORD_KEY: web.AppKey[str] = web.AppKey("ui_password")
 
@@ -949,9 +951,9 @@ _VALID_OS_FAMILIES = {"ubuntu", "debian", "rhel"}  # must match OSFamily enum in
 
 
 async def _ui_inventory_get(request: web.Request) -> web.Response:
-    """GET /ui/inventory — show all VMs grouped by environment."""
+    """GET /ui/inventory — show full YAML fleet merged with DB overrides."""
     store: OverridesStore | None = request.app.get(_OVERRIDES_STORE_KEY)
-    audit: AuditStore | None = request.app.get(_AUDIT_STORE_KEY)
+    base_inventory: list[VMTarget] = request.app.get(_BASE_INVENTORY_KEY) or []
     manager: ApprovalManager | None = request.app.get(_APPROVAL_MANAGER_KEY)
     pending_count = len(manager.get_pending()) if manager is not None else 0
 
@@ -966,28 +968,62 @@ async def _ui_inventory_get(request: web.Request) -> web.Response:
     if store is None:
         return _page("Inventory", flash_html + '<div class="nc">Overrides store not connected.</div>', pending_count=pending_count)
 
+    # Build a lookup: (env_name, vm_name) → override row
     all_overrides = await store.get_all_inventory_overrides()
-    by_env: dict[str, list[dict[str, object]]] = {}
+    override_map: dict[tuple[str, str], dict[str, object]] = {}
+    adhoc_rows: list[dict[str, object]] = []
     for row in all_overrides:
-        env = str(row["env_name"])
-        by_env.setdefault(env, []).append(row)
+        key = (str(row["env_name"]), str(row["vm_name"]))
+        if str(row["source"]) == "db_addition":
+            adhoc_rows.append(row)
+        else:
+            override_map[key] = row
+
+    # Group YAML VMs by environment (vm_id = "env/name")
+    by_env: dict[str, list[dict[str, object]]] = {}
+    for vm in base_inventory:
+        parts = vm.vm_id.split("/", 1)
+        env_name, vm_name = (parts[0], parts[1]) if len(parts) == 2 else ("default", vm.vm_id)
+        override = override_map.get((env_name, vm_name))
+        disabled = bool(override["disabled"]) if override else False
+        by_env.setdefault(env_name, []).append({
+            "vm_name": vm_name,
+            "host": vm.hostname,
+            "os_family": vm.os_family.value,
+            "disabled": disabled,
+            "source": "yaml",
+            "is_adhoc": False,
+        })
+
+    # Append ad-hoc VMs per environment
+    for row in adhoc_rows:
+        env_name = str(row["env_name"])
+        by_env.setdefault(env_name, []).append({
+            "vm_name": str(row["vm_name"]),
+            "host": str(row["host"] or ""),
+            "os_family": str(row["os_family"] or ""),
+            "disabled": bool(row["disabled"]),
+            "source": "db_addition",
+            "is_adhoc": True,
+        })
 
     env_sections = ""
-    for env_name, rows in sorted(by_env.items()):
+    os_options = "".join(f'<option value="{o}">{o}</option>' for o in sorted(_VALID_OS_FAMILIES))
+
+    for env_name, vms in sorted(by_env.items()):
         items_html = ""
-        for row in rows:
-            vm_name = _esc(str(row["vm_name"]))
-            source = str(row["source"])
-            disabled = bool(row["disabled"])
-            host = _esc(str(row["host"] or ""))
-            os_fam = _esc(str(row["os_family"] or ""))
-            is_adhoc = source == "db_addition"
+        for vm in vms:
+            vm_name = _esc(str(vm["vm_name"]))
+            host = _esc(str(vm["host"]))
+            os_fam = _esc(str(vm["os_family"]))
+            disabled = bool(vm["disabled"])
+            is_adhoc = bool(vm["is_adhoc"])
 
             name_cls = "inv-dis" if disabled else ""
-            adhoc_badge = '<span class="inv-badge">+ ad-hoc</span>' if is_adhoc else ""
-
+            source_badge = '<span class="inv-badge">+ ad-hoc</span>' if is_adhoc else '<span class="inv-badge inv-badge-yaml">YAML</span>'
             disable_label = "Enable" if disabled else "Disable"
             env_name_esc = _esc(env_name)
+
             toggle_form = (
                 f'<form method="POST" action="/ui/inventory/toggle" style="display:inline">'
                 f'<input type="hidden" name="env_name" value="{env_name_esc}">'
@@ -1007,20 +1043,19 @@ async def _ui_inventory_get(request: web.Request) -> web.Response:
             items_html += (
                 f'<div class="inv-row">'
                 f'<span class="mono {name_cls}">{vm_name}</span>'
-                f'{adhoc_badge}'
+                f'{source_badge}'
                 f'<span style="color:var(--t3);font-size:.74rem">{host}</span>'
                 f'<span class="badge bk-neu">{os_fam}</span>'
                 f'{toggle_form}{delete_form}'
                 f'</div>'
             )
 
-        os_options = "".join(f'<option value="{o}">{o}</option>' for o in sorted(_VALID_OS_FAMILIES))
         add_form = (
             f'<details style="margin-top:1rem">'
             f'<summary style="cursor:pointer;font-family:var(--mono);font-size:.7rem;color:var(--t3)">+ Add VM</summary>'
             f'<div class="form-card" style="margin-top:.6rem">'
             f'<form method="POST" action="/ui/inventory/add">'
-            f'<input type="hidden" name="env_name" value="{env_name}">'
+            f'<input type="hidden" name="env_name" value="{_esc(env_name)}">'
             f'<div class="form-row"><label class="form-lbl">Name</label>'
             f'<input type="text" name="vm_name" required placeholder="my-vm-01"></div>'
             f'<div class="form-row"><label class="form-lbl">Host (IP or DNS)</label>'
@@ -1038,18 +1073,15 @@ async def _ui_inventory_get(request: web.Request) -> web.Response:
         )
 
         env_sections += (
-            _section(f"Environment: {env_name}", len(rows))
+            _section(f"Environment: {env_name}", len(vms))
             + '<div class="form-card">'
-            + (items_html or '<div class="empty">No overrides for this environment.</div>')
+            + items_html
             + add_form
             + '</div>'
         )
 
     if not env_sections:
-        env_sections = (
-            '<div class="nc">No inventory overrides yet. '
-            'VMs appear here once you add ad-hoc entries or toggle YAML VMs.</div>'
-        )
+        env_sections = '<div class="nc">No VMs in inventory. Add an ad-hoc entry below or configure inventory.yaml.</div>'
 
     body = flash_html + env_sections
     return _page("Inventory", body, pending_count=pending_count, request=request)
@@ -1473,6 +1505,7 @@ async def start_metrics_server(
     audit_store: AuditStore | None = None,
     approval_manager: ApprovalManager | None = None,
     overrides_store: OverridesStore | None = None,
+    base_inventory: list[VMTarget] | None = None,
     ui_user: str = "",
     ui_password: str = "",
     bind_address: str = "127.0.0.1",
@@ -1503,6 +1536,7 @@ async def start_metrics_server(
         audit_store: Connected AuditStore for UI queries.
         approval_manager: ApprovalManager for dual-channel approval UI.
         overrides_store: OverridesStore for settings/inventory overrides.
+        base_inventory: Flat list of VMTarget from inventory.yaml — shown as the base fleet on /ui/inventory.
         ui_user: HTTP Basic Auth username for /ui/* (empty = auth disabled).
         ui_password: HTTP Basic Auth password for /ui/*.
 
@@ -1533,6 +1567,7 @@ async def start_metrics_server(
     app[_AUDIT_STORE_KEY] = audit_store
     app[_APPROVAL_MANAGER_KEY] = approval_manager
     app[_OVERRIDES_STORE_KEY] = overrides_store
+    app[_BASE_INVENTORY_KEY] = base_inventory or []
     app[_UI_USER_KEY] = ui_user
     app[_UI_PASSWORD_KEY] = ui_password
     app[_CSRF_SECRET_KEY] = csrf_secret

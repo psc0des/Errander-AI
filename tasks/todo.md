@@ -8,6 +8,13 @@
 - [x] Medium 4 — Remove `authentication failure` from `failed_logins_command` grep (regex couldn't parse it — honest fix)
 - [x] New test file `tests/agent/test_sre_wiring.py` — 10 tests proving full wiring chain; 1,303 total passing
 
+## SRE Auditor Second Pass — Non-Blocking Items (2026-05-14)
+
+- [x] URL-quote all path segments in UI links/form actions (`_uq = urllib.parse.quote(safe="")`) — defense in depth alongside `_esc`
+- [x] Fix stale `test_inventory_playwright.py` — add `_YAML_FLEET` VMTargets, pass as `base_inventory` to fixture server, update empty-state assertion
+- [x] Auditor verdict: "substantially fixed, acceptable for pre-production" — no more blockers
+- [x] 1303 tests passing — no regressions
+
 ## Inventory UI — Full YAML Fleet (2026-05-14)
 
 - [x] Add `_BASE_INVENTORY_KEY` app key to `metrics.py`

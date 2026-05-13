@@ -10,6 +10,18 @@ uv run pytest tests/agent/test_sre_wiring.py -v   # 10 passed
 uv run pytest --tb=short -q   # 1303 passed, 111 skipped
 ```
 
+## SRE Auditor Second Pass — Non-Blocking Items (2026-05-14)
+
+```bash
+uv run pytest --basetemp=.pytest-tmp -q   # 1303 passed, 111 skipped
+
+git add errander/observability/metrics.py tests/ui/test_inventory_playwright.py
+git commit -m "fix: URL-quote path segments in UI links, fix stale Playwright inventory test for new YAML fleet view"
+git push origin main
+```
+**What**: (1) Added `_uq = urllib.parse.quote(safe="")` to `metrics.py`; applied to every URL path segment in batch/VM/approval links and form actions for defense in depth. (2) Updated `test_inventory_playwright.py` — `_start_server` now accepts `base_inventory`, seeded fixture passes `_YAML_FLEET` VMTargets so yaml_override rows render, stale empty-state text assertion updated.
+**Why**: Auditor's second-pass non-blocking items: URL-quoting and stale Playwright test.
+
 ## Inventory UI — Full YAML Fleet (2026-05-14)
 
 ```bash

@@ -1084,6 +1084,7 @@ def make_fan_out_router(
                     error=None,
                     drift_detection_enabled=state.get("drift_detection_enabled", False),
                     drift_abort_on_detection=state.get("drift_abort_on_detection", False),
+                    disable_failed_login_check=bool(t.get("disable_failed_login_check", False)),
                 ),
             )
             for t in healthy
@@ -1181,6 +1182,7 @@ def make_wave_dispatcher(
                         error=vm_error,
                         drift_detection_enabled=state.get("drift_detection_enabled", False),
                         drift_abort_on_detection=state.get("drift_abort_on_detection", False),
+                        disable_failed_login_check=bool(t.get("disable_failed_login_check", False)),
                     ),
                 )
             )

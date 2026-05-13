@@ -20,6 +20,10 @@
 #             maintenance for health regressions.  Any service that transitions from
 #             active → failed triggers a SERVICE_HEALTH_REGRESSION audit event.
 #             No auto-restart — detection only.  Host-level list overrides env-level.
+#           disable_failed_login_check: skip the failed SSH login probe for this host.
+#             Useful for honeypots, bastion hosts, or jump boxes where high failure
+#             counts are expected and would produce noisy false alerts.
+#             Default: false (probe is enabled for all hosts).
 #
 # Note: SSH keys are referenced by path. Never inline key material.
 # The agent uses key-based auth only — passwords are not supported.

@@ -63,6 +63,10 @@ class TargetSchema(BaseModel):
     # Host-level list overrides env-level list when both are set.
     critical_services: list[str] = []
 
+    # Set true to skip the failed SSH login probe for this VM (e.g., honeypots
+    # or bastion hosts where high failure counts are expected and not actionable).
+    disable_failed_login_check: bool = False
+
     @field_validator("os_family")
     @classmethod
     def validate_os_family(cls, v: str) -> str:

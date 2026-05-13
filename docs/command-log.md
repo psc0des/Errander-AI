@@ -1,5 +1,18 @@
 # Errander-AI Command Log
 
+## PR-2 Gap Closure (2026-05-14)
+
+```bash
+# Run listening ports tests (17 tests — includes 4 new PID-stripping tests)
+uv run pytest tests/safety/drift_checks/test_listening_ports.py -v   # 17 passed
+
+# Full suite — verify no regressions
+uv run pytest --tb=short -q   # 1287 passed, 111 skipped
+
+# Type-check changed files
+uv run mypy errander/safety/drift_checks/listening_ports.py errander/config/schema.py errander/agent/vm_graph.py errander/agent/graph.py errander/main.py
+```
+
 ## SRE Monitoring — PR-2 Signal Aggregation + BatchReport Rendering (2026-05-13)
 
 ```bash

@@ -629,6 +629,7 @@ async def run_env_batch(
             "ssh_user": t.ssh_user or env_schema.ssh_user,
             "ssh_key_path": t.ssh_key_path or env_schema.ssh_key_path,
             "os_family": t.os_family,
+            "disable_failed_login_check": t.disable_failed_login_check,
             "_name": t.name,
         }
         for t in env_schema.targets

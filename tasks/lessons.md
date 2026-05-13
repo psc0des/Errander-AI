@@ -4,6 +4,26 @@ Self-improvement log. Updated after corrections, mistakes, and surprises.
 
 ---
 
+## 2026-05-14 — Listening ports canonicalization must strip PIDs, not just sort
+
+`ss -tlnp` includes `users:(("sshd",pid=1234,fd=4))` in every row. Sorting and stripping the header is not enough — if sshd restarts, the PID changes and every restart produces a false drift alert.
+
+**Rule**: whenever capturing state for drift comparison, audit the output for *ephemeral* fields that change without the thing actually changing. For `ss`/`netstat`: strip `pid=\d+` and `fd=\d+` with a regex before hashing. Keep the process name (it signals a new service) but drop the transient numeric identifiers.
+
+## 2026-05-14 — Example configs must document all wired settings
+
+`schema.py` and `settings.py` fully wired `sre_signals:` but `example/settings.yaml` had no reference block. Operators reading the example file had no way to know the section existed or what the defaults were.
+
+**Rule**: every new settings block added to `schema.py` must be mirrored in `example/settings.yaml` with annotated comments on the same commit. Doc debt compounds — add it at implementation time.
+
+## 2026-05-14 — Per-VM opt-out tags need to flow through every Send() path
+
+`disable_failed_login_check` was added to `TargetSchema` and `VMGraphState` but if it's not threaded through both `Send()` call sites in `graph.py` (`route_after_validate` AND `dispatch_current_wave`) the flag silently has no effect in production (wave-based dispatch path).
+
+**Rule**: when adding a new per-VM flag, grep every `VMGraphState(...)` constructor call and add the field to all of them. The two fan-out paths often diverge in test coverage.
+
+---
+
 ## 2026-05-13 — SQLite UNIQUE constraint on timestamps breaks tests when two saves happen in the same microsecond
 
 Adding `UNIQUE(vm_id, baseline_kind, scope_key, captured_at)` to `vm_baselines` seemed reasonable to prevent duplicates, but two `await store.save()` calls within the same `async def test_*` body resolve to the same `datetime.now(UTC).isoformat()`. This causes `IntegrityError` in tests even though production code (saves spaced seconds apart) would never hit it.

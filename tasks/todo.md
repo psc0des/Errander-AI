@@ -24,6 +24,12 @@
 - [x] 2.2 — `render_batch_report()`: deterministic Slack-formatted renderer, all 7 sections, drift grouped by kind, sections omitted when empty; 47 tests in `test_reporting.py`
 - [x] 2.3 — `generate_report_node` refactor: deserializes SRE dicts to typed objects, builds `BatchReport`, calls `render_batch_report()`
 
+## PR-2 Gap Closure (2026-05-14)
+
+- [x] Gap 1 (correctness) — `parse_listening_ports`: strip `pid=\d+` and `fd=\d+` via `_EPHEMERAL_RE` before sorting; 4 new tests; 1,287 total passing
+- [x] Gap 2 (docs debt) — `example/settings.yaml`: added full annotated `sre_signals:` block with all 10 tuneable fields
+- [x] Gap 3 (feature) — `disable_failed_login_check: bool = False` per-VM tag: `TargetSchema` → `yaml_targets` dict → `VMGraphState` → `failed_logins_node` early-exit; documented in `example/inventory.yaml`
+
 ## Operations Hub UI — Glossary + Inventory + Settings + Admin (2026-05-13)
 
 - [x] Glossary page: 18-term glossary grid (CORE/SAFETY/ACTIONS/INFRA categories) + animated LangGraph DAG workflow diagram with node-click modal popups

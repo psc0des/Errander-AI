@@ -114,3 +114,57 @@ schedules:
 
   dev:
     maintenance: "0 9 * * mon-fri"   # 09:00 UTC weekday mornings
+
+# SRE signal collection — runs alongside every maintenance batch.
+# All checks default to enabled. Set enabled: false to disable globally,
+# or use disable_failed_login_check: true per-host in inventory.yaml to opt
+# individual VMs out of the failed login probe.
+sre_signals:
+
+  # --- Operational checks (wired into the preflight/postflight phases) ---
+  # Lock-file check: abort if another batch already holds the VM lock.
+  preflight_lock_check: true
+
+  # Reboot-required detection: flag VMs needing a reboot after patching.
+  reboot_required_check: true
+
+  # Service health regression: compare service states pre/post maintenance.
+  # Which services are checked is controlled by critical_services in inventory.yaml.
+  service_health_check: true
+
+  # --- Disk growth trend ---
+  disk_growth_trend:
+    enabled: true
+
+    # Alert when disk usage grows by ≥ this many percentage points over window_days.
+    threshold_pct: 10
+
+    # How many days of history to look back when computing the growth rate.
+    window_days: 7
+
+    # How long to retain historical disk-usage snapshots (days).
+    retention_days: 90
+
+  # --- Configuration drift signals ---
+  # Compares each VM's discovered state against a stored baseline.
+  # A changed baseline emits a DRIFT_KIND_CHANGED audit event and appears
+  # in the batch report grouped by kind.
+  drift:
+    sudoers: true           # /etc/sudoers + /etc/sudoers.d/*
+    authorized_keys: true   # ~/.ssh/authorized_keys for all users
+    listening_ports: true   # TCP listening ports (PIDs stripped — restarts are not drift)
+    scheduled_jobs: true    # crontab -l + /etc/cron.d/*
+
+    # Truncate unified diffs longer than this line count in the report.
+    diff_max_lines: 50
+
+    # Number of baseline captures to retain per VM+kind in the database.
+    retention_captures: 30
+
+  # --- Failed SSH login snapshot ---
+  failed_ssh_logins:
+    enabled: true
+
+    # Look back this many hours when counting failed login attempts.
+    # Shorter windows reduce noise; longer windows catch slow brute-force scans.
+    window_hours: 24

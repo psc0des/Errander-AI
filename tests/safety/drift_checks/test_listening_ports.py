@@ -71,6 +71,34 @@ class TestParseListeningPorts:
         )
         assert result == ""
 
+    def test_pid_stripped_from_users_column(self) -> None:
+        result = parse_listening_ports(_SS_OUTPUT)
+        assert "pid=1234" not in result
+        assert "pid=5678" not in result
+
+    def test_fd_stripped_from_users_column(self) -> None:
+        result = parse_listening_ports(_SS_OUTPUT)
+        assert "fd=4" not in result
+        assert "fd=6" not in result
+
+    def test_process_name_retained(self) -> None:
+        # Process name must survive PID stripping so new services are detected as drift.
+        result = parse_listening_ports(_SS_OUTPUT)
+        assert "sshd" in result
+        assert "nginx" in result
+
+    def test_pid_change_does_not_change_canonical_form(self) -> None:
+        # Same port, different PID → identical canonical output (no false drift).
+        output_v1 = (
+            "Netid State  Recv-Q Send-Q Local Address:Port Peer Address:Port Process\n"
+            'tcp   LISTEN 0      128    0.0.0.0:22  0.0.0.0:* users:(("sshd",pid=1000,fd=3))\n'
+        )
+        output_v2 = (
+            "Netid State  Recv-Q Send-Q Local Address:Port Peer Address:Port Process\n"
+            'tcp   LISTEN 0      128    0.0.0.0:22  0.0.0.0:* users:(("sshd",pid=9999,fd=7))\n'
+        )
+        assert parse_listening_ports(output_v1) == parse_listening_ports(output_v2)
+
 
 # --- capture_listening_ports ---
 

@@ -1,13 +1,15 @@
 """Listening ports drift check.
 
 Captures TCP listening ports via `ss -tlnp` (preferred) with a fallback to
-`netstat -tlnp` on older systems.  The header line is stripped and remaining
-lines are sorted so port order changes don't trigger false alerts.
+`netstat -tlnp` on older systems.  The header line is stripped, ephemeral
+PID/fd values are removed, and remaining lines are sorted so port order
+changes and service restarts don't trigger false alerts.
 """
 
 from __future__ import annotations
 
 import logging
+import re
 from typing import TYPE_CHECKING
 
 from errander.safety.baselines import BaselineCapture
@@ -21,6 +23,11 @@ KIND = "listening_ports"
 
 _CMD = "ss -tlnp 2>/dev/null || netstat -tlnp 2>/dev/null || true"
 
+# Strip ephemeral pid= and fd= values that change on every service restart.
+# Keeps the process name so new services are still detected as drift.
+# Example: users:(("sshd",pid=1234,fd=4)) → users:(("sshd"))
+_EPHEMERAL_RE = re.compile(r",pid=\d+|,fd=\d+")
+
 
 def listening_ports_command() -> str:
     """Return shell command that lists TCP listening ports."""
@@ -30,21 +37,25 @@ def listening_ports_command() -> str:
 def parse_listening_ports(stdout: str) -> str:
     """Canonicalize raw ss/netstat output.
 
-    Strips the header line and sorts the remaining data lines so minor
-    re-orderings (e.g., different enumeration order across reboots) don't
-    produce false diffs.
+    Strips the header line, removes ephemeral pid/fd values, and sorts
+    the remaining data lines so service restarts and enumeration-order
+    changes don't produce false drift alerts.
 
     Args:
         stdout: Raw output from listening_ports_command().
 
     Returns:
-        Sorted, header-stripped string suitable for baseline hashing.
+        Sorted, header-stripped, pid-stripped string suitable for baseline hashing.
     """
     lines = stdout.strip().splitlines()
     if not lines:
         return ""
     # First line is always the column header
-    data_lines = sorted(line.strip() for line in lines[1:] if line.strip())
+    data_lines = sorted(
+        _EPHEMERAL_RE.sub("", line).strip()
+        for line in lines[1:]
+        if line.strip()
+    )
     return "\n".join(data_lines)
 
 

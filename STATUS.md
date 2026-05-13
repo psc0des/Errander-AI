@@ -1,7 +1,7 @@
 # Errander-AI — Project Status
 
 ## Last Updated
-2026-05-13
+2026-05-14
 
 ## Current Phase
 **SRE Monitoring — PR-2 complete (SRE signal aggregation + BatchReport rendering). Phase 2 done.**
@@ -271,6 +271,15 @@ The approval flow is now fully decoupled from execution. A dry-run scan can happ
 
 ## In Progress
 - Nothing actively in flight.
+
+## Recent Fix: PR-2 Gap Closure (2026-05-14)
+
+Three correctness/docs gaps identified in PR-1.5/PR-2 post-review:
+
+- **Gap 1 (correctness)** — `parse_listening_ports` now strips `pid=\d+` and `fd=\d+` from the `users:((...))` column via `_EPHEMERAL_RE`. PIDs change on every service restart and were causing false drift alerts. Process names are retained so new services are still detected. 4 new tests added (`test_pid_stripped_from_users_column`, `test_fd_stripped_from_users_column`, `test_process_name_retained`, `test_pid_change_does_not_change_canonical_form`).
+- **Gap 2 (docs debt)** — `example/settings.yaml` now contains the full `sre_signals:` block with annotated comments for all 10 tuneable fields (`preflight_lock_check`, `reboot_required_check`, `service_health_check`, `disk_growth_trend.*`, `drift.*`, `failed_ssh_logins.*`). Operators now have a reference config.
+- **Gap 3 (missing feature)** — `disable_failed_login_check: bool = False` per-VM inventory tag wired through: `TargetSchema` → `yaml_targets` dict → `VMGraphState` → `failed_logins_node` early-exit. Set `disable_failed_login_check: true` in inventory.yaml to skip the failed login probe for honeypots/bastions. Documented in `example/inventory.yaml` header comment.
+- **1287 tests passing** (no regressions, 4 new listening_ports tests).
 
 ## Next Up
 - Run staging soak (`tests/staging/soak_checklist.md`) against real VMs to validate end-to-end before any production deployment

@@ -116,6 +116,9 @@ class VMGraphState(TypedDict, total=False):
     drift_changes: list[dict[str, object]]  # serialised DriftChange objects
     failed_login_summary: dict[str, object] | None  # serialised FailedLoginSummary
 
+    # Per-VM opt-out: skip failed SSH login probe for this VM (e.g., honeypots).
+    disable_failed_login_check: bool
+
 
 # --- Node functions ---
 
@@ -997,6 +1000,10 @@ async def failed_logins_node(
     from errander.execution.failed_logins import detect_failed_logins
 
     if not isinstance(settings, FailedSSHLoginsSettings):
+        return {"failed_login_summary": None}
+
+    if state.get("disable_failed_login_check", False):
+        logger.info("failed_logins: probe skipped for %s (disable_failed_login_check=true)", state.get("vm_id"))
         return {"failed_login_summary": None}
 
     vm_id = state["vm_id"]

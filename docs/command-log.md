@@ -1,5 +1,21 @@
 # Errander-AI Command Log
 
+## SRE Monitoring — PR-1.4 Disk Growth Trend (2026-05-13)
+
+```bash
+# Run PR-1.4 unit tests
+uv run pytest tests/execution/test_disk_trend.py -q   # 24 passed
+
+# Full suite
+uv run pytest --tb=short -q   # 1148 passed, 111 skipped
+
+# mypy on new source file
+uv run mypy errander/execution/disk_trend.py   # clean
+
+# ruff on PR-1.4 new files (after fixing E501 on lines 161, 253, and vm_graph.py:1008)
+uv run ruff check errander/execution/disk_trend.py tests/execution/test_disk_trend.py   # All checks passed
+```
+
 ## SRE Monitoring — PR-1.3 Service Health Checks (2026-05-13)
 
 ```bash

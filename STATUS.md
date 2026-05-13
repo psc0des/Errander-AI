@@ -4,9 +4,15 @@
 2026-05-13
 
 ## Current Phase
-**SRE Monitoring — PR-1.3 complete (service health checks). Ready for 1.4 (disk growth trend).**
+**SRE Monitoring — PR-1.4 complete (disk growth trend). Ready for 1.5 (drift detection).**
 
 ## Completed
+
+### PR-1.4: Disk Growth Trend Detection (2026-05-13)
+- **`errander/execution/disk_trend.py`**: `disk_bytes_command()` — `df -B1 2>/dev/null || true`; `parse_df_bytes()` — skips pseudo-filesystems (tmpfs/devtmpfs/udev/…), non-integer values, zero-total; `compute_growth_alert(datapoints, threshold_pct)` — compares oldest→newest used%, returns `DiskGrowth` when delta ≥ threshold; `detect_growth_alerts()` — queries distinct mountpoints then window per mountpoint; `record_and_detect_disk_growth()` — SSH probe with `dry_run=False`, records batch, returns alerts
+- **`disk_snapshot_node`** in `vm_graph.py`: runs between discover and drift_check; calls `record_and_detect_disk_growth`; stores alerts in `disk_growth_alerts`; conditionally wired — when `disk_history_store=None` (default) graph is unchanged
+- **24 new tests** in `tests/execution/test_disk_trend.py`; 1,148 total passing
+- Learning doc: `docs/learning/29-disk-growth-trend.md`
 
 ### PR-1.3: Service Health Regression Detection (2026-05-13)
 - **`errander/execution/service_check.py`**: `ServiceStatus` frozen dataclass; `service_status_command(services)` — shell loop using `systemctl is-active` with absent-binary fallback (`unknown`); `parse_service_statuses()` fills missing services as unknown; `find_regressions(pre, post)` returns services that were active before but not after; `check_services()` SSH probe best-effort (SSH failure → empty dict, no false regressions)

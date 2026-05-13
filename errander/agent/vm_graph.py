@@ -109,6 +109,9 @@ class VMGraphState(TypedDict, total=False):
     drift_abort_on_detection: bool
     drift_result: dict[str, object] | None
 
+    # Disk growth trend (1.4)
+    disk_growth_alerts: list[dict[str, object]]  # serialised DiskGrowth alerts
+
 
 # --- Node functions ---
 
@@ -784,6 +787,80 @@ async def release_lock_node(
     return {}
 
 
+async def disk_snapshot_node(
+    state: VMGraphState,
+    *,
+    executor: SandboxExecutor,
+    disk_history_store: object,
+    audit_store: AuditStore,
+    settings: object,
+) -> dict[str, Any]:
+    """Capture disk usage, record to history, detect growth alerts.
+
+    Runs after discover (VM reachable and creds known).  SSH failure is
+    best-effort — never blocks the maintenance run.
+
+    Args:
+        state: Current VM graph state.
+        executor: SandboxExecutor for SSH.
+        disk_history_store: VMDiskHistoryStore (typed as object for TC001).
+        audit_store: AuditStore for DISK_USAGE_CAPTURED events.
+        settings: DiskGrowthSettings (typed as object for TC001).
+    """
+    from errander.config.settings import DiskGrowthSettings
+    from errander.execution.disk_trend import record_and_detect_disk_growth
+    from errander.safety.disk_history import VMDiskHistoryStore
+
+    vm_id = state["vm_id"]
+    vm_info = state.get("vm_info") or {}
+    hostname = str(vm_info.get("hostname") or state.get("hostname", ""))
+    username = str(vm_info.get("ssh_user") or state.get("ssh_user", ""))
+    key_path = str(vm_info.get("ssh_key_path") or state.get("ssh_key_path", ""))
+
+    if not isinstance(disk_history_store, VMDiskHistoryStore):
+        return {"disk_growth_alerts": []}
+    if not isinstance(settings, DiskGrowthSettings):
+        return {"disk_growth_alerts": []}
+
+    alerts = await record_and_detect_disk_growth(
+        executor, vm_id, hostname, username, key_path,
+        disk_history_store, settings,
+    )
+
+    # Emit one DISK_USAGE_CAPTURED event per growth alert detected
+    for alert in alerts:
+        await audit_store.log_event(AuditEvent(
+            event_type=EventType.DISK_USAGE_CAPTURED,
+            batch_id=state.get("batch_id", ""),
+            vm_id=vm_id,
+            action_type="disk_trend",
+            detail=(
+                f"{alert.mountpoint}: {alert.used_pct_start:.1f}% → "
+                f"{alert.used_pct_end:.1f}% (+{alert.delta_pct:.1f}%) "
+                f"over {settings.window_days}d"  # type: ignore[union-attr]
+            ),
+            metadata={
+                "mountpoint": alert.mountpoint,
+                "used_pct_start": alert.used_pct_start,
+                "used_pct_end": alert.used_pct_end,
+                "delta_pct": alert.delta_pct,
+                "window_days": settings.window_days,  # type: ignore[union-attr]
+            },
+        ), dry_run=state.get("dry_run", True))
+
+    serialised = [
+        {
+            "vm_id": a.vm_id,
+            "mountpoint": a.mountpoint,
+            "used_pct_start": a.used_pct_start,
+            "used_pct_end": a.used_pct_end,
+            "delta_pct": a.delta_pct,
+        }
+        for a in alerts
+    ]
+    return {"disk_growth_alerts": serialised}
+
+
 # --- Routing ---
 
 def route_after_lock(state: VMGraphState) -> str:
@@ -833,6 +910,8 @@ def build_vm_graph(
     ssh_manager: SSHConnectionManager,
     llm_client: Any = None,
     ai_decision_store: AIDecisionStore | None = None,
+    disk_history_store: object = None,
+    sre_disk_settings: object = None,
 ) -> StateGraph:
     """Construct the per-VM maintenance graph.
 
@@ -901,11 +980,34 @@ def build_vm_graph(
     builder.add_conditional_edges(
         "acquire_lock", route_after_lock, ["discover", "audit_results"],
     )
+    if disk_history_store is not None:
+        async def _disk_snapshot(state: VMGraphState) -> dict[str, Any]:
+            return await disk_snapshot_node(
+                state, executor=executor,
+                disk_history_store=disk_history_store,
+                audit_store=audit_store,
+                settings=sre_disk_settings,
+            )
+
+        builder.add_node("disk_snapshot", _disk_snapshot)
+
+        def _route_after_discover(state: VMGraphState) -> str:
+            if state.get("error"):
+                return "audit_results"
+            return "disk_snapshot"
+
+        builder.add_conditional_edges(
+            "discover", _route_after_discover, ["disk_snapshot", "audit_results"],
+        )
+        builder.add_edge("disk_snapshot", "drift_check")
+    else:
+        builder.add_conditional_edges(
+            "discover", route_after_discover, ["drift_check", "audit_results"],
+        )
     builder.add_conditional_edges(
-        "discover", route_after_discover, ["drift_check", "audit_results"],
-    )
-    builder.add_conditional_edges(
-        "drift_check", route_after_drift_check, ["plan_actions", "audit_results", "dispatch_action"],
+        "drift_check",
+        route_after_drift_check,
+        ["plan_actions", "audit_results", "dispatch_action"],
     )
     builder.add_edge("plan_actions", "dispatch_action")
     builder.add_edge("dispatch_action", "check_more_actions")

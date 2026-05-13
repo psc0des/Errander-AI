@@ -1,5 +1,30 @@
 # Errander-AI Command Log
 
+## UI Nav Bug Fix (2026-05-13)
+
+```bash
+# Audit all routes + CSS classes used in new pages
+grep -n "def handle_\|def page_\|NAV_ITEMS\|create_app\|add_route\|router.add" errander/web/server.py
+
+# Check for missing CSS class definitions
+for cls in inv-kpi filter-bar search-input ... admin-card ...; do grep -c ".${cls}" server.py; done
+
+# Verify every route returns 200
+for p in / /batches /approvals /audit /inventory /settings /admin /glossary; do
+  curl -s -o /dev/null -w "%{http_code}" http://localhost:8099$p; done
+
+# Confirm exactly one active nav item per page
+curl -s http://localhost:8099/batches | grep -o 'class="nav-item active">[^<]*'
+# Before fix → "Active Batch" AND "Batch History" both highlighted
+# After fix  → "Batch History" only
+
+git add errander/web/server.py STATUS.md tasks/todo.md tasks/lessons.md docs/command-log.md
+git commit -m "fix: remove duplicate nav active highlight — drop Active Batch nav item, remove dead sidebar() and _sidebar_nav()"
+git push origin main
+```
+**What**: Found and fixed two bugs in the Operations Hub UI: (1) "Active Batch" and "Batch History" both mapped to `/batches` causing dual active highlighting; (2) `sidebar()` and `_sidebar_nav()` were dead functions never invoked by `layout()`. Verified all 8 routes return 200 with exactly one active nav item.
+**Why**: Team reported UI issues during testing.
+
 ## Plan Gap Closure Round 2 (2026-05-14)
 
 ```bash

@@ -1,10 +1,10 @@
 # Errander-AI — Project Status
 
 ## Last Updated
-2026-05-14
+2026-05-13
 
 ## Current Phase
-**SRE Monitoring — PR-2 complete (SRE signal aggregation + BatchReport rendering). Phase 2 done.**
+**Operations Hub UI complete — all 8 routes wired, nav active-state bug fixed.**
 
 ## Completed
 
@@ -327,6 +327,10 @@ Three remaining items from `ai_sre_implementation_plan.md` audit:
 
 ## Blockers
 None.
+
+## Files Changed (2026-05-13 — UI nav active-state bug fix)
+### Modified
+- `errander/web/server.py` — Removed duplicate "Active Batch" nav item (both it and "Batch History" pointed to `/batches`, causing both to highlight simultaneously). Deleted dead `sidebar()` and `_sidebar_nav()` functions that were never called by `layout()`. All 8 routes verified returning 200 with exactly one active nav item per page.
 
 ## Files Changed (2026-05-13 — Operations Hub UI: Glossary, Inventory, Settings, Admin)
 ### Modified

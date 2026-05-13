@@ -1,5 +1,12 @@
 # Errander-AI — Task Tracking
 
+## UI Nav Bug Fix (2026-05-13)
+
+- [x] Audit all UI route wiring — found duplicate `/batches` in NAV_ITEMS causing both "Active Batch" and "Batch History" to highlight simultaneously
+- [x] Remove "Active Batch" nav item (redundant — fleet dashboard already shows active batch card)
+- [x] Delete dead `sidebar()` and `_sidebar_nav()` functions (never called by `layout()`)
+- [x] Verify all 8 routes return 200 and each page has exactly one active nav item
+
 ## SRE Monitoring — PR-G Groundwork (2026-05-13)
 
 - [x] G1 — `ActionStatus.BLOCKED` enum value

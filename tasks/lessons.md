@@ -4,6 +4,20 @@ Self-improvement log. Updated after corrections, mistakes, and surprises.
 
 ---
 
+## 2026-05-13 — Duplicate URL in NAV_ITEMS causes both items to highlight as active
+
+**Two nav items ("Active Batch" and "Batch History") pointed to the same URL `/batches`.** The active-state check `url == active_url` matched both, so visiting `/batches` highlighted two items simultaneously — confusing and unprofessional.
+
+**Rule**: every URL in `NAV_ITEMS` must be unique. Before adding a nav item, grep the list for duplicate URLs. If two entries logically represent the same destination, keep only one (or give one a distinct route/anchor).
+
+## 2026-05-13 — Dead code in helper functions goes unnoticed without a call-site check
+
+**`sidebar()` and `_sidebar_nav()` were never called by `layout()`.** `layout()` had its own inline nav loop. The dead functions accumulated over sessions and were shipped in two commits before the audit caught them.
+
+**Rule**: after writing a new helper function, immediately confirm it's called somewhere. `grep -n "function_name(" file.py` takes 2 seconds and prevents dead code from living in the codebase across multiple commits.
+
+---
+
 ## 2026-05-14 — scheduled_jobs must cover systemd timers, not just cron
 
 On modern Linux (Ubuntu 18.04+, RHEL 7+), many scheduled tasks run as systemd timer units, not cron entries. Capturing only `crontab -l` / `/etc/cron.d/*` misses all of these — logrotate, apt-daily, and package manager timers all use systemd.

@@ -1,5 +1,15 @@
 # Errander-AI — Task Tracking
 
+## Operations Hub UI — Glossary + Inventory + Settings + Admin (2026-05-13)
+
+- [x] Glossary page: 18-term glossary grid (CORE/SAFETY/ACTIONS/INFRA categories) + animated LangGraph DAG workflow diagram with node-click modal popups
+- [x] Inventory page: KPI tiles (Total VMs, OS Types, Reachable), filter bar (search + env/os/status dropdowns), full VM table
+- [x] Settings page: 4 read-only config cards (LLM, Slack, Scheduling, Safety & Audit) in 2-col grid
+- [x] Admin page: Agent controls card, system health checks, lock manager (empty state), override toggles (CSS), danger zone
+- [x] Wired handle_inventory(), handle_settings(), handle_admin() route handlers
+- [x] NAV_ITEMS updated with ADMIN section + Admin Panel link
+- [x] All routes registered in create_app() — /inventory, /settings, /admin, /glossary all live
+
 ## Fourth-Round Audit: Action Params in Plan Artifact (2026-05-12)
 
 ### From ai_sre_audit.md fourth re-audit (2026-05-12)

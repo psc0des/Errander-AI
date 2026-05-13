@@ -1,10 +1,10 @@
 # Errander-AI — Project Status
 
 ## Last Updated
-2026-05-12
+2026-05-13
 
 ## Current Phase
-**Third-round SRE audit remediation — 2 hard blockers + 2 high risks from 2026-05-12 re-audit fixed.**
+**Operations Hub UI — Glossary, Inventory, Settings, and Admin pages built and wired.**
 
 ## Completed
 
@@ -242,6 +242,10 @@ The approval flow is now fully decoupled from execution. A dry-run scan can happ
 
 ## Blockers
 None.
+
+## Files Changed (2026-05-13 — Operations Hub UI: Glossary, Inventory, Settings, Admin)
+### Modified
+- `errander/web/server.py` — Added `page_glossary()` (animated LangGraph DAG + 18-term glossary + node-click modal), `page_inventory()` (KPI tiles, filter bar, full VM table), `page_settings()` (4 read-only config cards), `page_admin()` (agent controls, system health, lock manager, override toggles, danger zone). Wired `handle_inventory()`, `handle_settings()`, `handle_admin()` route handlers. Updated `NAV_ITEMS` with Admin section. Registered all routes in `create_app()`.
 
 ## Files Changed (2026-05-10 — fix MasterKeyMissingError in --check-llm)
 ### Modified

@@ -359,6 +359,160 @@ body { font-family: 'Inter', system-ui, sans-serif; background: #f0f2ff; color: 
   font-family: 'JetBrains Mono', monospace; font-size: 0.625rem; font-weight: 600;
   padding: 2px 7px; border-radius: 4px; white-space: nowrap;
 }
+
+/* ── Glossary grid ── */
+.gloss-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 28px; }
+.gloss-card { background: #fff; border-radius: 8px; padding: 14px 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+.gloss-card-hdr { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.gloss-term { font-family: 'JetBrains Mono', monospace; font-size: 0.875rem; font-weight: 700; color: #4f46e5; }
+.gloss-chip { font-family: 'JetBrains Mono', monospace; font-size: 0.55rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; padding: 2px 6px; border-radius: 3px; flex-shrink: 0; }
+.gloss-chip-core   { background: #e0e7ff; color: #3730a3; }
+.gloss-chip-safety { background: #ede9fe; color: #5b21b6; }
+.gloss-chip-action { background: #cffafe; color: #155e75; }
+.gloss-chip-infra  { background: #fef3c7; color: #92400e; }
+.gloss-defn { font-size: 0.8125rem; color: #475569; line-height: 1.55; }
+
+/* ── Workflow diagram ── */
+@keyframes dash-flow { to { stroke-dashoffset: -26; } }
+.wf-outer-card { background: #0f172a; border-radius: 12px; padding: 24px; margin-bottom: 8px; }
+.wf-diagram-wrap { overflow-x: auto; padding-bottom: 8px; }
+.wf-diagram { position: relative; width: 960px; height: 760px; margin: 0 auto; }
+.wf-svg { position: absolute; top: 0; left: 0; width: 960px; height: 760px; pointer-events: none; overflow: visible; }
+.wf-node {
+  position: absolute; width: 160px; height: 50px; border-radius: 8px;
+  display: flex; align-items: center; gap: 10px; padding: 0 14px;
+  cursor: pointer; transition: all 0.18s; background: #1e293b; user-select: none;
+}
+.wf-node:hover { background: #243348; transform: translateY(-1px); box-shadow: 0 4px 16px rgba(79,70,229,0.3); }
+.wf-node.active { background: linear-gradient(135deg, #3525cd, #712ae2) !important; box-shadow: 0 4px 24px rgba(79,70,229,0.5); border: none !important; }
+.wf-node.active .wf-node-name { color: #fff !important; }
+.wf-node.active .wf-node-sub  { color: rgba(255,255,255,0.65) !important; }
+.wf-node-conditional { border: 1.5px dashed #d97706; background: #1e1a0f !important; }
+.wf-node-conditional:hover { background: #29240f !important; }
+.wf-node-failure-node { border: 1.5px dashed #ef4444; background: #1e1010 !important; }
+.wf-node-failure-node:hover { background: #2a1515 !important; }
+.wf-node-terminal {
+  position: absolute; width: 110px; height: 38px; border-radius: 6px;
+  display: flex; align-items: center; justify-content: center;
+  background: #1e1010; border: 1.5px dashed #ef4444;
+  font-family: 'JetBrains Mono', monospace; font-size: 0.6875rem;
+  font-weight: 700; color: #ef4444; letter-spacing: 0.05em;
+}
+.wf-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.wf-dot-amber  { background: #fbbf24; box-shadow: 0 0 6px #fbbf24; }
+.wf-dot-indigo { background: #818cf8; box-shadow: 0 0 6px #818cf8; }
+.wf-dot-violet { background: #a78bfa; box-shadow: 0 0 6px #a78bfa; }
+.wf-dot-teal   { background: #22d3ee; box-shadow: 0 0 6px #22d3ee; }
+.wf-dot-red    { background: #f87171; box-shadow: 0 0 6px #f87171; }
+.wf-dot-green  { background: #4ade80; box-shadow: 0 0 6px #4ade80; }
+.wf-dot-white  { background: rgba(255,255,255,0.85); }
+.wf-node-name { font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; font-weight: 700; color: #e2e8f0; white-space: nowrap; }
+.wf-node-sub  { font-size: 0.585rem; color: #64748b; font-family: 'Inter', sans-serif; white-space: nowrap; margin-top: 2px; }
+.wf-legend { display: flex; align-items: center; gap: 20px; margin-bottom: 16px; flex-wrap: wrap; }
+.wf-legend-item { display: flex; align-items: center; gap: 8px; font-size: 0.75rem; color: #94a3b8; font-family: 'JetBrains Mono', monospace; }
+.wf-detail { background: #fff; border-radius: 8px; border-left: 4px solid #4f46e5; padding: 16px 20px; margin-top: 16px; transition: border-color 0.2s; }
+.wf-detail-hdr { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+.wf-detail-title { font-family: 'Space Grotesk', sans-serif; font-size: 1rem; font-weight: 700; color: #4f46e5; transition: color 0.2s; }
+.wf-detail-badge { font-family: 'JetBrains Mono', monospace; font-size: 0.6rem; font-weight: 700; letter-spacing: 0.08em; padding: 3px 8px; border-radius: 4px; color: #fff; transition: background 0.2s; }
+.wf-detail-rows { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
+.wf-detail-row { display: flex; gap: 14px; }
+.wf-detail-lbl { font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 0.6875rem; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.06em; width: 68px; flex-shrink: 0; padding-top: 1px; }
+.wf-detail-val { font-family: 'JetBrains Mono', monospace; font-size: 0.775rem; color: #0f172a; line-height: 1.55; }
+.wf-detail-note { font-size: 0.8rem; color: #64748b; font-style: italic; border-top: 1px solid #f1f5f9; padding-top: 10px; }
+.wf-hint { text-align: center; font-family: 'JetBrains Mono', monospace; font-size: 0.6875rem; color: #334155; padding: 12px 0 4px; letter-spacing: 0.04em; }
+
+/* ── Node detail modal ── */
+.wf-modal-backdrop {
+  display: none; position: fixed; inset: 0;
+  background: rgba(15,23,42,0.55); backdrop-filter: blur(4px);
+  z-index: 200;
+}
+.wf-modal-backdrop.open { display: block; }
+@keyframes modal-in {
+  from { opacity: 0; transform: translate(-50%, -48%); }
+  to   { opacity: 1; transform: translate(-50%, -50%); }
+}
+.wf-modal {
+  display: none; position: fixed;
+  top: 50%; left: 50%; transform: translate(-50%, -50%);
+  width: 520px; max-width: 92vw;
+  background: #fff; border-radius: 12px; border-left: 4px solid #4f46e5;
+  padding: 22px 26px;
+  z-index: 201;
+  box-shadow: 0 24px 64px -12px rgba(24,20,69,0.28);
+}
+.wf-modal.open { display: block; animation: modal-in 0.17s ease; }
+.wf-modal-close {
+  position: absolute; top: 12px; right: 14px;
+  background: none; border: none; cursor: pointer;
+  font-size: 0.9rem; color: #94a3b8;
+  font-family: 'JetBrains Mono', monospace; font-weight: 700;
+  padding: 3px 8px; border-radius: 4px; transition: all 0.12s; line-height: 1;
+}
+.wf-modal-close:hover { background: #f1f5f9; color: #0f172a; }
+
+@media (max-width: 1100px) { .gloss-grid { grid-template-columns: repeat(2, 1fr); } }
+
+/* ── Inventory page ── */
+.inv-kpi { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 20px; }
+
+/* ── Settings page ── */
+.settings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; }
+.settings-card { padding: 20px 22px; }
+.settings-section-title { font-family: 'Space Grotesk', sans-serif; font-size: 0.875rem; font-weight: 700; color: #0f172a; margin-bottom: 14px; display: flex; align-items: center; gap: 10px; }
+.settings-icon { width: 28px; height: 28px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 0.875rem; flex-shrink: 0; }
+.settings-rows { display: flex; flex-direction: column; }
+.settings-row { display: flex; align-items: center; justify-content: space-between; padding: 9px 0; border-bottom: 1px solid #f8fafc; }
+.settings-row:last-child { border-bottom: none; }
+.settings-key { font-size: 0.8125rem; color: #475569; }
+.settings-val { font-family: 'JetBrains Mono', monospace; font-size: 0.8125rem; color: #0f172a; font-weight: 500; }
+.settings-masked { font-family: 'JetBrains Mono', monospace; font-size: 0.8125rem; color: #94a3b8; letter-spacing: 0.08em; }
+.settings-badge { font-family: 'JetBrains Mono', monospace; font-size: 0.6rem; font-weight: 700; letter-spacing: 0.06em; padding: 2px 7px; border-radius: 4px; }
+.settings-note { background: #f8fafc; border-radius: 8px; padding: 14px 16px; font-size: 0.8125rem; color: #64748b; line-height: 1.6; margin-top: 4px; }
+.settings-note code { font-family: 'JetBrains Mono', monospace; font-size: 0.8125rem; color: #4f46e5; background: #e0e7ff; padding: 1px 5px; border-radius: 3px; }
+
+/* ── Admin page ── */
+.admin-top { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+.admin-card { padding: 18px 20px; }
+.admin-section-title { font-family: 'Space Grotesk', sans-serif; font-size: 0.9375rem; font-weight: 700; color: #0f172a; margin-bottom: 14px; }
+.agent-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.agent-row-label { font-size: 0.8125rem; color: #64748b; width: 148px; flex-shrink: 0; }
+.agent-row-val { font-family: 'JetBrains Mono', monospace; font-size: 0.8125rem; font-weight: 600; color: #0f172a; }
+.admin-btns { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 16px; padding-top: 14px; border-top: 1px solid #f1f5f9; }
+.btn-run { background: linear-gradient(135deg, #3525cd, #712ae2); color: #fff; font-family: 'Space Grotesk', sans-serif; font-size: 0.8125rem; font-weight: 700; padding: 7px 16px; border: none; border-radius: 6px; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; }
+.btn-warn-ol { background: #fff; color: #d97706; font-family: 'Space Grotesk', sans-serif; font-size: 0.8125rem; font-weight: 700; padding: 6px 14px; border: 1.5px solid #d97706; border-radius: 6px; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; }
+.btn-danger-ol { background: #fff; color: #dc2626; font-family: 'Space Grotesk', sans-serif; font-size: 0.8125rem; font-weight: 700; padding: 6px 14px; border: 1.5px solid #dc2626; border-radius: 6px; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; }
+.health-rows { display: flex; flex-direction: column; gap: 11px; }
+.health-row { display: flex; align-items: center; gap: 10px; }
+.health-label { font-size: 0.875rem; color: #0f172a; font-weight: 500; flex: 1; }
+.health-detail { font-family: 'JetBrains Mono', monospace; font-size: 0.7rem; color: #94a3b8; max-width: 200px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.h-ok   { display:flex;align-items:center;gap:5px;font-family:'JetBrains Mono',monospace;font-size:0.6875rem;font-weight:700;color:#16a34a;white-space:nowrap }
+.h-warn { display:flex;align-items:center;gap:5px;font-family:'JetBrains Mono',monospace;font-size:0.6875rem;font-weight:700;color:#d97706;white-space:nowrap }
+.h-err  { display:flex;align-items:center;gap:5px;font-family:'JetBrains Mono',monospace;font-size:0.6875rem;font-weight:700;color:#dc2626;white-space:nowrap }
+.hdot-ok  { width:7px;height:7px;border-radius:50%;background:#16a34a;box-shadow:0 0 5px #16a34a;flex-shrink:0 }
+.hdot-warn{ width:7px;height:7px;border-radius:50%;background:#d97706;box-shadow:0 0 5px #d97706;flex-shrink:0 }
+.hdot-err { width:7px;height:7px;border-radius:50%;background:#dc2626;box-shadow:0 0 5px #dc2626;flex-shrink:0 }
+.override-rows { display: flex; flex-direction: column; }
+.override-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 12px 0; border-bottom: 1px solid #f8fafc; }
+.override-row:last-child { border-bottom: none; }
+.override-label { font-size: 0.875rem; font-weight: 600; color: #0f172a; margin-bottom: 3px; }
+.override-desc  { font-size: 0.75rem; color: #94a3b8; line-height: 1.45; max-width: 360px; }
+.toggle-wrap { display: flex; align-items: center; gap: 8px; flex-shrink: 0; padding-top: 2px; }
+.toggle { position: relative; display: inline-block; width: 40px; height: 22px; }
+.toggle input { opacity: 0; width: 0; height: 0; position: absolute; }
+.toggle-slider { position: absolute; cursor: pointer; inset: 0; background: #cbd5e1; border-radius: 22px; transition: 0.2s; }
+.toggle-slider:before { position: absolute; content: ""; height: 16px; width: 16px; left: 3px; bottom: 3px; background: #fff; border-radius: 50%; transition: 0.2s; }
+.toggle input:checked + .toggle-slider { background: #4f46e5; }
+.toggle input:checked + .toggle-slider:before { transform: translateX(18px); }
+.t-on  { font-family:'JetBrains Mono',monospace;font-size:0.625rem;font-weight:700;color:#4f46e5;width:22px;text-align:right }
+.t-off { font-family:'JetBrains Mono',monospace;font-size:0.625rem;font-weight:700;color:#94a3b8;width:22px;text-align:right }
+.danger-zone-card { border-top: 4px solid #dc2626; padding: 18px 20px; }
+.danger-zone-hdr { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+.danger-zone-title { font-family: 'Space Grotesk', sans-serif; font-size: 0.9375rem; font-weight: 700; color: #dc2626; }
+.danger-zone-sub { font-size: 0.8125rem; color: #94a3b8; margin-bottom: 16px; line-height: 1.5; }
+.danger-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.btn-danger { color: #fff; font-family: 'Space Grotesk', sans-serif; font-size: 0.8125rem; font-weight: 700; padding: 7px 16px; border: none; border-radius: 6px; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; }
+@media (max-width: 900px) { .admin-top { grid-template-columns: 1fr; } .settings-grid { grid-template-columns: 1fr; } }
 """
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -438,9 +592,71 @@ NAV_ITEMS = [
     ("SYSTEM",      None),
     ("Inventory",       "/inventory", "system"),
     ("Settings",        "/settings",  "system"),
+    ("Glossary",        "/glossary",  "system"),
+    ("ADMIN",       None),
+    ("Admin Panel",     "/admin",     "admin"),
 ]
 
 APPROVAL_COUNT = len(APPROVALS)
+
+# ── Static config / admin data ────────────────────────────────────────────────
+
+_SETTINGS_SECTIONS = [
+    {
+        "title": "LLM Configuration", "icon": "🤖", "icon_bg": "#ede9fe",
+        "rows": [
+            ("Base URL",    "http://10.0.0.100:8000/v1", False),
+            ("Model",       "Qwen3-8B-AWQ",              False),
+            ("API Key",     "xai-••••••••",              True),
+            ("Timeout",     "60s",                       False),
+            ("Temperature", "0.1",                       False),
+        ],
+    },
+    {
+        "title": "Slack Integration", "icon": "💬", "icon_bg": "#e0f2fe",
+        "rows": [
+            ("Bot Token",        "xoxb-••••••••",  True),
+            ("Channel ID",       "C04ERRANDER1",   False),
+            ("Approval Timeout", "30 min",         False),
+            ("Poll Interval",    "30s",            False),
+        ],
+    },
+    {
+        "title": "Scheduling", "icon": "🕐", "icon_bg": "#fef3c7",
+        "rows": [
+            ("Cron Expression", "0 2 * * 2,4",       False),
+            ("Human Schedule",  "Tue/Thu 02:00 UTC", False),
+            ("Dry Run Default", "ON",                False),
+            ("Force Override",  "Requires reason",   False),
+        ],
+    },
+    {
+        "title": "Safety & Audit", "icon": "🛡", "icon_bg": "#dcfce7",
+        "rows": [
+            ("Audit DB Path",  "errander.sqlite", False),
+            ("DB Size",        "2.4 MB",          False),
+            ("Log Retention",  "90 days",         False),
+            ("Strict Mode",    "ON",              False),
+        ],
+    },
+]
+
+_HEALTH_CHECKS = [
+    {"label": "vLLM Endpoint",    "detail": "http://10.0.0.100:8000/v1",  "status": "ok",   "meta": "42 ms"},
+    {"label": "Slack API",        "detail": "api.slack.com",               "status": "ok",   "meta": "outbound HTTPS"},
+    {"label": "Audit DB",         "detail": "errander.sqlite · 2.4 MB",   "status": "ok",   "meta": "writable"},
+    {"label": "SSH Keys",         "detail": "11 / 11 key files present",   "status": "ok",   "meta": "/keys/"},
+    {"label": "APScheduler",      "detail": "next: 2026-05-14 02:00 UTC",  "status": "ok",   "meta": "running"},
+]
+
+_ACTIVE_LOCKS: list[dict] = []  # empty = clean state; add dicts with vm/since/path to simulate stuck locks
+
+_OVERRIDES = [
+    ("Dry Run Mode",            "All batches simulate actions without executing on real VMs.",        True),
+    ("Force Maintenance Window","Allow batches outside configured windows. Requires --force reason.", False),
+    ("Skip Approval Gate",      "Bypass Slack approval for High-risk actions. Emergency use only.",  False),
+    ("Strict Audit Mode",       "Halt agent if any audit write fails — integrity over execution.",    True),
+]
 
 
 def sidebar(active_url: str) -> str:
@@ -979,6 +1195,634 @@ def page_batches() -> str:
     </div>"""
 
 
+# ── Inventory page ───────────────────────────────────────────────────────────
+
+def page_inventory() -> str:
+    envs  = len(set(v["env"] for v in VMS))
+    os_ct = len(set(v["os"].split()[0] for v in VMS))
+    reachable = sum(1 for v in VMS if v["status"] != "offline")
+
+    kpis = f"""
+    <div class="inv-kpi">
+      <div class="card kpi-tile kpi-top-border" style="border-color:#4f46e5">
+        <div class="kpi-label">Total VMs</div>
+        <div class="kpi-value" style="color:#0f172a">{len(VMS)}</div>
+        <div class="kpi-subtitle">{envs} environments</div>
+      </div>
+      <div class="card kpi-tile kpi-top-border" style="border-color:#0891b2">
+        <div class="kpi-label">OS Types</div>
+        <div class="kpi-value" style="color:#0891b2">{os_ct}</div>
+        <div class="kpi-subtitle">Ubuntu · RHEL · Debian</div>
+      </div>
+      <div class="card kpi-tile kpi-top-border" style="border-color:#16a34a">
+        <div class="kpi-label">Reachable</div>
+        <div class="kpi-value" style="color:#16a34a">{reachable}</div>
+        <div class="kpi-subtitle">last verified 02:14 UTC</div>
+      </div>
+    </div>"""
+
+    filters = """
+    <div class="card" style="padding:14px 16px;margin-bottom:16px">
+      <div class="filter-bar">
+        <input class="search-input" type="text" placeholder="Search hostname, IP, OS..."/>
+        <select class="select-input">
+          <option>All Environments</option>
+          <option>PROD</option><option>STAGING</option><option>DEV</option>
+        </select>
+        <select class="select-input">
+          <option>All OS</option>
+          <option>Ubuntu 22.04</option><option>RHEL 8.7</option><option>Debian 11</option>
+        </select>
+        <select class="select-input">
+          <option>All Status</option>
+          <option>OK</option><option>Warning</option><option>Failed</option><option>Pending</option>
+        </select>
+        <a href="#" class="btn-primary">FILTER</a>
+      </div>
+    </div>"""
+
+    rows = ""
+    for i, vm in enumerate(VMS):
+        alt  = " row-alt" if i % 2 == 1 else ""
+        fcls = " row-failed" if vm["status"] == "failed" else (" row-pending" if vm["status"] == "pending" else "")
+        rows += f"""<tr class="{alt}{fcls}">
+          <td><a href="/vm/{vm['hostname']}" class="td-host">{vm['hostname']}</a></td>
+          <td class="td-mono">{vm['ip']}</td>
+          <td>{os_tag(vm['os'])}</td>
+          <td>{env_tag(vm['env'])}</td>
+          <td class="td-mono" style="color:#94a3b8;font-size:0.75rem">/keys/{vm['hostname']}.pem</td>
+          <td class="td-mono" style="font-size:0.75rem">Tue/Thu 02:00–04:00</td>
+          <td class="td-mono" style="font-size:0.75rem">{vm['uptime']}</td>
+          <td>{badge(vm['status'])}</td>
+          <td><a href="/vm/{vm['hostname']}" class="td-link">Details →</a></td>
+        </tr>"""
+
+    return f"""
+    <div class="section-hdr">
+      <div>
+        <div class="section-title">VM Inventory</div>
+        <div class="section-sub">{len(VMS)} hosts registered across {envs} environments</div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <a href="#" class="btn-outline btn-outline-indigo">EXPORT</a>
+        <a href="#" class="btn-primary">+ ADD VM</a>
+      </div>
+    </div>
+    {kpis}
+    {filters}
+    <div class="card table-card">
+      <table class="data-table">
+        <thead><tr>
+          <th>HOSTNAME</th><th>IP ADDRESS</th><th>OS</th><th>ENV</th>
+          <th>SSH KEY</th><th>MAINT. WINDOW</th><th>UPTIME</th><th>STATUS</th><th></th>
+        </tr></thead>
+        <tbody>{rows}</tbody>
+      </table>
+    </div>"""
+
+
+# ── Settings page ─────────────────────────────────────────────────────────────
+
+def page_settings() -> str:
+    cards = ""
+    for s in _SETTINGS_SECTIONS:
+        rows_html = ""
+        for key, val, masked in s["rows"]:
+            if masked:
+                val_html = f'<span class="settings-masked">{val}</span>'
+            elif val in ("ON", "OFF"):
+                c = "#16a34a" if val == "ON" else "#94a3b8"
+                val_html = f'<span class="settings-badge" style="background:{c}22;color:{c}">{val}</span>'
+            else:
+                val_html = f'<span class="settings-val">{val}</span>'
+            rows_html += f"""
+            <div class="settings-row">
+              <span class="settings-key">{key}</span>
+              {val_html}
+            </div>"""
+        cards += f"""
+        <div class="card settings-card">
+          <div class="settings-section-title">
+            <span class="settings-icon" style="background:{s['icon_bg']}">{s['icon']}</span>
+            {s['title']}
+          </div>
+          <div class="settings-rows">{rows_html}</div>
+        </div>"""
+
+    note = """
+    <div class="settings-note">
+      <strong>All settings are configured via environment variables and <code>inventory.yaml</code>.</strong>
+      To change a value, update the relevant env var (see <code>docs/SECRETS.md</code>) and restart the agent.
+      SSH keys are referenced by file path in the inventory — never stored in the database.
+    </div>"""
+
+    return f"""
+    <div class="section-hdr">
+      <div>
+        <div class="section-title">Settings</div>
+        <div class="section-sub">Current agent configuration — read-only (set via environment variables)</div>
+      </div>
+      <a href="#" class="btn-outline btn-outline-indigo">VIEW DOCS</a>
+    </div>
+    <div class="settings-grid">{cards}</div>
+    {note}"""
+
+
+# ── Admin page ────────────────────────────────────────────────────────────────
+
+def page_admin() -> str:
+    # Agent controls card
+    agent_card = """
+    <div class="card admin-card">
+      <div class="admin-section-title">Agent Controls</div>
+      <div class="agent-row">
+        <span class="agent-row-label">Scheduler</span>
+        <span class="agent-row-val">
+          <span class="sys-dot dot-green" style="display:inline-block;margin-right:6px"></span>RUNNING
+        </span>
+      </div>
+      <div class="agent-row">
+        <span class="agent-row-label">Last batch</span>
+        <span class="agent-row-val">prod-0423-0200 &nbsp;·&nbsp; 14m 32s</span>
+      </div>
+      <div class="agent-row">
+        <span class="agent-row-label">Next scheduled</span>
+        <span class="agent-row-val">2026-05-14 02:00 UTC</span>
+      </div>
+      <div class="agent-row">
+        <span class="agent-row-label">Current mode</span>
+        <span class="badge badge-indigo">DRY RUN</span>
+      </div>
+      <div class="agent-row">
+        <span class="agent-row-label">Active batch</span>
+        <span class="agent-row-val" style="color:#94a3b8">None</span>
+      </div>
+      <div class="admin-btns">
+        <a href="#" class="btn-run">▶ RUN BATCH NOW</a>
+        <a href="#" class="btn-warn-ol">⏸ PAUSE SCHEDULER</a>
+      </div>
+    </div>"""
+
+    # System health card
+    health_rows = ""
+    for h in _HEALTH_CHECKS:
+        if h["status"] == "ok":
+            ind = f'<span class="h-ok"><span class="hdot-ok"></span>OK &nbsp;·&nbsp; {h["meta"]}</span>'
+        elif h["status"] == "warn":
+            ind = f'<span class="h-warn"><span class="hdot-warn"></span>WARN &nbsp;·&nbsp; {h["meta"]}</span>'
+        else:
+            ind = f'<span class="h-err"><span class="hdot-err"></span>ERROR &nbsp;·&nbsp; {h["meta"]}</span>'
+        health_rows += f"""
+        <div class="health-row">
+          <span class="health-label">{h['label']}</span>
+          <span class="health-detail">{h['detail']}</span>
+          {ind}
+        </div>"""
+
+    health_card = f"""
+    <div class="card admin-card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+        <span class="admin-section-title" style="margin-bottom:0">System Health</span>
+        <a href="#" class="btn-outline btn-outline-indigo" style="font-size:0.75rem;padding:5px 12px">RUN CHECK</a>
+      </div>
+      <div class="health-rows">{health_rows}</div>
+      <div style="margin-top:14px;font-family:'JetBrains Mono',monospace;font-size:0.6875rem;color:#94a3b8">
+        Last checked: 2026-05-13 03:00:12 UTC
+      </div>
+    </div>"""
+
+    # Lock manager
+    if _ACTIVE_LOCKS:
+        lock_rows = "".join(
+            f"""<tr>
+              <td class="td-mono">{lk['vm']}</td>
+              <td class="td-ts">{lk['since']}</td>
+              <td class="td-mono" style="color:#94a3b8;font-size:0.75rem">{lk['path']}</td>
+              <td><a href="#" class="btn-danger-ol" style="font-size:0.75rem;padding:4px 10px">FORCE CLEAR</a></td>
+            </tr>"""
+            for lk in _ACTIVE_LOCKS
+        )
+        lock_body = f"""
+        <table class="data-table">
+          <thead><tr><th>VM</th><th>LOCKED SINCE</th><th>LOCK FILE</th><th></th></tr></thead>
+          <tbody>{lock_rows}</tbody>
+        </table>"""
+    else:
+        lock_body = """
+        <div style="padding:28px;text-align:center;color:#94a3b8;
+                    font-family:'JetBrains Mono',monospace;font-size:0.8125rem">
+          ✓ &nbsp;No active locks — fleet is clean
+        </div>"""
+
+    lock_card = f"""
+    <div class="card table-card" style="margin-bottom:16px">
+      <div style="padding:14px 20px;display:flex;align-items:center;
+                  justify-content:space-between;border-bottom:1px solid #f1f5f9">
+        <span class="section-title" style="font-size:0.9375rem">Lock Manager</span>
+        <a href="#" class="btn-danger-ol" style="font-size:0.75rem;padding:5px 12px">CLEAR ALL LOCKS</a>
+      </div>
+      {lock_body}
+    </div>"""
+
+    # Override toggles
+    override_rows = ""
+    for label, desc, on in _OVERRIDES:
+        chk = "checked" if on else ""
+        state_cls = "t-on" if on else "t-off"
+        state_txt = "ON" if on else "OFF"
+        override_rows += f"""
+        <div class="override-row">
+          <div>
+            <div class="override-label">{label}</div>
+            <div class="override-desc">{desc}</div>
+          </div>
+          <div class="toggle-wrap">
+            <span class="{state_cls}" id="lbl-{label.replace(' ','-')}">{state_txt}</span>
+            <label class="toggle">
+              <input type="checkbox" {chk}
+                onchange="var l=document.getElementById('lbl-{label.replace(" ","-")}');
+                          l.textContent=this.checked?'ON':'OFF';
+                          l.className=this.checked?'t-on':'t-off'">
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+        </div>"""
+
+    override_card = f"""
+    <div class="card admin-card" style="margin-bottom:16px">
+      <div class="admin-section-title">Override Controls</div>
+      <div class="override-rows">{override_rows}</div>
+    </div>"""
+
+    # Danger zone
+    danger_card = """
+    <div class="card danger-zone-card">
+      <div class="danger-zone-hdr">
+        <span style="font-size:1.1rem">⚠</span>
+        <span class="danger-zone-title">Danger Zone</span>
+      </div>
+      <div class="danger-zone-sub">
+        These actions are destructive and may be irreversible.
+        Confirm before executing in a production environment.
+      </div>
+      <div class="danger-actions">
+        <a href="#" class="btn-danger" style="background:#d97706">FLUSH DEFERRED QUEUE</a>
+        <a href="#" class="btn-danger" style="background:#dc2626">CLEAR ALL LOCKS</a>
+        <a href="#" class="btn-danger" style="background:#7c3aed">FORCE ROLLBACK ALL VMs</a>
+        <a href="#" class="btn-danger" style="background:#0f172a">TRUNCATE AUDIT LOG</a>
+      </div>
+    </div>"""
+
+    return f"""
+    <div class="section-hdr">
+      <div>
+        <div class="section-title">Admin</div>
+        <div class="section-sub">Agent controls, system health, lock management, and operational overrides</div>
+      </div>
+      <span class="badge badge-amber" style="font-size:0.75rem;padding:5px 12px">⚠ DRY RUN MODE ACTIVE</span>
+    </div>
+    <div class="admin-top">
+      {agent_card}
+      {health_card}
+    </div>
+    {lock_card}
+    {override_card}
+    {danger_card}"""
+
+
+# ── Glossary data ────────────────────────────────────────────────────────────
+
+_GLOSS: list[tuple[str, str, str, str, str]] = [
+    ("Batch",              "CORE",    "#4f46e5", "gloss-chip-core",
+     "A single end-to-end maintenance run across all VMs in the fleet. Identified by a unique ID like prod-0423-0200."),
+    ("Agent",              "CORE",    "#4f46e5", "gloss-chip-core",
+     "The autonomous LangGraph-powered system that orchestrates all maintenance decisions without human intervention."),
+    ("LangGraph",          "CORE",    "#4f46e5", "gloss-chip-core",
+     "State machine framework driving the agent workflow. Each node is a discrete step; edges are conditional transitions."),
+    ("Dry Run",            "CORE",    "#4f46e5", "gloss-chip-core",
+     "Simulation mode. Actions are planned and logged but never executed on real VMs. The default safety mode."),
+    ("Fleet",              "CORE",    "#4f46e5", "gloss-chip-core",
+     "The full collection of target VMs managed by the agent across all environments (PROD, STAGING, DEV)."),
+    ("Idempotent",         "CORE",    "#4f46e5", "gloss-chip-core",
+     "Running the same action twice produces the same result. A core design invariant for all agent actions."),
+    ("Approval Gate",      "SAFETY",  "#7c3aed", "gloss-chip-safety",
+     "High-risk actions pause here. The agent posts to Slack and polls for a ✅ or ❌ reaction before proceeding."),
+    ("Rollback",           "SAFETY",  "#7c3aed", "gloss-chip-safety",
+     "Automatic revert to pre-action state on failure. Strategy differs per action: full, re-pull, or no-op."),
+    ("Risk Tier",          "SAFETY",  "#7c3aed", "gloss-chip-safety",
+     "Action classification by impact: Low (auto), Medium (log+notify), High (approval), Critical (blocked)."),
+    ("Maintenance Window", "SAFETY",  "#7c3aed", "gloss-chip-safety",
+     "Configured time slots when the agent is permitted to run. The agent refuses to act outside these windows."),
+    ("Audit Log",          "SAFETY",  "#7c3aed", "gloss-chip-safety",
+     "Immutable before-and-after record of every agent action. Written to SQLite and never deleted."),
+    ("OS Patching",        "ACTIONS", "#0891b2", "gloss-chip-action",
+     "Non-kernel security and package updates via apt (Ubuntu/Debian) or dnf (RHEL). Kernel updates are blocked."),
+    ("Docker Prune",       "ACTIONS", "#0891b2", "gloss-chip-action",
+     "Removal of stopped containers, dangling images, unused networks, and volumes to reclaim disk space."),
+    ("Log Rotation",       "ACTIONS", "#0891b2", "gloss-chip-action",
+     "Compression and archival of old log files in /var/log via logrotate or journalctl vacuum."),
+    ("Disk Cleanup",       "ACTIONS", "#0891b2", "gloss-chip-action",
+     "Frees temp files from a strict whitelist: /tmp, apt/yum cache, old journals, orphaned deps only."),
+    ("vLLM",               "INFRA",   "#d97706", "gloss-chip-infra",
+     "Self-hosted LLM (Qwen3-8B-AWQ) on a private GPU VM. Used for planning with a hardcoded fallback if unreachable."),
+    ("SSH",                "INFRA",   "#d97706", "gloss-chip-infra",
+     "Key-based Secure Shell protocol used exclusively to connect to and execute commands on target VMs."),
+    ("APScheduler",        "INFRA",   "#d97706", "gloss-chip-infra",
+     "Python scheduling library that fires maintenance batches on a configured cron schedule inside the agent process."),
+]
+
+# Node detail data for JS — plain string avoids f-string brace escaping
+_WF_JS = """
+function closeNodeModal() {
+  document.getElementById('wf-modal-backdrop').classList.remove('open');
+  document.getElementById('wf-modal').classList.remove('open');
+  document.querySelectorAll('.wf-node').forEach(function(n) { n.classList.remove('active'); });
+}
+document.addEventListener('keydown', function(e) { if (e.key === 'Escape') closeNodeModal(); });
+
+const WF_NODES = {
+  'apscheduler': {
+    title: 'APScheduler', badge: 'BATCH TRIGGER', badgeColor: '#d97706',
+    checks: 'Cron expression evaluated · Maintenance window verified · No active batch running',
+    onfail: 'Batch skipped silently — next scheduled run continues normally',
+    code: 'errander/scheduling/scheduler.py · errander/scheduling/windows.py',
+    note: 'The scheduler is the only automated entry point. Use --run-now to trigger a batch manually.'
+  },
+  'parent-graph': {
+    title: 'Parent Graph', badge: 'ORCHESTRATOR', badgeColor: '#4f46e5',
+    checks: 'Loads VM inventory · Acquires per-VM file locks · Fans out to parallel sub-graphs',
+    onfail: 'Individual VM failures do not abort the batch — each VM runs independently',
+    code: 'errander/agent/graph.py · errander/config/inventory.py · errander/safety/locking.py',
+    note: 'LangGraph parent graph fans out to one per-VM sub-graph execution in parallel across the fleet.'
+  },
+  'pre-validation': {
+    title: 'Pre-Validation', badge: 'RUNS ON EVERY VM', badgeColor: '#16a34a',
+    checks: 'SSH reachable · OS detected · Maintenance window active · VM not locked',
+    onfail: 'VM skipped for this batch — audit event written with reason',
+    code: 'errander/safety/validators.py · errander/execution/os_detection.py',
+    note: 'This is the first node run for every VM. No action is taken until all checks pass.'
+  },
+  'llm-planning': {
+    title: 'LLM Planning', badge: 'AI DECISION', badgeColor: '#7c3aed',
+    checks: 'Queries vLLM endpoint · Outputs ordered action plan as JSON · Classifies risk tier per action',
+    onfail: 'Falls back to hardcoded default action priority — agent never blocks on LLM unavailability',
+    code: 'errander/agent/decisions.py · errander/integrations/llm.py · errander/models/plans.py',
+    note: 'All LLM responses are validated via Pydantic models. Invalid responses trigger the hardcoded fallback.'
+  },
+  'approval-gate': {
+    title: 'Approval Gate', badge: 'HIGH RISK ONLY', badgeColor: '#d97706',
+    checks: 'Posts plan to Slack · Polls for reaction every 30s · Timeout 30 min (auto-REJECT)',
+    onfail: 'Action skipped on REJECTED or timeout — audit event written, VM continues to next action',
+    code: 'errander/safety/approval.py · errander/integrations/slack.py',
+    note: 'Only High-tier actions enter this node. Low and Medium actions bypass it entirely.'
+  },
+  'action-execution': {
+    title: 'Action Execution', badge: 'RUNS MAINTENANCE', badgeColor: '#0891b2',
+    checks: 'Dispatches to action sub-graph · dry_run flag respected · Idempotency enforced',
+    onfail: 'Exception caught → Rollback node entered → Audit event written with error detail',
+    code: 'errander/agent/vm_graph.py · errander/agent/subgraphs/ · errander/execution/commands.py',
+    note: 'Sub-graphs: patching.py, log_rotation.py, docker_prune.py, disk_cleanup.py, backup_verify.py'
+  },
+  'rollback': {
+    title: 'Rollback', badge: 'FAILURE PATH ONLY', badgeColor: '#ef4444',
+    checks: 'Restores package snapshot (patching) · Re-pull images (Docker) · No-op for log/disk',
+    onfail: 'Critical alert fired if rollback itself fails — requires manual intervention',
+    code: 'errander/safety/rollback.py',
+    note: 'Not all actions support full rollback. See Rollback Tiers in the spec for strategy per action type.'
+  },
+  'audit-logging': {
+    title: 'Audit Logging', badge: 'ALWAYS RUNS', badgeColor: '#16a34a',
+    checks: 'Writes before-event · Writes after-event · Records duration, operator, status, detail',
+    onfail: 'If audit write fails — agent halts. Audit integrity takes priority over execution.',
+    code: 'errander/safety/audit.py · errander/models/events.py',
+    note: 'Every action produces two audit events: one before execution and one after. Never deleted.'
+  },
+  'report': {
+    title: 'Report', badge: 'BATCH SUMMARY', badgeColor: '#4f46e5',
+    checks: 'LLM generates human-readable summary · Falls back to template if LLM unavailable · Posted to Slack',
+    onfail: 'Template fallback always succeeds — batch report is never skipped',
+    code: 'errander/observability/reporting.py · errander/integrations/slack.py',
+    note: 'Report includes: VMs processed, actions taken, errors, rollbacks triggered, and total time elapsed.'
+  },
+};
+
+function selectNode(id) {
+  document.querySelectorAll('.wf-node').forEach(function(n) { n.classList.remove('active'); });
+  var el = document.getElementById('node-' + id);
+  if (el) el.classList.add('active');
+  var d = WF_NODES[id];
+  if (!d) return;
+  document.getElementById('wf-modal-title').textContent = d.title;
+  document.getElementById('wf-modal-title').style.color = d.badgeColor;
+  var badge = document.getElementById('wf-modal-badge');
+  badge.textContent = d.badge;
+  badge.style.background = d.badgeColor;
+  document.getElementById('wf-modal-checks').textContent = d.checks;
+  document.getElementById('wf-modal-onfail').textContent = d.onfail;
+  document.getElementById('wf-modal-code').textContent = d.code;
+  document.getElementById('wf-modal-note').textContent = d.note;
+  document.getElementById('wf-modal').style.borderLeftColor = d.badgeColor;
+  document.getElementById('wf-modal-backdrop').classList.add('open');
+  document.getElementById('wf-modal').classList.add('open');
+}
+"""
+
+
+def page_glossary() -> str:
+    # ── Glossary grid ─────────────────────────────────────────────────────────
+    cards = ""
+    for term, _cat, color, chip_cls, defn in _GLOSS:
+        cat_label = _cat
+        cards += f"""
+        <div class="gloss-card" style="border-left:3px solid {color}">
+          <div class="gloss-card-hdr">
+            <span class="gloss-term">{term}</span>
+            <span class="gloss-chip {chip_cls}">{cat_label}</span>
+          </div>
+          <div class="gloss-defn">{defn}</div>
+        </div>"""
+
+    grid_section = f"""
+    <div class="section-hdr" style="margin-bottom:16px">
+      <div>
+        <div class="section-title">Glossary</div>
+        <div class="section-sub">Core concepts for understanding how errander-ai works</div>
+      </div>
+    </div>
+    <div class="gloss-grid">{cards}</div>"""
+
+    # ── Workflow diagram ───────────────────────────────────────────────────────
+    # Node definitions: (id, left, top, extra_classes, dot_cls, name, sublabel)
+    _nodes = [
+        ("apscheduler",      400, 20,  "",                        "wf-dot-amber",  "APScheduler",   "cron trigger"),
+        ("parent-graph",     400, 110, "",                        "wf-dot-indigo", "Parent Graph",  "fan-out · VMs"),
+        ("pre-validation",   400, 200, "active",                  "wf-dot-white",  "Pre-Validation","SSH · OS · window"),
+        ("llm-planning",     400, 290, "",                        "wf-dot-violet", "LLM Planning",  "decide action plan"),
+        ("approval-gate",    120, 385, "wf-node-conditional",     "wf-dot-amber",  "Approval Gate", "high-risk · Slack"),
+        ("action-execution", 650, 385, "",                        "wf-dot-teal",   "Action Exec.",  "patch·rotate·prune"),
+        ("rollback",         755, 480, "wf-node-failure-node",    "wf-dot-red",    "Rollback",      "revert snapshot"),
+        ("audit-logging",    400, 575, "",                        "wf-dot-green",  "Audit Logging", "before + after"),
+        ("report",           400, 665, "",                        "wf-dot-indigo", "Report",        "LLM or template"),
+    ]
+    nodes_html = ""
+    for nid, left, top, extra, dot, name, sub in _nodes:
+        nodes_html += (
+            f'<div class="wf-node {extra}" id="node-{nid}"'
+            f' style="left:{left}px;top:{top}px"'
+            f' onclick="selectNode(\'{nid}\')">'
+            f'<span class="wf-dot {dot}"></span>'
+            f'<div><div class="wf-node-name">{name}</div>'
+            f'<div class="wf-node-sub">{sub}</div></div></div>'
+        )
+    nodes_html += '<div class="wf-node-terminal" style="left:50px;top:480px">✕ SKIPPED</div>'
+
+    # SVG arrow overlay — all coordinates are pixel-exact for 960×760 container
+    svg = """<svg class="wf-svg" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="mh" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+      <polygon points="0 0,8 3,0 6" fill="#4f46e5"/></marker>
+    <marker id="mg" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+      <polygon points="0 0,8 3,0 6" fill="#16a34a"/></marker>
+    <marker id="ma" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+      <polygon points="0 0,8 3,0 6" fill="#d97706"/></marker>
+    <marker id="mr" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+      <polygon points="0 0,8 3,0 6" fill="#ef4444"/></marker>
+  </defs>
+
+  <!-- Happy-path: animated flowing dashes, indigo glow -->
+  <path d="M 480,70 L 480,110"
+        stroke="#4f46e5" stroke-width="2" fill="none" stroke-dasharray="8 5"
+        marker-end="url(#mh)"
+        style="animation:dash-flow 0.8s linear infinite;filter:drop-shadow(0 0 3px #4f46e5)"/>
+  <path d="M 480,160 L 480,200"
+        stroke="#4f46e5" stroke-width="2" fill="none" stroke-dasharray="8 5"
+        marker-end="url(#mh)"
+        style="animation:dash-flow 0.8s linear infinite;filter:drop-shadow(0 0 3px #4f46e5)"/>
+  <path d="M 480,250 L 480,290"
+        stroke="#4f46e5" stroke-width="2" fill="none" stroke-dasharray="8 5"
+        marker-end="url(#mh)"
+        style="animation:dash-flow 0.8s linear infinite;filter:drop-shadow(0 0 3px #4f46e5)"/>
+
+  <!-- LLM Planning → Action Execution (low/med, happy) -->
+  <path d="M 515,340 C 585,365 670,378 730,385"
+        stroke="#4f46e5" stroke-width="2" fill="none" stroke-dasharray="8 5"
+        marker-end="url(#mh)"
+        style="animation:dash-flow 0.8s linear infinite;filter:drop-shadow(0 0 3px #4f46e5)"/>
+
+  <!-- LLM Planning → Approval Gate (high risk, amber dashed) -->
+  <path d="M 445,340 C 375,362 265,375 200,385"
+        stroke="#d97706" stroke-width="1.5" fill="none" stroke-dasharray="5 5"
+        marker-end="url(#ma)"/>
+
+  <!-- Approval Gate → Action Execution (APPROVED, green animated) -->
+  <path d="M 280,410 C 430,410 500,410 650,410"
+        stroke="#16a34a" stroke-width="2" fill="none" stroke-dasharray="8 5"
+        marker-end="url(#mg)"
+        style="animation:dash-flow 0.9s linear infinite"/>
+
+  <!-- Approval Gate → SKIPPED (REJECTED, red dashed) -->
+  <path d="M 185,435 C 165,455 130,468 105,480"
+        stroke="#ef4444" stroke-width="1.5" fill="none" stroke-dasharray="4 5"
+        marker-end="url(#mr)"/>
+
+  <!-- Action Execution → Rollback (FAILURE, red dashed) -->
+  <path d="M 810,410 C 848,432 850,458 835,480"
+        stroke="#ef4444" stroke-width="1.5" fill="none" stroke-dasharray="4 5"
+        marker-end="url(#mr)"/>
+
+  <!-- Action Execution → Audit Logging (SUCCESS, green animated) -->
+  <path d="M 730,435 C 700,490 635,558 560,600"
+        stroke="#16a34a" stroke-width="2" fill="none" stroke-dasharray="8 5"
+        marker-end="url(#mg)"
+        style="animation:dash-flow 0.9s linear infinite"/>
+
+  <!-- Rollback → Audit Logging (rejoins, amber dashed) -->
+  <path d="M 800,530 C 762,558 660,583 560,600"
+        stroke="#d97706" stroke-width="1.5" fill="none" stroke-dasharray="5 5"
+        marker-end="url(#ma)"/>
+
+  <!-- Audit Logging → Report (happy) -->
+  <path d="M 480,625 L 480,665"
+        stroke="#4f46e5" stroke-width="2" fill="none" stroke-dasharray="8 5"
+        marker-end="url(#mh)"
+        style="animation:dash-flow 0.8s linear infinite;filter:drop-shadow(0 0 3px #4f46e5)"/>
+
+  <!-- Edge labels -->
+  <text x="308" y="354" fill="#d97706" font-family="JetBrains Mono,monospace" font-size="9" font-weight="700">HIGH RISK</text>
+  <text x="576" y="356" fill="#818cf8" font-family="JetBrains Mono,monospace" font-size="9" font-weight="700">LOW / MED</text>
+  <text x="428" y="402" fill="#4ade80" font-family="JetBrains Mono,monospace" font-size="9" font-weight="700">APPROVED</text>
+  <text x="116" y="455" fill="#f87171" font-family="JetBrains Mono,monospace" font-size="9" font-weight="700">REJECTED</text>
+  <text x="820" y="448" fill="#f87171" font-family="JetBrains Mono,monospace" font-size="9" font-weight="700">FAILURE</text>
+  <text x="650" y="508" fill="#4ade80" font-family="JetBrains Mono,monospace" font-size="9" font-weight="700">SUCCESS</text>
+</svg>"""
+
+    legend = """
+    <div class="wf-legend">
+      <span class="wf-legend-item">
+        <svg width="28" height="10"><line x1="0" y1="5" x2="28" y2="5" stroke="#4f46e5" stroke-width="2"
+          stroke-dasharray="8 5" style="animation:dash-flow 0.8s linear infinite"/></svg>
+        Happy path
+      </span>
+      <span class="wf-legend-item">
+        <svg width="28" height="10"><line x1="0" y1="5" x2="28" y2="5" stroke="#d97706"
+          stroke-width="1.5" stroke-dasharray="5 4"/></svg>
+        Conditional
+      </span>
+      <span class="wf-legend-item">
+        <svg width="28" height="10"><line x1="0" y1="5" x2="28" y2="5" stroke="#ef4444"
+          stroke-width="1.5" stroke-dasharray="4 4"/></svg>
+        Failure path
+      </span>
+    </div>"""
+
+    modal_html = """
+    <div class="wf-modal-backdrop" id="wf-modal-backdrop" onclick="closeNodeModal()"></div>
+    <div class="wf-modal" id="wf-modal">
+      <button class="wf-modal-close" onclick="closeNodeModal()">✕</button>
+      <div class="wf-detail-hdr">
+        <span class="wf-detail-title" id="wf-modal-title">Pre-Validation</span>
+        <span class="wf-detail-badge" id="wf-modal-badge" style="background:#16a34a">RUNS ON EVERY VM</span>
+      </div>
+      <div class="wf-detail-rows">
+        <div class="wf-detail-row">
+          <span class="wf-detail-lbl">Checks</span>
+          <span class="wf-detail-val" id="wf-modal-checks"></span>
+        </div>
+        <div class="wf-detail-row">
+          <span class="wf-detail-lbl">On fail</span>
+          <span class="wf-detail-val" id="wf-modal-onfail"></span>
+        </div>
+        <div class="wf-detail-row">
+          <span class="wf-detail-lbl">Code</span>
+          <span class="wf-detail-val" id="wf-modal-code"></span>
+        </div>
+      </div>
+      <div class="wf-detail-note" id="wf-modal-note"></div>
+    </div>"""
+
+    workflow_section = f"""
+    <div class="section-hdr" style="margin-bottom:12px">
+      <div>
+        <div class="section-title">Agent Workflow</div>
+        <div class="section-sub">Click any node to see what happens at that stage</div>
+      </div>
+    </div>
+    {legend}
+    <div class="wf-outer-card">
+      <div class="wf-diagram-wrap">
+        <div class="wf-diagram" id="wf-diagram">
+          {nodes_html}
+          {svg}
+        </div>
+      </div>
+      <div class="wf-hint">↑ Click any node to open a detail popup · Press Esc to close</div>
+    </div>
+    {modal_html}
+    <script>{_WF_JS}</script>"""
+
+    return grid_section + workflow_section
+
+
 def page_placeholder(name: str) -> str:
     return f"""
     <div class="card" style="padding:60px;text-align:center">
@@ -1052,6 +1896,50 @@ async def handle_batches(request: web.Request) -> web.Response:
     return web.Response(text=html, content_type="text/html")
 
 
+async def handle_glossary(request: web.Request) -> web.Response:
+    html = layout(
+        title="Glossary & Workflow",
+        active_url="/glossary",
+        breadcrumb="Glossary &amp; Workflow",
+        topnav_extra='<a href="#" class="btn-outline btn-outline-indigo">DOCS ↗</a>',
+        content=page_glossary(),
+    )
+    return web.Response(text=html, content_type="text/html")
+
+
+async def handle_inventory(request: web.Request) -> web.Response:
+    html = layout(
+        title="Inventory",
+        active_url="/inventory",
+        breadcrumb="Inventory",
+        topnav_extra='<a href="#" class="btn-outline btn-outline-indigo">EXPORT CSV</a>',
+        content=page_inventory(),
+    )
+    return web.Response(text=html, content_type="text/html")
+
+
+async def handle_settings(request: web.Request) -> web.Response:
+    html = layout(
+        title="Settings",
+        active_url="/settings",
+        breadcrumb="Settings",
+        topnav_extra='',
+        content=page_settings(),
+    )
+    return web.Response(text=html, content_type="text/html")
+
+
+async def handle_admin(request: web.Request) -> web.Response:
+    html = layout(
+        title="Admin Panel",
+        active_url="/admin",
+        breadcrumb="Admin Panel",
+        topnav_extra='<span class="badge badge-danger" style="font-size:0.7rem;padding:4px 10px;">PRIVILEGED</span>',
+        content=page_admin(),
+    )
+    return web.Response(text=html, content_type="text/html")
+
+
 async def handle_placeholder(request: web.Request) -> web.Response:
     name = request.path.strip("/").replace("-", " ").title()
     html = layout(
@@ -1071,8 +1959,10 @@ def create_app() -> web.Application:
     app.router.add_get("/vm/{hostname}",   handle_vm)
     app.router.add_get("/audit",           handle_audit)
     app.router.add_get("/batches",         handle_batches)
-    app.router.add_get("/inventory",       handle_placeholder)
-    app.router.add_get("/settings",        handle_placeholder)
+    app.router.add_get("/inventory",       handle_inventory)
+    app.router.add_get("/settings",        handle_settings)
+    app.router.add_get("/admin",           handle_admin)
+    app.router.add_get("/glossary",        handle_glossary)
     return app
 
 

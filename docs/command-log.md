@@ -1,5 +1,29 @@
 # Errander-AI Command Log
 
+## Web UI — Operations Hub Pages (2026-05-13)
+
+```bash
+# Kill stale server on port 8099 (PowerShell)
+Get-NetTCPConnection -LocalPort 8099 | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }
+
+# Start dev server in background (Git Bash)
+uv run python -m errander.web.server &
+
+# Verify all new routes respond
+curl -s -o /tmp/inv.html http://localhost:8099/inventory   # inventory ok
+curl -s -o /tmp/set.html http://localhost:8099/settings    # settings ok
+curl -s -o /tmp/adm.html http://localhost:8099/admin       # admin ok
+
+# Spot-check rendered content
+grep -o "Total VMs\|LLM Configuration\|Agent Controls\|Admin Panel" inv.html set.html adm.html
+
+git add errander/web/server.py STATUS.md tasks/todo.md docs/command-log.md
+git commit -m "feat: add Glossary, Inventory, Settings, and Admin pages to Operations Hub UI"
+git push origin main
+```
+**What**: Built four full UI pages in the Operations Hub (`errander/web/server.py`): Glossary (animated LangGraph DAG + 18-term glossary + node-click modal), Inventory (VM fleet table with KPIs and filters), Settings (read-only config display), Admin (agent controls, health checks, lock manager, override toggles, danger zone). Wired route handlers and registered all routes.
+**Why**: Placeholder routes for /inventory and /settings replaced with real pages; /admin and /glossary are new. All four accessible from the sidebar nav.
+
 Developer reference for every command used in building this project.
 
 ## Project Setup

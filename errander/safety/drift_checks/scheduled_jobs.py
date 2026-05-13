@@ -1,12 +1,15 @@
 """Scheduled jobs drift check.
 
-Captures cron-based scheduled jobs from three sources in one SSH call:
+Captures scheduled jobs from four sources in one SSH call:
   - The invoking user's crontab (crontab -l)
   - /etc/crontab (system-wide crontab)
   - /etc/cron.d/* (package-dropped cron snippets)
+  - systemd timer unit names (systemctl list-timers)
 
 Comment lines and blank lines are stripped before hashing to avoid
-false alerts from comment-only changes.
+false alerts from comment-only changes.  The systemd section captures
+timer unit names only — the volatile "next trigger" time is excluded
+to prevent false drift every time the timer fires.
 """
 
 from __future__ import annotations
@@ -27,6 +30,9 @@ _CMD = (
     "{ crontab -l 2>/dev/null;"
     " cat /etc/crontab 2>/dev/null;"
     " for f in /etc/cron.d/*; do [ -f \"$f\" ] && cat \"$f\"; done;"
+    " echo '=== SYSTEMD_TIMERS ===';"
+    " systemctl list-timers --all --no-legend --no-pager 2>/dev/null"
+    " | awk '{print $NF}';"
     " } 2>/dev/null || true"
 )
 

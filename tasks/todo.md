@@ -30,6 +30,12 @@
 - [x] Gap 2 (docs debt) — `example/settings.yaml`: added full annotated `sre_signals:` block with all 10 tuneable fields
 - [x] Gap 3 (feature) — `disable_failed_login_check: bool = False` per-VM tag: `TargetSchema` → `yaml_targets` dict → `VMGraphState` → `failed_logins_node` early-exit; documented in `example/inventory.yaml`
 
+## Plan Gap Closure Round 2 (2026-05-14)
+
+- [x] Systemd timers — `scheduled_jobs.py` now includes `systemctl list-timers | awk '{print $NF}'` as 4th source; timer unit names captured; volatile timestamps excluded; 6 new tests; 1,293 total passing
+- [x] `docs/learning/README.md` — entries 25–31 added
+- [x] `README.md` — test count updated 929 → 1293 (3 occurrences)
+
 ## Operations Hub UI — Glossary + Inventory + Settings + Admin (2026-05-13)
 
 - [x] Glossary page: 18-term glossary grid (CORE/SAFETY/ACTIONS/INFRA categories) + animated LangGraph DAG workflow diagram with node-click modal popups

@@ -27,6 +27,17 @@ _CRON_OUTPUT = (
     "30 3 * * * backup /usr/local/bin/backup.sh\n"
 )
 
+# Simulates combined cron + systemd timer output (the === SYSTEMD_TIMERS === separator
+# and the timer unit names emitted by awk '{print $NF}').
+_COMBINED_OUTPUT = (
+    "# user crontab\n"
+    "0 2 * * 0 root /usr/sbin/logrotate /etc/logrotate.conf\n"
+    "=== SYSTEMD_TIMERS ===\n"
+    "apt-daily.timer\n"
+    "logrotate.timer\n"
+    "fwupd-refresh.timer\n"
+)
+
 
 # --- scheduled_jobs_command ---
 
@@ -39,6 +50,14 @@ class TestScheduledJobsCommand:
 
     def test_includes_cron_d(self) -> None:
         assert "/etc/cron.d/" in scheduled_jobs_command()
+
+    def test_includes_systemd_timers(self) -> None:
+        assert "systemctl list-timers" in scheduled_jobs_command()
+
+    def test_systemd_timer_extracts_unit_name_only(self) -> None:
+        # awk '{print $NF}' extracts the last column (unit name) and discards
+        # the volatile "next trigger" timestamp that changes every time the timer fires.
+        assert "awk '{print $NF}'" in scheduled_jobs_command()
 
     def test_exits_zero(self) -> None:
         assert "|| true" in scheduled_jobs_command()
@@ -71,6 +90,31 @@ class TestParseScheduledJobs:
 
     def test_only_comments_returns_empty(self) -> None:
         assert parse_scheduled_jobs("# nothing here\n# or here\n") == ""
+
+    def test_systemd_timer_names_retained(self) -> None:
+        result = parse_scheduled_jobs(_COMBINED_OUTPUT)
+        assert "apt-daily.timer" in result
+        assert "logrotate.timer" in result
+        assert "fwupd-refresh.timer" in result
+
+    def test_systemd_timers_section_header_retained(self) -> None:
+        # The separator line is not a comment and signals the start of the timer section.
+        result = parse_scheduled_jobs(_COMBINED_OUTPUT)
+        assert "SYSTEMD_TIMERS" in result
+
+    def test_new_timer_detected_as_drift(self) -> None:
+        # Adding a new timer unit produces a different canonical form.
+        base = parse_scheduled_jobs(_COMBINED_OUTPUT)
+        with_new_timer = _COMBINED_OUTPUT + "snapd.refresh.timer\n"
+        assert parse_scheduled_jobs(with_new_timer) != base
+
+    def test_timer_removal_detected_as_drift(self) -> None:
+        # Removing a timer produces a different canonical form.
+        reduced = (
+            "=== SYSTEMD_TIMERS ===\n"
+            "apt-daily.timer\n"
+        )
+        assert parse_scheduled_jobs(_COMBINED_OUTPUT) != parse_scheduled_jobs(reduced)
 
 
 # --- capture_scheduled_jobs ---

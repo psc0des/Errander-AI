@@ -30,3 +30,10 @@ Index of all learning docs created during development. Each doc explains what wa
 | 22 | [UI Settings & Inventory Management](22-ui-settings-and-inventory.md) | 4 | `22-ui-settings-and-inventory.md` |
 | 23 | [Playwright UI Tests](23-playwright-ui-tests.md) | 4 | `23-playwright-ui-tests.md` |
 | 24 | [Deferred Execution: Window-Gated Approval](24-deferred-execution.md) | 4 | `24-deferred-execution.md` |
+| 25 | [SRE Groundwork: Migrations, State, Baselines, Reports](25-sre-groundwork.md) | SRE-G | `25-sre-groundwork.md` |
+| 26 | [Package Lock Detection (Preflight)](26-pkg-lock-detection.md) | SRE-1.1 | `26-pkg-lock-detection.md` |
+| 27 | [Reboot-Required Detection](27-reboot-detection.md) | SRE-1.2 | `27-reboot-detection.md` |
+| 28 | [Service Health Regression Detection](28-service-health-checks.md) | SRE-1.3 | `28-service-health-checks.md` |
+| 29 | [Disk Growth Trend Detection](29-disk-growth-trend.md) | SRE-1.4 | `29-disk-growth-trend.md` |
+| 30 | [Configuration Drift Detection + Failed SSH Logins](30-drift-detection.md) | SRE-2 | `30-drift-detection.md` |
+| 31 | [SRE Signal Aggregation + BatchReport Rendering](31-sre-signal-aggregation.md) | SRE-2 | `31-sre-signal-aggregation.md` |

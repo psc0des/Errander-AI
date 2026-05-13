@@ -1,5 +1,15 @@
 # Errander-AI Command Log
 
+## Plan Gap Closure Round 2 (2026-05-14)
+
+```bash
+# Run scheduled_jobs tests (20 tests — includes 6 new systemd timer tests)
+uv run pytest tests/safety/drift_checks/test_scheduled_jobs.py -v   # 20 passed
+
+# Full suite
+uv run pytest --tb=short -q   # 1293 passed, 111 skipped
+```
+
 ## PR-2 Gap Closure (2026-05-14)
 
 ```bash

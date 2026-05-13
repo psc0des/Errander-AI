@@ -4,6 +4,12 @@ Self-improvement log. Updated after corrections, mistakes, and surprises.
 
 ---
 
+## 2026-05-14 — scheduled_jobs must cover systemd timers, not just cron
+
+On modern Linux (Ubuntu 18.04+, RHEL 7+), many scheduled tasks run as systemd timer units, not cron entries. Capturing only `crontab -l` / `/etc/cron.d/*` misses all of these — logrotate, apt-daily, and package manager timers all use systemd.
+
+**Rule**: any "scheduled jobs" drift check must include `systemctl list-timers --all --no-legend --no-pager | awk '{print $NF}'`. The awk is critical — it extracts only the unit name column; the "next trigger" timestamp changes every time the timer fires and would produce false drift if included.
+
 ## 2026-05-14 — Listening ports canonicalization must strip PIDs, not just sort
 
 `ss -tlnp` includes `users:(("sshd",pid=1234,fd=4))` in every row. Sorting and stripping the header is not enough — if sshd restarts, the PID changes and every restart produces a false drift alert.

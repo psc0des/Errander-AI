@@ -281,6 +281,15 @@ Three correctness/docs gaps identified in PR-1.5/PR-2 post-review:
 - **Gap 3 (missing feature)** — `disable_failed_login_check: bool = False` per-VM inventory tag wired through: `TargetSchema` → `yaml_targets` dict → `VMGraphState` → `failed_logins_node` early-exit. Set `disable_failed_login_check: true` in inventory.yaml to skip the failed login probe for honeypots/bastions. Documented in `example/inventory.yaml` header comment.
 - **1287 tests passing** (no regressions, 4 new listening_ports tests).
 
+## Recent Fix: Plan Gap Closure Round 2 (2026-05-14)
+
+Three remaining items from `ai_sre_implementation_plan.md` audit:
+
+- **Systemd timers in `scheduled_jobs.py`** — Added `systemctl list-timers --all --no-legend --no-pager | awk '{print $NF}'` as a 4th source in the SSH command. Timer unit names are captured; the volatile "next trigger" timestamp is excluded (awk last-column only) to prevent false drift every time a timer fires. 6 new tests.
+- **`docs/learning/README.md`** — Added entries 25–31 (all SRE learning docs were missing from the index).
+- **`README.md`** — Test count updated 929 → 1293 in all three occurrences.
+- **1293 tests passing**.
+
 ## Next Up
 - Run staging soak (`tests/staging/soak_checklist.md`) against real VMs to validate end-to-end before any production deployment
 - Wire `generate_report` and `analyze_failure` decisions through `ai_decision_store` (currently only `prioritize_actions` is audited)

@@ -4,9 +4,17 @@
 2026-05-13
 
 ## Current Phase
-**SRE Monitoring — PR-1.2 complete (reboot detection). Ready for 1.3 (service health checks).**
+**SRE Monitoring — PR-1.3 complete (service health checks). Ready for 1.4 (disk growth trend).**
 
 ## Completed
+
+### PR-1.3: Service Health Regression Detection (2026-05-13)
+- **`errander/execution/service_check.py`**: `ServiceStatus` frozen dataclass; `service_status_command(services)` — shell loop using `systemctl is-active` with absent-binary fallback (`unknown`); `parse_service_statuses()` fills missing services as unknown; `find_regressions(pre, post)` returns services that were active before but not after; `check_services()` SSH probe best-effort (SSH failure → empty dict, no false regressions)
+- **`service_health_pre_node`** in `patching.py`: runs after snapshot, before execute; probes `critical_services`; stores `service_pre_snapshot: dict[str, str]`; no-op when critical_services empty
+- **`service_health_post_node`** in `patching.py`: runs after last SRE node; compares pre/post snapshots; emits `SERVICE_HEALTH_REGRESSION` with regressed service names in metadata; no-op when no pre-snapshot
+- **`build_patching_subgraph`** gains `sre_service_check` param; local routing closure chains `service_pre → execute` and `[reboot_check →] service_post → END`; all 3 SRE flag combinations compile correctly
+- **47 new tests** across 2 files (test_service_check.py, TestServiceHealthPreNode + TestServiceHealthPostNode + TestBuildSubgraphWithServiceCheck in test_patching.py); 1,124 total passing
+- Learning doc: `docs/learning/28-service-health-checks.md`
 
 ### PR-1.2: Reboot-Required Detection (2026-05-13)
 - **`errander/execution/reboot_check.py`**: `RebootStatus` frozen dataclass; `reboot_required_command(os_family)` — Debian/Ubuntu uses `/var/run/reboot-required` flag file + pkg list; RHEL uses `needs-restarting -r` with absent-binary fallback (`EXIT=unknown` → no reboot); `parse_reboot_status()` pure parser for both OS variants; `detect_reboot_required()` SSH probe with best-effort (failure → no reboot)

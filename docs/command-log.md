@@ -1,5 +1,21 @@
 # Errander-AI Command Log
 
+## SRE Monitoring — PR-1.3 Service Health Checks (2026-05-13)
+
+```bash
+# Run PR-1.3 tests
+uv run pytest tests/execution/test_service_check.py tests/agent/subgraphs/test_patching.py -x --tb=short -q
+
+# Full suite
+uv run pytest --tb=short -q   # 1124 passed, 111 skipped
+
+# mypy on new source file
+uv run mypy errander/execution/service_check.py   # clean
+
+# ruff on PR-1.3 files; auto-fix import sort
+uv run ruff check --select I001 --fix tests/execution/test_service_check.py tests/agent/subgraphs/test_patching.py
+```
+
 ## SRE Monitoring — PR-1.2 Reboot-Required Detection (2026-05-13)
 
 ```bash

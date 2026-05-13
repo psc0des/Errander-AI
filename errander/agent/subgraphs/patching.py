@@ -25,6 +25,7 @@ from langgraph.graph import END, StateGraph
 from errander.agent.subgraphs.disk_cleanup import get_package_manager_by_name
 from errander.execution.reboot_check import detect_reboot_required
 from errander.execution.sandbox import SandboxExecutor
+from errander.execution.service_check import check_services, find_regressions
 from errander.models.actions import ActionStatus
 from errander.safety.validators import validate_no_pkg_lock
 
@@ -93,6 +94,11 @@ class PatchingGraphState(TypedDict, total=False):
 
     # Post-patch reboot detection (1.2)
     reboot_status_detected: bool  # True when reboot required after successful patch
+
+    # Service health monitoring (1.3)
+    critical_services: list[str]            # services to probe pre/post action
+    service_pre_snapshot: dict[str, str]    # {name: state} before execute
+    service_regressions: list[str]          # services that regressed post-execute
 
 
 # --- Node functions ---
@@ -462,6 +468,93 @@ async def reboot_check_node(
     return {"reboot_status_detected": True}
 
 
+async def service_health_pre_node(
+    state: PatchingGraphState,
+    *,
+    executor: SandboxExecutor,
+) -> dict[str, Any]:
+    """Capture service states before the upgrade begins.
+
+    Stores a snapshot of each critical service's state so
+    service_health_post_node can detect regressions.
+    No-op when critical_services is empty — returns immediately.
+    """
+    services = tuple(state.get("critical_services") or [])
+    if not services:
+        return {"service_pre_snapshot": {}}
+
+    vm_id = state["vm_id"]
+    target = _get_connection_params(state)
+    statuses = await check_services(
+        executor, vm_id,
+        target["hostname"], target["username"], target["key_path"],
+        services,
+    )
+    snapshot = {name: s.state for name, s in statuses.items()}
+    logger.debug("Pre-patch service snapshot on %s: %s", vm_id, snapshot)
+    return {"service_pre_snapshot": snapshot}
+
+
+async def service_health_post_node(
+    state: PatchingGraphState,
+    *,
+    executor: SandboxExecutor,
+    audit_store: AuditStore | None = None,
+    batch_id: str = "",
+) -> dict[str, Any]:
+    """Check service states after the upgrade and emit regressions.
+
+    Compares current states with service_pre_snapshot.  Any service that was
+    active before but is no longer active is a SERVICE_HEALTH_REGRESSION.
+    No-op when critical_services is empty or pre_snapshot is absent.
+    """
+    from errander.execution.service_check import ServiceStatus
+    from errander.models.events import AuditEvent, EventType
+
+    services = tuple(state.get("critical_services") or [])
+    pre_raw = state.get("service_pre_snapshot") or {}
+
+    if not services or not pre_raw:
+        return {"service_regressions": []}
+
+    vm_id = state["vm_id"]
+    target = _get_connection_params(state)
+
+    pre = {
+        name: ServiceStatus(name=name, active=(st == "active"), state=st)
+        for name, st in pre_raw.items()
+    }
+
+    post = await check_services(
+        executor, vm_id,
+        target["hostname"], target["username"], target["key_path"],
+        services,
+    )
+
+    regressions = find_regressions(pre, post)
+
+    if regressions:
+        detail = f"Services down after patching: {', '.join(regressions)}"
+        logger.warning("SERVICE_HEALTH_REGRESSION on %s: %s", vm_id, detail)
+        if audit_store is not None:
+            await audit_store.log_event(AuditEvent(
+                event_type=EventType.SERVICE_HEALTH_REGRESSION,
+                batch_id=batch_id,
+                vm_id=vm_id,
+                action_type="patching",
+                detail=detail,
+                metadata={
+                    "regressed_services": regressions,
+                    "pre_states": {n: s.state for n, s in pre.items()},
+                    "post_states": {n: s.state for n, s in post.items()},
+                },
+            ), dry_run=state.get("dry_run", True))
+    else:
+        logger.debug("No service regressions on %s after patching", vm_id)
+
+    return {"service_regressions": regressions}
+
+
 # --- Helpers ---
 
 def _get_connection_params(state: PatchingGraphState) -> dict[str, str]:
@@ -603,6 +696,7 @@ def build_patching_subgraph(
     batch_id: str = "",
     sre_preflight_lock_check: bool = True,
     sre_reboot_check: bool = True,
+    sre_service_check: bool = True,
 ) -> StateGraph:
     """Construct the patching sub-graph.
 
@@ -615,6 +709,9 @@ def build_patching_subgraph(
             lock before patching and BLOCK if held.
         sre_reboot_check: When True (default), probe reboot-required status
             after a successful upgrade.
+        sre_service_check: When True (default), snapshot critical_services
+            states before and after the upgrade; emit SERVICE_HEALTH_REGRESSION
+            on any regression.
 
     Returns:
         StateGraph for patching (call .compile() to use).
@@ -632,6 +729,9 @@ def build_patching_subgraph(
     async def _snapshot(state: PatchingGraphState) -> dict[str, Any]:
         return await snapshot_node(state, executor=executor)
 
+    async def _service_pre(state: PatchingGraphState) -> dict[str, Any]:
+        return await service_health_pre_node(state, executor=executor)
+
     async def _execute(state: PatchingGraphState) -> dict[str, Any]:
         return await execute_node(state, executor=executor)
 
@@ -645,6 +745,11 @@ def build_patching_subgraph(
         return await reboot_check_node(
             state, executor=executor,
             vm_state_store=vm_state_store, audit_store=audit_store, batch_id=batch_id,
+        )
+
+    async def _service_post(state: PatchingGraphState) -> dict[str, Any]:
+        return await service_health_post_node(
+            state, executor=executor, audit_store=audit_store, batch_id=batch_id,
         )
 
     builder.add_node("validate", validate_node)
@@ -665,9 +770,18 @@ def build_patching_subgraph(
 
     builder.add_conditional_edges("validate", route_after_validate, ["assess", END])
     builder.add_conditional_edges("assess", route_after_assess, ["snapshot", END])
-    builder.add_edge("snapshot", "execute")
+
+    if sre_service_check:
+        builder.add_node("service_pre", _service_pre)
+        builder.add_node("service_post", _service_post)
+        builder.add_edge("snapshot", "service_pre")
+        builder.add_edge("service_pre", "execute")
+    else:
+        builder.add_edge("snapshot", "execute")
+
     builder.add_conditional_edges("execute", route_after_execute, ["verify", "rollback", END])
 
+    # Determine the first post-verify SRE node (failure always → rollback).
     if sre_reboot_check:
         builder.add_node("reboot_check", _reboot_check)
 
@@ -677,9 +791,27 @@ def build_patching_subgraph(
             return "reboot_check"
 
         builder.add_conditional_edges("verify", _route_verify, ["rollback", "reboot_check"])
-        builder.add_edge("reboot_check", END)
+
+        if sre_service_check:
+            builder.add_edge("reboot_check", "service_post")
+        else:
+            builder.add_edge("reboot_check", END)
+
+    elif sre_service_check:
+        def _route_verify_svc(state: PatchingGraphState) -> str:
+            if state.get("status") == ActionStatus.FAILED.value or state.get("error"):
+                return "rollback"
+            return "service_post"
+
+        builder.add_conditional_edges(
+            "verify", _route_verify_svc, ["rollback", "service_post"],
+        )
+
     else:
         builder.add_conditional_edges("verify", route_after_verify, ["rollback", END])
+
+    if sre_service_check:
+        builder.add_edge("service_post", END)
 
     builder.add_edge("rollback", END)
 

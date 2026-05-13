@@ -20,6 +20,8 @@ from errander.agent.subgraphs.patching import (
     route_after_execute,
     route_after_preflight_lock,
     route_after_validate,
+    service_health_post_node,
+    service_health_pre_node,
     snapshot_node,
     validate_node,
     verify_node,
@@ -768,3 +770,230 @@ class TestBuildSubgraphWithRebootCheck:
         # DRY_RUN_OK exits before reboot check
         assert result["status"] == ActionStatus.DRY_RUN_OK.value
         assert result.get("reboot_status_detected") is None
+
+
+# --- Service health node tests (1.3) ---
+
+class TestServiceHealthPreNode:
+    async def test_no_services_returns_empty_snapshot(self) -> None:
+        executor = _make_executor(dry_run=False)
+        result = await service_health_pre_node(
+            _base_state(critical_services=[]),
+            executor=executor,
+        )
+        assert result["service_pre_snapshot"] == {}
+
+    async def test_captures_service_states(self) -> None:
+        executor = _make_executor(dry_run=False)
+        with patch.object(
+            executor, "execute",
+            AsyncMock(return_value=_make_result("nginx=active\npostgresql=inactive\n")),
+        ):
+            result = await service_health_pre_node(
+                _base_state(critical_services=["nginx", "postgresql"]),
+                executor=executor,
+            )
+        assert result["service_pre_snapshot"]["nginx"] == "active"
+        assert result["service_pre_snapshot"]["postgresql"] == "inactive"
+
+    async def test_ssh_failure_returns_empty_snapshot(self) -> None:
+        executor = _make_executor(dry_run=False)
+        with patch.object(
+            executor, "execute",
+            AsyncMock(return_value=_make_result("", exit_code=1)),
+        ):
+            result = await service_health_pre_node(
+                _base_state(critical_services=["nginx"]),
+                executor=executor,
+            )
+        assert result["service_pre_snapshot"] == {}
+
+
+class TestServiceHealthPostNode:
+    async def test_no_services_returns_empty_regressions(self) -> None:
+        executor = _make_executor(dry_run=False)
+        result = await service_health_post_node(
+            _base_state(critical_services=[], service_pre_snapshot={}),
+            executor=executor,
+        )
+        assert result["service_regressions"] == []
+
+    async def test_detects_regression(self) -> None:
+        executor = _make_executor(dry_run=False)
+        # nginx was active before, now inactive
+        with patch.object(
+            executor, "execute",
+            AsyncMock(return_value=_make_result("nginx=inactive\n")),
+        ):
+            result = await service_health_post_node(
+                _base_state(
+                    critical_services=["nginx"],
+                    service_pre_snapshot={"nginx": "active"},
+                ),
+                executor=executor,
+            )
+        assert "nginx" in result["service_regressions"]
+
+    async def test_no_regression_when_all_active(self) -> None:
+        executor = _make_executor(dry_run=False)
+        with patch.object(
+            executor, "execute",
+            AsyncMock(return_value=_make_result("nginx=active\n")),
+        ):
+            result = await service_health_post_node(
+                _base_state(
+                    critical_services=["nginx"],
+                    service_pre_snapshot={"nginx": "active"},
+                ),
+                executor=executor,
+            )
+        assert result["service_regressions"] == []
+
+    async def test_pre_inactive_service_not_regression(self) -> None:
+        executor = _make_executor(dry_run=False)
+        with patch.object(
+            executor, "execute",
+            AsyncMock(return_value=_make_result("nginx=inactive\n")),
+        ):
+            result = await service_health_post_node(
+                _base_state(
+                    critical_services=["nginx"],
+                    service_pre_snapshot={"nginx": "inactive"},
+                ),
+                executor=executor,
+            )
+        assert result["service_regressions"] == []
+
+    async def test_emits_audit_event_on_regression(self) -> None:
+        from errander.models.events import EventType
+        from errander.safety.audit import AuditStore
+
+        executor = _make_executor(dry_run=False)
+        audit_store = AsyncMock(spec=AuditStore)
+        audit_store.log_event = AsyncMock()
+
+        with patch.object(
+            executor, "execute",
+            AsyncMock(return_value=_make_result("nginx=inactive\n")),
+        ):
+            await service_health_post_node(
+                _base_state(
+                    vm_id="dev/web-01",
+                    critical_services=["nginx"],
+                    service_pre_snapshot={"nginx": "active"},
+                ),
+                executor=executor,
+                audit_store=audit_store,
+                batch_id="batch-77",
+            )
+
+        audit_store.log_event.assert_called_once()
+        call_args = audit_store.log_event.call_args[0][0]
+        assert call_args.event_type == EventType.SERVICE_HEALTH_REGRESSION
+        assert call_args.batch_id == "batch-77"
+        assert "nginx" in call_args.detail
+
+    async def test_no_audit_event_when_no_regression(self) -> None:
+        from errander.safety.audit import AuditStore
+
+        executor = _make_executor(dry_run=False)
+        audit_store = AsyncMock(spec=AuditStore)
+        audit_store.log_event = AsyncMock()
+
+        with patch.object(
+            executor, "execute",
+            AsyncMock(return_value=_make_result("nginx=active\n")),
+        ):
+            await service_health_post_node(
+                _base_state(
+                    critical_services=["nginx"],
+                    service_pre_snapshot={"nginx": "active"},
+                ),
+                executor=executor,
+                audit_store=audit_store,
+            )
+
+        audit_store.log_event.assert_not_called()
+
+    async def test_no_audit_store_no_error(self) -> None:
+        executor = _make_executor(dry_run=False)
+        with patch.object(
+            executor, "execute",
+            AsyncMock(return_value=_make_result("nginx=inactive\n")),
+        ):
+            result = await service_health_post_node(
+                _base_state(
+                    critical_services=["nginx"],
+                    service_pre_snapshot={"nginx": "active"},
+                ),
+                executor=executor,
+                audit_store=None,
+            )
+        assert "nginx" in result["service_regressions"]
+
+    async def test_missing_pre_snapshot_returns_empty(self) -> None:
+        executor = _make_executor(dry_run=False)
+        result = await service_health_post_node(
+            _base_state(critical_services=["nginx"]),
+            executor=executor,
+        )
+        assert result["service_regressions"] == []
+
+
+class TestBuildSubgraphWithServiceCheck:
+    """Integration tests: sre_service_check wiring in build_patching_subgraph."""
+
+    def test_graph_builds_with_service_check_enabled(self) -> None:
+        executor = _make_executor(dry_run=True)
+        graph = build_patching_subgraph(executor, sre_service_check=True)
+        compiled = graph.compile()
+        assert compiled is not None
+
+    def test_graph_builds_with_service_check_disabled(self) -> None:
+        executor = _make_executor(dry_run=True)
+        graph = build_patching_subgraph(executor, sre_service_check=False)
+        compiled = graph.compile()
+        assert compiled is not None
+
+    def test_graph_builds_all_sre_disabled(self) -> None:
+        executor = _make_executor(dry_run=True)
+        graph = build_patching_subgraph(
+            executor,
+            sre_preflight_lock_check=False,
+            sre_reboot_check=False,
+            sre_service_check=False,
+        )
+        compiled = graph.compile()
+        assert compiled is not None
+
+    async def test_nothing_to_do_skips_service_pre(self) -> None:
+        """Nothing-to-do path exits before service_pre is reached."""
+        executor = _make_executor(dry_run=True)
+        call_count = 0
+
+        async def mock_execute(*args: object, **kwargs: object) -> SSHResult:
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return _make_result("")   # no lock
+            if call_count == 2:
+                return _make_result("")   # refresh_package_lists
+            return _make_result("Listing... Done\n")  # list_upgradable → nothing to do
+
+        with patch.object(executor, "execute", side_effect=mock_execute):
+            graph = build_patching_subgraph(executor, sre_service_check=True)
+            compiled = graph.compile()
+            initial_state: PatchingGraphState = {
+                "vm_id": "dev/web-01",
+                "os_family": "ubuntu",
+                "dry_run": True,
+                "critical_services": ["nginx"],  # type: ignore[typeddict-item]
+                "hostname": "10.0.1.10",  # type: ignore[typeddict-item]
+                "username": "errander-ai",  # type: ignore[typeddict-item]
+                "key_path": "/key",  # type: ignore[typeddict-item]
+            }
+            result = await compiled.ainvoke(initial_state)
+
+        assert result["status"] == ActionStatus.SKIPPED.value
+        # service_pre was never reached (nothing_to_do exits at assess)
+        assert result.get("service_pre_snapshot") is None

@@ -584,7 +584,6 @@ def env_badge_top(env: str) -> str:
 NAV_ITEMS = [
     ("OVERVIEW",    None),
     ("Fleet Dashboard", "/",          "overview"),
-    ("Active Batch",    "/batches",   "overview"),
     ("OPERATIONS",  None),
     ("Approval Queue",  "/approvals", "operations"),
     ("Batch History",   "/batches",   "operations"),
@@ -657,52 +656,6 @@ _OVERRIDES = [
     ("Skip Approval Gate",      "Bypass Slack approval for High-risk actions. Emergency use only.",  False),
     ("Strict Audit Mode",       "Halt agent if any audit write fails — integrity over execution.",    True),
 ]
-
-
-def sidebar(active_url: str) -> str:
-    items_html = ""
-    for item in NAV_ITEMS:
-        if item[1] is None:
-            items_html += f'<div class="nav-section"><div class="nav-label">{item[0]}</div>'
-        else:
-            label, url = item[0], item[1]
-            active_cls = ' active' if url == active_url else ''
-            badge_html = f'<span class="nav-badge">{APPROVAL_COUNT}</span>' if label == "Approval Queue" and APPROVAL_COUNT else ""
-            items_html += f'<a href="{url}" class="nav-item{active_cls}">{label}{badge_html}</a>'
-            items_html += '</div>' if item == NAV_ITEMS[-1] or NAV_ITEMS[NAV_ITEMS.index(item) + 1][1] is None else ""
-    items_html += '</div>'
-
-    return f"""
-    <aside class="sidebar">
-      <div class="sidebar-logo">⚡ errander<span>-ai</span></div>
-      <nav>
-        {"".join(_sidebar_nav())}
-      </nav>
-      <div class="sidebar-footer">
-        <div class="sys-chip"><span class="sys-dot dot-green"></span>vLLM &nbsp;·&nbsp; ONLINE</div>
-        <div class="sys-chip"><span class="sys-dot dot-indigo"></span>Scheduler &nbsp;·&nbsp; RUNNING</div>
-        <div class="sys-version">v1.0.0</div>
-      </div>
-    </aside>"""
-
-
-def _sidebar_nav() -> list[str]:
-    parts: list[str] = []
-    section_open = False
-    for item in NAV_ITEMS:
-        if item[1] is None:
-            if section_open:
-                parts.append('</div>')
-            parts.append(f'<div class="nav-section"><div class="nav-label">{item[0]}</div>')
-            section_open = True
-        else:
-            label, url = item[0], item[1]
-            parts.append(f'<a href="{url}" class="nav-item" data-url="{url}">{label}'
-                         + (f'<span class="nav-badge">{APPROVAL_COUNT}</span>' if label == "Approval Queue" and APPROVAL_COUNT else "")
-                         + '</a>')
-    if section_open:
-        parts.append('</div>')
-    return parts
 
 
 def layout(title: str, active_url: str, breadcrumb: str, topnav_extra: str, content: str) -> str:

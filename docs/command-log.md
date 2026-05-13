@@ -10,6 +10,25 @@ uv run pytest tests/agent/test_sre_wiring.py -v   # 10 passed
 uv run pytest --tb=short -q   # 1303 passed, 111 skipped
 ```
 
+## SRE UI Revalidation — 3 Remaining Issues (2026-05-14)
+
+```bash
+# Verify remaining unescaped interpolations in metrics.py
+grep -n "batch_id\|vm_id\|{title}" errander/observability/metrics.py | grep -v "_esc"
+
+# Run affected test suites
+uv run pytest tests/observability/ tests/ui/ tests/test_main.py --basetemp=.pytest-tmp -q   # 104 passed
+
+# Full suite
+uv run pytest --basetemp=.pytest-tmp -q   # 1303 passed, 111 skipped
+
+git add errander/observability/metrics.py errander/main.py
+git commit -m "fix: SRE UI revalidation — escape title/batch_id/vm_id, load DB overrides before building components"
+git push origin main
+```
+**What**: Fixed 3 remaining issues from SRE revalidation: (1) Raw `title` in `_page()` `<title>` and `.tb-title` — now escaped; (2) Raw `batch_id`/`vm_id` in dashboard, batches, and approvals pages — all escaped; (3) `OverridesStore` initialized before `_build_components()` so DB-persisted LLM settings actually apply on restart.
+**Why**: Auditor revalidated previous fixes and flagged these as still open.
+
 ## SRE UI Audit Remediation (2026-05-14)
 
 ```bash

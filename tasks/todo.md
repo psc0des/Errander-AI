@@ -8,6 +8,13 @@
 - [x] Medium 4 — Remove `authentication failure` from `failed_logins_command` grep (regex couldn't parse it — honest fix)
 - [x] New test file `tests/agent/test_sre_wiring.py` — 10 tests proving full wiring chain; 1,303 total passing
 
+## SRE UI Revalidation — 3 Remaining Issues (2026-05-14)
+
+- [x] XSS — `_page()` still injected raw `title` into `<title>` and `.tb-title`; fixed with `_esc(title)`
+- [x] XSS — dashboard/batches/approvals still rendered raw `batch_id` and `vm_id` in links and form actions; all escaped
+- [x] Settings DB overrides not applied on restart — `OverridesStore` now initialized before `_build_components()`, DB overrides fetched and passed to second `load_settings()` call so restart picks them up
+- [x] 1303 tests passing — no regressions
+
 ## SRE UI Audit Remediation (2026-05-14)
 
 - [x] Critical 1 — Add `@web.middleware` to `_csrf_middleware` (was missing → HTTP 500 on all POST /ui/* routes)

@@ -353,6 +353,11 @@ None.
 - `tests/agent/test_sre_wiring.py` — 10 wiring tests proving full dependency chain from `make_wave_dispatcher` → `build_vm_graph` → patching subgraph, `critical_services` in `Send()` payloads, and `run_env_batch` passing stores to `build_batch_graph`.
 - `docs/learning/32-sre-production-wiring.md` — Learning doc: dependency injection chain, silent no-op pattern, batch_id-in-state fix, critical_services flow, how to wire new dependencies correctly.
 
+## Files Changed (2026-05-14 — SRE UI revalidation: 3 remaining issues)
+### Modified
+- `errander/observability/metrics.py` — Escaped `title` in `<title>` and `.tb-title` in `_page()`; escaped `batch_id`/`vm_id` in dashboard rows, batches list, approval cards/forms/history links.
+- `errander/main.py` — Fixed startup ordering: `OverridesStore` initialized and queried for `db_overrides` before `_build_components()` so DB-persisted LLM settings take effect on restart. Reuses same store instance later.
+
 ## Files Changed (2026-05-14 — SRE UI audit remediation)
 ### Modified
 - `errander/observability/metrics.py` — 7 findings fixed: (1) Added `@web.middleware` to `_csrf_middleware` — was missing, causing 500 on POST; (2) Fixed `_inject_csrf` to return `(modified_html, nonce)` not `(token, nonce)` — modified html was discarded; (3) Wired `_inject_csrf` + `_set_csrf_cookie` into `_page()` via optional `request=` param, called from settings/inventory/approvals GET handlers; (4) Applied `html.escape()` (`_esc`) to all untrusted DB/URL fields in batch detail, VM detail, inventory rows, flash messages, and settings input values; (5) Added "takes effect after restart" warning to settings page; (6) Converted `test-llm` from GET to POST so API keys never appear in URLs/logs; (7) Narrowed `_VALID_OS_FAMILIES` to `{"ubuntu","debian","rhel"}` matching `OSFamily` enum.

@@ -10,6 +10,19 @@ uv run pytest tests/agent/test_sre_wiring.py -v   # 10 passed
 uv run pytest --tb=short -q   # 1303 passed, 111 skipped
 ```
 
+## Inventory UI — Full YAML Fleet (2026-05-14)
+
+```bash
+uv run pytest tests/observability/ tests/ui/ tests/test_main.py --basetemp=.pytest-tmp -q   # 104 passed
+uv run pytest --basetemp=.pytest-tmp -q   # 1303 passed, 111 skipped
+
+git add errander/observability/metrics.py errander/main.py
+git commit -m "feat: inventory UI shows full YAML fleet merged with DB overrides — pass base_inventory to start_metrics_server"
+git push origin main
+```
+**What**: `_ui_inventory_get` now reads `_BASE_INVENTORY_KEY` from the app to build the full fleet view. YAML VMs appear as the base with their DB-override disabled state; ad-hoc DB VMs are appended. `start_metrics_server` gains a `base_inventory` param; `main.py` loads the flat list via `load_inventory()` and passes it.
+**Why**: Auditor's last open finding — inventory page only showed DB overrides, not the YAML fleet.
+
 ## SRE UI Revalidation — 3 Remaining Issues (2026-05-14)
 
 ```bash

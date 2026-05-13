@@ -8,6 +8,14 @@
 - [x] Medium 4 — Remove `authentication failure` from `failed_logins_command` grep (regex couldn't parse it — honest fix)
 - [x] New test file `tests/agent/test_sre_wiring.py` — 10 tests proving full wiring chain; 1,303 total passing
 
+## Inventory UI — Full YAML Fleet (2026-05-14)
+
+- [x] Add `_BASE_INVENTORY_KEY` app key to `metrics.py`
+- [x] Add `base_inventory: list[VMTarget] | None` param to `start_metrics_server`
+- [x] Rewrite `_ui_inventory_get`: YAML VMs as base with DB override status, ad-hoc VMs appended; YAML vs ad-hoc badge per row
+- [x] `main.py`: call `load_inventory()` and pass `flat_inventory` to `start_metrics_server`
+- [x] 1303 tests passing — no regressions
+
 ## SRE UI Revalidation — 3 Remaining Issues (2026-05-14)
 
 - [x] XSS — `_page()` still injected raw `title` into `<title>` and `.tb-title`; fixed with `_esc(title)`

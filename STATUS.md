@@ -353,6 +353,11 @@ None.
 - `tests/agent/test_sre_wiring.py` — 10 wiring tests proving full dependency chain from `make_wave_dispatcher` → `build_vm_graph` → patching subgraph, `critical_services` in `Send()` payloads, and `run_env_batch` passing stores to `build_batch_graph`.
 - `docs/learning/32-sre-production-wiring.md` — Learning doc: dependency injection chain, silent no-op pattern, batch_id-in-state fix, critical_services flow, how to wire new dependencies correctly.
 
+## Files Changed (2026-05-14 — Inventory UI shows full YAML fleet)
+### Modified
+- `errander/observability/metrics.py` — Added `_BASE_INVENTORY_KEY` app key; `start_metrics_server` gains `base_inventory` param; `_ui_inventory_get` rewritten to build merged view: YAML VMs as base (with disabled state from DB override), ad-hoc DB VMs appended. Shows YAML vs ad-hoc badge per row.
+- `errander/main.py` — Calls `load_inventory()` alongside `validate_inventory()` to get flat `list[VMTarget]`; passes it as `base_inventory` to `start_metrics_server`.
+
 ## Files Changed (2026-05-14 — SRE UI revalidation: 3 remaining issues)
 ### Modified
 - `errander/observability/metrics.py` — Escaped `title` in `<title>` and `.tb-title` in `_page()`; escaped `batch_id`/`vm_id` in dashboard rows, batches list, approval cards/forms/history links.

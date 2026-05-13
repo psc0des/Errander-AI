@@ -18,6 +18,12 @@
 - [x] 1.4 — Disk growth trend: `disk_trend.py` with `disk_bytes_command()`, `parse_df_bytes()`, `compute_growth_alert()`, `detect_growth_alerts()`, `record_and_detect_disk_growth()`; `disk_snapshot_node` in vm_graph wired between discover and drift_check; 24 new tests; 1,148 total passing
 - [x] 1.5 — Configuration drift detection + failed SSH logins: 4 drift check modules (authorized_keys, sudoers, listening_ports, scheduled_jobs) in `drift_checks/`; `failed_logins.py`; `drift_baseline_node` + `failed_logins_node` in vm_graph; generalized SRE chain wiring; 97 new tests; 1,245 total passing
 
+## SRE Phase 2 — Signal Aggregation + Report Rendering
+
+- [x] 2.1 — SRE signal threading: `disk_snapshot_node` serialization adds `window_start`/`window_end`; `_merge_sre_list` reducer; `BatchGraphState` SRE fields; `run_vm_node` extracts SRE signals; 1,283 total passing
+- [x] 2.2 — `render_batch_report()`: deterministic Slack-formatted renderer, all 7 sections, drift grouped by kind, sections omitted when empty; 47 tests in `test_reporting.py`
+- [x] 2.3 — `generate_report_node` refactor: deserializes SRE dicts to typed objects, builds `BatchReport`, calls `render_batch_report()`
+
 ## Operations Hub UI — Glossary + Inventory + Settings + Admin (2026-05-13)
 
 - [x] Glossary page: 18-term glossary grid (CORE/SAFETY/ACTIONS/INFRA categories) + animated LangGraph DAG workflow diagram with node-click modal popups

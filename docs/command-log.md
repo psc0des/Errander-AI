@@ -1,5 +1,21 @@
 # Errander-AI Command Log
 
+## SRE Monitoring — PR-2 Signal Aggregation + BatchReport Rendering (2026-05-13)
+
+```bash
+# Run new reporting tests (47 tests)
+uv run pytest tests/observability/test_reporting.py -v --tb=short   # 47 passed
+
+# Full suite
+uv run pytest --tb=short -q   # 1283 passed, 111 skipped
+
+# ruff on changed files (pre-existing warnings only, no new errors)
+uv run ruff check errander/agent/graph.py errander/observability/reporting.py errander/agent/vm_graph.py
+
+# mypy on graph.py (6 pre-existing errors, 0 new)
+uv run mypy errander/agent/graph.py
+```
+
 ## SRE Monitoring — PR-1.5 Drift Detection + Failed Logins (2026-05-13)
 
 ```bash

@@ -30,11 +30,11 @@ from typing import Annotated, Any, TypedDict
 from langgraph.graph import END, StateGraph
 from langgraph.types import Send
 
-from errander.agent.decisions import generate_report, prioritize_actions
+from errander.agent.decisions import prioritize_actions
 from errander.agent.vm_graph import VMGraphState, build_vm_graph
 from errander.execution.os_detection import detect_os
 from errander.execution.sandbox import SandboxExecutor
-from errander.execution.ssh import SSHConnectionManager, SSHResult
+from errander.execution.ssh import SSHConnectionManager
 from errander.integrations.slack import SlackClient
 from errander.models.actions import ACTION_RISK_TIERS, ActionStatus, ActionType, RiskTier
 from errander.models.events import AuditEvent, EventType
@@ -70,6 +70,14 @@ def _merge_vm_plans(
     return [*existing, *incoming]
 
 
+def _merge_sre_list(
+    existing: list[dict[str, object]],
+    incoming: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    """Append-only reducer for SRE signal lists (disk growth, drift, failed logins)."""
+    return [*existing, *incoming]
+
+
 # --- State ---
 
 class BatchGraphState(TypedDict, total=False):
@@ -97,6 +105,11 @@ class BatchGraphState(TypedDict, total=False):
 
     # Aggregated results from all VM graphs (append-only via reducer)
     vm_results: Annotated[list[dict[str, object]], _merge_vm_results]
+
+    # SRE signals aggregated from all VM graphs (append-only via reducer)
+    sre_disk_growth: Annotated[list[dict[str, object]], _merge_sre_list]
+    sre_drift_changes: Annotated[list[dict[str, object]], _merge_sre_list]
+    sre_failed_logins: Annotated[list[dict[str, object]], _merge_sre_list]
 
     # Final report
     report: str
@@ -527,18 +540,34 @@ async def run_vm_node(
     """
     try:
         final: VMGraphState = await vm_compiled.ainvoke(state)
-        return {"vm_results": final.get("results", [])}
+        sre_disk: list[dict[str, object]] = list(final.get("disk_growth_alerts") or [])
+        sre_drift: list[dict[str, object]] = list(final.get("drift_changes") or [])
+        raw_logins = final.get("failed_login_summary")
+        sre_logins: list[dict[str, object]] = (
+            [raw_logins] if isinstance(raw_logins, dict) else []
+        )
+        return {
+            "vm_results": final.get("results", []),
+            "sre_disk_growth": sre_disk,
+            "sre_drift_changes": sre_drift,
+            "sre_failed_logins": sre_logins,
+        }
     except Exception as exc:  # noqa: BLE001
         logger.exception("VM graph crashed for %s", state.get("vm_id"))
-        return {"vm_results": [{
-            "action_type": "unknown",
-            "status": ActionStatus.FAILED.value,
-            "vm_id": state.get("vm_id", "unknown"),
-            "started_at": datetime.now(tz=timezone.utc).isoformat(),
-            "completed_at": datetime.now(tz=timezone.utc).isoformat(),
-            "detail": "vm graph raised exception",
-            "error": str(exc),
-        }]}
+        return {
+            "vm_results": [{
+                "action_type": "unknown",
+                "status": ActionStatus.FAILED.value,
+                "vm_id": state.get("vm_id", "unknown"),
+                "started_at": datetime.now(tz=timezone.utc).isoformat(),
+                "completed_at": datetime.now(tz=timezone.utc).isoformat(),
+                "detail": "vm graph raised exception",
+                "error": str(exc),
+            }],
+            "sre_disk_growth": [],
+            "sre_drift_changes": [],
+            "sre_failed_logins": [],
+        }
 
 
 async def collect_results_node(state: BatchGraphState) -> dict[str, Any]:
@@ -553,32 +582,69 @@ async def collect_results_node(state: BatchGraphState) -> dict[str, Any]:
 
 
 async def generate_report_node(state: BatchGraphState) -> dict[str, Any]:
-    """Generate a human-readable report from aggregated results."""
-    from errander.models.actions import ActionResult, ActionStatus, ActionType
+    """Generate a human-readable report from aggregated SRE signals and action results."""
+    from errander.models.reports import BatchReport, DiskGrowth, DriftChange, FailedLoginSummary
+    from errander.observability.reporting import render_batch_report
 
-    raw_results = state.get("vm_results", [])
     batch_id = state.get("batch_id", "")
+    raw_results: list[dict[str, object]] = list(state.get("vm_results") or [])
 
-    # Deserialise raw dicts back to ActionResult objects
-    action_results: list[ActionResult] = []
-    for r in raw_results:
+    disk_growth_alerts: list[DiskGrowth] = []
+    for d in state.get("sre_disk_growth") or []:
         try:
-            action_results.append(
-                ActionResult(
-                    action_type=ActionType(str(r.get("action_type", "disk_cleanup"))),
-                    status=ActionStatus(str(r.get("status", "failed"))),
-                    vm_id=str(r.get("vm_id", "unknown")),
-                    started_at=datetime.fromisoformat(str(r["started_at"])),
-                    completed_at=datetime.fromisoformat(str(r["completed_at"]))
-                    if r.get("completed_at") else None,
-                    detail=str(r.get("detail", "")),
-                    error=str(r["error"]) if r.get("error") else None,
-                )
-            )
-        except (KeyError, ValueError) as exc:
-            logger.warning("Could not deserialise result %s: %s", r, exc)
+            disk_growth_alerts.append(DiskGrowth(
+                vm_id=str(d["vm_id"]),
+                mountpoint=str(d["mountpoint"]),
+                used_pct_start=float(str(d["used_pct_start"])),
+                used_pct_end=float(str(d["used_pct_end"])),
+                window_start=datetime.fromisoformat(str(d["window_start"])),
+                window_end=datetime.fromisoformat(str(d["window_end"])),
+            ))
+        except (KeyError, ValueError, TypeError) as exc:
+            logger.warning("Could not deserialise disk growth alert %s: %s", d, exc)
 
-    report = await generate_report(action_results, batch_id=batch_id)
+    drift_changes: list[DriftChange] = []
+    for d in state.get("sre_drift_changes") or []:
+        try:
+            drift_changes.append(DriftChange(
+                vm_id=str(d["vm_id"]),
+                kind=str(d["kind"]),
+                scope_key=str(d["scope_key"]),
+                unified_diff=str(d["unified_diff"]),
+            ))
+        except (KeyError, ValueError) as exc:
+            logger.warning("Could not deserialise drift change %s: %s", d, exc)
+
+    failed_logins: list[FailedLoginSummary] = []
+    for d in state.get("sre_failed_logins") or []:
+        try:
+            raw_users = d.get("top_users")
+            raw_ips = d.get("top_source_ips")
+            failed_logins.append(FailedLoginSummary(
+                vm_id=str(d["vm_id"]),
+                window_hours=int(str(d["window_hours"])),
+                total_count=int(str(d["total_count"])),
+                top_users=tuple(
+                    (str(u), int(c))
+                    for u, c in (raw_users if isinstance(raw_users, list) else [])
+                ),
+                top_source_ips=tuple(
+                    (str(ip), int(c))
+                    for ip, c in (raw_ips if isinstance(raw_ips, list) else [])
+                ),
+            ))
+        except (KeyError, ValueError, TypeError) as exc:
+            logger.warning("Could not deserialise failed logins %s: %s", d, exc)
+
+    batch_report = BatchReport(
+        batch_id=batch_id,
+        generated_at=datetime.now(tz=timezone.utc),
+        vm_action_results=raw_results,
+        disk_growth_alerts=disk_growth_alerts,
+        drift_changes=drift_changes,
+        failed_logins=failed_logins,
+    )
+    rendered = render_batch_report(batch_report)
 
     # Record batch duration
     started_at_str = state.get("batch_started_at")
@@ -592,7 +658,7 @@ async def generate_report_node(state: BatchGraphState) -> dict[str, Any]:
         except (ValueError, TypeError):
             pass  # Skip metric if timestamp is unparseable
 
-    return {"report": report}
+    return {"report": rendered}
 
 
 # --- Planning phase nodes ---

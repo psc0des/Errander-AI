@@ -858,7 +858,8 @@ async def disk_snapshot_node(
             "mountpoint": a.mountpoint,
             "used_pct_start": a.used_pct_start,
             "used_pct_end": a.used_pct_end,
-            "delta_pct": a.delta_pct,
+            "window_start": a.window_start.isoformat(),
+            "window_end": a.window_end.isoformat(),
         }
         for a in alerts
     ]

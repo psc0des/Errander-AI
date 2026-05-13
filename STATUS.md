@@ -4,9 +4,19 @@
 2026-05-13
 
 ## Current Phase
-**SRE Monitoring — PR-1.5 complete (drift detection + failed logins). Phase 1 signal collection done.**
+**SRE Monitoring — PR-2 complete (SRE signal aggregation + BatchReport rendering). Phase 2 done.**
 
 ## Completed
+
+### PR-2: SRE Signal Aggregation + BatchReport Rendering (2026-05-13)
+- **`disk_snapshot_node` serialization** in `vm_graph.py`: now includes `window_start` and `window_end` as ISO strings (needed to reconstruct `DiskGrowth` objects for reports)
+- **`_merge_sre_list` reducer** in `graph.py`: append-only reducer for SRE signal lists
+- **`BatchGraphState` SRE fields**: `sre_disk_growth`, `sre_drift_changes`, `sre_failed_logins` (all Annotated with `_merge_sre_list`)
+- **`run_vm_node`** updated to extract and return all 3 SRE signals from final vm_graph state alongside `vm_results`
+- **`render_batch_report(report: BatchReport) -> str`** in `reporting.py`: deterministic Slack-formatted renderer with 7 sections (action results, preflight blocks, service regressions, reboot required, drift changes grouped by kind, disk growth, failed logins); sections omitted when empty
+- **`generate_report_node`** refactored to build `BatchReport` from aggregated state (deserializes SRE dicts → typed objects) and call `render_batch_report()`, replacing LLM-powered `generate_report()` call
+- **47 tests** in `test_reporting.py`; 1,283 total passing
+- Learning doc: `docs/learning/31-sre-signal-aggregation.md`
 
 ### PR-1.5: Configuration Drift Detection + Failed SSH Logins (2026-05-13)
 - **`errander/safety/drift_checks/authorized_keys.py`**: `authorized_keys_command()` — single-round-trip shell loop with `USER:` section delimiters; `parse_authorized_keys()` — parses user→keys sections; `capture_authorized_keys()` — SSH probe, scope_key=username (per-user independent baselines)

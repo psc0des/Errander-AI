@@ -15,9 +15,12 @@ Metrics exposed:
 
 from __future__ import annotations
 
+import html as _html_mod
 import logging
 import secrets
 from datetime import datetime, timezone
+
+_esc = _html_mod.escape  # escape untrusted data before HTML interpolation
 
 from aiohttp import web
 from prometheus_client import (
@@ -490,7 +493,14 @@ def _table(headers: list[str], rows: list[list[str]]) -> str:
     )
 
 
-def _page(title: str, body: str, *, refresh: int = 0, pending_count: int = 0) -> web.Response:
+def _page(
+    title: str,
+    body: str,
+    *,
+    refresh: int = 0,
+    pending_count: int = 0,
+    request: web.Request | None = None,
+) -> web.Response:
     # Active nav state
     t = title.lower()
     nav: dict[str, str] = {}
@@ -566,6 +576,11 @@ def _page(title: str, body: str, *, refresh: int = 0, pending_count: int = 0) ->
 </div>
 </body>
 </html>"""
+    if request is not None:
+        html, nonce = _inject_csrf(request, html)
+        response = web.Response(text=html, content_type="text/html")
+        _set_csrf_cookie(response, nonce)
+        return response
     return web.Response(text=html, content_type="text/html")
 
 
@@ -608,6 +623,7 @@ async def _basic_auth_middleware(
     )
 
 
+@web.middleware
 async def _csrf_middleware(
     request: web.Request,
     handler: web.RequestHandler,
@@ -698,7 +714,7 @@ def _set_csrf_cookie(response: web.Response, nonce: str) -> None:
 
 
 def _inject_csrf(request: web.Request, html: str) -> tuple[str, str]:
-    """Return (token, nonce) and inject a hidden CSRF field into all <form> tags.
+    """Return (modified_html, nonce) with hidden CSRF fields injected into all <form> tags.
 
     The nonce is returned so it can be set as a cookie on the response.
     """
@@ -714,11 +730,8 @@ def _inject_csrf(request: web.Request, html: str) -> tuple[str, str]:
         hashlib.sha256,
     ).hexdigest()
     hidden = f'<input type="hidden" name="{_CSRF_FIELD}" value="{token}">'
-    html = html.replace("<form ", f'<form data-csrf="{token}" ', 1)
-    # Inject into every <form ...> → <form ...> + hidden field after first >
-    import re as _re
     html = _re_inject_csrf(html, hidden)
-    return token, nonce
+    return html, nonce
 
 
 def _re_inject_csrf(html: str, hidden_field: str) -> str:
@@ -762,9 +775,9 @@ async def _ui_settings_get(request: web.Request) -> web.Response:
     flash_err = request.rel_url.query.get("err", "")
     flash_html = ""
     if flash:
-        flash_html = f'<div class="flash flash-ok">{flash}</div>'
+        flash_html = f'<div class="flash flash-ok">{_esc(flash)}</div>'
     elif flash_err:
-        flash_html = f'<div class="flash flash-err">{flash_err}</div>'
+        flash_html = f'<div class="flash flash-err">{_esc(flash_err)}</div>'
 
     import os as _os
     datalist = "".join(f'<option value="{m}">' for m in _LLM_MODEL_DATALIST)
@@ -813,7 +826,7 @@ async def _ui_settings_get(request: web.Request) -> web.Response:
         rows_html += (
             f'<div class="form-row">'
             f'<label class="form-lbl">{label}{source_label}</label>'
-            f'<input type="{input_type}" name="{env_key}" value="{display_val}" {disabled} {extra_attrs}>'
+            f'<input type="{input_type}" name="{env_key}" value="{_esc(display_val)}" {disabled} {extra_attrs}>'
             f'{reset_btn}'
             f'</div>'
         )
@@ -833,8 +846,10 @@ async def _ui_settings_get(request: web.Request) -> web.Response:
         + reset_forms_html  # reset forms rendered outside main form
         + '<p class="note">Env-var-locked fields cannot be overridden via UI. '
         + 'Reset removes the DB override and reverts to YAML/default.</p>'
+        + '<p class="note" style="color:#b45309">&#9888; LLM settings changes take effect after agent restart. '
+        + 'The running agent was built from the settings active at startup.</p>'
     )
-    return _page("Settings", body, pending_count=pending_count)
+    return _page("Settings", body, pending_count=pending_count, request=request)
 
 
 async def _ui_settings_post(request: web.Request) -> web.Response:
@@ -901,16 +916,20 @@ async def _ui_settings_reset(request: web.Request) -> web.Response:
 
 
 async def _ui_settings_test_llm(request: web.Request) -> web.Response:
-    """GET /ui/settings/test-llm — verify LLM connectivity with provided params."""
+    """POST /ui/settings/test-llm — verify LLM connectivity with provided params.
+
+    Accepts POST so secrets never appear in URLs, browser history, or access logs.
+    """
     import os as _os
     from errander.integrations.llm import LLMClient
 
-    base_url = request.rel_url.query.get("base_url", _os.environ.get("ERRANDER_LLM_BASE_URL", ""))
-    model = request.rel_url.query.get("model", _os.environ.get("ERRANDER_LLM_MODEL", ""))
-    api_key = request.rel_url.query.get("api_key", _os.environ.get("ERRANDER_LLM_API_KEY", "not-needed"))
+    data = await request.post()
+    base_url = str(data.get("base_url", "") or _os.environ.get("ERRANDER_LLM_BASE_URL", ""))
+    model = str(data.get("model", "") or _os.environ.get("ERRANDER_LLM_MODEL", ""))
+    api_key = str(data.get("api_key", "") or _os.environ.get("ERRANDER_LLM_API_KEY", "not-needed"))
 
     try:
-        temperature = float(request.rel_url.query.get("temperature", "0.1"))
+        temperature = float(str(data.get("temperature", "0.1")) or "0.1")
     except ValueError:
         temperature = 0.1
 
@@ -926,7 +945,7 @@ async def _ui_settings_test_llm(request: web.Request) -> web.Response:
 # UI — Inventory page handlers
 # ---------------------------------------------------------------------------
 
-_VALID_OS_FAMILIES = {"ubuntu", "debian", "rhel", "centos", "amazon"}
+_VALID_OS_FAMILIES = {"ubuntu", "debian", "rhel"}  # must match OSFamily enum in models/vm.py
 
 
 async def _ui_inventory_get(request: web.Request) -> web.Response:
@@ -940,9 +959,9 @@ async def _ui_inventory_get(request: web.Request) -> web.Response:
     flash_err = request.rel_url.query.get("err", "")
     flash_html = ""
     if flash:
-        flash_html = f'<div class="flash flash-ok">{flash}</div>'
+        flash_html = f'<div class="flash flash-ok">{_esc(flash)}</div>'
     elif flash_err:
-        flash_html = f'<div class="flash flash-err">{flash_err}</div>'
+        flash_html = f'<div class="flash flash-err">{_esc(flash_err)}</div>'
 
     if store is None:
         return _page("Inventory", flash_html + '<div class="nc">Overrides store not connected.</div>', pending_count=pending_count)
@@ -957,20 +976,21 @@ async def _ui_inventory_get(request: web.Request) -> web.Response:
     for env_name, rows in sorted(by_env.items()):
         items_html = ""
         for row in rows:
-            vm_name = str(row["vm_name"])
+            vm_name = _esc(str(row["vm_name"]))
             source = str(row["source"])
             disabled = bool(row["disabled"])
-            host = str(row["host"] or "")
-            os_fam = str(row["os_family"] or "")
+            host = _esc(str(row["host"] or ""))
+            os_fam = _esc(str(row["os_family"] or ""))
             is_adhoc = source == "db_addition"
 
             name_cls = "inv-dis" if disabled else ""
             adhoc_badge = '<span class="inv-badge">+ ad-hoc</span>' if is_adhoc else ""
 
             disable_label = "Enable" if disabled else "Disable"
+            env_name_esc = _esc(env_name)
             toggle_form = (
                 f'<form method="POST" action="/ui/inventory/toggle" style="display:inline">'
-                f'<input type="hidden" name="env_name" value="{env_name}">'
+                f'<input type="hidden" name="env_name" value="{env_name_esc}">'
                 f'<input type="hidden" name="vm_name" value="{vm_name}">'
                 f'<input type="hidden" name="disabled" value="{"0" if disabled else "1"}">'
                 f'<button type="submit" class="btn-sm">{disable_label}</button>'
@@ -979,7 +999,7 @@ async def _ui_inventory_get(request: web.Request) -> web.Response:
             delete_form = ""
             if is_adhoc:
                 delete_form = (
-                    f'<form method="POST" action="/ui/inventory/delete/{env_name}/{vm_name}" style="display:inline">'
+                    f'<form method="POST" action="/ui/inventory/delete/{env_name_esc}/{vm_name}" style="display:inline">'
                     f'<button type="submit" class="btn-del">Delete</button>'
                     f'</form>'
                 )
@@ -1032,7 +1052,7 @@ async def _ui_inventory_get(request: web.Request) -> web.Response:
         )
 
     body = flash_html + env_sections
-    return _page("Inventory", body, pending_count=pending_count)
+    return _page("Inventory", body, pending_count=pending_count, request=request)
 
 
 async def _ui_inventory_toggle(request: web.Request) -> web.Response:
@@ -1255,16 +1275,16 @@ async def _ui_batch_detail(request: web.Request) -> web.Response:
         [
             f'<span class="mono">{e.timestamp.strftime("%Y-%m-%d %H:%M:%S")}</span>',
             _event_cell(e.event_type.value),
-            f'<a class="id-a" href="/ui/vms/{e.vm_id}">{e.vm_id}</a>' if e.vm_id else "",
-            f'<span class="mono">{e.action_type}</span>' if e.action_type else "",
-            e.detail,
+            f'<a class="id-a" href="/ui/vms/{_esc(e.vm_id)}">{_esc(e.vm_id)}</a>' if e.vm_id else "",
+            f'<span class="mono">{_esc(e.action_type)}</span>' if e.action_type else "",
+            _esc(e.detail or ""),
         ]
         for e in events
     ]
     body = (
         back
         + f'<div class="det-hdr">'
-        f'<div class="det-id">{batch_id}</div>'
+        f'<div class="det-id">{_esc(batch_id)}</div>'
         f'<div class="det-sub">{len(events)} event(s)</div>'
         f'</div>'
         + _section("Event Log", len(events))
@@ -1296,16 +1316,16 @@ async def _ui_vm(request: web.Request) -> web.Response:
         [
             f'<span class="mono">{e.timestamp.strftime("%Y-%m-%d %H:%M:%S")}</span>',
             _event_cell(e.event_type.value),
-            f'<a class="id-a" href="/ui/batches/{e.batch_id}">{e.batch_id}</a>',
-            f'<span class="mono">{e.action_type}</span>' if e.action_type else "",
-            e.detail,
+            f'<a class="id-a" href="/ui/batches/{_esc(e.batch_id)}">{_esc(e.batch_id)}</a>',
+            f'<span class="mono">{_esc(e.action_type)}</span>' if e.action_type else "",
+            _esc(e.detail or ""),
         ]
         for e in events
     ]
     body = (
         back
         + f'<div class="det-hdr">'
-        f'<div class="det-id">{vm_id}</div>'
+        f'<div class="det-id">{_esc(vm_id)}</div>'
         f'<div class="det-sub">{len(events)} event(s)</div>'
         f'</div>'
         + _section("Action History", len(events))
@@ -1401,6 +1421,7 @@ async def _ui_approvals(request: web.Request) -> web.Response:
         pending_section + history_section,
         refresh=15,
         pending_count=pending_count,
+        request=request,
     )
 
 
@@ -1471,7 +1492,7 @@ async def start_metrics_server(
     - GET  /ui/settings                          — LLM settings form
     - POST /ui/settings                          — Save settings overrides
     - POST /ui/settings/reset                    — Clear a single override
-    - GET  /ui/settings/test-llm                 — Test LLM connectivity
+    - POST /ui/settings/test-llm                 — Test LLM connectivity (POST keeps secrets out of URLs)
     - GET  /ui/inventory                         — Inventory management
     - POST /ui/inventory/toggle                  — Enable/disable a VM
     - POST /ui/inventory/add                     — Add an ad-hoc VM
@@ -1530,7 +1551,7 @@ async def start_metrics_server(
     app.router.add_get("/ui/settings", _ui_settings_get)
     app.router.add_post("/ui/settings", _ui_settings_post)
     app.router.add_post("/ui/settings/reset", _ui_settings_reset)
-    app.router.add_get("/ui/settings/test-llm", _ui_settings_test_llm)
+    app.router.add_post("/ui/settings/test-llm", _ui_settings_test_llm)
     app.router.add_get("/ui/inventory", _ui_inventory_get)
     app.router.add_post("/ui/inventory/toggle", _ui_inventory_toggle)
     app.router.add_post("/ui/inventory/add", _ui_inventory_add)

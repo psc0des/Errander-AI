@@ -594,6 +594,7 @@ async def run_env_batch(
     disk_history_store: object = None,
     baseline_store: object = None,
     vm_state_store: object = None,
+    is_deferred_reapproval: bool = False,
 ) -> None:
     """Run a full maintenance batch for one environment.
 
@@ -694,6 +695,7 @@ async def run_env_batch(
         "env_name": env_name,
         "env_policy": env_schema.approval_policy,
         "ai_db_path": ai_db_path,
+        "is_deferred_reapproval": is_deferred_reapproval,
     }
 
     logger.info(
@@ -764,7 +766,12 @@ async def _window_opener(
         await audit_store.log_event(AuditEvent(
             event_type=_ET.DEFERRED_EXECUTION_STARTED,
             batch_id=record.batch_id,
-            detail=f"Executing deferred batch approved by {record.approved_by}",
+            detail=(
+                f"Deferred batch window opened — re-planning and requesting fresh "
+                f"human re-approval (original approval by {record.approved_by} "
+                f"at {record.approved_at.isoformat()}). "
+                f"Original approval was for action categories only, not pinned commands."
+            ),
         ))
         try:
             await run_env_batch(
@@ -778,8 +785,8 @@ async def _window_opener(
                 dry_run=False,
                 force=True,
                 force_reason=(
-                    f"Deferred execution: approved by {record.approved_by} "
-                    f"at {record.approved_at.isoformat()}"
+                    f"Deferred re-approval: original approval by {record.approved_by} "
+                    f"at {record.approved_at.isoformat()} — fresh re-approval required at window time"
                 ),
                 approval_manager=approval_manager,
                 slack_client=slack_client,
@@ -789,6 +796,7 @@ async def _window_opener(
                 disk_history_store=disk_history_store,
                 baseline_store=baseline_store,
                 vm_state_store=vm_state_store,
+                is_deferred_reapproval=True,
             )
         finally:
             await deferred_store.mark_done(record.batch_id)

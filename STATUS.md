@@ -8,6 +8,15 @@
 
 ## Completed
 
+### SRE HITL Guardrails (2026-05-14)
+- **`require_live_approval: bool = True`** in Settings — ALL live batches require human Slack approval regardless of policy tier; overrides relaxed/moderate auto-approve
+- **`autonomous_live_apply_enabled: bool = False`** in Settings — product-level gate documenting HITL-only posture until P0-1/P0-2 done
+- **Default policy → `strict`** — schema.py and graph.py fallback both changed from `moderate`
+- **Honest Slack approval message** — disclaimer that operator approves action categories, not pinned commands; deferred batches flagged as re-approval required
+- **Deferred execution re-approval** — `_window_opener` triggers fresh re-plan + fresh human approval at window time; no longer silently replays old approval
+- **SPEC.md** — removed false exactness claims from `PlannedAction`; added honest pre-P0-1 limitation note
+- 1308 tests passing, 111 skipped
+
 ### AI SRE Audit v2 — Second-Pass Residuals (2026-05-14)
 - **Residual P0-3**: log_rotation tracks logrotate failure independently; per-file fallback clears it only when all files rotated AND large_files was non-empty
 - **P2-3 full**: `check_connectivity` now has `strict_host_keys=True` default — refuses without `known_hosts_path`, consistent with `SSHConnectionManager`

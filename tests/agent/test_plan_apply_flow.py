@@ -186,8 +186,8 @@ class TestApprovalGatePolicies:
         assert result.get("approved") is True
 
     @pytest.mark.asyncio
-    async def test_moderate_policy_auto_approves_medium(self) -> None:
-        """MEDIUM tier in moderate env auto-approves without Slack."""
+    async def test_moderate_policy_auto_approves_medium_when_hitl_disabled(self) -> None:
+        """MEDIUM tier in moderate env auto-approves when require_live_approval=False."""
         vm_plans = _make_vm_plans(["patching"], ["medium"])
         state = _base_state(
             dry_run=False,
@@ -197,14 +197,16 @@ class TestApprovalGatePolicies:
         mgr = self._make_manager_mock()
 
         with patch("errander.agent.graph.await_dual_approval", new_callable=AsyncMock) as mock_approval:
-            result = await approval_gate_node(state, approval_manager=mgr)
+            result = await approval_gate_node(
+                state, approval_manager=mgr, require_live_approval=False,
+            )
 
         mock_approval.assert_not_awaited()
         assert result.get("approved") is True
 
     @pytest.mark.asyncio
-    async def test_relaxed_policy_auto_approves_medium_and_high(self) -> None:
-        """HIGH tier in relaxed env auto-approves (only CRITICAL gates)."""
+    async def test_relaxed_policy_auto_approves_medium_and_high_when_hitl_disabled(self) -> None:
+        """HIGH tier in relaxed env auto-approves when require_live_approval=False."""
         vm_plans = _make_vm_plans(["backup_verify"], ["high"])
         state = _base_state(
             dry_run=False,
@@ -214,9 +216,31 @@ class TestApprovalGatePolicies:
         mgr = self._make_manager_mock()
 
         with patch("errander.agent.graph.await_dual_approval", new_callable=AsyncMock) as mock_approval:
-            result = await approval_gate_node(state, approval_manager=mgr)
+            result = await approval_gate_node(
+                state, approval_manager=mgr, require_live_approval=False,
+            )
 
         mock_approval.assert_not_awaited()
+        assert result.get("approved") is True
+
+    @pytest.mark.asyncio
+    async def test_require_live_approval_overrides_relaxed_policy(self) -> None:
+        """HITL guardrail: even relaxed policy requires approval when require_live_approval=True."""
+        vm_plans = _make_vm_plans(["disk_cleanup"], ["low"])
+        state = _base_state(
+            dry_run=False,
+            env_policy="relaxed",
+            vm_plans=vm_plans,
+        )
+        mgr = self._make_manager_mock()
+
+        with patch("errander.agent.graph.await_dual_approval", new_callable=AsyncMock) as mock_approval:
+            mock_approval.return_value = (True, "ops-on-call")
+            result = await approval_gate_node(
+                state, approval_manager=mgr, require_live_approval=True,
+            )
+
+        mock_approval.assert_awaited_once()
         assert result.get("approved") is True
 
     @pytest.mark.asyncio

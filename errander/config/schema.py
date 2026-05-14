@@ -99,7 +99,7 @@ class EnvironmentSchema(BaseModel):
     maintenance_window: str | None = None
     maintenance_days: list[str] = []
     maintenance_timezone: str = "UTC"
-    approval_policy: str = "moderate"
+    approval_policy: str = "strict"
     ssh_user: str = "errander-ai"
     ssh_key_path: str = "~/.ssh/errander"
     # Environment-level default; host-level list overrides when set.

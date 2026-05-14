@@ -64,7 +64,7 @@ class TestEnvironmentSchema:
             targets=[TargetSchema(host="10.0.1.10", name="web-01", os_family="ubuntu")],
         )
         assert env.ssh_user == "errander-ai"
-        assert env.approval_policy == "moderate"
+        assert env.approval_policy == "strict"
 
     def test_invalid_policy_rejected(self) -> None:
         with pytest.raises(ValidationError, match="approval_policy"):

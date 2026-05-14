@@ -131,6 +131,20 @@ class Settings:
     metrics_port: int = 9090
     dry_run_default: bool = True
 
+    # HITL guardrails — must remain enabled until immutable plan artifact
+    # (P0-1) and exact deferred-artifact replay (P0-2) are implemented.
+    #
+    # require_live_approval: when True, every live batch requires human Slack
+    # approval regardless of env approval_policy tier.  Only relaxes when an
+    # operator explicitly sets this to False AND understands they are bypassing
+    # the HITL contract.
+    require_live_approval: bool = True
+    #
+    # autonomous_live_apply_enabled: product-level gate.  False = agent is a
+    # HITL automation assistant.  True = agent may apply live changes without
+    # human approval (NOT safe until P0-1/P0-2 are implemented).
+    autonomous_live_apply_enabled: bool = False
+
     # Audit mode: "strict" (fail-closed on write error for live actions) or
     # "best_effort" (log and continue). Default strict so production batches
     # are never silently under-audited (finding #13).

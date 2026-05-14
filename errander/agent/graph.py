@@ -121,6 +121,10 @@ class BatchGraphState(TypedDict, total=False):
     # Approval policy from environment config (relaxed / moderate / strict)
     env_policy: str
 
+    # Set True by deferred executor so the approval message and audit trail
+    # make clear this is a re-approval at window time, not the original approval.
+    is_deferred_reapproval: bool
+
     # Rolling update state
     rolling_update_percentage: int
     wave_failure_threshold: float
@@ -798,10 +802,16 @@ def _format_plan_for_approval(
     batch_id: str,
     plan_id: str,
     plan_hash: str,
+    is_deferred_reapproval: bool = False,
 ) -> str:
-    """Format an ImmutableBatchPlan for the Slack approval message."""
+    """Format a batch plan for the Slack approval message."""
+    header = (
+        f":repeat: *Deferred Re-Approval Required* — Batch `{batch_id}`"
+        if is_deferred_reapproval
+        else f"*Live Execution Approval* — Batch `{batch_id}`"
+    )
     lines = [
-        f"Batch `{batch_id}` — Live Execution Plan",
+        header,
         f"Plan: {plan_id} | Hash: `{plan_hash[:12]}`",
         f"{len(vm_plans)} VM(s):",
     ]
@@ -816,7 +826,13 @@ def _format_plan_for_approval(
                 label = f"{label}({param_str})"
             action_summaries.append(label)
         lines.append(f"  • `{vm_id}`: {', '.join(action_summaries) or 'no actions planned'}")
-    lines.extend(["", "Reply :white_check_mark: to approve or :x: to reject (timeout -> auto-REJECT)"])
+    lines.extend([
+        "",
+        ":warning: *You are approving action categories and parameters, not exact pinned "
+        "commands or package versions. VM state will be re-evaluated at execution time.*",
+        "",
+        "Reply :white_check_mark: to approve or :x: to reject (timeout → auto-REJECT)",
+    ])
     return "\n".join(lines)
 
 
@@ -830,6 +846,7 @@ async def approval_gate_node(
     deferred_store: DeferredExecutionStore | None = None,
     approval_timeout_seconds: int = 1800,
     approval_poll_interval_seconds: int = 30,
+    require_live_approval: bool = True,
 ) -> dict[str, Any]:
     """Gate live execution behind Slack approval of the ImmutableBatchPlan.
 
@@ -848,21 +865,26 @@ async def approval_gate_node(
     vm_plans = state.get("vm_plans", [])
     batch_id = state.get("batch_id", "unknown")
     env_name = state.get("env_name", "unknown")
-    env_policy = state.get("env_policy", "moderate")
+    env_policy = state.get("env_policy", "strict")
     plan_id = state.get("plan_id", "unknown")
     plan_hash = state.get("plan_hash", "")
     dry_run = state.get("dry_run", True)
 
     max_tier = _max_risk_tier_from_plans(vm_plans)
 
-    # Determine which risk tiers require operator approval based on policy
-    if env_policy == "strict":
+    # When require_live_approval=True (HITL guardrail, default while P0-1/P0-2
+    # are open), ALL live tiers require human approval — policy is ignored.
+    if require_live_approval and not dry_run:
         _approval_tiers: frozenset[RiskTier] = frozenset({
+            RiskTier.LOW, RiskTier.MEDIUM, RiskTier.HIGH, RiskTier.CRITICAL,
+        })
+    elif env_policy == "strict":
+        _approval_tiers = frozenset({
             RiskTier.MEDIUM, RiskTier.HIGH, RiskTier.CRITICAL,
         })
     elif env_policy == "relaxed":
         _approval_tiers = frozenset({RiskTier.CRITICAL})
-    else:  # moderate (default)
+    else:  # moderate
         _approval_tiers = frozenset({RiskTier.HIGH, RiskTier.CRITICAL})
 
     if dry_run:
@@ -875,10 +897,15 @@ async def approval_gate_node(
             batch_id, max_tier.value,
         )
     elif max_tier in _approval_tiers and approval_manager is not None:
-        plan_summary = _format_plan_for_approval(vm_plans, batch_id, plan_id, plan_hash)
+        is_deferred = bool(state.get("is_deferred_reapproval", False))
+        plan_summary = _format_plan_for_approval(
+            vm_plans, batch_id, plan_id, plan_hash,
+            is_deferred_reapproval=is_deferred,
+        )
         logger.info(
-            "Batch %s requires live approval before execution (policy=%s, max risk tier: %s)",
+            "Batch %s requires live approval before execution (policy=%s, max risk tier: %s%s)",
             batch_id, env_policy, max_tier.value,
+            " [deferred re-approval]" if is_deferred else "",
         )
         approved, approver = await await_dual_approval(
             approval_manager, slack_client, batch_id, plan_summary,
@@ -1067,7 +1094,7 @@ def make_fan_out_router(
 
         batch_id = state.get("batch_id", "unknown")
         dry_run = state.get("dry_run", True)
-        env_policy = state.get("env_policy", "moderate")
+        env_policy = state.get("env_policy", "strict")
 
         return [
             Send(
@@ -1145,7 +1172,7 @@ def make_wave_dispatcher(
             current_wave + 1, state.get("total_waves", 1), len(wave_targets),
         )
 
-        env_policy = state.get("env_policy", "moderate")
+        env_policy = state.get("env_policy", "strict")
         ai_db_path = state.get("ai_db_path", "")
 
         # Build approved plan lookup: vm_id → planned_actions.
@@ -1302,6 +1329,7 @@ def build_batch_graph(
             deferred_store=deferred_store,
             approval_timeout_seconds=_settings.approval_timeout_seconds,
             approval_poll_interval_seconds=_settings.approval_poll_interval_seconds,
+            require_live_approval=_settings.require_live_approval,
         )
 
     async def _check_fleet(state: BatchGraphState) -> dict[str, Any]:
@@ -1332,7 +1360,7 @@ def build_batch_graph(
         if not healthy:
             return "generate_report"
         batch_id = state.get("batch_id", "unknown")
-        env_policy = state.get("env_policy", "moderate")
+        env_policy = state.get("env_policy", "strict")
         return [
             Send("plan_vm", {
                 "vm_id": str(t["vm_id"]),

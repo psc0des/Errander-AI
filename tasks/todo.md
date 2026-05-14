@@ -13,6 +13,19 @@
 - [x] P1-4 — approval_gate_node: approval_timeout_seconds/approval_poll_interval_seconds wired from settings
 - [x] 1305 tests passing, 111 skipped — no regressions
 
+## SRE HITL Guardrails — P0-1/P0-2 Deferral Contract (2026-05-14)
+
+- [x] Add `require_live_approval: bool = True` to Settings — ALL live batches require human approval regardless of policy tier; only relaxes when operator explicitly sets False
+- [x] Add `autonomous_live_apply_enabled: bool = False` to Settings — product-level gate documenting current HITL-only posture
+- [x] Default `approval_policy` → `strict` (schema.py + graph.py fallback) — was `moderate`
+- [x] `approval_gate_node`: when `require_live_approval=True` and not dry-run, override approval tiers to include ALL risk tiers including LOW
+- [x] `_format_plan_for_approval`: honest disclaimer in Slack message — "You are approving action categories and parameters, not exact pinned commands/packages"; deferred re-approvals flagged with :repeat: header
+- [x] `_window_opener`: deferred execution now re-plans and requests fresh human re-approval (not silent re-execution of old approval); audit event updated accordingly
+- [x] `run_env_batch`: `is_deferred_reapproval: bool = False` parameter threads through to graph state
+- [x] SPEC.md: removed false exactness claims from `PlannedAction`; added honest note about current pre-P0-1 limitation
+- [x] Updated two policy auto-approve tests to pass `require_live_approval=False` (testing policy tier logic, not HITL override); added HITL override test
+- [x] 1308 tests passing, 111 skipped — no regressions
+
 ## AI SRE Audit v2 — Second-Pass Residuals (2026-05-14)
 
 - [x] Residual P0-3 — log_rotation: logrotate failure with empty large_files now returns FAILED; fallback succeeds only if all per-file rotations succeed AND there were actual large_files

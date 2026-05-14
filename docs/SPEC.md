@@ -349,12 +349,17 @@ class PlannedAction(BaseModel):
     action_type: str
     risk_tier: str
     description: str                        # human-readable summary
-    commands: list[str]                     # exact commands to run
-    dry_run_output: str                     # output from simulation
+    params: dict                            # action parameters (paths, thresholds, flags)
     rollback_strategy: str                  # "full", "re-pull", "none", "blocked"
-    rollback_commands: list[str]            # commands to undo (if applicable)
     estimated_duration_seconds: int
 ```
+
+> **Current implementation note (pre-P0-1):** The plan artifact contains action categories
+> and parameters, not exact pinned commands or package versions. Commands are generated at
+> live execution time against current VM state. Operators approving a batch are approving
+> action types and parameters — not exact package versions or shell commands.
+> `commands`, `dry_run_output`, and `rollback_commands` are target fields for the P0-1
+> immutable artifact milestone and are not yet populated.
 
 ---
 

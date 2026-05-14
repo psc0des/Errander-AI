@@ -242,19 +242,31 @@ sudo cp -r /etc/sudoers.d /etc/sudoers.d.bak.$(date +%Y%m%d)
 
 **2. Create the errander sudoers file** *(Target VM)*
 
+> **Important — sudo prefix requirement:** The agent runs all commands as the `errander` user via SSH. Commands that require root (apt-get, logrotate, gzip on /var/log, etc.) must be prefixed with `sudo` in the generated command strings. The sudoers file below grants passwordless sudo for those binaries. **Until the command layer is updated to prepend `sudo` where needed, privileged commands will fail with permission denied on a real VM.** This is a known gap tracked as a code-level fix — for now, confirm the sudoers file is correct so production setup is not blocked once the code fix lands.
+
 ```bash
 sudo tee /etc/sudoers.d/errander << 'EOF'
 errander ALL=(ALL) NOPASSWD: \
   /usr/bin/apt-get, \
+  /usr/bin/apt-mark, \
   /usr/bin/apt-cache, \
+  /usr/bin/dpkg-query, \
   /usr/bin/dnf, \
   /usr/bin/yum, \
+  /usr/bin/rpm, \
   /usr/bin/journalctl, \
   /usr/bin/docker, \
   /usr/bin/find, \
   /bin/df, \
   /usr/bin/du, \
-  /usr/sbin/logrotate
+  /usr/sbin/logrotate, \
+  /bin/gzip, \
+  /usr/bin/gzip, \
+  /usr/bin/truncate, \
+  /bin/cp, \
+  /usr/bin/stat, \
+  /bin/systemctl, \
+  /usr/bin/systemctl
 EOF
 ```
 

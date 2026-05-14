@@ -13,6 +13,14 @@
 - [x] P1-4 — approval_gate_node: approval_timeout_seconds/approval_poll_interval_seconds wired from settings
 - [x] 1305 tests passing, 111 skipped — no regressions
 
+## SRE HITL Guardrails — Fourth-Pass Fixes (2026-05-14)
+
+- [x] Fail closed when no approval_manager supplied — `approval_gate_node` returns `approved=False` with error instead of auto-approving when `require_live_approval=True` and `approval_manager is None`
+- [x] `autonomous_live_apply_enabled` enforced — when False (default), any attempt to pass `require_live_approval=False` is silently overridden to True; gate is real not decorative
+- [x] `require_live_approval` hardcoded — NOT loadable via settings.yaml/env vars until P0-1/P0-2 done; comment updated to say so explicitly
+- [x] New tests: fail-closed with no approval_manager; autonomous gate prevents HITL bypass; deferred tests now supply mock approval_manager
+- [x] 1310 tests passing, 111 skipped — no regressions
+
 ## SRE HITL Guardrails — P0-1/P0-2 Deferral Contract (2026-05-14)
 
 - [x] Add `require_live_approval: bool = True` to Settings — ALL live batches require human approval regardless of policy tier; only relaxes when operator explicitly sets False

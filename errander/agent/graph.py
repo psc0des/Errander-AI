@@ -847,6 +847,7 @@ async def approval_gate_node(
     approval_timeout_seconds: int = 1800,
     approval_poll_interval_seconds: int = 30,
     require_live_approval: bool = True,
+    autonomous_live_apply_enabled: bool = False,
 ) -> dict[str, Any]:
     """Gate live execution behind Slack approval of the ImmutableBatchPlan.
 
@@ -872,6 +873,16 @@ async def approval_gate_node(
 
     max_tier = _max_risk_tier_from_plans(vm_plans)
 
+    # Enforce the autonomous mode gate: if autonomous_live_apply_enabled=False (default),
+    # require_live_approval cannot be disabled — HITL is mandatory.
+    if not autonomous_live_apply_enabled and not require_live_approval and not dry_run:
+        logger.warning(
+            "Batch %s: require_live_approval=False rejected — autonomous_live_apply_enabled=False "
+            "enforces HITL. Forcing require_live_approval=True.",
+            batch_id,
+        )
+        require_live_approval = True
+
     # When require_live_approval=True (HITL guardrail, default while P0-1/P0-2
     # are open), ALL live tiers require human approval — policy is ignored.
     if require_live_approval and not dry_run:
@@ -896,6 +907,17 @@ async def approval_gate_node(
             "Batch %s dry-run — proceeding to sandbox execution (max risk tier: %s)",
             batch_id, max_tier.value,
         )
+    elif max_tier in _approval_tiers and approval_manager is None:
+        # Approval required but no mechanism available — fail closed.
+        # This guards against misconfigured deployments where require_live_approval=True
+        # but the approval manager was never wired up.
+        logger.error(
+            "Batch %s BLOCKED: live approval required (require_live_approval=%s, "
+            "policy=%s, max tier=%s) but no approval_manager is configured — "
+            "refusing live execution",
+            batch_id, require_live_approval, env_policy, max_tier.value,
+        )
+        return {"approved": False, "error": "live approval required but no approval manager configured"}
     elif max_tier in _approval_tiers and approval_manager is not None:
         is_deferred = bool(state.get("is_deferred_reapproval", False))
         plan_summary = _format_plan_for_approval(
@@ -1330,6 +1352,7 @@ def build_batch_graph(
             approval_timeout_seconds=_settings.approval_timeout_seconds,
             approval_poll_interval_seconds=_settings.approval_poll_interval_seconds,
             require_live_approval=_settings.require_live_approval,
+            autonomous_live_apply_enabled=_settings.autonomous_live_apply_enabled,
         )
 
     async def _check_fleet(state: BatchGraphState) -> dict[str, Any]:

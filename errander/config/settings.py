@@ -134,15 +134,17 @@ class Settings:
     # HITL guardrails — must remain enabled until immutable plan artifact
     # (P0-1) and exact deferred-artifact replay (P0-2) are implemented.
     #
-    # require_live_approval: when True, every live batch requires human Slack
-    # approval regardless of env approval_policy tier.  Only relaxes when an
-    # operator explicitly sets this to False AND understands they are bypassing
-    # the HITL contract.
+    # require_live_approval: hardcoded True — NOT configurable via settings.yaml
+    # or environment variable until P0-1/P0-2 are implemented.  The approval_gate
+    # enforces this: if autonomous_live_apply_enabled=False, any attempt to pass
+    # require_live_approval=False is silently overridden back to True.
     require_live_approval: bool = True
     #
-    # autonomous_live_apply_enabled: product-level gate.  False = agent is a
-    # HITL automation assistant.  True = agent may apply live changes without
-    # human approval (NOT safe until P0-1/P0-2 are implemented).
+    # autonomous_live_apply_enabled: product-level gate.  False (default) = agent
+    # is a HITL automation assistant — require_live_approval cannot be disabled.
+    # True = immutable artifact replay is implemented and audited; agent may apply
+    # live changes after human approval of exact pinned commands.
+    # DO NOT set True until P0-1 and P0-2 are fully implemented and tested.
     autonomous_live_apply_enabled: bool = False
 
     # Audit mode: "strict" (fail-closed on write error for live actions) or

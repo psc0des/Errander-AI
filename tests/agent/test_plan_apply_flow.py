@@ -187,7 +187,7 @@ class TestApprovalGatePolicies:
 
     @pytest.mark.asyncio
     async def test_moderate_policy_auto_approves_medium_when_hitl_disabled(self) -> None:
-        """MEDIUM tier in moderate env auto-approves when require_live_approval=False."""
+        """MEDIUM tier in moderate env auto-approves when require_live_approval=False and autonomous mode on."""
         vm_plans = _make_vm_plans(["patching"], ["medium"])
         state = _base_state(
             dry_run=False,
@@ -198,7 +198,9 @@ class TestApprovalGatePolicies:
 
         with patch("errander.agent.graph.await_dual_approval", new_callable=AsyncMock) as mock_approval:
             result = await approval_gate_node(
-                state, approval_manager=mgr, require_live_approval=False,
+                state, approval_manager=mgr,
+                require_live_approval=False,
+                autonomous_live_apply_enabled=True,
             )
 
         mock_approval.assert_not_awaited()
@@ -206,7 +208,7 @@ class TestApprovalGatePolicies:
 
     @pytest.mark.asyncio
     async def test_relaxed_policy_auto_approves_medium_and_high_when_hitl_disabled(self) -> None:
-        """HIGH tier in relaxed env auto-approves when require_live_approval=False."""
+        """HIGH tier in relaxed env auto-approves when require_live_approval=False and autonomous mode on."""
         vm_plans = _make_vm_plans(["backup_verify"], ["high"])
         state = _base_state(
             dry_run=False,
@@ -217,7 +219,9 @@ class TestApprovalGatePolicies:
 
         with patch("errander.agent.graph.await_dual_approval", new_callable=AsyncMock) as mock_approval:
             result = await approval_gate_node(
-                state, approval_manager=mgr, require_live_approval=False,
+                state, approval_manager=mgr,
+                require_live_approval=False,
+                autonomous_live_apply_enabled=True,
             )
 
         mock_approval.assert_not_awaited()
@@ -293,6 +297,47 @@ class TestApprovalGatePolicies:
             result = await approval_gate_node(state, approval_manager=mgr)
 
         mock_approval.assert_not_awaited()
+        assert result.get("approved") is True
+
+
+    @pytest.mark.asyncio
+    async def test_live_approval_fails_closed_when_no_approval_manager(self) -> None:
+        """Live batch with require_live_approval=True and no approval_manager returns approved=False."""
+        vm_plans = _make_vm_plans(["patching"], ["medium"])
+        state = _base_state(
+            dry_run=False,
+            env_policy="strict",
+            vm_plans=vm_plans,
+        )
+        result = await approval_gate_node(
+            state,
+            approval_manager=None,
+            require_live_approval=True,
+        )
+        assert result.get("approved") is False
+        assert result.get("error") is not None
+
+    @pytest.mark.asyncio
+    async def test_autonomous_gate_prevents_disabling_hitl(self) -> None:
+        """autonomous_live_apply_enabled=False prevents require_live_approval=False from taking effect."""
+        vm_plans = _make_vm_plans(["disk_cleanup"], ["low"])
+        state = _base_state(
+            dry_run=False,
+            env_policy="relaxed",
+            vm_plans=vm_plans,
+        )
+        mgr = self._make_manager_mock()
+
+        with patch("errander.agent.graph.await_dual_approval", new_callable=AsyncMock) as mock_approval:
+            mock_approval.return_value = (True, "ops-on-call")
+            result = await approval_gate_node(
+                state, approval_manager=mgr,
+                require_live_approval=False,      # caller tries to disable HITL
+                autonomous_live_apply_enabled=False,  # gate overrides it
+            )
+
+        # Approval was still required because autonomous mode is off
+        mock_approval.assert_awaited_once()
         assert result.get("approved") is True
 
 

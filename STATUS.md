@@ -8,6 +8,12 @@
 
 ## Completed
 
+### SRE HITL Guardrails — Fourth-Pass Fixes (2026-05-14)
+- **Fail-closed**: `approval_gate_node` returns `approved=False` when `require_live_approval=True` but `approval_manager is None` — no silent auto-approve
+- **`autonomous_live_apply_enabled` enforced**: gate is real — when False, any `require_live_approval=False` call is overridden to True
+- **`require_live_approval` hardcoded**: not configurable via settings.yaml/env until P0-1/P0-2 done
+- 1310 tests passing, 111 skipped
+
 ### SRE HITL Guardrails (2026-05-14)
 - **`require_live_approval: bool = True`** in Settings — ALL live batches require human Slack approval regardless of policy tier; overrides relaxed/moderate auto-approve
 - **`autonomous_live_apply_enabled: bool = False`** in Settings — product-level gate documenting HITL-only posture until P0-1/P0-2 done

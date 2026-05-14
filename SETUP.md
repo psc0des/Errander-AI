@@ -658,7 +658,7 @@ INSTALL_USER=$(whoami)
 
 sudo tee /etc/systemd/system/errander.service << EOF
 [Unit]
-Description=Errander-AI autonomous maintenance agent
+Description=Errander-AI supervised agentic AI SRE platform
 After=network.target
 
 [Service]

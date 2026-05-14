@@ -541,7 +541,7 @@ def _page(
 <aside class="sb">
   <div class="sb-head">
     <div class="sb-brand"><span class="sb-led"></span>Errander-AI</div>
-    <div class="sb-tag">autonomous maintenance agent</div>
+    <div class="sb-tag">supervised agentic AI SRE</div>
   </div>
   <nav class="sb-nav">
     <a href="/ui" class="sb-a{nav.get('dashboard','')}">

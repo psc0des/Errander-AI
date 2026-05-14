@@ -1,6 +1,6 @@
 # Errander-AI — Full Project Specification
 
-> Autonomous maintenance agent that eliminates repetitive operational toil across heterogeneous VM infrastructure. Performs secure patching (non-kernel), log rotation, Docker pruning, disk cleanup, and more — with safety gates, rollback, and full audit logging.
+> A supervised agentic AI SRE platform that eliminates operational toil while keeping humans in control of live infrastructure changes. Performs secure patching (non-kernel), log rotation, Docker pruning, disk cleanup, and more — with safety gates, rollback, and full audit logging. Every live change requires human Slack approval.
 
 ---
 
@@ -29,7 +29,7 @@
 
 ## 1. System Overview
 
-Errander-AI is a long-lived agent process that runs on a single VM inside a private VPN. It autonomously maintains a fleet of heterogeneous Linux VMs (Ubuntu, RHEL, Debian) by performing:
+Errander-AI is a long-lived agent process that runs on a single VM inside a private VPN. It maintains a fleet of heterogeneous Linux VMs (Ubuntu, RHEL, Debian) under human supervision by performing:
 
 - **Non-kernel OS patching** — security and package updates
 - **Docker pruning** — reclaim disk from dangling images, stopped containers, build cache

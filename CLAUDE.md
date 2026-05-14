@@ -1,6 +1,6 @@
-# Errander-AI — LangGraph Autonomous Maintenance Agent
+# Errander-AI — Supervised Agentic AI SRE Platform
 
-Autonomous maintenance agent that eliminates repetitive operational toil across heterogeneous VM infrastructure. Performs secure patching (non-kernel), log rotation, Docker pruning, disk cleanup, and more — with safety gates, rollback, and full audit logging.
+A supervised agentic AI SRE platform that eliminates operational toil while keeping humans in control of live infrastructure changes. Performs secure patching (non-kernel), log rotation, Docker pruning, disk cleanup, and more — with safety gates, rollback, and full audit logging. Every live change requires human Slack approval.
 
 ## Stack (100% Open Source, Cloud-Agnostic)
 - Language: Python 3.12+

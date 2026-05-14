@@ -1449,7 +1449,7 @@ _GLOSS: list[tuple[str, str, str, str, str]] = [
     ("Batch",              "CORE",    "#4f46e5", "gloss-chip-core",
      "A single end-to-end maintenance run across all VMs in the fleet. Identified by a unique ID like prod-0423-0200."),
     ("Agent",              "CORE",    "#4f46e5", "gloss-chip-core",
-     "The autonomous LangGraph-powered system that orchestrates all maintenance decisions without human intervention."),
+     "The LangGraph-powered system that orchestrates maintenance decisions and enforces human approval before any live infrastructure change."),
     ("LangGraph",          "CORE",    "#4f46e5", "gloss-chip-core",
      "State machine framework driving the agent workflow. Each node is a discrete step; edges are conditional transitions."),
     ("Dry Run",            "CORE",    "#4f46e5", "gloss-chip-core",

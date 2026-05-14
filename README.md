@@ -1,8 +1,8 @@
 # Errander-AI
 
-**Autonomous maintenance agent that replaces repetitive DevOps toil across heterogeneous VM fleets.**
+**A supervised agentic AI SRE platform that eliminates operational toil while keeping humans in control of live infrastructure changes.**
 
-Errander-AI performs non-kernel patching, log rotation, Docker pruning, disk cleanup, and backup verification — with safety gates, rollback, idempotency, and full audit logging. It runs on a single master VM and manages any number of target servers over SSH.
+Errander-AI performs non-kernel patching, log rotation, Docker pruning, disk cleanup, and backup verification — with safety gates, rollback, idempotency, and full audit logging. Every live change requires human Slack approval. It runs on a single master VM and manages any number of target servers over SSH.
 
 100% open source. Cloud-agnostic. No SaaS dependencies except Slack.
 

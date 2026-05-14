@@ -50,7 +50,7 @@ logger = structlog.get_logger(__name__)
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="errander-ai",
-        description="Errander-AI — autonomous VM maintenance agent",
+        description="Errander-AI — supervised agentic AI SRE platform",
     )
     parser.add_argument(
         "--config",

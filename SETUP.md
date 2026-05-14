@@ -242,33 +242,28 @@ sudo cp -r /etc/sudoers.d /etc/sudoers.d.bak.$(date +%Y%m%d)
 
 **2. Create the errander sudoers file** *(Target VM)*
 
-> **Important — sudo prefix requirement:** The agent runs all commands as the `errander` user via SSH. Commands that require root (apt-get, logrotate, gzip on /var/log, etc.) must be prefixed with `sudo` in the generated command strings. The sudoers file below grants passwordless sudo for those binaries. **Until the command layer is updated to prepend `sudo` where needed, privileged commands will fail with permission denied on a real VM.** This is a known gap tracked as a code-level fix — for now, confirm the sudoers file is correct so production setup is not blocked once the code fix lands.
+> **sudo -n model:** The agent calls all privileged commands as `sudo -n /absolute/path ...` (e.g. `sudo -n /usr/bin/apt-get upgrade -y`). `sudo -n` fails immediately with exit 1 if passwordless sudo is not configured — it never hangs waiting for a password. Absolute paths match sudoers entries predictably and produce clean audit logs in `/var/log/auth.log` on the target VM.
 
 ```bash
 sudo tee /etc/sudoers.d/errander << 'EOF'
-errander ALL=(ALL) NOPASSWD: \
+errander ALL=(root) NOPASSWD: \
   /usr/bin/apt-get, \
   /usr/bin/apt-mark, \
-  /usr/bin/apt-cache, \
-  /usr/bin/dpkg-query, \
   /usr/bin/dnf, \
   /usr/bin/yum, \
-  /usr/bin/rpm, \
   /usr/bin/journalctl, \
-  /usr/bin/docker, \
-  /usr/bin/find, \
-  /bin/df, \
-  /usr/bin/du, \
   /usr/sbin/logrotate, \
-  /bin/gzip, \
   /usr/bin/gzip, \
   /usr/bin/truncate, \
-  /bin/cp, \
-  /usr/bin/stat, \
-  /bin/systemctl, \
+  /usr/bin/cp, \
+  /usr/bin/needs-restarting, \
   /usr/bin/systemctl
 EOF
 ```
+
+> **Docker — production hardening (see below):** Do NOT add `/usr/bin/docker` to the sudoers above for production. Use root-owned wrapper scripts instead (see "Docker hardening" section below). Raw `sudo docker` is root-equivalent — any `docker run` command can mount the host filesystem. The wrapper approach restricts the agent to exactly the prune operations it is allowed to perform.
+
+> **Read-only commands** — these run without sudo (no sudoers entry needed): `df`, `du`, `dpkg-query`, `rpm -q`, `apt list`, `dnf check-update`, `find` (listing only), `stat`, `systemctl is-active`, `journalctl --disk-usage`.
 
 **3. Set correct permissions and validate syntax** *(Target VM)*
 
@@ -289,12 +284,60 @@ sudo rm /etc/sudoers.d/errander
 sudo cp -r /etc/sudoers.d.bak.$(date +%Y%m%d) /etc/sudoers.d
 ```
 
-**4. Verify the errander user can use sudo** *(Target VM)*
+**4. Verify the errander user can use sudo -n** *(Target VM)*
 
 ```bash
-sudo -u errander sudo /bin/df -h /
-# Expected: filesystem usage table — no password prompt
+sudo -u errander sudo -n /usr/bin/apt-get --version
+# Expected: apt-get version output — no password prompt, exits 0
+
+# Confirm sudo -n fails fast when not configured (sanity check):
+sudo -u errander sudo -n /usr/bin/id  # should FAIL — /usr/bin/id is not in sudoers
+# Expected: exit 1 immediately, no hanging
 ```
+
+---
+
+## Docker hardening *(Target VM — production)*
+
+The Docker group is effectively root: a user in it can mount the host filesystem via `docker run`. Do **not** add `errander` to the docker group, and do not grant raw `sudo /usr/bin/docker` in production.
+
+Instead, create root-owned wrapper scripts that restrict the agent to exactly the two prune operations it is permitted to perform:
+
+```bash
+# Create wrapper scripts as root
+sudo tee /usr/local/sbin/errander-docker-prune-safe << 'EOF'
+#!/bin/bash
+# Runs dangling image + stopped container prune only. No -a flag.
+/usr/bin/docker image prune -f 2>&1
+/usr/bin/docker container prune -f 2>&1
+EOF
+
+sudo tee /usr/local/sbin/errander-docker-prune-aggressive << 'EOF'
+#!/bin/bash
+# Runs full system prune including ALL unused images.
+# Only used when aggressive=true is approved in the maintenance plan.
+/usr/bin/docker system prune -af 2>&1
+EOF
+
+sudo chmod 755 /usr/local/sbin/errander-docker-prune-safe
+sudo chmod 755 /usr/local/sbin/errander-docker-prune-aggressive
+sudo chown root:root /usr/local/sbin/errander-docker-prune-safe
+sudo chown root:root /usr/local/sbin/errander-docker-prune-aggressive
+```
+
+Then add only the wrappers to sudoers *(replacing the `/usr/bin/docker` line if present)*:
+
+```bash
+sudo tee /etc/sudoers.d/errander-docker << 'EOF'
+errander ALL=(root) NOPASSWD: \
+  /usr/local/sbin/errander-docker-prune-safe, \
+  /usr/local/sbin/errander-docker-prune-aggressive
+EOF
+sudo chmod 440 /etc/sudoers.d/errander-docker
+sudo visudo -c -f /etc/sudoers.d/errander-docker
+```
+
+> **Lab / pre-prod shortcut only:** If wrapper scripts are too much for a dev environment, you may add `/usr/bin/docker` to the main sudoers file temporarily. Do not call this enterprise-hardened.
 
 ---
 

@@ -16,6 +16,7 @@ import logging
 from typing import TYPE_CHECKING
 
 from errander.execution.command_builder import CommandBuildError, pkg_version_spec
+from errander.execution.privilege import privileged
 
 from errander.models.actions import ActionType
 
@@ -120,8 +121,9 @@ async def _rollback_patching_apt(
     if not install_specs:
         return False, "No versioned packages in snapshot — cannot rollback"
 
-    rollback_cmd = (
-        "DEBIAN_FRONTEND=noninteractive apt-get install -y --allow-downgrades "
+    rollback_cmd = privileged(
+        "/usr/bin/env DEBIAN_FRONTEND=noninteractive "
+        "/usr/bin/apt-get install -y --allow-downgrades "
         + " ".join(install_specs)
     )
 
@@ -241,7 +243,7 @@ async def _rollback_patching_dnf(
     if not downgrade_specs:
         return False, "No versioned packages in snapshot — cannot rollback via dnf"
 
-    rollback_cmd = "dnf downgrade -y " + " ".join(downgrade_specs)
+    rollback_cmd = privileged("/usr/bin/dnf downgrade -y " + " ".join(downgrade_specs))
 
     logger.info(
         "Rolling back %d packages on %s via dnf downgrade",

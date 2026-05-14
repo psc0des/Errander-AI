@@ -19,6 +19,7 @@ from typing import Any, TypedDict
 from langgraph.graph import END, StateGraph
 
 from errander.execution.command_builder import CommandBuildError, safe_path
+from errander.execution.privilege import privileged
 from errander.execution.sandbox import SandboxExecutor
 from errander.models.actions import ActionStatus
 
@@ -176,8 +177,8 @@ async def execute_node(
     failed_items: list[str] = []
 
     # Try system logrotate first
-    logrotate_cmd = "logrotate --force /etc/logrotate.conf 2>&1"
-    logrotate_sim = "logrotate --debug /etc/logrotate.conf 2>&1 | head -20"
+    logrotate_cmd = privileged("/usr/sbin/logrotate --force /etc/logrotate.conf 2>&1")
+    logrotate_sim = privileged("/usr/sbin/logrotate --debug /etc/logrotate.conf 2>&1 | head -20")
 
     result = await executor.execute(
         vm_id, target["hostname"], target["username"], target["key_path"],
@@ -207,11 +208,15 @@ async def execute_node(
                 continue
             if compress:
                 live_cmd = (
-                    f"cp {qp} {qp1} && "
-                    f"gzip {qp1} && truncate -s 0 {qp}"
+                    f"sudo -n /usr/bin/cp {qp} {qp1} && "
+                    f"sudo -n /usr/bin/gzip {qp1} && "
+                    f"sudo -n /usr/bin/truncate -s 0 {qp}"
                 )
             else:
-                live_cmd = f"cp {qp} {qp1} && truncate -s 0 {qp}"
+                live_cmd = (
+                    f"sudo -n /usr/bin/cp {qp} {qp1} && "
+                    f"sudo -n /usr/bin/truncate -s 0 {qp}"
+                )
             sim_cmd = f"ls -lh {qp}"
 
             file_result = await executor.execute(

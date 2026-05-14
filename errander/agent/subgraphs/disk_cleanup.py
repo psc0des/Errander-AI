@@ -26,6 +26,7 @@ from typing import Any, TypedDict
 from langgraph.graph import END, StateGraph
 
 from errander.execution.commands import AptManager, DnfManager, get_package_manager
+from errander.execution.privilege import privileged
 from errander.execution.sandbox import SandboxExecutor
 from errander.execution.ssh import SSHResult
 from errander.models.actions import ActionStatus
@@ -86,10 +87,11 @@ def _tmp_assess_cmd(age_days: int) -> str:
 
 
 def _journal_vacuum_cmd(days: int) -> str:
-    return f"journalctl --vacuum-time={days}d 2>/dev/null || echo 'journal not available'"
+    return privileged(f"/usr/bin/journalctl --vacuum-time={days}d 2>/dev/null || echo 'journal not available'")
 
 
 def _journal_size_cmd() -> str:
+    # --disk-usage is read-only — no sudo needed on most distros.
     return "journalctl --disk-usage 2>/dev/null || echo '0'"
 
 

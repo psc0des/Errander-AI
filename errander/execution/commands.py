@@ -18,6 +18,7 @@ import shlex
 from abc import ABC, abstractmethod
 
 from errander.execution.command_builder import safe_pkg, safe_ver
+from errander.execution.privilege import privileged
 from errander.models.vm import OSFamily
 
 # Kernel package patterns for Python-side filtering (finding #11).
@@ -91,7 +92,7 @@ class AptManager(PackageManager):
     """Package manager for Debian/Ubuntu systems (apt)."""
 
     def refresh_package_lists(self) -> str:
-        return "apt-get update -qq"
+        return privileged("/usr/bin/apt-get update -qq")
 
     def list_upgradable(self) -> str:
         return "apt list --upgradable 2>/dev/null"
@@ -101,6 +102,7 @@ class AptManager(PackageManager):
         # package names queried from dpkg-query and filtered in Python.
         # This two-step shell script queries installed kernel packages, holds
         # them, upgrades everything else, then unholds.
+        # dpkg-query is read-only — no sudo needed.
         kernel_query = (
             "dpkg-query -W -f='${Package}\\n' 2>/dev/null"
             " | grep -E "
@@ -111,10 +113,10 @@ class AptManager(PackageManager):
         )
         hold_cmd = (
             f"KERNEL_PKGS=$({kernel_query}); "
-            "[ -n \"$KERNEL_PKGS\" ] && echo \"$KERNEL_PKGS\" | xargs apt-mark hold 2>/dev/null || true; "
-            "apt-get upgrade -y; "
+            "[ -n \"$KERNEL_PKGS\" ] && echo \"$KERNEL_PKGS\" | xargs sudo -n /usr/bin/apt-mark hold 2>/dev/null || true; "
+            "sudo -n /usr/bin/apt-get upgrade -y; "
             "APT_RC=$?; "
-            "[ -n \"$KERNEL_PKGS\" ] && echo \"$KERNEL_PKGS\" | xargs apt-mark unhold 2>/dev/null || true; "
+            "[ -n \"$KERNEL_PKGS\" ] && echo \"$KERNEL_PKGS\" | xargs sudo -n /usr/bin/apt-mark unhold 2>/dev/null || true; "
             "exit $APT_RC"
         )
         return hold_cmd
@@ -132,7 +134,8 @@ class AptManager(PackageManager):
 
     def install_version(self, package: str, version: str) -> str:
         return (
-            "DEBIAN_FRONTEND=noninteractive apt-get install -y --allow-downgrades "
+            "sudo -n /usr/bin/env DEBIAN_FRONTEND=noninteractive "
+            "/usr/bin/apt-get install -y --allow-downgrades "
             + f"{safe_pkg(package)}={safe_ver(version)}"
         )
 
@@ -141,14 +144,14 @@ class AptManager(PackageManager):
         return f"dpkg-query -W -f='${{Package}}=${{Version}}\\n' {quoted} 2>/dev/null"
 
     def clean_cache(self) -> str:
-        return "apt-get clean"
+        return privileged("/usr/bin/apt-get clean")
 
     def autoremove(self) -> str:
-        return "apt-get autoremove -y"
+        return privileged("/usr/bin/apt-get autoremove -y")
 
     def simulate_upgrade(self) -> str:
         """Return command to simulate an upgrade (dry-run)."""
-        return "apt-get --simulate upgrade"
+        return privileged("/usr/bin/apt-get --simulate upgrade")
 
     def detect_lock(self) -> str:
         # fuser prints the PID holding each lock file; /proc/<pid>/comm gives the name.
@@ -174,7 +177,7 @@ class DnfManager(PackageManager):
     """Package manager for RHEL systems (dnf)."""
 
     def refresh_package_lists(self) -> str:
-        return "dnf makecache --quiet 2>/dev/null || true"
+        return privileged("/usr/bin/dnf makecache --quiet 2>/dev/null || true")
 
     def list_upgradable(self) -> str:
         return "dnf check-update --quiet 2>/dev/null || true"
@@ -182,6 +185,7 @@ class DnfManager(PackageManager):
     def upgrade_all(self, exclude_patterns: list[str] | None = None) -> str:
         # Finding #11: use dnf versionlock with exact kernel package names
         # queried from rpm and filtered in Python — not glob patterns.
+        # rpm -qa is read-only — no sudo needed.
         kernel_query = (
             "rpm -qa --qf '%{NAME}\\n' 2>/dev/null"
             " | grep -E "
@@ -191,10 +195,10 @@ class DnfManager(PackageManager):
         )
         lock_cmd = (
             f"KERNEL_PKGS=$({kernel_query}); "
-            "[ -n \"$KERNEL_PKGS\" ] && echo \"$KERNEL_PKGS\" | xargs dnf versionlock add 2>/dev/null || true; "
-            "dnf upgrade -y; "
+            "[ -n \"$KERNEL_PKGS\" ] && echo \"$KERNEL_PKGS\" | xargs sudo -n /usr/bin/dnf versionlock add 2>/dev/null || true; "
+            "sudo -n /usr/bin/dnf upgrade -y; "
             "DNF_RC=$?; "
-            "[ -n \"$KERNEL_PKGS\" ] && echo \"$KERNEL_PKGS\" | xargs dnf versionlock delete 2>/dev/null || true; "
+            "[ -n \"$KERNEL_PKGS\" ] && echo \"$KERNEL_PKGS\" | xargs sudo -n /usr/bin/dnf versionlock delete 2>/dev/null || true; "
             "exit $DNF_RC"
         )
         return lock_cmd
@@ -208,17 +212,17 @@ class DnfManager(PackageManager):
         )
 
     def install_version(self, package: str, version: str) -> str:
-        return f"dnf downgrade -y {safe_pkg(package)}-{safe_ver(version)}"
+        return privileged(f"/usr/bin/dnf downgrade -y {safe_pkg(package)}-{safe_ver(version)}")
 
     def list_installed_versions(self, packages: list[str]) -> str:
         quoted = " ".join(safe_pkg(p) for p in packages)
         return f"rpm -q --qf '%{{NAME}}=%{{VERSION}}-%{{RELEASE}}\\n' {quoted} 2>/dev/null"
 
     def clean_cache(self) -> str:
-        return "dnf clean all"
+        return privileged("/usr/bin/dnf clean all")
 
     def autoremove(self) -> str:
-        return "dnf autoremove -y"
+        return privileged("/usr/bin/dnf autoremove -y")
 
     def simulate_upgrade(self) -> str:
         """Return command to simulate an upgrade (dry-run)."""

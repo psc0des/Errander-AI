@@ -51,10 +51,11 @@ def reboot_required_command(os_family: str) -> str:
             " fi"
         )
     # RHEL / CentOS / Rocky — needs-restarting is part of dnf-utils.
+    # Requires sudo -n for reliable process inspection.
     # Exit 1 = reboot needed; 0 = no; absent binary → EXIT=unknown.
     return (
         "if command -v needs-restarting >/dev/null 2>&1; then"
-        " needs-restarting -r >/dev/null 2>&1;"
+        " sudo -n /usr/bin/needs-restarting -r >/dev/null 2>&1;"
         " echo \"EXIT=$?\";"
         " else echo 'EXIT=unknown';"
         " fi"

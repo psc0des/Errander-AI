@@ -54,6 +54,11 @@ from errander.models.actions import (
     ActionType,
     RiskTier,
 )
+from errander.execution.privilege import (
+    REQUIRED_BINARIES_BY_ACTION,
+    parse_capability_check,
+    sudo_capability_check,
+)
 from errander.models.events import AuditEvent, EventType
 from errander.observability.metrics import ACTION_DURATION, ACTIONS_TOTAL, VM_LOCK_HELD
 from errander.safety.audit import AuditStore
@@ -278,6 +283,97 @@ async def drift_check_node(
             }
 
     return {"drift_result": drift_dict}
+
+
+async def sudo_preflight_node(
+    state: VMGraphState,
+    *,
+    executor: SandboxExecutor,
+    audit_store: AuditStore | None = None,
+) -> dict[str, Any]:
+    """Check sudo -n capability for binaries required by the planned actions.
+
+    Skipped in dry-run mode. In live mode, runs sudo_capability_check() via SSH
+    for the binaries needed by planned actions. Fails closed with an error that
+    routes to audit_results if any required binary cannot be called with sudo -n.
+
+    This catches misconfigured sudoers before the agent touches anything on the VM.
+    """
+    dry_run = state.get("dry_run", True)
+    if dry_run:
+        return {}
+
+    vm_id = state["vm_id"]
+    os_family = state.get("os_family", "ubuntu")
+    planned = state.get("planned_actions", [])
+    action_types = {a.get("action_type") for a in planned}
+    batch_id = state.get("batch_id", "unknown")
+
+    # Collect binaries required by the planned action types + OS family.
+    required: list[str] = []
+    for action_type in action_types:
+        if action_type == "patching":
+            key = "patching_dnf" if os_family == "rhel" else "patching_apt"
+        else:
+            key = str(action_type)
+        required.extend(REQUIRED_BINARIES_BY_ACTION.get(key, []))
+
+    if not required:
+        return {}
+
+    # Deduplicate while preserving order.
+    seen: set[str] = set()
+    unique_required = [b for b in required if not (b in seen or seen.add(b))]  # type: ignore[func-returns-value]
+
+    target_hostname = state.get("hostname", "")
+    target_username = state.get("ssh_user", "")
+    target_key_path = state.get("ssh_key_path", "")
+
+    result = await executor.execute(
+        vm_id, target_hostname, target_username, target_key_path,
+        command=sudo_capability_check(unique_required),
+        dry_run=False,
+    )
+
+    if not result.success:
+        detail = f"Sudo preflight SSH probe failed on {vm_id}: {result.stderr[:200]}"
+        logger.error("SUDO PREFLIGHT FAILED (SSH error) on %s — blocking live execution", vm_id)
+        if audit_store is not None:
+            await audit_store.log_event(AuditEvent(
+                event_type=EventType.PREFLIGHT_LOCK_DETECTED,
+                batch_id=batch_id,
+                vm_id=vm_id,
+                action_type="sudo_preflight",
+                detail=detail,
+            ), dry_run=False)
+        return {"error": detail}
+
+    _ok, failed = parse_capability_check(result.stdout)
+
+    if failed:
+        detail = (
+            f"sudo -n unavailable on {vm_id} for: {failed}. "
+            "Check sudoers — see SETUP.md Step 3."
+        )
+        logger.error("SUDO PREFLIGHT FAILED on %s: %s", vm_id, detail)
+        if audit_store is not None:
+            await audit_store.log_event(AuditEvent(
+                event_type=EventType.PREFLIGHT_LOCK_DETECTED,
+                batch_id=batch_id,
+                vm_id=vm_id,
+                action_type="sudo_preflight",
+                detail=detail,
+                metadata={"failed_binaries": failed},
+            ), dry_run=False)
+        return {"error": detail}
+
+    logger.info("Sudo preflight passed on %s for %d binaries", vm_id, len(unique_required))
+    return {}
+
+
+def route_after_sudo_preflight(state: VMGraphState) -> str:
+    """Route to dispatch if sudo preflight passed, else to audit_results."""
+    return "audit_results" if state.get("error") else "dispatch_action"
 
 
 async def dispatch_action_node(
@@ -1205,7 +1301,11 @@ def build_vm_graph(
             ai_decision_store=ai_decision_store,
         )
 
+    async def _sudo_preflight(state: VMGraphState) -> dict[str, Any]:
+        return await sudo_preflight_node(state, executor=executor, audit_store=audit_store)
+
     builder.add_node("plan_actions", _plan_actions)
+    builder.add_node("sudo_preflight", _sudo_preflight)
     builder.add_node("dispatch_action", _dispatch)
     builder.add_node("check_more_actions", lambda state: {})
     builder.add_node("audit_results", _audit)
@@ -1277,7 +1377,10 @@ def build_vm_graph(
         route_after_drift_check,
         ["plan_actions", "audit_results", "dispatch_action"],
     )
-    builder.add_edge("plan_actions", "dispatch_action")
+    builder.add_edge("plan_actions", "sudo_preflight")
+    builder.add_conditional_edges(
+        "sudo_preflight", route_after_sudo_preflight, ["dispatch_action", "audit_results"],
+    )
     builder.add_edge("dispatch_action", "check_more_actions")
     builder.add_conditional_edges(
         "check_more_actions", route_check_more, ["dispatch_action", "audit_results"],

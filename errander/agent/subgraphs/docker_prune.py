@@ -18,6 +18,7 @@ from typing import Any, TypedDict
 
 from langgraph.graph import END, StateGraph
 
+from errander.execution.privilege import privileged
 from errander.execution.sandbox import SandboxExecutor
 from errander.models.actions import ActionStatus
 
@@ -96,10 +97,12 @@ async def assess_node(
 
     # Assessment calls always use dry_run=False — must inspect real Docker state.
 
-    # Check docker is actually reachable
+    # Check docker is actually reachable.
+    # Production: replace sudo -n /usr/bin/docker with root-owned wrapper scripts.
+    # See SETUP.md "Docker hardening" for the enterprise wrapper approach.
     docker_check = await executor.execute(
         vm_id, target["hostname"], target["username"], target["key_path"],
-        command="docker info >/dev/null 2>&1 && echo ok",
+        command=privileged("/usr/bin/docker info >/dev/null 2>&1 && echo ok"),
         dry_run=False,
     )
     if not docker_check.success or "ok" not in docker_check.stdout:
@@ -112,7 +115,7 @@ async def assess_node(
     # Get system df
     df_result = await executor.execute(
         vm_id, target["hostname"], target["username"], target["key_path"],
-        command="docker system df 2>/dev/null",
+        command=privileged("/usr/bin/docker system df 2>/dev/null"),
         dry_run=False,
     )
     system_df = df_result.stdout.strip() if df_result.success else ""
@@ -120,7 +123,7 @@ async def assess_node(
     # Count dangling images
     dangling_result = await executor.execute(
         vm_id, target["hostname"], target["username"], target["key_path"],
-        command="docker images -f dangling=true -q 2>/dev/null | wc -l",
+        command=privileged("/usr/bin/docker images -f dangling=true -q 2>/dev/null | wc -l"),
         dry_run=False,
     )
     if dangling_result.success and not dangling_result.stdout.strip():
@@ -134,7 +137,7 @@ async def assess_node(
     # Count stopped containers
     stopped_result = await executor.execute(
         vm_id, target["hostname"], target["username"], target["key_path"],
-        command="docker ps -a -f status=exited -q 2>/dev/null | wc -l",
+        command=privileged("/usr/bin/docker ps -a -f status=exited -q 2>/dev/null | wc -l"),
         dry_run=False,
     )
     if stopped_result.success and not stopped_result.stdout.strip():
@@ -191,18 +194,18 @@ async def execute_node(
     aggressive = state.get("docker_prune_aggressive", False)
 
     if aggressive:
-        live_cmd = "docker system prune -af 2>&1"
+        live_cmd = privileged("/usr/bin/docker system prune -af 2>&1")
     else:
         # Safe default: dangling images + stopped containers only
         live_cmd = (
-            "docker image prune -f 2>&1 && "
-            "docker container prune -f 2>&1"
+            privileged("/usr/bin/docker image prune -f 2>&1") + " && "
+            + privileged("/usr/bin/docker container prune -f 2>&1")
         )
 
     result = await executor.execute(
         vm_id, target["hostname"], target["username"], target["key_path"],
         command=live_cmd,
-        simulate_command="docker system df 2>/dev/null",
+        simulate_command=privileged("/usr/bin/docker system df 2>/dev/null"),
         dry_run=dry_run,
     )
 
@@ -236,7 +239,7 @@ async def verify_node(
 
     result = await executor.execute(
         vm_id, target["hostname"], target["username"], target["key_path"],
-        command="docker system df 2>/dev/null",
+        command=privileged("/usr/bin/docker system df 2>/dev/null"),
         dry_run=False,
     )
 

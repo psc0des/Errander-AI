@@ -162,8 +162,8 @@ class TestPatchingRollback:
         mock_rollback.assert_awaited_once()
         call_kwargs = mock_rollback.call_args
         assert call_kwargs.args[2] == snapshot  # pre_snapshot passed through
-        # Status stays FAILED (upgrade failed, even if rollback succeeded)
-        assert result["status"] == ActionStatus.FAILED.value
+        # Rollback succeeded → ROLLED_BACK (distinct from FAILED = no rollback attempted)
+        assert result["status"] == ActionStatus.ROLLED_BACK.value
 
     @pytest.mark.asyncio
     async def test_rollback_failure_logged_as_critical(

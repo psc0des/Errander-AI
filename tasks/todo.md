@@ -1,5 +1,20 @@
 # Errander-AI — Task Tracking
 
+## AI SRE Audit v2 — P0/P1/P2 Fixes (2026-05-14)
+
+- [x] P0-3 — docker_prune/disk_cleanup/log_rotation execute_node: check result.success, propagate failures
+- [x] P0-3 — commands.py AptManager/DnfManager upgrade_all: capture apt/dnf exit code, suppress only unhold/versionlock-delete failures
+- [x] P0-4 — patching rollback_node: return ROLLED_BACK on success, ROLLBACK_FAILED on failure (distinct from FAILED)
+- [x] P1-3 — validate_no_pkg_lock: fail-closed (block patching) when probe fails in live mode; dry-run keeps old permissive behavior
+- [x] P1-5 — drift_baseline_node: skip compare_and_save in dry_run mode (read-only, no operational state mutation)
+- [x] P2-3 — check_connectivity: consistent known_hosts policy with SSHConnectionManager (TOFU with warning when no path given)
+- [x] P2-1 — BACKUP_VERIFY reclassified LOW (read-only action); moved to front of DEFAULT_PRIORITY
+- [x] P1-1 — disk_cleanup/log_rotation/docker_prune runners now read approved action params from planned_actions
+- [x] P1-4 — approval_gate_node: approval_timeout_seconds/approval_poll_interval_seconds wired from settings
+- [x] 1305 tests passing, 111 skipped — no regressions
+- [ ] P0-1 — Immutable approved plan artifact (architecture work — deferred)
+- [ ] P0-2 — Deferred execution applies exact approved artifact (architecture work — deferred)
+
 ## SRE Production Wiring Fix (2026-05-14)
 
 - [x] High 1 — Wire `VMDiskHistoryStore`, `BaselineStore`, `VMStateStore` through `async_main` → `run_env_batch` → `build_batch_graph` → `make_wave_dispatcher` → `build_vm_graph`

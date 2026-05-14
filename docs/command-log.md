@@ -1,5 +1,16 @@
 # Errander-AI Command Log
 
+## AI SRE Audit v2 Remediation (2026-05-14)
+
+```bash
+# Full test suite after each fix iteration
+uv run pytest tests -q -p no:cacheprovider --basetemp=.pytest-tmp -x   # caught failing tests
+uv run pytest tests -q -p no:cacheprovider --basetemp=.pytest-tmp       # 1305 passed, 111 skipped
+
+# Ruff check on changed files (pre-existing errors only, no new violations)
+uv run ruff check errander/agent/subgraphs/docker_prune.py errander/agent/subgraphs/disk_cleanup.py ...
+```
+
 ## SRE Production Wiring Fix (2026-05-14)
 
 ```bash

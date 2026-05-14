@@ -41,14 +41,12 @@ _INJECTION_RE = re.compile(r"[;&|`$(){}\\\n]|\.\./")
 
 #: Default priority ordering — lowest risk first, then by operational value.
 #: Disk cleanup and log rotation free space (enables other actions).
-#: Docker prune is low risk. Patching is medium risk.
-#: Backup verify is high risk (may restart services).
 DEFAULT_PRIORITY: list[ActionType] = [
-    ActionType.DISK_CLEANUP,
-    ActionType.LOG_ROTATION,
-    ActionType.DOCKER_PRUNE,
-    ActionType.PATCHING,
-    ActionType.BACKUP_VERIFY,
+    ActionType.BACKUP_VERIFY,   # LOW — read-only check, run first
+    ActionType.DISK_CLEANUP,    # LOW
+    ActionType.LOG_ROTATION,    # LOW
+    ActionType.DOCKER_PRUNE,    # MEDIUM
+    ActionType.PATCHING,        # MEDIUM
 ]
 
 

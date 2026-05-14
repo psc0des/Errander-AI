@@ -185,6 +185,8 @@ async def execute_node(
         dry_run=dry_run,
     )
 
+    failed_items: list[str] = []
+
     if result.success:
         output["logrotate"] = result.stdout.strip()
     else:
@@ -197,6 +199,8 @@ async def execute_node(
             except CommandBuildError as exc:
                 logger.error("Skipping log file with unsafe path on %s: %s", vm_id, exc)
                 output[filepath] = "[SKIPPED — unsafe path]"
+                if not dry_run:
+                    failed_items.append(filepath)
                 continue
             if compress:
                 live_cmd = (
@@ -214,11 +218,19 @@ async def execute_node(
                 dry_run=dry_run,
             )
             output[filepath] = file_result.stdout.strip()
+            if not file_result.success and not dry_run:
+                failed_items.append(filepath)
 
-    status = ActionStatus.DRY_RUN_OK if dry_run else ActionStatus.SUCCESS
+    if dry_run:
+        status = ActionStatus.DRY_RUN_OK
+    elif failed_items:
+        status = ActionStatus.FAILED
+    else:
+        status = ActionStatus.SUCCESS
     return {
         "rotation_output": output,
         "status": status.value,
+        "error": f"rotation failed for: {failed_items}" if failed_items else None,
     }
 
 

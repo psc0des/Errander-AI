@@ -4,9 +4,21 @@
 2026-05-14
 
 ## Current Phase
-**SRE wiring complete — all signal stores active in production path.**
+**AI SRE audit v2 remediation — P0/P1/P2 safety fixes applied.**
 
 ## Completed
+
+### AI SRE Audit v2 Remediation (2026-05-14)
+- **P0-3**: `execute_node` in docker_prune, disk_cleanup, log_rotation now propagate command failures to status; `SUCCESS` only when all commands succeed
+- **P0-3**: `AptManager`/`DnfManager` `upgrade_all` capture apt/dnf exit code; unhold/versionlock-delete failures suppressed with `|| true`
+- **P0-4**: `rollback_node` returns `ROLLED_BACK` on success, `ROLLBACK_FAILED` on failure — audit trail can now distinguish all 3 outcomes
+- **P1-3**: `validate_no_pkg_lock` fail-closed in live mode on SSH probe failure; dry-run keeps permissive behavior
+- **P1-5**: `drift_baseline_node` skips `compare_and_save` in dry-run — no operational state mutation
+- **P2-3**: `check_connectivity` follows same known_hosts policy as `SSHConnectionManager`
+- **P2-1**: `BACKUP_VERIFY` reclassified to LOW (read-only); moved to front of `DEFAULT_PRIORITY`
+- **P1-1**: disk_cleanup, log_rotation, docker_prune runners read `whitelist_paths`/`tmp_age_days`/`log_paths`/`aggressive` from approved action params
+- **P1-4**: `approval_timeout_seconds` + `approval_poll_interval_seconds` wired from settings into `await_dual_approval`
+- 1305 tests passing, 111 skipped
 
 ### PR-2: SRE Signal Aggregation + BatchReport Rendering (2026-05-13)
 - **`disk_snapshot_node` serialization** in `vm_graph.py`: now includes `window_start` and `window_end` as ISO strings (needed to reconstruct `DiskGrowth` objects for reports)

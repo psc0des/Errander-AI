@@ -58,7 +58,7 @@ ACTION_RISK_TIERS: dict[ActionType, RiskTier] = {
     ActionType.LOG_ROTATION: RiskTier.LOW,
     ActionType.DOCKER_PRUNE: RiskTier.MEDIUM,
     ActionType.PATCHING: RiskTier.MEDIUM,
-    ActionType.BACKUP_VERIFY: RiskTier.HIGH,
+    ActionType.BACKUP_VERIFY: RiskTier.LOW,
 }
 
 

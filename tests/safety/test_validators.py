@@ -203,12 +203,25 @@ class TestValidateNoPkgLock:
         assert holder is not None
         assert holder.pid == 5678
 
-    async def test_ssh_failure_treated_as_clear(self) -> None:
+    async def test_ssh_failure_live_mode_fail_closed(self) -> None:
         executor = self._executor()
         failed = SSHResult(exit_code=1, stdout="", stderr="connection refused", command="mock")
         with patch.object(executor, "execute", AsyncMock(return_value=failed)):
             is_clear, holder = await validate_no_pkg_lock(
                 executor, "dev/web-01", "host", "user", "/key", AptManager(),
+                dry_run=False,
+            )
+        assert is_clear is False
+        assert holder is not None
+        assert holder.cmd == "probe-failed"
+
+    async def test_ssh_failure_dry_run_treated_as_clear(self) -> None:
+        executor = self._executor()
+        failed = SSHResult(exit_code=1, stdout="", stderr="connection refused", command="mock")
+        with patch.object(executor, "execute", AsyncMock(return_value=failed)):
+            is_clear, holder = await validate_no_pkg_lock(
+                executor, "dev/web-01", "host", "user", "/key", AptManager(),
+                dry_run=True,
             )
         assert is_clear is True
         assert holder is None

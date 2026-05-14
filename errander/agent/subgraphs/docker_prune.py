@@ -206,10 +206,16 @@ async def execute_node(
         dry_run=dry_run,
     )
 
-    status = ActionStatus.DRY_RUN_OK if dry_run else ActionStatus.SUCCESS
+    if dry_run:
+        status = ActionStatus.DRY_RUN_OK
+    elif result.success:
+        status = ActionStatus.SUCCESS
+    else:
+        status = ActionStatus.FAILED
     return {
         "prune_output": result.stdout.strip(),
         "status": status.value,
+        "error": result.stderr.strip() if not result.success else None,
     }
 
 

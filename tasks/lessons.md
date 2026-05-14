@@ -4,6 +4,28 @@ Self-improvement log. Updated after corrections, mistakes, and surprises.
 
 ---
 
+## 2026-05-14 — Unconditional SUCCESS after execute is a silent corruption pattern
+
+`status = SUCCESS if not dry_run` without checking `result.success` means a failed SSH command is logged as a success in the audit trail. All execute_nodes must check `result.success` explicitly; there is no safe default.
+
+## 2026-05-14 — Trailing `true` in shell scripts masks the real exit code
+
+`KERNEL_PKGS=...; apt-get upgrade -y; ...; true` always exits 0. The fix: capture the important exit code (`APT_RC=$?`), suppress only the cleanup step's failure (`|| true`), then `exit $APT_RC`.
+
+## 2026-05-14 — Fail-open probe checks are as dangerous as no check at all
+
+`validate_no_pkg_lock` treated SSH probe failure as "clear." In live mode, unknown lock state = block patching; in dry-run, unknown state is fine. Always distinguish live vs dry-run when the consequence of guessing wrong is a real production action.
+
+## 2026-05-14 — Distinct rollback terminal states are required for autonomous agents
+
+Returning `FAILED` whether rollback succeeded or failed means operators and downstream automation can't distinguish "safe to redeploy" from "manual intervention required." Every action with a rollback path needs at least `ROLLED_BACK` and `ROLLBACK_FAILED` terminal states.
+
+## 2026-05-14 — Tests using default dry_run=True silently pass when code skips live-only paths
+
+After adding a `if not dry_run: continue` guard, tests that were implicitly relying on live behavior still "passed" because the expected result was empty/default. Always check whether a test's dry_run default matches what it's actually testing.
+
+---
+
 ## 2026-05-14 — Library code ≠ production feature: stores must be wired through every layer
 
 All SRE signal stores (`VMDiskHistoryStore`, `BaselineStore`, `VMStateStore`) were implemented with tests, but `async_main` never initialized them and the graph builder chain never received them. Nodes silently no-op when stores are `None` — no errors, just silent non-execution.

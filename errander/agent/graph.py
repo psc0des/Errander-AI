@@ -828,6 +828,8 @@ async def approval_gate_node(
     audit_store: AuditStore | None = None,
     window: MaintenanceWindow | None = None,
     deferred_store: DeferredExecutionStore | None = None,
+    approval_timeout_seconds: int = 1800,
+    approval_poll_interval_seconds: int = 30,
 ) -> dict[str, Any]:
     """Gate live execution behind Slack approval of the ImmutableBatchPlan.
 
@@ -880,6 +882,8 @@ async def approval_gate_node(
         )
         approved, approver = await await_dual_approval(
             approval_manager, slack_client, batch_id, plan_summary,
+            timeout_seconds=approval_timeout_seconds,
+            poll_interval_seconds=approval_poll_interval_seconds,
         )
         logger.info(
             "Batch %s %s by %s",
@@ -1296,6 +1300,8 @@ def build_batch_graph(
             audit_store=audit_store,
             window=window,
             deferred_store=deferred_store,
+            approval_timeout_seconds=_settings.approval_timeout_seconds,
+            approval_poll_interval_seconds=_settings.approval_poll_interval_seconds,
         )
 
     async def _check_fleet(state: BatchGraphState) -> dict[str, Any]:

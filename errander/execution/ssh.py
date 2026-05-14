@@ -319,23 +319,37 @@ async def check_connectivity(
     hostname: str,
     username: str,
     key_path: str,
+    known_hosts_path: str = "",
 ) -> bool:
     """Verify SSH connectivity to a target host.
+
+    Follows the same host-key policy as SSHConnectionManager:
+    - known_hosts_path set → strict verification against that file.
+    - known_hosts_path empty → TOFU mode with a WARNING (not silent).
 
     Args:
         hostname: Target host.
         username: SSH username.
         key_path: Path to private key file.
+        known_hosts_path: Optional path to a known_hosts file.
 
     Returns:
         True if connection succeeds, False otherwise.
     """
+    if known_hosts_path:
+        known_hosts: str | None = known_hosts_path
+    else:
+        logger.warning(
+            "SECURITY: check_connectivity to %s in TOFU mode (no known_hosts_path supplied).",
+            hostname,
+        )
+        known_hosts = None
     try:
         conn = await asyncssh.connect(
             hostname,
             username=username,
             client_keys=[key_path],
-            known_hosts=None,  # one-shot connectivity check only — no pooling
+            known_hosts=known_hosts,
             password=None,
         )
         conn.close()

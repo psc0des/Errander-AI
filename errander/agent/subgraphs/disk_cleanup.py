@@ -220,6 +220,7 @@ async def execute_node(
     dry_run = state.get("dry_run", True)
 
     output: dict[str, str] = {}
+    failed_paths: list[str] = []
 
     for path in paths:
         if path == "/tmp":
@@ -230,6 +231,8 @@ async def execute_node(
                 dry_run=dry_run,
             )
             output["/tmp"] = result.stdout.strip()
+            if not result.success and not dry_run:
+                failed_paths.append("/tmp")
 
         elif path in ("apt-cache", "yum-cache"):
             result = await executor.execute(
@@ -239,6 +242,8 @@ async def execute_node(
                 dry_run=dry_run,
             )
             output[path] = result.stdout.strip()
+            if not result.success and not dry_run:
+                failed_paths.append(path)
 
         elif path == "journal":
             result = await executor.execute(
@@ -248,6 +253,8 @@ async def execute_node(
                 dry_run=dry_run,
             )
             output["journal"] = result.stdout.strip()
+            if not result.success and not dry_run:
+                failed_paths.append("journal")
 
         elif path == "orphaned-deps":
             if os_family in ("ubuntu", "debian"):
@@ -261,11 +268,19 @@ async def execute_node(
                 dry_run=dry_run,
             )
             output["orphaned-deps"] = result.stdout.strip()
+            if not result.success and not dry_run:
+                failed_paths.append("orphaned-deps")
 
-    status = ActionStatus.DRY_RUN_OK if dry_run else ActionStatus.SUCCESS
+    if dry_run:
+        status = ActionStatus.DRY_RUN_OK
+    elif failed_paths:
+        status = ActionStatus.FAILED
+    else:
+        status = ActionStatus.SUCCESS
     return {
         "cleanup_output": output,
         "status": status.value,
+        "error": f"cleanup failed for paths: {failed_paths}" if failed_paths else None,
     }
 
 

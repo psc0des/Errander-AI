@@ -92,7 +92,7 @@ class TestDriftBaselineNode:
             listening_ports=False,
             scheduled_jobs=False,
         )
-        state = _make_state()
+        state = _make_state(dry_run=False)
 
         with patch(
             "errander.safety.drift_checks.capture_sudoers",
@@ -120,7 +120,7 @@ class TestDriftBaselineNode:
             listening_ports=False,
             scheduled_jobs=False,
         )
-        state = _make_state()
+        state = _make_state(dry_run=False)
 
         with patch(
             "errander.safety.drift_checks.capture_sudoers",
@@ -149,7 +149,7 @@ class TestDriftBaselineNode:
             listening_ports=False,
             scheduled_jobs=False,
         )
-        state = _make_state()
+        state = _make_state(dry_run=False)
 
         with patch(
             "errander.safety.drift_checks.capture_sudoers",
@@ -177,7 +177,7 @@ class TestDriftBaselineNode:
             listening_ports=False,
             scheduled_jobs=False,
         )
-        state = _make_state()
+        state = _make_state(dry_run=False)
 
         with patch(
             "errander.safety.drift_checks.capture_sudoers",
@@ -205,7 +205,7 @@ class TestDriftBaselineNode:
             listening_ports=False,
             scheduled_jobs=False,
         )
-        state = _make_state()
+        state = _make_state(dry_run=False)
 
         with patch(
             "errander.safety.drift_checks.capture_sudoers",
@@ -235,7 +235,7 @@ class TestDriftBaselineNode:
             listening_ports=False,
             scheduled_jobs=False,
         )
-        state = _make_state()
+        state = _make_state(dry_run=False)
 
         with patch(
             "errander.safety.drift_checks.capture_sudoers",
@@ -263,7 +263,7 @@ class TestDriftBaselineNode:
             scheduled_jobs=False,
             diff_max_lines=10,
         )
-        state = _make_state()
+        state = _make_state(dry_run=False)
 
         with patch(
             "errander.safety.drift_checks.capture_sudoers",
@@ -290,7 +290,7 @@ class TestDriftBaselineNode:
             listening_ports=True,
             scheduled_jobs=True,
         )
-        state = _make_state()
+        state = _make_state(dry_run=False)
 
         capture_calls: list[str] = []
 
@@ -339,7 +339,7 @@ class TestDriftBaselineNode:
             listening_ports=False,
             scheduled_jobs=False,
         )
-        state = _make_state()
+        state = _make_state(dry_run=False)
 
         result = await drift_baseline_node(
             state, executor=executor,
@@ -347,6 +347,33 @@ class TestDriftBaselineNode:
             audit_store=None,
             settings=settings,
         )
+        store.compare_and_save.assert_not_called()
+        assert result["drift_changes"] == []
+
+    async def test_dry_run_skips_compare_and_save(self) -> None:
+        store = AsyncMock(spec=BaselineStore)
+        store.compare_and_save = AsyncMock(
+            return_value=_make_comparison(changed=True),
+        )
+        executor = _make_executor()
+        settings = DriftSettings(
+            sudoers=True,
+            authorized_keys=False,
+            listening_ports=False,
+            scheduled_jobs=False,
+        )
+        state = _make_state(dry_run=True)
+
+        with patch(
+            "errander.safety.drift_checks.capture_sudoers",
+            AsyncMock(return_value=[BaselineCapture(kind="sudoers", scope_key="", content="x")]),
+        ):
+            result = await drift_baseline_node(
+                state, executor=executor,
+                baseline_store=store,
+                audit_store=None,
+                settings=settings,
+            )
         store.compare_and_save.assert_not_called()
         assert result["drift_changes"] == []
 

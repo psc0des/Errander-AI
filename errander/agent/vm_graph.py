@@ -391,6 +391,13 @@ async def _run_disk_cleanup(
     vm_id = state["vm_id"]
     now = datetime.now(tz=timezone.utc)
 
+    # Read approved action params from the plan (P1-1)
+    planned = state.get("planned_actions", [])
+    index = state.get("current_action_index", 0)
+    action_params: dict[str, object] = {}
+    if index < len(planned):
+        action_params = dict(planned[index].get("params") or {})
+
     sub_state: DiskCleanupGraphState = {
         "vm_id": vm_id,
         "os_family": state.get("os_family", "ubuntu"),
@@ -398,6 +405,11 @@ async def _run_disk_cleanup(
         "hostname": state.get("hostname", ""),  # type: ignore[typeddict-item]
         "username": state.get("ssh_user", ""),  # type: ignore[typeddict-item]
         "key_path": state.get("ssh_key_path", ""),  # type: ignore[typeddict-item]
+        **({  # type: ignore[typeddict-item]
+            k: action_params[k]
+            for k in ("whitelist_paths", "tmp_age_days", "journal_vacuum_days")
+            if k in action_params
+        }),
     }
 
     try:
@@ -453,6 +465,13 @@ async def _run_log_rotation(
     vm_id = state["vm_id"]
     now = datetime.now(tz=timezone.utc)
 
+    # Read approved action params from the plan (P1-1)
+    planned = state.get("planned_actions", [])
+    index = state.get("current_action_index", 0)
+    action_params: dict[str, object] = {}
+    if index < len(planned):
+        action_params = dict(planned[index].get("params") or {})
+
     sub_state: LogRotationGraphState = {
         "vm_id": vm_id,
         "os_family": state.get("os_family", "ubuntu"),
@@ -460,6 +479,11 @@ async def _run_log_rotation(
         "hostname": state.get("hostname", ""),  # type: ignore[typeddict-item]
         "username": state.get("ssh_user", ""),  # type: ignore[typeddict-item]
         "key_path": state.get("ssh_key_path", ""),  # type: ignore[typeddict-item]
+        **({  # type: ignore[typeddict-item]
+            k: action_params[k]
+            for k in ("log_paths", "size_threshold_mb", "compress")
+            if k in action_params
+        }),
     }
 
     try:
@@ -516,11 +540,19 @@ async def _run_docker_prune(
     now = datetime.now(tz=timezone.utc)
     vm_info = state.get("vm_info", {})
 
+    # Read approved action params from the plan (P1-1)
+    planned = state.get("planned_actions", [])
+    index = state.get("current_action_index", 0)
+    action_params: dict[str, object] = {}
+    if index < len(planned):
+        action_params = dict(planned[index].get("params") or {})
+
     sub_state: DockerPruneGraphState = {
         "vm_id": vm_id,
         "os_family": state.get("os_family", "ubuntu"),
         "dry_run": state.get("dry_run", True),
         "docker_available": bool(vm_info.get("docker_available", True)),
+        "docker_prune_aggressive": bool(action_params.get("aggressive", False)),
         "hostname": state.get("hostname", ""),  # type: ignore[typeddict-item]
         "username": state.get("ssh_user", ""),  # type: ignore[typeddict-item]
         "key_path": state.get("ssh_key_path", ""),  # type: ignore[typeddict-item]
@@ -938,6 +970,9 @@ async def drift_baseline_node(
             continue
 
         for capture in captures:
+            if dry_run:
+                # Dry-run must not mutate the operational baseline.
+                continue
             comparison = await baseline_store.compare_and_save(vm_id, capture)
 
             if comparison.is_first_run:

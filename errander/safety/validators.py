@@ -77,12 +77,17 @@ async def validate_no_pkg_lock(
     username: str,
     key_path: str,
     pm: PackageManager,
+    dry_run: bool = False,
 ) -> tuple[bool, LockHolder | None]:
     """Check whether a package manager lock is held on the target VM.
 
     Runs detect_lock() via SSH.  The command always exits 0; empty stdout
-    means no lock.  On SSH failure we log a warning and treat the lock as
-    absent (best-effort — don't block patching on a probe error).
+    means no lock.
+
+    In live mode (dry_run=False), an SSH probe failure is fail-closed: we
+    cannot determine lock state so we block patching rather than proceed
+    blindly.  In dry-run mode, probe failure is treated as clear (safe for
+    simulation).
 
     Args:
         executor: SSH executor.
@@ -91,6 +96,7 @@ async def validate_no_pkg_lock(
         username: SSH user.
         key_path: SSH key path.
         pm: PackageManager for the target OS (provides detect_lock() command).
+        dry_run: When True, probe failure is non-blocking (simulation only).
 
     Returns:
         (is_clear, holder): is_clear=True when no lock held; holder is None
@@ -102,11 +108,19 @@ async def validate_no_pkg_lock(
         dry_run=False,
     )
     if not result.success:
-        logger.warning(
-            "Lock probe failed on %s (treating as clear): %s",
-            vm_id, result.stderr[:120],
-        )
-        return True, None
+        if dry_run:
+            logger.warning(
+                "Lock probe failed on %s (dry-run — treating as clear): %s",
+                vm_id, result.stderr[:120],
+            )
+            return True, None
+        else:
+            logger.error(
+                "Lock probe failed on %s (live mode — blocking patching): %s",
+                vm_id, result.stderr[:120],
+            )
+            # Return a synthetic holder so the caller blocks execution.
+            return False, LockHolder(pid=None, cmd="probe-failed")
     holder = parse_lock_output(result.stdout)
     return holder is None, holder
 

@@ -369,6 +369,7 @@ async def preflight_lock_node(
         executor, vm_id,
         target["hostname"], target["username"], target["key_path"],
         pkg_mgr,
+        dry_run=state.get("dry_run", True),
     )
 
     if is_clear:
@@ -660,20 +661,22 @@ async def rollback_node(
         os_family=state.get("os_family", "ubuntu"),
     )
 
+    original_error = state.get("error") or "upgrade failed"
     if success:
         logger.info("Patching rollback succeeded for %s: %s", vm_id, detail)
+        return {
+            "status": ActionStatus.ROLLED_BACK.value,
+            "error": f"{original_error} | rollback succeeded: {detail}",
+        }
     else:
         logger.error(
             "CRITICAL: Patching rollback FAILED for %s: %s — manual intervention required",
             vm_id, detail,
         )
-
-    original_error = state.get("error") or "upgrade failed"
-    rollback_outcome = "succeeded" if success else "FAILED — MANUAL INTERVENTION REQUIRED"
-    return {
-        "status": ActionStatus.FAILED.value,
-        "error": f"{original_error} | rollback {rollback_outcome}: {detail}",
-    }
+        return {
+            "status": ActionStatus.ROLLBACK_FAILED.value,
+            "error": f"{original_error} | rollback FAILED — MANUAL INTERVENTION REQUIRED: {detail}",
+        }
 
 
 def route_after_execute(state: PatchingGraphState) -> str:

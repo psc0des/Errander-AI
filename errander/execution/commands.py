@@ -111,10 +111,11 @@ class AptManager(PackageManager):
         )
         hold_cmd = (
             f"KERNEL_PKGS=$({kernel_query}); "
-            "[ -n \"$KERNEL_PKGS\" ] && echo \"$KERNEL_PKGS\" | xargs apt-mark hold; "
+            "[ -n \"$KERNEL_PKGS\" ] && echo \"$KERNEL_PKGS\" | xargs apt-mark hold 2>/dev/null || true; "
             "apt-get upgrade -y; "
-            "[ -n \"$KERNEL_PKGS\" ] && echo \"$KERNEL_PKGS\" | xargs apt-mark unhold; "
-            "true"
+            "APT_RC=$?; "
+            "[ -n \"$KERNEL_PKGS\" ] && echo \"$KERNEL_PKGS\" | xargs apt-mark unhold 2>/dev/null || true; "
+            "exit $APT_RC"
         )
         return hold_cmd
 
@@ -192,8 +193,9 @@ class DnfManager(PackageManager):
             f"KERNEL_PKGS=$({kernel_query}); "
             "[ -n \"$KERNEL_PKGS\" ] && echo \"$KERNEL_PKGS\" | xargs dnf versionlock add 2>/dev/null || true; "
             "dnf upgrade -y; "
+            "DNF_RC=$?; "
             "[ -n \"$KERNEL_PKGS\" ] && echo \"$KERNEL_PKGS\" | xargs dnf versionlock delete 2>/dev/null || true; "
-            "true"
+            "exit $DNF_RC"
         )
         return lock_cmd
 

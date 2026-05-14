@@ -251,9 +251,9 @@ async def verify_node(
 def _get_connection_params(state: DockerPruneGraphState) -> dict[str, str]:
     """Extract SSH connection params from state."""
     return {
-        "hostname": state.get("hostname", ""),  # type: ignore[typeddict-item]
-        "username": state.get("username", ""),  # type: ignore[typeddict-item]
-        "key_path": state.get("key_path", ""),  # type: ignore[typeddict-item]
+        "hostname": str(state.get("hostname", "")),
+        "username": str(state.get("username", "")),
+        "key_path": str(state.get("key_path", "")),
     }
 
 

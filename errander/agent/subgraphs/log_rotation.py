@@ -173,6 +173,7 @@ async def execute_node(
     dry_run = state.get("dry_run", True)
 
     output: dict[str, str] = {}
+    failed_items: list[str] = []
 
     # Try system logrotate first
     logrotate_cmd = "logrotate --force /etc/logrotate.conf 2>&1"
@@ -185,13 +186,15 @@ async def execute_node(
         dry_run=dry_run,
     )
 
-    failed_items: list[str] = []
-
     if result.success:
         output["logrotate"] = result.stdout.strip()
     else:
-        # Logrotate not available or failed — manual rotation per file
+        # Logrotate not available or failed — attempt per-file fallback.
+        # In live mode, track logrotate failure; only clear it if all per-file
+        # fallbacks succeed (meaning logrotate was unavailable but files were rotated).
         logger.info("logrotate unavailable on %s, falling back to manual rotation", vm_id)
+        logrotate_failed = not dry_run
+
         for filepath in large_files:
             try:
                 qp = safe_path(filepath)
@@ -220,6 +223,14 @@ async def execute_node(
             output[filepath] = file_result.stdout.strip()
             if not file_result.success and not dry_run:
                 failed_items.append(filepath)
+
+        # If the fallback handled all large_files successfully, logrotate being
+        # absent is acceptable — rotation was achieved via the per-file path.
+        if logrotate_failed and not failed_items and large_files:
+            logrotate_failed = False
+
+        if logrotate_failed and not dry_run:
+            failed_items.append("logrotate")
 
     if dry_run:
         status = ActionStatus.DRY_RUN_OK
@@ -280,9 +291,9 @@ async def verify_node(
 def _get_connection_params(state: LogRotationGraphState) -> dict[str, str]:
     """Extract SSH connection params from state."""
     return {
-        "hostname": state.get("hostname", ""),  # type: ignore[typeddict-item]
-        "username": state.get("username", ""),  # type: ignore[typeddict-item]
-        "key_path": state.get("key_path", ""),  # type: ignore[typeddict-item]
+        "hostname": str(state.get("hostname", "")),
+        "username": str(state.get("username", "")),
+        "key_path": str(state.get("key_path", "")),
     }
 
 

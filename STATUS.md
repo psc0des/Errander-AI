@@ -8,6 +8,12 @@
 
 ## Completed
 
+### AI SRE Audit v2 — Second-Pass Residuals (2026-05-14)
+- **Residual P0-3**: log_rotation tracks logrotate failure independently; per-file fallback clears it only when all files rotated AND large_files was non-empty
+- **P2-3 full**: `check_connectivity` now has `strict_host_keys=True` default — refuses without `known_hosts_path`, consistent with `SSHConnectionManager`
+- **mypy**: `action_params` extraction uses `isinstance(raw, dict)` (type-safe); `_get_connection_params` uses `str()` cast (removes wrong ignore tags); mypy errors 142 → 112
+- 1307 tests passing, 111 skipped
+
 ### AI SRE Audit v2 Remediation (2026-05-14)
 - **P0-3**: `execute_node` in docker_prune, disk_cleanup, log_rotation now propagate command failures to status; `SUCCESS` only when all commands succeed
 - **P0-3**: `AptManager`/`DnfManager` `upgrade_all` capture apt/dnf exit code; unhold/versionlock-delete failures suppressed with `|| true`

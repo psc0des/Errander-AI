@@ -275,13 +275,30 @@ class TestExecuteSSH:
 class TestCheckConnectivity:
     """Tests for SSH connectivity check."""
 
-    async def test_success(self) -> None:
+    async def test_success_with_known_hosts(self) -> None:
         fake_conn = MagicMock()
         fake_conn.close = MagicMock()
-
         with patch("errander.execution.ssh.asyncssh.connect", new_callable=AsyncMock, return_value=fake_conn):
-            assert await check_connectivity("10.0.1.10", "errander-ai", "/key")
+            assert await check_connectivity(
+                "10.0.1.10", "errander-ai", "/key", known_hosts_path="/known_hosts"
+            )
+
+    async def test_success_tofu_mode(self) -> None:
+        fake_conn = MagicMock()
+        fake_conn.close = MagicMock()
+        with patch("errander.execution.ssh.asyncssh.connect", new_callable=AsyncMock, return_value=fake_conn):
+            assert await check_connectivity(
+                "10.0.1.10", "errander-ai", "/key", strict_host_keys=False
+            )
+
+    async def test_strict_mode_refuses_without_known_hosts(self) -> None:
+        with patch("errander.execution.ssh.asyncssh.connect", new_callable=AsyncMock) as mock_connect:
+            result = await check_connectivity("10.0.1.10", "errander-ai", "/key")
+        assert result is False
+        mock_connect.assert_not_called()
 
     async def test_failure(self) -> None:
         with patch("errander.execution.ssh.asyncssh.connect", new_callable=AsyncMock, side_effect=OSError("refused")):
-            assert not await check_connectivity("10.0.1.10", "errander-ai", "/key")
+            assert not await check_connectivity(
+                "10.0.1.10", "errander-ai", "/key", strict_host_keys=False
+            )

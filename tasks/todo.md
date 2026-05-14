@@ -12,6 +12,15 @@
 - [x] P1-1 — disk_cleanup/log_rotation/docker_prune runners now read approved action params from planned_actions
 - [x] P1-4 — approval_gate_node: approval_timeout_seconds/approval_poll_interval_seconds wired from settings
 - [x] 1305 tests passing, 111 skipped — no regressions
+
+## AI SRE Audit v2 — Second-Pass Residuals (2026-05-14)
+
+- [x] Residual P0-3 — log_rotation: logrotate failure with empty large_files now returns FAILED; fallback succeeds only if all per-file rotations succeed AND there were actual large_files
+- [x] P2-3 full — check_connectivity now has strict_host_keys param (default True); refuses without known_hosts_path in strict mode, consistent with SSHConnectionManager
+- [x] mypy: action_params extraction uses isinstance(raw, dict) instead of dict(object) — type-safe
+- [x] mypy: _get_connection_params in disk_cleanup/log_rotation/docker_prune uses str() cast — removes wrong typeddict-item ignores
+- [x] mypy: 112 errors (down from 142 at second-pass audit — net improvement)
+- [x] 1307 tests passing, 111 skipped — no regressions
 - [ ] P0-1 — Immutable approved plan artifact (architecture work — deferred)
 - [ ] P0-2 — Deferred execution applies exact approved artifact (architecture work — deferred)
 

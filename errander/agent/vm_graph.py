@@ -396,15 +396,16 @@ async def _run_disk_cleanup(
     index = state.get("current_action_index", 0)
     action_params: dict[str, object] = {}
     if index < len(planned):
-        action_params = dict(planned[index].get("params") or {})
+        _raw = planned[index].get("params")
+        action_params = dict(_raw) if isinstance(_raw, dict) else {}
 
     sub_state: DiskCleanupGraphState = {
         "vm_id": vm_id,
         "os_family": state.get("os_family", "ubuntu"),
         "dry_run": state.get("dry_run", True),
-        "hostname": state.get("hostname", ""),  # type: ignore[typeddict-item]
-        "username": state.get("ssh_user", ""),  # type: ignore[typeddict-item]
-        "key_path": state.get("ssh_key_path", ""),  # type: ignore[typeddict-item]
+        "hostname": state.get("hostname", ""),
+        "username": state.get("ssh_user", ""),
+        "key_path": state.get("ssh_key_path", ""),
         **({  # type: ignore[typeddict-item]
             k: action_params[k]
             for k in ("whitelist_paths", "tmp_age_days", "journal_vacuum_days")
@@ -470,15 +471,16 @@ async def _run_log_rotation(
     index = state.get("current_action_index", 0)
     action_params: dict[str, object] = {}
     if index < len(planned):
-        action_params = dict(planned[index].get("params") or {})
+        _raw = planned[index].get("params")
+        action_params = dict(_raw) if isinstance(_raw, dict) else {}
 
     sub_state: LogRotationGraphState = {
         "vm_id": vm_id,
         "os_family": state.get("os_family", "ubuntu"),
         "dry_run": state.get("dry_run", True),
-        "hostname": state.get("hostname", ""),  # type: ignore[typeddict-item]
-        "username": state.get("ssh_user", ""),  # type: ignore[typeddict-item]
-        "key_path": state.get("ssh_key_path", ""),  # type: ignore[typeddict-item]
+        "hostname": state.get("hostname", ""),
+        "username": state.get("ssh_user", ""),
+        "key_path": state.get("ssh_key_path", ""),
         **({  # type: ignore[typeddict-item]
             k: action_params[k]
             for k in ("log_paths", "size_threshold_mb", "compress")
@@ -545,7 +547,8 @@ async def _run_docker_prune(
     index = state.get("current_action_index", 0)
     action_params: dict[str, object] = {}
     if index < len(planned):
-        action_params = dict(planned[index].get("params") or {})
+        _raw = planned[index].get("params")
+        action_params = dict(_raw) if isinstance(_raw, dict) else {}
 
     sub_state: DockerPruneGraphState = {
         "vm_id": vm_id,
@@ -553,9 +556,9 @@ async def _run_docker_prune(
         "dry_run": state.get("dry_run", True),
         "docker_available": bool(vm_info.get("docker_available", True)),
         "docker_prune_aggressive": bool(action_params.get("aggressive", False)),
-        "hostname": state.get("hostname", ""),  # type: ignore[typeddict-item]
-        "username": state.get("ssh_user", ""),  # type: ignore[typeddict-item]
-        "key_path": state.get("ssh_key_path", ""),  # type: ignore[typeddict-item]
+        "hostname": state.get("hostname", ""),  # type: ignore[typeddict-unknown-key]
+        "username": state.get("ssh_user", ""),
+        "key_path": state.get("ssh_key_path", ""),
     }
 
     try:

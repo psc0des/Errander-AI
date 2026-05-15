@@ -685,3 +685,19 @@ fi
 **Lesson 4**: `load_inventory` from `config/inventory.py` returns `list[VMTarget]` (flattened). `validate_inventory` from `config/schema.py` returns `InventoryConfig` with `.environments`. When you need per-environment fields (like `docker_command_mode`), use `validate_inventory`.
 
 **Rule**: Before patching env-level config into any function, check whether `load_inventory` or `validate_inventory` is the right call.
+
+---
+
+## Phase A.5 — Static gates cleanup (ruff + mypy)
+
+**Lesson 1 — Non-ASCII in `# type: ignore` causes mypy `[syntax]` errors.** Em-dashes (`—`) and other Unicode in `# type: ignore` comments are not ASCII and mypy rejects them with `[syntax]`. Always use ASCII-only in type: ignore comments; put explanations in a separate `# explanation` line or use plain hyphens.
+
+**Lesson 2 — `dict[str, object]` cascades to every call site.** Changing `list[dict]` → `list[dict[str, object]]` forces narrow types downstream: every `.get()` returns `object`, string interpolation requires `str()` casts, and every consumer needs updating. For heterogeneous mock/web data where types can't be predicted, `dict[str, Any]` is correct. Reserve `dict[str, object]` for narrowly typed mappings you control.
+
+**Lesson 3 — `per-file-ignores` beats 100+ `# noqa` comments.** When an entire directory (e.g. `errander/web/`) has a structural reason to violate a rule (inline HTML/CSS templates), one `[tool.ruff.lint.per-file-ignores]` entry in `pyproject.toml` is the right solution — not 100+ per-line suppressions that inflate the noqa budget and obscure real suppressions.
+
+**Lesson 4 — `# type: ignore` inside a closing paren is a Python syntax error.** `web.Application(middlewares=[...]  # type: ignore[list-item])` puts the comment inside the `)` — Python reports `'(' was never closed`. Always place `# type: ignore` comments after the closing delimiter on the same line.
+
+**Lesson 5 — Always specify the exact error code in `# type: ignore[code]`.** Adding `[arg-type]` when mypy reports `[call-overload]` silently creates an unused-ignore that mypy later flags as an error itself. Run mypy to see the precise code, then add it verbatim. Wrong codes do not suppress the real error and add noise.
+
+**Rule**: Before adding a `# type: ignore`, copy the error code from mypy output exactly. Never guess the code from memory.

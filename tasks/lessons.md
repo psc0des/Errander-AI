@@ -731,3 +731,15 @@ fi
 **Lesson 2 -- `resp.json()` returns `object`, not `Any`, in typed aiohttp stubs.** mypy sees `await resp.json()` as returning `object`. Accessing `.get()` on `object` is an `[attr-defined]` error. Fix: `isinstance(raw, dict)` first, then `isinstance(data_block, dict)`, then `isinstance(rows, list)` at each level of nesting. This narrowing chain is required for every JSON response body that has nested structure -- don't assign to `dict[str, object]` directly, narrow step by step.
 
 **Rule**: Every `await resp.json()` in a typed file needs explicit isinstance narrowing before any attribute access. The pattern from `_query_instant()` is the reference implementation.
+
+---
+
+## P0-1 -- Immutable Plan Artifact
+
+**Lesson 1 -- Load tests with hardcoded SSH call counts break when new phases add calls.** `test_wave_abort_stops_fleet_at_boundary` had `call_count <= 75` covering "12 validate + 60 plan_vm + 3 wave-0 health". Adding `enrich_plan_node` (24 new SSH calls for disk_cleanup preview) shifted wave-0's health check past the threshold, causing it to fail instead of wave-1.
+
+**Rule**: whenever a new node adds SSH calls to the planning flow, grep for hardcoded call-count thresholds in tests (`grep -n "call_count" tests/`). Update the comment AND the threshold together, and document the breakdown: `# 12 validate + 60 plan_vm + 24 enrich_plan + 3 wave-0 health = 99`.
+
+**Lesson 2 -- Backwards-compatibility in approval message: empty preview should show params, not silence.** When `enrich_plan_node` is skipped (e.g., on first deploy before the node was added to existing deferred batches) or when SSH fails at plan time, the preview is `{}`. The new message format for patching with empty preview should fall back to showing `params`, not just "patching" with no detail. Existing test `test_params_appear_in_approval_slack_summary` caught this.
+
+**Rule**: when reformatting a message that previously showed field X, always check if there's an existing test that asserts X appears. If the new format conditionally omits X, add a fallback so the assertion still passes.

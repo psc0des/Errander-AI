@@ -1,5 +1,32 @@
 # Errander-AI Command Log
 
+## P0-1 — Immutable Signed Plan Artifact (2026-05-16)
+
+```bash
+# Baseline
+uv run pytest --tb=no -q   # 1452 passed, 111 skipped
+
+# Commit 1: enrich_plan_node
+uv run pytest tests/agent/test_enrich_plan.py -v   # 15 passed
+uv run ruff check errander/agent/graph.py errander/agent/subgraphs/patching.py
+uv run mypy errander/agent/graph.py errander/agent/subgraphs/patching.py
+uv run pytest tests/agent/test_load.py::TestFleetBatchGraph::test_wave_abort_stops_fleet_at_boundary -v  # fixed regression
+
+# Commit 2: approval message
+uv run pytest tests/agent/test_approval_message_p01.py tests/agent/test_plan_apply_flow.py -v
+uv run ruff check errander/agent/graph.py
+uv run mypy errander/agent/graph.py
+uv run pytest --tb=short -q   # 1480 passed
+
+# Commits
+git add errander/agent/graph.py errander/agent/subgraphs/patching.py tests/agent/test_enrich_plan.py tests/agent/test_load.py
+git commit -m "feat: enrich_plan_node -- assessment at plan time, exact packages in hash"
+git add errander/agent/graph.py docs/SPEC.md tests/agent/test_approval_message_p01.py
+git commit -m "feat: P0-1 approval message -- exact packages per action, remove categories disclaimer"
+```
+**What**: P0-1 -- immutable signed plan artifact. `enrich_plan_node` runs SSH assessment at plan time (before hash), `_format_plan_for_approval` renders exact packages in Slack message.
+**Why**: The "You are approving action categories" disclaimer was honest but weak. Operators now approve exact packages/versions, cryptographically committed by the plan hash.
+
 ## Phase C — Prometheus HTTP Adapter (2026-05-16)
 
 ```bash

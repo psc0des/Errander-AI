@@ -1,0 +1,150 @@
+# 37 -- Immutable Signed Plan Artifact (P0-1)
+
+## What was built and why
+
+Before P0-1, the Slack approval message showed:
+
+```
+• prod-web-01: patching(exclude_patterns=['kernel*']), disk_cleanup
+⚠️ You are approving action categories and parameters, not exact pinned commands or package versions.
+```
+
+The operator had no idea which packages would be upgraded. The hash committed to the action categories and params, not to actual package names and versions. This was an honest but weak HITL guarantee.
+
+After P0-1:
+
+```
+prod-web-01:
+  - patching: 3 package(s)
+    nginx  1.18.0-0ubuntu1 -> 1.24.0-1ubuntu1
+    openssl  1.1.1f-1ubuntu2.20 -> 1.1.1f-1ubuntu2.21
+    curl  7.68.0-1ubuntu2.20 -> 7.81.0-1ubuntu1.10
+  - disk_cleanup: 78% disk used, ~450MB apt cache
+
+Hash a1b2c3d4e5f6abcd commits to the exact packages and actions listed above.
+```
+
+The operator approves exact packages. The hash proves the message hasn't been altered.
+
+---
+
+## Architecture: where enrichment slots in
+
+The batch graph has a two-phase design:
+
+**Phase 1 (plan):** `plan_vm` fan-out → `collect_plans` → **`enrich_plan` (new)** → `generate_plan_artifact` (hash) → `approval_gate`
+
+**Phase 2 (execute):** `dispatch_wave` → `run_vm` fan-out
+
+P0-1 inserts `enrich_plan_node` between plan collection and hash computation. The hash is computed **after** enrichment, so it now covers exact package data.
+
+```
+plan_vm (×N concurrent)
+  ↓ [vm_plans reduced into BatchGraphState]
+collect_plans_node    (passthrough, logs count)
+  ↓
+enrich_plan_node      ← NEW: SSH read per VM, adds preview to planned_actions
+  ↓
+generate_plan_artifact_node  (SHA-256 over full vm_plans including preview)
+  ↓
+approval_gate_node    (Slack message shows exact packages)
+```
+
+The existing `verify_plan_hash_node` required no changes — it already hashes the full `vm_plans` structure, which now includes `preview`.
+
+---
+
+## Key functions
+
+### `enrich_plan_node(state, *, ssh_manager)` in `graph.py`
+
+Entry point. Runs `_enrich_vm_plan` for each VM concurrently via `asyncio.gather`.
+
+### `_enrich_vm_plan(plan, target_by_id, ssh_manager)`
+
+For one VM:
+1. Looks up connection params from `target_by_id` (matches vm_id → hostname/ssh_user/ssh_key_path)
+2. Iterates planned actions
+3. For `patching`: calls `_preview_patching()`
+4. For `disk_cleanup`: calls `_preview_disk_cleanup()`
+5. For other actions: `preview = {}` (no SSH)
+6. Appends `preview` to each action dict
+
+### `_preview_patching(vm_id, hostname, username, key_path, os_family, ssh_manager)`
+
+Runs `apt list --upgradable` (or `dnf check-update` for RHEL) via SSH. Parses with `_parse_upgradable_with_versions` to get `{name, current, target}` per package. Applies `MANDATORY_KERNEL_EXCLUDES` filter — same exclusions as `assess_node` in the execution phase.
+
+### `_parse_upgradable_with_versions(output, os_family)` in `patching.py`
+
+Extends the existing `_parse_upgradable` to also capture current and target versions.
+
+apt output format:
+```
+nginx/focal-updates 1.24.0-1ubuntu1 amd64 [upgradable from: 1.18.0-0ubuntu1]
+```
+Regex: `^(\S+)/\S+\s+(\S+)\s+\S+\s+\[upgradable from:\s+(\S+)\]` → (name, target, current)
+
+DNF output: `nginx.x86_64  1:1.24.0-1.el9  @appstream` → (name, target) — no current version in DNF output.
+
+### `_format_plan_for_approval()` in `graph.py`
+
+Updated to render:
+- `patching` with packages: exact `name  current -> target` list (capped at 10)
+- `patching` with error in preview: `(preview unavailable: ...)` fallback
+- `patching` with empty preview: falls back to showing `params` (pre-P0-1 behavior for dry-run mode)
+- `disk_cleanup`: disk usage % and apt cache size
+- Other actions: same as before (type + params)
+
+---
+
+## Why `verify_plan_hash_node` needed no changes
+
+`generate_plan_artifact_node` hashes:
+```python
+canonical = json.dumps(
+    {"batch_id": batch_id, "env_name": env_name, "vm_plans": vm_plans},
+    sort_keys=True,
+    default=str,
+)
+```
+
+`vm_plans` now contains `preview` dicts in every `planned_actions` entry. The JSON serialization covers them automatically. The hash changes if the packages change — exactly what P0-1 requires.
+
+`verify_plan_hash_node` re-computes this same formula at execution time. Since `vm_plans` was approved, and the same `vm_plans` is in `BatchGraphState`, the re-computation matches.
+
+---
+
+## Best-effort design
+
+SSH failure in `enrich_plan_node` → `preview = {"error": "..."}` → batch continues. The hash then commits to the error state. The Slack message shows "(preview unavailable: ...)". The operator can still approve, knowing that exact package data was unavailable at plan time.
+
+This is correct: a failure to get the preview is not a reason to abort the entire batch. But the operator can see it in the message and decide.
+
+---
+
+## Load test regression (lessons learned)
+
+`test_wave_abort_stops_fleet_at_boundary` had a hardcoded SSH call count: "12 validate + 60 plan_vm + 3 wave-0 health = 75 succeed, wave-1 health fails."
+
+`enrich_plan_node` adds 2 SSH calls per VM for `disk_cleanup` preview (12 VMs × 2 = 24 calls). Updated threshold: `call_count <= 99` (12 + 60 + 24 + 3 = 99).
+
+**Rule**: whenever a new phase adds SSH calls to the planning flow, grep for hardcoded call-count thresholds in load tests and update them. Comment the breakdown explicitly: `# 12 validate + 60 plan_vm + 24 enrich_plan + 3 wave-0 health = 99`.
+
+---
+
+## What P0-1 does NOT include
+
+- Exact shell commands (e.g. the full `apt-get upgrade -y nginx=1.24.0...` string) — that would require generating the command before approval and re-verifying it at execution, adding significant complexity. Package names + versions is sufficient for operator review.
+- Rollback plan in the artifact — the rollback snapshot is taken at execution time (`snapshot_node`), not at plan time. Including it would require running `dpkg -l` at plan time. Deferred to a potential P0-1 extension.
+- `autonomous_live_apply_enabled = True` — P0-1/P0-2 don't change this flag. Enabling autonomous mode is a separate conscious decision.
+
+---
+
+## Quiz
+
+1. Where in the batch graph does `enrich_plan_node` run, and why does this timing matter?
+2. Why does `verify_plan_hash_node` require no changes after P0-1?
+3. What happens when `enrich_plan_node` SSH fails for one VM? Does the batch abort?
+4. Why does `_preview_patching` apply `MANDATORY_KERNEL_EXCLUDES`? What would happen if it didn't?
+5. DNF `check-update` output doesn't include the current version. How does P0-1 handle this?
+6. Why does `_format_plan_for_approval` fall back to showing `params` when preview is empty (not when preview has an error)?

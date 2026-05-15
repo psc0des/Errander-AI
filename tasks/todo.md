@@ -1,4 +1,17 @@
-# Errander-AI — Task Tracking
+## P0-1 — Immutable Signed Plan Artifact (2026-05-16, completed)
+
+- [x] Commit 1: `enrich_plan_node` + `_enrich_vm_plan` + `_preview_patching` + `_preview_disk_cleanup` in `graph.py`
+- [x] Commit 1: `_parse_upgradable_with_versions` in `patching.py`
+- [x] Commit 1: Wired `collect_plans → enrich_plan → generate_plan_artifact` in `build_batch_graph()`
+- [x] Commit 1: Load test `test_wave_abort_stops_fleet_at_boundary` call count updated (75 → 99)
+- [x] Commit 1: 15 new tests (`test_enrich_plan.py`)
+- [x] Commit 2: `_format_plan_for_approval()` updated — exact packages, disk preview, no disclaimer
+- [x] Commit 2: `docs/SPEC.md` pre-P0-1 limitation note replaced
+- [x] Commit 2: 13 new tests (`test_approval_message_p01.py`)
+- [x] 1480 tests passing, 111 skipped — 0 regressions
+- [x] ruff: All checks passed. mypy: 76 source files, no issues.
+- [x] `autonomous_live_apply_enabled = False` unchanged
+- [x] `docs/learning/37-immutable-plan-artifact.md` created
 
 ## Phase C — Prometheus HTTP Adapter (2026-05-16, completed)
 

@@ -4,9 +4,16 @@
 2026-05-16
 
 ## Current Phase
-**Phase C — COMPLETE.** Prometheus HTTP adapter (2 commits, Sonnet, 2026-05-16).
+**P0-1 — COMPLETE.** Immutable signed plan artifact (2 commits, Sonnet, 2026-05-16).
 
-P0-1 (immutable signed plan artifact) is next.
+P0-2 (deferred replay of exact artifact) is next.
+
+### P0-1 Completed (2026-05-16)
+- **Commit 1**: `enrich_plan_node` in `graph.py` — SSHes each VM at plan time, populates `preview` dict per planned action with exact packages/versions (patching) and disk usage (disk_cleanup); wired between `collect_plans` and `generate_plan_artifact` so preview is in the hash. `_parse_upgradable_with_versions` added to `patching.py`. Load test call count updated. 15 new tests.
+- **Commit 2**: `_format_plan_for_approval()` updated — shows exact packages with `current -> target` per patching action, disk usage for disk_cleanup; "approving categories" disclaimer removed; replaced with hash-commitment line. SPEC.md pre-P0-1 note replaced. 13 new tests.
+- **1480 tests passing, 111 skipped.**
+- ruff: All checks passed. mypy: 76 source files, no issues.
+- `autonomous_live_apply_enabled = False` unchanged — enabling autonomous mode is a separate decision.
 
 ### Phase C Completed (2026-05-16)
 - **Commit 1**: `errander/integrations/prometheus.py` — `PrometheusClient` (3 node_exporter metrics, 5s timeout, best-effort); `prometheus_base_url` in Settings; `prometheus_metrics` field on `VMSignalSummary` + `ProbeVMResult`; `all_prometheus_metrics` property on `DigestReport`. 10 new tests.
@@ -51,9 +58,8 @@ P0-1 (immutable signed plan artifact) is next.
 - **SRE sign-off**: validated in `ai_sre_audit_v2.md` "Two-Layer AI Architecture Validation" section. SRE's anchor phrase: *"MCP belongs in the operator brain, not in the execution hands."*
 
 ## Next
-- P0-1: Immutable signed plan artifact — operator approves exact packages/versions/commands
-- P0-2: Deferred replay of exact artifact (no re-planning at window open time)
-- Note: `autonomous_live_apply_enabled = False` stays False after P0-1/P0-2. Flipping it is a separate conscious decision.
+- P0-2: Deferred replay of exact artifact (window-opener replays approved plan, no re-planning)
+- Note: `autonomous_live_apply_enabled = False` stays False after P0-2. Flipping it is a separate conscious decision.
 - Phase D: Operator Assistant Layer (MCP / CLI / Skills for investigation and recommendation)
 
 ## Completed

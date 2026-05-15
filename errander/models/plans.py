@@ -11,8 +11,10 @@ import hashlib
 import json
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
-from errander.models.actions import Action, ActionResult
+if TYPE_CHECKING:
+    from errander.models.actions import Action, ActionResult
 
 
 @dataclass

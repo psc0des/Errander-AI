@@ -7,8 +7,11 @@ and the ActionResult model that captures execution outcomes.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
 from enum import StrEnum
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from datetime import datetime
 
 
 class ActionType(StrEnum):

@@ -19,10 +19,8 @@ import html as _html_mod
 import logging
 import secrets
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 from urllib.parse import quote as _url_quote
-
-_esc = _html_mod.escape  # escape untrusted data before HTML interpolation
-_uq = lambda s: _url_quote(str(s), safe="")  # URL-encode path segments (no safe chars)
 
 from aiohttp import web
 from prometheus_client import (
@@ -34,10 +32,18 @@ from prometheus_client import (
 )
 
 from errander.models.events import EventType
-from errander.models.vm import VMTarget
-from errander.safety.approval import ApprovalManager
-from errander.safety.audit import AuditStore
-from errander.safety.overrides import OverridesStore
+
+if TYPE_CHECKING:
+    from errander.models.vm import VMTarget
+    from errander.safety.approval import ApprovalManager
+    from errander.safety.audit import AuditStore
+    from errander.safety.overrides import OverridesStore
+
+_esc = _html_mod.escape  # escape untrusted data before HTML interpolation
+
+
+def _uq(s: str) -> str:
+    return _url_quote(str(s), safe="")  # URL-encode path segments (no safe chars)
 
 #: Typed app keys for storing shared objects on the aiohttp Application.
 _AUDIT_STORE_KEY: web.AppKey[AuditStore | None] = web.AppKey("audit_store")
@@ -633,10 +639,9 @@ async def _csrf_middleware(
     handler: web.RequestHandler,
 ) -> web.StreamResponse:
     """Enforce CSRF double-submit cookie on all /ui/* POST requests (finding #14)."""
-    if request.method == "POST" and request.path.startswith("/ui"):
-        if not await _csrf_verify(request):
-            logger.warning("CSRF check failed for %s %s", request.method, request.path)
-            raise web.HTTPForbidden(reason="CSRF token missing or invalid")
+    if request.method == "POST" and request.path.startswith("/ui") and not await _csrf_verify(request):
+        logger.warning("CSRF check failed for %s %s", request.method, request.path)
+        raise web.HTTPForbidden(reason="CSRF token missing or invalid")
     return await handler(request)
 
 
@@ -766,7 +771,6 @@ _LLM_MODEL_DATALIST = [
 async def _ui_settings_get(request: web.Request) -> web.Response:
     """GET /ui/settings — render LLM settings form."""
     store: OverridesStore | None = request.app.get(_OVERRIDES_STORE_KEY)
-    audit: AuditStore | None = request.app.get(_AUDIT_STORE_KEY)
     manager: ApprovalManager | None = request.app.get(_APPROVAL_MANAGER_KEY)
     pending_count = len(manager.get_pending()) if manager is not None else 0
 
@@ -868,7 +872,7 @@ async def _ui_settings_post(request: web.Request) -> web.Response:
     import os as _os
 
     errors: list[str] = []
-    for field_key, env_key, label, input_type, is_secret in _LLM_SETTINGS_FIELDS:
+    for field_key, env_key, label, _, is_secret in _LLM_SETTINGS_FIELDS:
         if _os.environ.get(env_key) is not None:
             continue  # env-locked, skip
         value = str(data.get(env_key, "")).strip()

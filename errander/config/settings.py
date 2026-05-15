@@ -12,10 +12,13 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from errander.config.schema import SettingsConfig, validate_settings
 from errander.integrations.secrets import SecretsManager
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 @dataclass

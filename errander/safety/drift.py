@@ -18,9 +18,12 @@ import json
 import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 from errander.models.events import AuditEvent, EventType
-from errander.safety.audit import AuditStore
+
+if TYPE_CHECKING:
+    from errander.safety.audit import AuditStore
 
 logger = logging.getLogger(__name__)
 

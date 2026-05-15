@@ -18,10 +18,10 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from errander.agent.subgraphs.disk_cleanup import ALLOWED_CLEANUP_PATHS
-from errander.config.policies import MaintenancePolicy
 from errander.models.actions import Action, ActionType, RiskTier
 
 if TYPE_CHECKING:
+    from errander.config.policies import MaintenancePolicy
     from errander.execution.commands import PackageManager
     from errander.execution.sandbox import SandboxExecutor
 

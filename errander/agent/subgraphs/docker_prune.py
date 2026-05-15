@@ -21,14 +21,17 @@ Rollback strategy: Re-pull only — pruned resources are gone.
 
 from __future__ import annotations
 
+import contextlib
 import logging
-from typing import Any, TypedDict
+from typing import TYPE_CHECKING, Any, TypedDict
 
 from langgraph.graph import END, StateGraph
 
 from errander.execution.privilege import privileged
-from errander.execution.sandbox import SandboxExecutor
 from errander.models.actions import ActionStatus
+
+if TYPE_CHECKING:
+    from errander.execution.sandbox import SandboxExecutor
 
 logger = logging.getLogger(__name__)
 
@@ -409,15 +412,11 @@ def parse_assess_output(stdout: str) -> dict[str, Any]:
         if key == "reachable":
             result["reachable"] = value.lower() in ("yes", "true", "1")
         elif key == "dangling_images":
-            try:
+            with contextlib.suppress(ValueError):
                 result["dangling_images"] = int(value)
-            except ValueError:
-                pass
         elif key == "stopped_containers":
-            try:
+            with contextlib.suppress(ValueError):
                 result["stopped_containers"] = int(value)
-            except ValueError:
-                pass
         elif key == "error":
             result["error"] = value or None
     result["system_df"] = "\n".join(df_lines)

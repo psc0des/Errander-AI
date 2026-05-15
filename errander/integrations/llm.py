@@ -216,7 +216,7 @@ class LLMClient:
         return result
 
 
-def _parse_response(content: str, response_model: type[T]) -> T | None:
+def _parse_response[T: BaseModel](content: str, response_model: type[T]) -> T | None:
     """Parse raw LLM response text into a Pydantic model.
 
     Handles:

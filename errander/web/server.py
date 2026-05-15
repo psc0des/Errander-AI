@@ -550,10 +550,7 @@ def audit_badge(status: str) -> str:
 
 
 def disk_bar(pct: int) -> str:
-    if pct >= 75:
-        color = "amber" if pct < 90 else "red"
-    else:
-        color = "indigo"
+    color = ("amber" if pct < 90 else "red") if pct >= 75 else "indigo"
     return f"""
       <div class="prog-wrap">
         <div class="prog-fill prog-{color}" style="width:{pct}%"></div>
@@ -898,7 +895,6 @@ def page_vm(hostname: str) -> str:
     ]
     disk_rows = ""
     for path, pct, size in disk_data:
-        dc = "amber" if pct >= 75 else ("red" if pct >= 90 else "indigo" if pct >= 30 else "green")
         pct_color = "#d97706" if pct >= 75 else "#4f46e5" if pct >= 30 else "#16a34a"
         disk_rows += f"""
         <div class="disk-partition">
@@ -1026,10 +1022,6 @@ def page_audit() -> str:
 
 
 def page_batches() -> str:
-    total = len(BATCHES)
-    completed = sum(1 for b in BATCHES if b["status"] == "completed")
-    success_rate = round(completed / total * 100, 1)
-
     kpis = """
     <div class="kpi-grid" style="margin-bottom:20px">
       <div class="card kpi-tile kpi-top-border" style="border-color:#4f46e5">

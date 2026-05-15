@@ -16,13 +16,15 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any, TypedDict
+from typing import TYPE_CHECKING, Any, TypedDict
 
 from langgraph.graph import END, StateGraph
 
 from errander.execution.command_builder import CommandBuildError, safe_path
-from errander.execution.sandbox import SandboxExecutor
 from errander.models.actions import ActionStatus
+
+if TYPE_CHECKING:
+    from errander.execution.sandbox import SandboxExecutor
 
 logger = logging.getLogger(__name__)
 

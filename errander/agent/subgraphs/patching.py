@@ -24,12 +24,12 @@ from langgraph.graph import END, StateGraph
 
 from errander.agent.subgraphs.disk_cleanup import get_package_manager_by_name
 from errander.execution.reboot_check import detect_reboot_required
-from errander.execution.sandbox import SandboxExecutor
 from errander.execution.service_check import check_services, find_regressions
 from errander.models.actions import ActionStatus
 from errander.safety.validators import validate_no_pkg_lock
 
 if TYPE_CHECKING:
+    from errander.execution.sandbox import SandboxExecutor
     from errander.safety.audit import AuditStore
     from errander.safety.vm_state import VMStateStore
 
@@ -643,7 +643,7 @@ async def rollback_node(
     Always sets status=FAILED (the upgrade itself failed); error details
     include rollback outcome for the audit trail.
     """
-    from errander.models.actions import ActionType as _AT
+    from errander.models.actions import ActionType
     from errander.safety.rollback import rollback_action
 
     vm_id = state["vm_id"]
@@ -651,7 +651,7 @@ async def rollback_node(
     snapshot = state.get("version_snapshot", {})
 
     success, detail = await rollback_action(
-        _AT.PATCHING,
+        ActionType.PATCHING,
         vm_id,
         snapshot,
         executor=executor,

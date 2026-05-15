@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
 import logging
 import signal
 import sys
@@ -556,12 +557,12 @@ def _truncate(s: str, width: int) -> str:
 
 
 def _print_audit_table(rows: list[tuple[str, ...]]) -> None:
-    header = "  ".join(h.ljust(w) for h, w in zip(_HEADERS, _COL_WIDTHS))
+    header = "  ".join(h.ljust(w) for h, w in zip(_HEADERS, _COL_WIDTHS, strict=False))
     separator = "  ".join("-" * w for w in _COL_WIDTHS)
     print(header)
     print(separator)
     for row in rows:
-        line = "  ".join(_truncate(v, w).ljust(w) for v, w in zip(row, _COL_WIDTHS))
+        line = "  ".join(_truncate(v, w).ljust(w) for v, w in zip(row, _COL_WIDTHS, strict=False))
         print(line)
 
 
@@ -803,8 +804,7 @@ async def _window_opener(
     vm_state_store: object = None,
 ) -> None:
     """Execute pending deferred batches when a maintenance window opens."""
-    from errander.models.events import AuditEvent
-    from errander.models.events import EventType as _ET
+    from errander.models.events import AuditEvent, EventType
 
     await deferred_store.expire_old()
     pending = await deferred_store.get_pending(env_name)
@@ -821,7 +821,7 @@ async def _window_opener(
         )
         await deferred_store.mark_executing(record.batch_id)
         await audit_store.log_event(AuditEvent(
-            event_type=_ET.DEFERRED_EXECUTION_STARTED,
+            event_type=EventType.DEFERRED_EXECUTION_STARTED,
             batch_id=record.batch_id,
             detail=(
                 f"Deferred batch window opened — re-planning and requesting fresh "
@@ -1122,11 +1122,9 @@ async def async_main(args: argparse.Namespace) -> int:
 
         loop = asyncio.get_running_loop()
         for sig in (signal.SIGTERM, signal.SIGINT):
-            try:
+            # Windows doesn't support add_signal_handler for all signals
+            with contextlib.suppress(NotImplementedError, OSError):
                 loop.add_signal_handler(sig, _handle_signal, sig)
-            except (NotImplementedError, OSError):
-                # Windows doesn't support add_signal_handler for all signals
-                pass
 
         await stop_event.wait()
 

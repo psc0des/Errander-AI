@@ -25,7 +25,7 @@ import logging
 import math
 import uuid
 from datetime import UTC, datetime
-from typing import Annotated, Any, TypedDict
+from typing import TYPE_CHECKING, Annotated, Any, TypedDict
 
 from langgraph.graph import END, StateGraph
 from langgraph.types import Send
@@ -33,21 +33,23 @@ from langgraph.types import Send
 from errander.agent.decisions import prioritize_actions
 from errander.agent.vm_graph import VMGraphState, build_vm_graph
 from errander.execution.os_detection import detect_os
-from errander.execution.sandbox import SandboxExecutor
-from errander.execution.ssh import SSHConnectionManager
-from errander.integrations.slack import SlackClient
 from errander.models.actions import ACTION_RISK_TIERS, ActionStatus, ActionType, RiskTier
 from errander.models.events import AuditEvent, EventType
 from errander.observability.metrics import BATCH_DURATION
 from errander.safety.approval import ApprovalManager, await_dual_approval
-from errander.safety.audit import AuditStore
-from errander.safety.deferred import DeferredExecutionStore
-from errander.safety.locking import FileLocker
 from errander.scheduling.windows import (
     MaintenanceWindow,
     check_window_from_config,
     next_window_open,
 )
+
+if TYPE_CHECKING:
+    from errander.execution.sandbox import SandboxExecutor
+    from errander.execution.ssh import SSHConnectionManager
+    from errander.integrations.slack import SlackClient
+    from errander.safety.audit import AuditStore
+    from errander.safety.deferred import DeferredExecutionStore
+    from errander.safety.locking import FileLocker
 
 logger = logging.getLogger(__name__)
 

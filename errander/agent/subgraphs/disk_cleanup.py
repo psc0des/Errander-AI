@@ -21,15 +21,17 @@ Rollback strategy: None needed — only targets known-safe paths.
 from __future__ import annotations
 
 import logging
-from typing import Any, TypedDict
+from typing import TYPE_CHECKING, Any, TypedDict
 
 from langgraph.graph import END, StateGraph
 
 from errander.execution.commands import AptManager, DnfManager
 from errander.execution.privilege import privileged
-from errander.execution.sandbox import SandboxExecutor
-from errander.execution.ssh import SSHResult
 from errander.models.actions import ActionStatus
+
+if TYPE_CHECKING:
+    from errander.execution.sandbox import SandboxExecutor
+    from errander.execution.ssh import SSHResult
 
 logger = logging.getLogger(__name__)
 

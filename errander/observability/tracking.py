@@ -7,13 +7,17 @@ from ActionResult fields to metric labels.
 
 from __future__ import annotations
 
-from errander.models.actions import ActionResult
+from typing import TYPE_CHECKING
+
 from errander.observability.metrics import (
     ACTION_DURATION,
     ACTIONS_TOTAL,
     LLM_REQUESTS_TOTAL,
     SSH_ERRORS_TOTAL,
 )
+
+if TYPE_CHECKING:
+    from errander.models.actions import ActionResult
 
 
 def record_action_result(result: ActionResult) -> None:

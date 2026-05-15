@@ -28,10 +28,10 @@ from errander.models.actions import (
     ActionType,
     RiskTier,
 )
-from errander.models.vm import VMInfo
 
 if TYPE_CHECKING:
     from errander.integrations.llm import LLMClient
+    from errander.models.vm import VMInfo
     from errander.safety.ai_audit import AIDecisionStore
 
 logger = logging.getLogger(__name__)
@@ -227,8 +227,8 @@ async def prioritize_actions(
 
     elif ai_store is not None:
         # No LLM — log that hardcoded fallback was used
-        from errander.safety.ai_audit import AIDecision as _AD
-        await ai_store.log(_AD(
+        from errander.safety.ai_audit import AIDecision
+        await ai_store.log(AIDecision(
             batch_id=batch_id,
             vm_id=vm_id,
             decision_type="prioritize_actions",

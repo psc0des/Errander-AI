@@ -9,13 +9,15 @@ Config inheritance: Global defaults → Environment settings → Host overrides.
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import yaml
 from pydantic import BaseModel, field_validator
 
 from errander.integrations.secrets import DecryptionError, SecretsManager
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def _decrypt_yaml_strings(data: Any, path: str = "") -> Any:

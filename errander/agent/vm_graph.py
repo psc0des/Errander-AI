@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime
-from typing import Any, TypedDict
+from typing import TYPE_CHECKING, Any, TypedDict
 
 from langgraph.graph import END, StateGraph
 
@@ -49,8 +49,6 @@ from errander.execution.privilege import (
     parse_capability_check,
     sudo_capability_check,
 )
-from errander.execution.sandbox import SandboxExecutor
-from errander.execution.ssh import SSHConnectionManager
 from errander.models.actions import (
     Action,
     ActionStatus,
@@ -59,11 +57,15 @@ from errander.models.actions import (
 )
 from errander.models.events import AuditEvent, EventType
 from errander.observability.metrics import ACTION_DURATION, ACTIONS_TOTAL, VM_LOCK_HELD
-from errander.safety.ai_audit import AIDecisionStore
-from errander.safety.audit import AuditStore
 from errander.safety.drift import compare_states, load_baseline, save_baseline
-from errander.safety.locking import FileLocker
 from errander.safety.validators import validate_action
+
+if TYPE_CHECKING:
+    from errander.execution.sandbox import SandboxExecutor
+    from errander.execution.ssh import SSHConnectionManager
+    from errander.safety.ai_audit import AIDecisionStore
+    from errander.safety.audit import AuditStore
+    from errander.safety.locking import FileLocker
 
 logger = logging.getLogger(__name__)
 
@@ -1393,7 +1395,7 @@ def build_vm_graph(
         builder.add_conditional_edges(
             "discover", _route_after_discover, sre_snapshot_nodes + ["audit_results"],
         )
-        for _prev, _nxt in zip(sre_snapshot_nodes, sre_snapshot_nodes[1:]):
+        for _prev, _nxt in zip(sre_snapshot_nodes, sre_snapshot_nodes[1:], strict=False):
             builder.add_edge(_prev, _nxt)
         builder.add_edge(sre_snapshot_nodes[-1], "drift_check")
     else:

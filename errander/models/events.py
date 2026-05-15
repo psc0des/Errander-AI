@@ -47,6 +47,10 @@ class EventType(StrEnum):
     DRIFT_KIND_BASELINE_SAVED = "drift_kind_baseline_saved"
     DRIFT_KIND_CHANGED = "drift_kind_changed"
     FAILED_SSH_LOGINS_OBSERVED = "failed_ssh_logins_observed"
+    # Phase B — proactive daily probe
+    DAILY_PROBE_STARTED = "daily_probe_started"
+    DAILY_PROBE_COMPLETE = "daily_probe_complete"
+    DAILY_PROBE_FAILED = "daily_probe_failed"
 
 
 @dataclass

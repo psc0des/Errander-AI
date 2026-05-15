@@ -126,3 +126,51 @@ class BatchReport:
     # Phase 2 — Security drift signals
     drift_changes: list[DriftChange] = field(default_factory=list)
     failed_logins: list[FailedLoginSummary] = field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# Phase B — Proactive daily probe models
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class ProbeVMResult:
+    """Result of probing a single VM outside a maintenance batch."""
+
+    vm_id: str
+    hostname: str
+    reachable: bool = True
+    disk_growth_alerts: list[dict[str, object]] = field(default_factory=list)
+    drift_changes: list[dict[str, object]] = field(default_factory=list)
+    failed_login_summary: dict[str, object] | None = None
+    error: str | None = None
+
+
+@dataclass
+class DigestReport:
+    """Aggregated result of a daily probe run across all VMs in an environment."""
+
+    probe_id: str
+    env_name: str
+    generated_at: datetime
+    vm_results: list[ProbeVMResult] = field(default_factory=list)
+
+    @property
+    def reachable_count(self) -> int:
+        return sum(1 for r in self.vm_results if r.reachable)
+
+    @property
+    def all_disk_alerts(self) -> list[dict[str, object]]:
+        return [a for r in self.vm_results for a in r.disk_growth_alerts]
+
+    @property
+    def all_drift_changes(self) -> list[dict[str, object]]:
+        return [c for r in self.vm_results for c in r.drift_changes]
+
+    @property
+    def all_failed_logins(self) -> list[dict[str, object]]:
+        return [
+            r.failed_login_summary
+            for r in self.vm_results
+            if r.failed_login_summary is not None
+        ]

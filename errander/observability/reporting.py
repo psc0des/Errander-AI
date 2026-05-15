@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from errander.models.actions import ActionResult
-    from errander.models.reports import BatchReport, DriftChange
+    from errander.models.reports import BatchReport, DigestReport, DriftChange
     from errander.safety.vm_state import VMState
 
 
@@ -202,7 +202,59 @@ def render_batch_report(report: BatchReport) -> str:
                 top = ", ".join(f"{u}×{c}" for u, c in fl.top_users[:3])
                 lines.append(f"    top users: {top}")
             if fl.top_source_ips:
-                top_ips = ", ".join(f"{ip}×{c}" for ip, c in fl.top_source_ips[:3])
+                top_ips = ", ".join(f"{ip}x{c}" for ip, c in fl.top_source_ips[:3])
                 lines.append(f"    top IPs: {top_ips}")
+
+    return "\n".join(lines)
+
+
+def render_digest_report(report: DigestReport) -> str:
+    """Render a daily probe digest as Slack-formatted text.
+
+    Deterministic — no LLM. Sections omitted when empty so the message
+    stays concise for healthy fleets.
+    """
+    lines: list[str] = []
+    ts = report.generated_at.strftime("%Y-%m-%d %H:%M UTC")
+    lines.append(f"*Daily Fleet Digest -- {report.env_name}* | {ts}")
+    lines.append(f"{report.reachable_count}/{len(report.vm_results)} VMs reachable")
+
+    unreachable = [r for r in report.vm_results if not r.reachable]
+    if unreachable:
+        lines.append(f"\n*:x: Unreachable VMs ({len(unreachable)})*")
+        for r in unreachable:
+            lines.append(f"  - `{r.vm_id}` ({r.hostname}) -- {r.error or 'no details'}")
+
+    disk_alerts = report.all_disk_alerts
+    if disk_alerts:
+        lines.append(f"\n*:chart_with_upwards_trend: Disk Growth Alerts ({len(disk_alerts)})*")
+        for a in disk_alerts:
+            lines.append(
+                f"  - `{a.get('vm_id')}` {a.get('mountpoint')} "
+                f"{a.get('used_pct_start')}% -> {a.get('used_pct_end')}%"
+            )
+
+    drift_changes = report.all_drift_changes
+    if drift_changes:
+        by_kind: dict[str, list[dict[str, object]]] = {}
+        for c in drift_changes:
+            kind = str(c.get("kind", "unknown"))
+            by_kind.setdefault(kind, []).append(c)
+        lines.append(f"\n*:warning: Drift Detected ({len(drift_changes)} change(s))*")
+        for kind, changes in sorted(by_kind.items()):
+            vm_ids = {str(c.get("vm_id", "")) for c in changes}
+            lines.append(f"  `{kind}` -- {len(changes)} change(s) across {len(vm_ids)} VM(s)")
+
+    failed_logins = report.all_failed_logins
+    if failed_logins:
+        total = sum(int(str(s.get("total_count", 0))) for s in failed_logins)
+        lines.append(f"\n*:lock: Failed SSH Logins (last 24h) -- {total} total*")
+        for s in failed_logins:
+            count = int(str(s.get("total_count", 0)))
+            if count > 0:
+                lines.append(f"  - `{s.get('vm_id')}` -- {count} failed attempts")
+
+    if not unreachable and not disk_alerts and not drift_changes and not failed_logins:
+        lines.append("\n:white_check_mark: No signals detected -- fleet healthy")
 
     return "\n".join(lines)

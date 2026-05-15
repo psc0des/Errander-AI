@@ -134,6 +134,16 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         ),
     )
 
+    parser.add_argument(
+        "--ask",
+        metavar="QUESTION",
+        default=None,
+        help=(
+            "Investigate fleet state and answer QUESTION using LLM analysis. "
+            "Layer A only — no changes made. Use --env to scope to one environment."
+        ),
+    )
+
     # SSH known-hosts bootstrap (finding #9)
     parser.add_argument(
         "--bootstrap-known-hosts",
@@ -646,6 +656,76 @@ async def run_env_probe_main(env_name: str, inventory_path: Path) -> int:
 
 
 # ---------------------------------------------------------------------------
+# Operator Assistant CLI  (Layer A — read-only)
+# ---------------------------------------------------------------------------
+
+
+async def run_ask_query(
+    question: str,
+    inventory_path: Path,
+    env_name: str | None,
+) -> int:
+    """Investigate fleet state and answer a question via LLM. Layer A — read-only."""
+    from errander.agent.operator_assistant import OperatorAssistant
+    from errander.config.schema import validate_inventory
+    from errander.config.settings import load_settings
+    from errander.integrations.llm import LLMClient
+    from errander.safety.audit import AuditStore
+    from errander.safety.baselines import BaselineStore
+    from errander.safety.disk_history import VMDiskHistoryStore
+
+    try:
+        inventory = validate_inventory(inventory_path)
+    except Exception as exc:  # noqa: BLE001
+        print(f"Error loading inventory: {exc}")
+        return 1
+
+    try:
+        settings = load_settings()
+    except Exception as exc:  # noqa: BLE001
+        print(f"Error loading settings: {exc}")
+        return 1
+
+    audit_store = AuditStore(settings.audit_db_url, strict_mode=False)
+    disk_history_store = VMDiskHistoryStore(settings.audit_db_url)
+    baseline_store = BaselineStore(settings.audit_db_url)
+
+    llm: LLMClient | None = None
+    if settings.llm_base_url:
+        llm = LLMClient(
+            base_url=settings.llm_base_url,
+            api_key=settings.llm_api_key,
+            model=settings.llm_model,
+            temperature=settings.llm_temperature,
+        )
+
+    async with audit_store:
+        await disk_history_store.initialize()
+        await baseline_store.initialize()
+
+        assistant = OperatorAssistant()
+        response = await assistant.investigate(
+            question,
+            audit_store=audit_store,
+            disk_history_store=disk_history_store,
+            baseline_store=baseline_store,
+            inventory=inventory,
+            env_name=env_name,
+            llm_client=llm,
+        )
+
+    print(f"\n[{response.risk_level.upper()} RISK] {response.summary}\n")
+    print("Findings:")
+    for finding in response.findings:
+        print(f"  - {finding}")
+    if response.recommendations:
+        print("\nRecommendations:")
+        for rec in response.recommendations:
+            print(f"  - {rec}")
+    return 0
+
+
+# ---------------------------------------------------------------------------
 # Audit CLI
 # ---------------------------------------------------------------------------
 
@@ -1004,6 +1084,13 @@ async def async_main(args: argparse.Namespace) -> int:
         return await run_env_probe_main(
             env_name=args.probe_now,
             inventory_path=args.inventory,
+        )
+
+    if args.ask:
+        return await run_ask_query(
+            question=args.ask,
+            inventory_path=args.inventory,
+            env_name=args.env,
         )
 
     # --- Configuration (first pass: no DB overrides yet) ---

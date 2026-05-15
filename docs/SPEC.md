@@ -1,6 +1,19 @@
 # Errander-AI — Full Project Specification
 
-> A supervised agentic AI SRE platform that eliminates operational toil while keeping humans in control of live infrastructure changes. Performs secure patching (non-kernel), log rotation, Docker pruning, disk cleanup, and more — with safety gates, rollback, and full audit logging. Every live change requires human Slack approval.
+> Deterministic maintenance automation with an AI-assisted operator layer for Linux fleets. Performs secure patching (non-kernel), log rotation, Docker pruning, disk cleanup, and backup verification — with safety gates, rollback, and full audit logging. Every live change requires human approval. The LLM is never in the path that changes infrastructure.
+
+---
+
+## AI Safety Model — Two Layers
+
+Errander-AI uses a two-layer AI architecture with a strict boundary between investigation and execution:
+
+- **Layer A — Operator Assistant** (LLM-driven): investigates, recommends, summarizes. Uses LLM, MCP, CLI, Skills, external APIs freely. Produces text and structured proposals for humans.
+- **Layer B — Safe Execution** (deterministic Python): plans, validates, requests approval, executes, audits, verifies, rolls back. No LLM in the path. No MCP/CLI tool calls. No AI-generated commands.
+
+> **MCP belongs in the operator brain, not in the execution hands.**
+
+See [`AI-ARCHITECTURE.md`](AI-ARCHITECTURE.md) for the canonical deep specification, including the handoff between layers, what each layer may and may not do, examples, and FAQ.
 
 ---
 

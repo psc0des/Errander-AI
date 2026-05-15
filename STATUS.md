@@ -1,10 +1,27 @@
 # Errander-AI — Project Status
 
 ## Last Updated
-2026-05-14
+2026-05-15
 
 ## Current Phase
-**AI SRE audit v2 remediation — P0/P1/P2 safety fixes applied.**
+**Phase A — Privilege model fixes (SRE-approved plan, Sonnet to execute).**
+
+Two-layer AI architecture locked in and documented (`docs/AI-ARCHITECTURE.md`). Positioning updated across README, SPEC, CLAUDE.md. Phase A implementation plan handed to Sonnet (`tasks/sonnet-phase-a-plan.md`).
+
+### Two-Layer AI Architecture Locked In (2026-05-15)
+- **`docs/AI-ARCHITECTURE.md`**: Canonical safety model document. Layer A (Operator Assistant — LLM + MCP + CLI + Skills) recommends; Layer B (Safe Execution — deterministic Python) executes. Strict audited boundary.
+- **README.md**: Headline changed to "Deterministic maintenance automation with an AI-assisted operator layer for Linux fleets." Added Non-Goals section.
+- **CLAUDE.md**: Added "AI Safety Invariant" section with anchor phrases.
+- **SPEC.md**: Added "AI Safety Model — Two Layers" summary with link to canonical doc.
+- **SRE sign-off**: validated in `ai_sre_audit_v2.md` "Two-Layer AI Architecture Validation" section. SRE's anchor phrase: *"MCP belongs in the operator brain, not in the execution hands."*
+
+## Next (Phase A — handed to Sonnet)
+
+Implementation plan: `tasks/sonnet-phase-a-plan.md`
+
+- Commit 1: Quick privilege fixes (remove `/usr/bin/env` from apt; drop sudo from `apt --simulate`; add `SUDO_PREFLIGHT_FAILED` event type; preflight behavior tests)
+- Commit 2: Docker wrapper mode (`docker_command_mode: wrapper | direct_sudo | disabled` per env; mode-aware preflight; wrapper script spec in SETUP.md)
+- Commit 3: `--check-targets <env>` CLI (per-VM readiness validation; wrapper `--check` support; supported distro matrix doc)
 
 ## Completed
 

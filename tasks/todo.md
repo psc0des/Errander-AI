@@ -1,5 +1,48 @@
 # Errander-AI — Task Tracking
 
+## Phase A — Privilege Model Fixes (2026-05-15) — handed to Sonnet
+
+Implementation plan: `tasks/sonnet-phase-a-plan.md`
+
+### Commit 0 — Positioning docs (completed by Opus, 2026-05-15)
+- [x] `docs/AI-ARCHITECTURE.md` — canonical two-layer model
+- [x] `README.md` — new headline, Non-Goals section, AI-ARCHITECTURE link, updated Design Principles
+- [x] `CLAUDE.md` — AI Safety Invariant section + anchor phrases
+- [x] `docs/SPEC.md` — AI Safety Model summary + link
+- [x] `STATUS.md` — Phase A context
+- [x] `tasks/sonnet-phase-a-plan.md` — full implementation plan for Sonnet
+
+### Commit 1 — Quick privilege fixes (Sonnet, pending)
+- [ ] Remove `/usr/bin/env DEBIAN_FRONTEND=noninteractive` from `rollback.py` and `AptManager.install_version`; use `-o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold` instead
+- [ ] Drop sudo from `AptManager.simulate_upgrade`
+- [ ] Add `EventType.SUDO_PREFLIGHT_FAILED`; migrate `sudo_preflight_node` to new event type
+- [ ] Add `tests/agent/test_sudo_preflight.py` with all behavior tests
+- [ ] Opportunistic ruff/mypy cleanup only in touched files
+
+### Commit 2 — Docker wrapper mode (Sonnet, pending)
+- [ ] Add `docker_command_mode: Literal["wrapper", "direct_sudo", "disabled"] = "wrapper"` to `EnvironmentSchema`
+- [ ] Refactor `docker_prune.py` to honor mode (wrapper / direct_sudo / disabled)
+- [ ] Add `parse_assess_output()` helper for the wrapper output format
+- [ ] Plumb `docker_command_mode` through `vm_graph.py`, `graph.py`, `main.py`
+- [ ] Update `REQUIRED_BINARIES_BY_ACTION` for mode-aware preflight
+- [ ] Update SETUP.md Docker hardening section with single `errander-docker-assess` wrapper + output format spec
+- [ ] Add `tests/agent/subgraphs/test_docker_prune_modes.py`
+- [ ] Extend `tests/agent/test_sudo_preflight.py` for mode-aware preflight checks
+
+### Commit 3 — `--check-targets <env>` CLI (Sonnet, pending)
+- [ ] Document supported distro matrix in SETUP.md and README.md
+- [ ] Create `errander/execution/target_validation.py` with `TargetReadiness` dataclass + `check_target()` + `render_readiness_report()`
+- [ ] Add `--check-targets <env>` flag to `main.py`
+- [ ] Wrapper script `--check` support documented in SETUP.md
+- [ ] Add `tests/execution/test_target_validation.py`
+- [ ] Extend `tests/test_main_cli.py` for CLI flag behavior
+
+### Phase A definition of done
+- [ ] All tests pass (`uv run pytest`)
+- [ ] Anchor phrases present in `docs/AI-ARCHITECTURE.md`, `CLAUDE.md`, and at least one other doc
+- [ ] `STATUS.md` and `tasks/todo.md` updated when Phase A complete
+- [ ] New learning doc: `docs/learning/XX-sudo-privilege-model.md`
+
 ## AI SRE Audit v2 — P0/P1/P2 Fixes (2026-05-14)
 
 - [x] P0-3 — docker_prune/disk_cleanup/log_rotation execute_node: check result.success, propagate failures

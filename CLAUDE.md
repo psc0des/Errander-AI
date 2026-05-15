@@ -176,6 +176,20 @@ deploy/
 
 Anything not on this whitelist requires human approval to clean.
 
+## AI Safety Invariant (MANDATORY)
+
+Errander-AI uses a two-layer AI architecture. See `docs/AI-ARCHITECTURE.md` for the canonical model.
+
+> **MCP belongs in the operator brain, not in the execution hands.**
+
+> **Layer A may investigate and recommend. Layer B alone may execute, and only through deterministic, approved, audited workflows.**
+
+**Layer A — Operator Assistant** (LLM-driven): may use LLM, MCP, CLI, Skills, Prometheus, ELK, CVE feeds, GitHub, Slack context, runbooks. Produces text, recommendations, structured proposals. **Never executes infrastructure changes.**
+
+**Layer B — Safe Execution** (deterministic Python): plans, validates, requests approval, executes, audits, verifies, rolls back. **No LLM in the live execution path. No MCP/CLI/Skill tool calls. No AI-generated shell commands. No AI self-approval.**
+
+When proposing any AI-related feature or contribution, classify it as Layer A or Layer B first. If unsure, default to Layer A. Layer B changes require explicit safety review.
+
 ## Domain Rules
 - NEVER automate kernel patching — this is explicitly out of scope
 - NEVER touch files/directories outside the disk cleanup whitelist without human approval

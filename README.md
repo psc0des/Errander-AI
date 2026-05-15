@@ -1,10 +1,29 @@
 # Errander-AI
 
-**A supervised agentic AI SRE platform that eliminates operational toil while keeping humans in control of live infrastructure changes.**
+**Deterministic maintenance automation with an AI-assisted operator layer for Linux fleets.**
 
-Errander-AI performs non-kernel patching, log rotation, Docker pruning, disk cleanup, and backup verification — with safety gates, rollback, idempotency, and full audit logging. Every live change requires human Slack approval. It runs on a single master VM and manages any number of target servers over SSH.
+Errander-AI is a supervised maintenance agent for small-to-medium Linux fleets. It performs non-kernel patching, log rotation, Docker pruning, disk cleanup, and backup verification — with safety gates, rollback, idempotency, and full audit logging. Every live change requires human approval (Slack or Web UI). It runs on a single controller VM and manages any number of target servers over SSH.
 
-100% open source. Cloud-agnostic. No SaaS dependencies except Slack.
+The AI layer prioritizes, explains, correlates, and summarizes maintenance work for operators. The execution layer is deterministic Python — the LLM is never in the path that actually changes infrastructure.
+
+100% open source. Cloud-agnostic. No SaaS dependencies except Slack (optional).
+
+> See [`docs/AI-ARCHITECTURE.md`](docs/AI-ARCHITECTURE.md) for the canonical two-layer AI safety model.
+>
+> **MCP belongs in the operator brain, not in the execution hands.**
+
+## Non-goals
+
+Errander-AI is intentionally narrow. It is **not**:
+
+- A monitoring system replacement — pair it with Prometheus, ELK, or your existing stack
+- An application manager — does not deploy, restart, or manage Tomcat, Nginx, Kubernetes, or app services
+- An Ansible / Salt / Puppet replacement — does not run arbitrary playbooks
+- A fully autonomous SRE — every live change requires human approval (HITL)
+- A kernel patching tool — kernel operations are explicitly excluded
+- A configuration management tool — does not enforce desired-state across files
+
+What it **is**: a safety-gated supervised execution layer for recurring Linux fleet maintenance toil that you'd otherwise do with cron, manual SSH, or a fragile playbook.
 
 ---
 
@@ -451,11 +470,12 @@ uv run python -m errander --check-llm
 
 ## Design Principles
 
+- **Two-layer AI architecture** — Layer A (Operator Assistant) uses LLM, MCP, CLI, Skills freely for investigation and recommendation; Layer B (Safe Execution) is deterministic Python with no LLM in the path. See [`docs/AI-ARCHITECTURE.md`](docs/AI-ARCHITECTURE.md).
 - **Fail loud, fail fast, fail safe** — never silently swallow errors; when in doubt, stop and escalate
 - **Idempotent** — every action can be run twice with the same result; assess before execute
-- **LLM-enhanced, not LLM-dependent** — hardcoded fallbacks for all LLM-powered functions
+- **LLM-enhanced, not LLM-dependent** — hardcoded fallbacks for all LLM-powered functions; agent never blocks on LLM availability
 - **Fully private** — no public IPs, no inbound traffic, no exposed endpoints
-- **Production-grade** — this replaces a DevOps engineer, not a prototype
+- **HITL-first** — every live infrastructure change requires human approval; autonomous execution is gated and currently disabled
 
 ---
 

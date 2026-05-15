@@ -626,6 +626,7 @@ async def run_env_probe_main(env_name: str, inventory_path: Path) -> int:
         report = await run_env_probe(
             env_name=env_name,
             vms=vms,
+            ssh_manager=ssh_manager,
             executor=executor,
             disk_history_store=disk_history_store,
             baseline_store=baseline_store,
@@ -1239,6 +1240,7 @@ async def async_main(args: argparse.Namespace) -> int:
                     report = await run_env_probe(
                         env_name=_env,
                         vms=vms,
+                        ssh_manager=ssh_manager,
                         executor=executor,
                         disk_history_store=disk_history_store,
                         baseline_store=baseline_store,

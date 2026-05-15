@@ -14,13 +14,19 @@ import logging
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from errander.agent.vm_graph import disk_snapshot_node, drift_baseline_node, failed_logins_node
+from errander.agent.vm_graph import (
+    discover_node,
+    disk_snapshot_node,
+    drift_baseline_node,
+    failed_logins_node,
+)
 from errander.models.events import AuditEvent, EventType
 from errander.models.reports import DigestReport, ProbeVMResult
 
 if TYPE_CHECKING:
     from errander.config.settings import SRESignalSettings
     from errander.execution.sandbox import SandboxExecutor
+    from errander.execution.ssh import SSHConnectionManager
     from errander.safety.audit import AuditStore
 
 logger = logging.getLogger(__name__)
@@ -34,16 +40,18 @@ async def probe_vm(
     ssh_key_path: str,
     os_family: str,
     disable_failed_login_check: bool = False,
+    ssh_manager: SSHConnectionManager,
     executor: SandboxExecutor,
     disk_history_store: object,
     baseline_store: object,
     audit_store: AuditStore,
     sre_settings: SRESignalSettings,
 ) -> ProbeVMResult:
-    """Run all signal probes against one VM. Read-only — never modifies state."""
-    # Build a minimal state dict that satisfies the node functions' field lookups.
-    # Nodes read hostname/ssh_user/ssh_key_path directly from state (not via vm_info)
-    # when vm_info is absent.
+    """Run all signal probes against one VM. Read-only — never modifies state.
+
+    Mirrors the vm_graph node ordering: discover first (SSH pre-check + vm_info),
+    then signal probes. Returns reachable=False immediately if discover fails.
+    """
     probe_state: dict[str, object] = {
         "vm_id": vm_id,
         "batch_id": "",
@@ -58,6 +66,21 @@ async def probe_vm(
         "failed_login_summary": None,
     }
     try:
+        # Mirrors vm_graph: discover verifies SSH connectivity and populates vm_info.
+        # Signal nodes prefer vm_info fields; fall back to state-level fields when absent.
+        discover_result = await discover_node(
+            probe_state,  # type: ignore[arg-type]
+            ssh_manager=ssh_manager,
+        )
+        if discover_result.get("error"):
+            return ProbeVMResult(
+                vm_id=vm_id,
+                hostname=hostname,
+                reachable=False,
+                error=str(discover_result["error"]),
+            )
+        probe_state.update(discover_result)
+
         disk_result = await disk_snapshot_node(
             probe_state,  # type: ignore[arg-type]
             executor=executor,
@@ -104,6 +127,7 @@ async def run_env_probe(
     *,
     env_name: str,
     vms: list[dict[str, object]],
+    ssh_manager: SSHConnectionManager,
     executor: SandboxExecutor,
     disk_history_store: object,
     baseline_store: object,
@@ -129,6 +153,7 @@ async def run_env_probe(
             ssh_key_path=str(vm["ssh_key_path"]),
             os_family=str(vm.get("os_family", "ubuntu")),
             disable_failed_login_check=bool(vm.get("disable_failed_login_check", False)),
+            ssh_manager=ssh_manager,
             executor=executor,
             disk_history_store=disk_history_store,
             baseline_store=baseline_store,

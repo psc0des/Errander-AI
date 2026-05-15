@@ -1,5 +1,32 @@
 # Errander-AI Command Log
 
+## Phase A — Privilege Model Fixes (2026-05-15)
+
+```bash
+# Pre-flight checks
+uv run pytest --tb=no -q   # 1343 passed, 111 skipped (baseline)
+git status                 # clean main branch
+
+# After each commit
+uv run pytest --tb=short -q
+
+# Acceptance checks
+grep -r "/usr/bin/env" errander/safety/ errander/execution/
+grep "PREFLIGHT_LOCK_DETECTED" errander/agent/vm_graph.py
+
+# Opportunistic ruff auto-fix on touched files
+uv run ruff check --fix errander/safety/rollback.py errander/execution/commands.py errander/agent/vm_graph.py errander/models/events.py
+uv run ruff check --fix errander/config/schema.py errander/agent/subgraphs/docker_prune.py errander/agent/graph.py errander/execution/privilege.py
+uv run ruff check --fix errander/execution/target_validation.py errander/main.py
+
+# Commits
+git add <files> && git commit -m "fix: close fifth-pass SRE residuals — env removal, simulate sudo, preflight event type"
+git add <files> && git commit -m "feat: docker_command_mode (wrapper/direct_sudo/disabled) per environment"
+git add <files> && git commit -m "feat: --check-targets CLI for pre-flight VM readiness validation"
+```
+**What**: Phase A — three commits closing SRE fifth-pass audit residuals + new Docker wrapper mode + pre-flight CLI.
+**Why**: Privilege hygiene, production-hardened Docker wrapper default, operator tooling before maintenance windows.
+
 ## AI SRE Audit v2 Remediation (2026-05-14)
 
 ```bash
@@ -1213,3 +1240,5 @@ git push origin main
 ```
 **What**: Fixed 2 hard blockers + 2 high risks from the 2026-05-12 third-round SRE re-audit: (1) Blocker 1 — `pre_approved_plan_set` sentinel distinguishes empty approved plan from no plan; (2) Blocker 2 — live mode VM missing from approved plan fails closed instead of re-planning; (3) High Risk 1 — `log_rotation.verify_node` passes `dry_run=False`; (4) High Risk 2 — `_rollback_patching_dnf` compares every rpm version against snapshot.
 **Why**: Audit identified that empty approved plan was falsy → re-planned after approval (plan/apply violation); missing VM in live mode silently re-planned; verify_node could return synthetic data; DNF rollback declared success without verifying versions.
+
+## Phase A — Privilege Model Fixes (2026-05-15)

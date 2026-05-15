@@ -4,9 +4,15 @@
 2026-05-15
 
 ## Current Phase
-**Phase A — Privilege model fixes (SRE-approved plan, Sonnet to execute).**
+**Phase A — COMPLETE.** Privilege model fixes (3 commits, Sonnet, 2026-05-15).
 
-Two-layer AI architecture locked in and documented (`docs/AI-ARCHITECTURE.md`). Positioning updated across README, SPEC, CLAUDE.md. Phase A implementation plan handed to Sonnet (`tasks/sonnet-phase-a-plan.md`).
+Phase B (proactive signals) and Phase C (observability adapters) are next. No work started on either yet.
+
+### Phase A Completed (2026-05-15)
+- **Commit 1**: `/usr/bin/env` removed from apt privileged commands; `apt --simulate` drops sudo; `SUDO_PREFLIGHT_FAILED` event type added; `sudo_preflight_node` migrated. 9 new tests.
+- **Commit 2**: `docker_command_mode: wrapper | direct_sudo | disabled` per environment; `docker_prune.py` refactored; `parse_assess_output()` helper; plumbed through vm_graph/graph/main; preflight mode-aware; SETUP.md Docker section updated. 16 new tests.
+- **Commit 3**: `--check-targets <env>` CLI reads every target VM and reports binary/sudo/wrapper readiness; supported distro matrix in SETUP.md and README. 11 new tests.
+- **1378 tests passing, 111 skipped.**
 
 ### Two-Layer AI Architecture Locked In (2026-05-15)
 - **`docs/AI-ARCHITECTURE.md`**: Canonical safety model document. Layer A (Operator Assistant — LLM + MCP + CLI + Skills) recommends; Layer B (Safe Execution — deterministic Python) executes. Strict audited boundary.
@@ -15,13 +21,10 @@ Two-layer AI architecture locked in and documented (`docs/AI-ARCHITECTURE.md`). 
 - **SPEC.md**: Added "AI Safety Model — Two Layers" summary with link to canonical doc.
 - **SRE sign-off**: validated in `ai_sre_audit_v2.md` "Two-Layer AI Architecture Validation" section. SRE's anchor phrase: *"MCP belongs in the operator brain, not in the execution hands."*
 
-## Next (Phase A — handed to Sonnet)
-
-Implementation plan: `tasks/sonnet-phase-a-plan.md`
-
-- Commit 1: Quick privilege fixes (remove `/usr/bin/env` from apt; drop sudo from `apt --simulate`; add `SUDO_PREFLIGHT_FAILED` event type; preflight behavior tests)
-- Commit 2: Docker wrapper mode (`docker_command_mode: wrapper | direct_sudo | disabled` per env; mode-aware preflight; wrapper script spec in SETUP.md)
-- Commit 3: `--check-targets <env>` CLI (per-VM readiness validation; wrapper `--check` support; supported distro matrix doc)
+## Next
+- Phase B: ProactiveSignal engine + signal catalog + native SSH probes + daily digest
+- Phase C: Direct Python adapters for Prometheus, ELK (optional)
+- Phase D: Operator Assistant Layer (MCP / CLI / Skills for investigation and recommendation)
 
 ## Completed
 

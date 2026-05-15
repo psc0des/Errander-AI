@@ -116,6 +116,13 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Check LLM endpoint connectivity, model info, and latency, then exit",
     )
 
+    parser.add_argument(
+        "--check-targets",
+        metavar="ENV",
+        default=None,
+        help="SSH to every VM in ENV and report sudo / binary / wrapper readiness. Read-only.",
+    )
+
     # SSH known-hosts bootstrap (finding #9)
     parser.add_argument(
         "--bootstrap-known-hosts",
@@ -331,6 +338,7 @@ async def run_llm_check() -> int:
     encrypted with a key that isn't available in the current session.
     """
     import os
+
     from errander.integrations.secrets import SecretsManager
     _sm = SecretsManager(require_key=False)
     base_url = _sm.decrypt_if_needed(os.environ.get("ERRANDER_LLM_BASE_URL", ""))
@@ -486,6 +494,53 @@ async def run_bootstrap_known_hosts(env_name: str, inventory_path: Path) -> int:
 
     print(f"\nDone. Set ERRANDER_SSH_KNOWN_HOSTS={out_path} in your .env")
     return 0
+
+
+# ---------------------------------------------------------------------------
+# --check-targets: pre-flight VM readiness validation
+# ---------------------------------------------------------------------------
+
+async def run_check_targets(env_name: str, inventory_path: Path) -> int:
+    """SSH to every VM in ENV and report sudo / binary / wrapper readiness.
+
+    Read-only — no mutation of target VMs. Exit code 0 if all ready, 1 if any blocked.
+    """
+    from errander.config.schema import validate_inventory
+    from errander.execution.ssh import SSHConnectionManager
+    from errander.execution.target_validation import check_target, render_readiness_report
+
+    try:
+        inventory = validate_inventory(inventory_path)
+    except Exception as exc:  # noqa: BLE001
+        print(f"Error loading inventory: {exc}")
+        return 1
+
+    env = inventory.environments.get(env_name)
+    if env is None:
+        print(f"Unknown environment: {env_name}")
+        return 1
+
+    ssh_manager = SSHConnectionManager()
+    results = []
+    try:
+        for target in env.targets:
+            username = target.ssh_user or env.ssh_user
+            key_path = str(Path(target.ssh_key_path or env.ssh_key_path).expanduser())
+            readiness = await check_target(
+                vm_id=target.name,
+                hostname=target.host,
+                username=username,
+                key_path=key_path,
+                os_family=target.os_family,
+                docker_command_mode=env.docker_command_mode,
+                ssh_manager=ssh_manager,
+            )
+            results.append(readiness)
+    finally:
+        await ssh_manager.close_all()
+
+    print(render_readiness_report(results))
+    return 1 if any(r.verdict == "blocked" for r in results) else 0
 
 
 # ---------------------------------------------------------------------------
@@ -748,7 +803,8 @@ async def _window_opener(
     vm_state_store: object = None,
 ) -> None:
     """Execute pending deferred batches when a maintenance window opens."""
-    from errander.models.events import AuditEvent, EventType as _ET
+    from errander.models.events import AuditEvent
+    from errander.models.events import EventType as _ET
 
     await deferred_store.expire_old()
     pending = await deferred_store.get_pending(env_name)
@@ -835,6 +891,12 @@ async def async_main(args: argparse.Namespace) -> int:
             inventory_path=args.inventory,
         )
 
+    if args.check_targets:
+        return await run_check_targets(
+            env_name=args.check_targets,
+            inventory_path=args.inventory,
+        )
+
     # --- Configuration (first pass: no DB overrides yet) ---
     try:
         settings = load_settings(
@@ -917,8 +979,8 @@ async def async_main(args: argparse.Namespace) -> int:
     overrides_store = _early_overrides_store  # already initialized above
 
     # --- SRE signal stores (same DB file, separate tables created by migrations) ---
-    from errander.safety.disk_history import VMDiskHistoryStore
     from errander.safety.baselines import BaselineStore
+    from errander.safety.disk_history import VMDiskHistoryStore
     from errander.safety.vm_state import VMStateStore as _VMStateStore
 
     disk_history_store = VMDiskHistoryStore(settings.audit_db_url)

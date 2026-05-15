@@ -12,36 +12,36 @@ Implementation plan: `tasks/sonnet-phase-a-plan.md`
 - [x] `STATUS.md` — Phase A context
 - [x] `tasks/sonnet-phase-a-plan.md` — full implementation plan for Sonnet
 
-### Commit 1 — Quick privilege fixes (Sonnet, pending)
-- [ ] Remove `/usr/bin/env DEBIAN_FRONTEND=noninteractive` from `rollback.py` and `AptManager.install_version`; use `-o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold` instead
-- [ ] Drop sudo from `AptManager.simulate_upgrade`
-- [ ] Add `EventType.SUDO_PREFLIGHT_FAILED`; migrate `sudo_preflight_node` to new event type
-- [ ] Add `tests/agent/test_sudo_preflight.py` with all behavior tests
-- [ ] Opportunistic ruff/mypy cleanup only in touched files
+### Commit 1 — Quick privilege fixes (Sonnet, completed 2026-05-15)
+- [x] Remove `/usr/bin/env DEBIAN_FRONTEND=noninteractive` from `rollback.py` and `AptManager.install_version`; use `-o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold` instead
+- [x] Drop sudo from `AptManager.simulate_upgrade`
+- [x] Add `EventType.SUDO_PREFLIGHT_FAILED`; migrate `sudo_preflight_node` to new event type
+- [x] Add `tests/agent/test_sudo_preflight.py` with all behavior tests
+- [x] Opportunistic ruff/mypy cleanup only in touched files
 
-### Commit 2 — Docker wrapper mode (Sonnet, pending)
-- [ ] Add `docker_command_mode: Literal["wrapper", "direct_sudo", "disabled"] = "wrapper"` to `EnvironmentSchema`
-- [ ] Refactor `docker_prune.py` to honor mode (wrapper / direct_sudo / disabled)
-- [ ] Add `parse_assess_output()` helper for the wrapper output format
-- [ ] Plumb `docker_command_mode` through `vm_graph.py`, `graph.py`, `main.py`
-- [ ] Update `REQUIRED_BINARIES_BY_ACTION` for mode-aware preflight
-- [ ] Update SETUP.md Docker hardening section with single `errander-docker-assess` wrapper + output format spec
-- [ ] Add `tests/agent/subgraphs/test_docker_prune_modes.py`
-- [ ] Extend `tests/agent/test_sudo_preflight.py` for mode-aware preflight checks
+### Commit 2 — Docker wrapper mode (Sonnet, completed 2026-05-15)
+- [x] Add `docker_command_mode: Literal["wrapper", "direct_sudo", "disabled"] = "wrapper"` to `EnvironmentSchema`
+- [x] Refactor `docker_prune.py` to honor mode (wrapper / direct_sudo / disabled)
+- [x] Add `parse_assess_output()` helper for the wrapper output format
+- [x] Plumb `docker_command_mode` through `vm_graph.py`, `graph.py`, `main.py`
+- [x] Update `REQUIRED_BINARIES_BY_ACTION` for mode-aware preflight
+- [x] Update SETUP.md Docker hardening section with single `errander-docker-assess` wrapper + output format spec
+- [x] Add `tests/agent/subgraphs/test_docker_prune_modes.py`
+- [x] Extend `tests/agent/test_sudo_preflight.py` for mode-aware preflight checks
 
-### Commit 3 — `--check-targets <env>` CLI (Sonnet, pending)
-- [ ] Document supported distro matrix in SETUP.md and README.md
-- [ ] Create `errander/execution/target_validation.py` with `TargetReadiness` dataclass + `check_target()` + `render_readiness_report()`
-- [ ] Add `--check-targets <env>` flag to `main.py`
-- [ ] Wrapper script `--check` support documented in SETUP.md
-- [ ] Add `tests/execution/test_target_validation.py`
-- [ ] Extend `tests/test_main_cli.py` for CLI flag behavior
+### Commit 3 — `--check-targets <env>` CLI (Sonnet, completed 2026-05-15)
+- [x] Document supported distro matrix in SETUP.md and README.md
+- [x] Create `errander/execution/target_validation.py` with `TargetReadiness` dataclass + `check_target()` + `render_readiness_report()`
+- [x] Add `--check-targets <env>` flag to `main.py`
+- [x] Wrapper script `--check` support documented in SETUP.md
+- [x] Add `tests/execution/test_target_validation.py`
+- [x] Extend `tests/test_main.py` for CLI flag behavior
 
 ### Phase A definition of done
-- [ ] All tests pass (`uv run pytest`)
-- [ ] Anchor phrases present in `docs/AI-ARCHITECTURE.md`, `CLAUDE.md`, and at least one other doc
-- [ ] `STATUS.md` and `tasks/todo.md` updated when Phase A complete
-- [ ] New learning doc: `docs/learning/XX-sudo-privilege-model.md`
+- [x] All tests pass (`uv run pytest`) — 1378 passing, 111 skipped
+- [x] Anchor phrases present in `docs/AI-ARCHITECTURE.md`, `CLAUDE.md`
+- [x] `STATUS.md` and `tasks/todo.md` updated when Phase A complete
+- [x] New learning doc: `docs/learning/XX-sudo-privilege-model.md`
 
 ## AI SRE Audit v2 — P0/P1/P2 Fixes (2026-05-14)
 

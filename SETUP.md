@@ -45,6 +45,20 @@ The LLM is **optional**. The agent runs fine without one using built-in hardcode
 
 Before starting, confirm the following are in place.
 
+### Supported target operating systems
+
+| OS family | Versions officially supported |
+|---|---|
+| Ubuntu | 20.04 LTS, 22.04 LTS, 24.04 LTS |
+| Debian | 11 (Bullseye), 12 (Bookworm) |
+| RHEL / Rocky / Alma | 8.x, 9.x |
+
+Older distros may work, but Errander expects FHS-compliant absolute binary paths
+(`/usr/bin/apt-get`, `/usr/sbin/logrotate`, etc.). Older distros that have not
+adopted the `/usr → /` merge may need a runtime path resolver. That's tracked
+as a separate compatibility project — `--check-targets <env>` will report any
+missing binaries.
+
 ### Software (on the Master VM / controller)
 
 | Requirement | Check |

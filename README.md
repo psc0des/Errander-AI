@@ -8,6 +8,8 @@ The AI layer prioritizes, explains, correlates, and summarizes maintenance work 
 
 100% open source. Cloud-agnostic. No SaaS dependencies except Slack (optional).
 
+**Supported target OS:** Ubuntu 20.04+, Debian 11+, RHEL/Rocky/Alma 8+.
+
 > See [`docs/AI-ARCHITECTURE.md`](docs/AI-ARCHITECTURE.md) for the canonical two-layer AI safety model.
 >
 > **MCP belongs in the operator brain, not in the execution hands.**

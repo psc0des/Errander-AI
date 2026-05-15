@@ -673,3 +673,15 @@ fi
 **Lesson**: Setup steps that mix end-user deployment steps (check-inventory, dry-run) with developer steps (pytest, playwright, ruff) confuse both audiences. An end user who runs `uv run playwright install chromium` downloads 150 MB they'll never use. A developer who skips the dev section misses the test suite.
 
 **Rule**: keep a single linear path for end users (Steps 1–N) covering only what's needed to run the agent in production. Add a separate "For developers" section at the bottom for the test/lint/type-check workflow. Scripts (bootstrap.sh, configure.sh) follow the same split — no dev tools in the end-user path.
+
+## Phase A — sudo privilege model
+
+**Lesson 1**: `/usr/bin/env` in a sudoers entry is a root bypass. `sudo env rm -rf /` works if `env` is allowed. Always remove `env` from privileged commands and use explicit flags (`-o Dpkg::Options::=--force-confold`) instead of environment variables.
+
+**Lesson 2**: `replace_all=true` in Edit only matches exact occurrences. When two code blocks look similar but have different extra fields (e.g., one has `metadata=` and one does not), they won't be deduplicated by a single replace_all. Check the surrounding context of every occurrence separately.
+
+**Lesson 3**: `f"docker_prune_{mode}"` produces wrong key when mode is `"direct_sudo"` (would give `"docker_prune_direct_sudo"` not `"docker_prune_direct"`). Never use f-string interpolation for dictionary key lookups when the mode name doesn't exactly match the key suffix. Use explicit conditionals.
+
+**Lesson 4**: `load_inventory` from `config/inventory.py` returns `list[VMTarget]` (flattened). `validate_inventory` from `config/schema.py` returns `InventoryConfig` with `.environments`. When you need per-environment fields (like `docker_command_mode`), use `validate_inventory`.
+
+**Rule**: Before patching env-level config into any function, check whether `load_inventory` or `validate_inventory` is the right call.

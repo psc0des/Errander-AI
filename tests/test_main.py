@@ -376,3 +376,99 @@ class TestWindowOpener:
             finally:
                 await deferred_store.close()
                 await overrides_store.close()
+
+
+# ---------------------------------------------------------------------------
+# --check-targets CLI
+# ---------------------------------------------------------------------------
+
+class TestCheckTargetsArg:
+    def test_check_targets_flag_parses(self) -> None:
+        args = _parse_args(["--check-targets", "production"])
+        assert args.check_targets == "production"
+
+    def test_check_targets_default_none(self) -> None:
+        args = _parse_args([])
+        assert args.check_targets is None
+
+
+class TestRunCheckTargets:
+    @pytest.mark.asyncio
+    async def test_check_targets_exits_0_when_all_ready(self, tmp_path: Path) -> None:
+        from errander.main import run_check_targets
+        from errander.execution.target_validation import TargetReadiness
+
+        inv = tmp_path / "inventory.yaml"
+        inv.write_text(
+            "environments:\n"
+            "  dev:\n"
+            "    ssh_user: u\n"
+            "    ssh_key_path: /key\n"
+            "    approval_policy: relaxed\n"
+            "    docker_command_mode: disabled\n"
+            "    targets:\n"
+            "      - host: 10.0.0.1\n"
+            "        name: dev-01\n"
+            "        os_family: ubuntu\n"
+        )
+
+        ready = TargetReadiness(vm_id="dev-01", hostname="10.0.0.1", verdict="ready")
+
+        with (
+            patch("errander.execution.target_validation.check_target", return_value=ready),
+            patch("errander.execution.ssh.SSHConnectionManager.close_all", new_callable=AsyncMock),
+        ):
+            result = await run_check_targets(env_name="dev", inventory_path=inv)
+
+        assert result == 0
+
+    @pytest.mark.asyncio
+    async def test_check_targets_exits_1_when_any_blocked(self, tmp_path: Path) -> None:
+        from errander.main import run_check_targets
+        from errander.execution.target_validation import TargetReadiness
+
+        inv = tmp_path / "inventory.yaml"
+        inv.write_text(
+            "environments:\n"
+            "  dev:\n"
+            "    ssh_user: u\n"
+            "    ssh_key_path: /key\n"
+            "    approval_policy: relaxed\n"
+            "    docker_command_mode: disabled\n"
+            "    targets:\n"
+            "      - host: 10.0.0.1\n"
+            "        name: dev-01\n"
+            "        os_family: ubuntu\n"
+        )
+
+        blocked = TargetReadiness(
+            vm_id="dev-01", hostname="10.0.0.1", verdict="blocked",
+            issues=["missing binary: /usr/bin/apt-get"],
+        )
+
+        with (
+            patch("errander.execution.target_validation.check_target", return_value=blocked),
+            patch("errander.execution.ssh.SSHConnectionManager.close_all", new_callable=AsyncMock),
+        ):
+            result = await run_check_targets(env_name="dev", inventory_path=inv)
+
+        assert result == 1
+
+    @pytest.mark.asyncio
+    async def test_check_targets_unknown_env(self, tmp_path: Path) -> None:
+        from errander.main import run_check_targets
+
+        inv = tmp_path / "inventory.yaml"
+        inv.write_text(
+            "environments:\n"
+            "  dev:\n"
+            "    ssh_user: u\n"
+            "    ssh_key_path: /key\n"
+            "    approval_policy: relaxed\n"
+            "    targets:\n"
+            "      - host: 10.0.0.1\n"
+            "        name: dev-01\n"
+            "        os_family: ubuntu\n"
+        )
+        result = await run_check_targets(env_name="nonexistent", inventory_path=inv)
+        assert result == 1

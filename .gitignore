@@ -44,3 +44,6 @@ playwright/.local-browsers/
 
 # Test temp files
 .pytest-tmp/
+
+# Local SRE audit working docs (not part of project source)
+ai_sre_*.md

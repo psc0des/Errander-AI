@@ -202,7 +202,7 @@ class AIDecisionStore:
         return [_row_to_decision(row) for row in rows]
 
 
-def _row_to_decision(row: tuple[object, ...]) -> AIDecision:
+def _row_to_decision(row: aiosqlite.Row) -> AIDecision:
     return AIDecision(
         batch_id=str(row[0]),
         vm_id=str(row[1]) if row[1] is not None else None,

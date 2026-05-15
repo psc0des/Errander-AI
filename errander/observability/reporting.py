@@ -15,6 +15,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from errander.models.reports import DriftChange
     from errander.models.actions import ActionResult
     from errander.models.reports import BatchReport
     from errander.safety.vm_state import VMState
@@ -165,7 +166,7 @@ def render_batch_report(report: BatchReport) -> str:
     if drift:
         lines.append("")
         lines.append(f"*Configuration Drift* ({len(drift)} change(s))")
-        by_kind: dict[str, list[object]] = {}
+        by_kind: dict[str, list[DriftChange]] = {}
         for d in drift:
             by_kind.setdefault(d.kind, []).append(d)
         for kind, changes in sorted(by_kind.items()):

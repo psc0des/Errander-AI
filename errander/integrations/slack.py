@@ -108,8 +108,8 @@ class SlackClient:
             "full": True,
         }, http_method="GET")
 
-        message = data.get("message", {})
-        reactions: list[dict[str, object]] = message.get("reactions", [])
+        message: dict[str, object] = data.get("message") or {}  # type: ignore[assignment]
+        reactions: list[dict[str, object]] = message.get("reactions") or []  # type: ignore[assignment]
         return reactions
 
     async def post_alert(self, text: str, channel_id: str | None = None) -> None:
@@ -171,7 +171,10 @@ class SlackClient:
         """Execute request with one rate-limit retry."""
 
         for attempt in range(2):
-            ctx = session.get(url, params=payload) if http_method == "GET" else session.post(url, json=payload)
+            ctx = (
+                session.get(url, params=payload) if http_method == "GET"  # type: ignore[arg-type]  # aiohttp params stubs
+                else session.post(url, json=payload)
+            )
 
             async with ctx as resp:
                 if resp.status == 429:

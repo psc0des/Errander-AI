@@ -792,7 +792,7 @@ def _max_risk_tier_from_plans(vm_plans: list[dict[str, object]]) -> RiskTier:
     max_tier = RiskTier.LOW
     tier_order = {RiskTier.LOW: 0, RiskTier.MEDIUM: 1, RiskTier.HIGH: 2, RiskTier.CRITICAL: 3}
     for plan in vm_plans:
-        for action in plan.get("planned_actions", []):
+        for action in (plan.get("planned_actions") or []):
             try:
                 tier = RiskTier(str(action.get("risk_tier", "low")))
                 if tier_order.get(tier, 0) > tier_order.get(max_tier, 0):
@@ -823,7 +823,7 @@ def _format_plan_for_approval(
     for plan in vm_plans:
         vm_id = plan.get("vm_id", "?")
         action_summaries: list[str] = []
-        for a in plan.get("planned_actions", []):
+        for a in (plan.get("planned_actions") or []):
             label = str(a.get("action_type", "?"))
             params = a.get("params") or {}
             if isinstance(params, dict) and params:
@@ -1209,7 +1209,7 @@ def make_wave_dispatcher(
         # Execution MUST follow the approved plan — the VM graph skips re-planning
         # when pre_approved_plan_set=True.
         vm_id_to_approved_actions: dict[str, list[dict[str, object]]] = {
-            str(p["vm_id"]): list(p.get("planned_actions", []))
+            str(p["vm_id"]): list(p.get("planned_actions") or [])  # type: ignore[arg-type]
             for p in state.get("vm_plans", [])
         }
 

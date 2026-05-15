@@ -653,7 +653,7 @@ async def rollback_node(
     success, detail = await rollback_action(
         ActionType.PATCHING,
         vm_id,
-        snapshot,
+        snapshot,  # type: ignore[arg-type]  # dict[str,str] vs dict[str,object]: dict is invariant in mypy
         executor=executor,
         hostname=target["hostname"],
         username=target["username"],

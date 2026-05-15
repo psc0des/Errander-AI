@@ -130,8 +130,8 @@ def compare_states(
         )
 
     # Uptime reset (VM rebooted)
-    baseline_uptime = float(baseline.get("uptime_seconds", 0))
-    current_uptime = float(current.get("uptime_seconds", 0))
+    baseline_uptime = float(str(baseline.get("uptime_seconds", 0)))
+    current_uptime = float(str(current.get("uptime_seconds", 0)))
     if current_uptime < baseline_uptime and baseline_uptime > 0:
         drifts.append(
             f"VM was rebooted "
@@ -139,8 +139,8 @@ def compare_states(
         )
 
     # Package count drift (> 5 change)
-    baseline_pkgs = int(baseline.get("pending_packages", 0))
-    current_pkgs = int(current.get("pending_packages", 0))
+    baseline_pkgs = int(str(baseline.get("pending_packages", 0)))
+    current_pkgs = int(str(current.get("pending_packages", 0)))
     if abs(current_pkgs - baseline_pkgs) > 5:
         drifts.append(
             f"Pending packages changed: {baseline_pkgs} -> {current_pkgs}"

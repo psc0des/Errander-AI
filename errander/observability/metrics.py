@@ -1257,12 +1257,13 @@ async def _ui_dashboard(request: web.Request) -> web.Response:
     # ── Recent batches table ─────────────────────────────────────────────────
     rows = [
         [
-            f'<a class="id-a" href="/ui/batches/{_uq(b["batch_id"])}">{_esc(str(b["batch_id"]))}</a>',
+            f'<a class="id-a" href="/ui/batches/{_uq(str(b["batch_id"]))}">{_esc(str(b["batch_id"]))}</a>',
             f'<span class="mono">{str(b["started_at"])[:19]}</span>',
             str(b["event_count"]),
             ", ".join(
                 f'<a href="/ui/vms/{_uq(v)}">{_esc(v)}</a>'
-                for v in b["vm_ids"]            ) or '<span style="color:var(--t3)">—</span>',
+                for v in (b["vm_ids"] or [])  # type: ignore[attr-defined]
+            ) or '<span style="color:var(--t3)">—</span>',
         ]
         for b in batches
     ]
@@ -1289,12 +1290,13 @@ async def _ui_batches(request: web.Request) -> web.Response:
     batches = await store.get_recent_batches(limit=100)
     rows = [
         [
-            f'<a class="id-a" href="/ui/batches/{_uq(b["batch_id"])}">{_esc(str(b["batch_id"]))}</a>',
+            f'<a class="id-a" href="/ui/batches/{_uq(str(b["batch_id"]))}">{_esc(str(b["batch_id"]))}</a>',
             f'<span class="mono">{str(b["started_at"])[:19]}</span>',
             str(b["event_count"]),
             ", ".join(
                 f'<a href="/ui/vms/{_uq(v)}">{_esc(v)}</a>'
-                for v in b["vm_ids"]            ) or '<span style="color:var(--t3)">—</span>',
+                for v in (b["vm_ids"] or [])  # type: ignore[attr-defined]
+            ) or '<span style="color:var(--t3)">—</span>',
         ]
         for b in batches
     ]

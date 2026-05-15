@@ -251,8 +251,8 @@ class SSHConnectionManager:
 
         return SSHResult(
             exit_code=exit_code,
-            stdout=result.stdout or "",
-            stderr=result.stderr or "",
+            stdout=result.stdout or "",  # type: ignore[arg-type]  # asyncssh text mode returns str
+            stderr=result.stderr or "",  # type: ignore[arg-type]
             command=command,
             duration_seconds=duration,
             started_at=started_at,

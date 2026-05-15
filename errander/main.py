@@ -381,7 +381,8 @@ async def run_llm_check() -> int:
     error = result["error"]
 
     print("  Status   : OK")
-    print(f"  Models   : {', '.join(str(m) for m in model_ids) if model_ids else '(none listed)'}")
+    model_ids_list = list(model_ids) if isinstance(model_ids, list) else []
+    print(f"  Models   : {', '.join(str(m) for m in model_ids_list) if model_ids_list else '(none listed)'}")
 
     if latency is not None:
         print(f"  Latency  : {latency} ms (test completion)")
@@ -417,7 +418,7 @@ async def run_bootstrap_known_hosts(env_name: str, inventory_path: Path) -> int:
 
     import asyncssh
 
-    from errander.config.inventory import load_inventory
+    from errander.config.schema import validate_inventory
 
     out_path_str = os.environ.get(
         "ERRANDER_SSH_KNOWN_HOSTS",
@@ -432,7 +433,7 @@ async def run_bootstrap_known_hosts(env_name: str, inventory_path: Path) -> int:
         existing_lines = set(out_path.read_text().splitlines())
 
     try:
-        inventory = load_inventory(inventory_path)
+        inventory = validate_inventory(inventory_path)
     except Exception as exc:  # noqa: BLE001
         print(f"Error loading inventory: {exc}")
         return 1
@@ -556,7 +557,7 @@ def _truncate(s: str, width: int) -> str:
     return s if len(s) <= width else s[: width - 1] + "…"
 
 
-def _print_audit_table(rows: list[tuple[str, ...]]) -> None:
+def _print_audit_table(rows: list[tuple[str, str, str, str, str, str]]) -> None:
     header = "  ".join(h.ljust(w) for h, w in zip(_HEADERS, _COL_WIDTHS, strict=False))
     separator = "  ".join("-" * w for w in _COL_WIDTHS)
     print(header)
@@ -579,7 +580,9 @@ async def run_audit_query(args: argparse.Namespace, settings: Settings) -> int:
             print(f"{'batch_id':<36}  {'started_at':<26}  {'events':>6}  vms")
             print("-" * 80)
             for b in batches:
-                vms = ", ".join(str(v) for v in b["vm_ids"]) if b["vm_ids"] else "(none)"
+                vm_ids_raw = b["vm_ids"]
+                vm_ids_list = list(vm_ids_raw) if isinstance(vm_ids_raw, list) else []
+                vms = ", ".join(str(v) for v in vm_ids_list) if vm_ids_list else "(none)"
                 print(
                     f"{str(b['batch_id']):<36}  "
                     f"{str(b['started_at']):<26}  "
@@ -764,7 +767,7 @@ async def run_env_batch(
     )
 
     try:
-        final = await graph.ainvoke(initial_state)
+        final = await graph.ainvoke(initial_state)  # type: ignore[call-overload]
     finally:
         await ai_decision_store.close()
 

@@ -209,10 +209,10 @@ async def plan_actions_node(
     vm_info = VMInfo(
         os_family=OSFamily(str(vm_info_dict.get("os_family", "ubuntu"))),
         os_version=str(vm_info_dict.get("os_version", "")),
-        disk_usage=dict(vm_info_dict.get("disk_usage", {})),
+        disk_usage=dict(vm_info_dict.get("disk_usage") or {}),  # type: ignore[call-overload]
         docker_available=bool(vm_info_dict.get("docker_available", False)),
-        pending_packages=int(vm_info_dict.get("pending_packages", 0)),
-        uptime_seconds=float(vm_info_dict.get("uptime_seconds", 0.0)),
+        pending_packages=int(str(vm_info_dict.get("pending_packages", 0))),
+        uptime_seconds=float(str(vm_info_dict.get("uptime_seconds", 0.0))),
     )
 
     actions = await prioritize_actions(
@@ -433,7 +433,7 @@ async def dispatch_action_node(
         action_obj = Action(
             action_type=ActionType(str(action_type)),
             risk_tier=RiskTier(str(action.get("risk_tier", "medium"))),
-            params=dict(action.get("params", {})),
+            params=dict(action.get("params") or {}),  # type: ignore[call-overload]
         )
     except ValueError:
         logger.warning("Unknown action type %s on %s — skipping", action_type, vm_id)
@@ -812,7 +812,8 @@ async def _run_backup_verify(
     backup_paths: list[str] = []
     if index < len(planned):
         params = planned[index].get("params", {})
-        backup_paths = list(params.get("backup_paths", []))
+        bp_raw = params.get("backup_paths")
+        backup_paths = [str(p) for p in bp_raw] if isinstance(bp_raw, list) else []
 
     sub_state: BackupVerifyGraphState = {
         "vm_id": vm_id,

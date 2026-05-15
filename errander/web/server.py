@@ -1,6 +1,8 @@
 """errander — Operations Hub development UI server."""
 from __future__ import annotations
 
+from typing import Any
+
 from aiohttp import web
 
 from .data import ACTIVE_BATCH, APPROVALS, AUDIT_EVENTS, BATCHES, VM_ACTIONS, VMS
@@ -644,7 +646,7 @@ _HEALTH_CHECKS = [
     {"label": "APScheduler",      "detail": "next: 2026-05-14 02:00 UTC",  "status": "ok",   "meta": "running"},
 ]
 
-_ACTIVE_LOCKS: list[dict[str, object]] = []  # empty = clean state; add dicts with vm/since/path to simulate stuck locks
+_ACTIVE_LOCKS: list[dict[str, Any]] = []  # empty = clean state; add dicts with vm/since/path to simulate stuck locks
 
 _OVERRIDES = [
     ("Dry Run Mode",            "All batches simulate actions without executing on real VMs.",        True),

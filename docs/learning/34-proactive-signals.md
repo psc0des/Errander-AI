@@ -68,6 +68,9 @@ disk_snapshot_node(..., settings=settings)   # Settings is not DiskGrowthSetting
 ```
 probe_vm()
   - builds a minimal probe_state dict
+  - calls discover_node first (SSH pre-check + populates vm_info)
+    - if discover returns {"error": ...}: return ProbeVMResult(reachable=False) immediately
+    - signal nodes never run for unreachable VMs
   - calls disk_snapshot_node → drift_baseline_node → failed_logins_node
   - aggregates results into ProbeVMResult
   - if any node raises → catches exception, returns ProbeVMResult(reachable=False)
@@ -79,6 +82,8 @@ run_env_probe()
   - emits DAILY_PROBE_COMPLETE audit event
   - returns DigestReport
 ```
+
+This mirrors the vm_graph node ordering exactly: `discover -> disk_snapshot -> drift_baseline -> failed_logins`. `discover_node` verifies SSH connectivity and populates `vm_info` (runtime os_family, os_version, disk layout). Signal nodes prefer `vm_info` fields over the state-level fallbacks — without discover, they'd silently use inventory values instead of what's actually on the VM.
 
 The `batch_id` field in `probe_state` is set to `""` — probes don't belong to a maintenance batch. This is a sentinel that tells audit queries "this event came from a standalone probe, not a batch run."
 
@@ -170,9 +175,10 @@ When Phase D (Operator Assistant Layer) is built, an optional LLM summarization 
 
 ## Quiz
 
-1. Why does `probe_vm()` set `dry_run: False` in the probe_state?
-2. What happens if you pass the full `Settings` object to `disk_snapshot_node` as `settings=`?
-3. Why is `asyncio.gather()` used in `run_env_probe()` instead of a sequential loop?
-4. Where must `signals` be set to enable the daily probe cron job?
-5. What is the `batch_id=""` sentinel and why is it used?
-6. Why is `render_digest_report()` deterministic rather than LLM-powered?
+1. Why does `probe_vm()` call `discover_node` before any signal node?
+2. Why does `probe_vm()` set `dry_run: False` in the probe_state?
+3. What happens if you pass the full `Settings` object to `disk_snapshot_node` as `settings=`?
+4. Why is `asyncio.gather()` used in `run_env_probe()` instead of a sequential loop?
+5. Where must `signals` be set to enable the daily probe cron job?
+6. What is the `batch_id=""` sentinel and why is it used?
+7. Why is `render_digest_report()` deterministic rather than LLM-powered?

@@ -701,3 +701,13 @@ fi
 **Lesson 5 — Always specify the exact error code in `# type: ignore[code]`.** Adding `[arg-type]` when mypy reports `[call-overload]` silently creates an unused-ignore that mypy later flags as an error itself. Run mypy to see the precise code, then add it verbatim. Wrong codes do not suppress the real error and add noise.
 
 **Rule**: Before adding a `# type: ignore`, copy the error code from mypy output exactly. Never guess the code from memory.
+
+---
+
+## Phase B -- Proactive Signals
+
+**Lesson 1 -- A standalone probe must mirror the vm_graph node ordering.** The initial Phase B probe skipped `discover_node` and called signal nodes directly. This caused two problems: (1) signal nodes used inventory fallback values (`os_family` from YAML) instead of what was actually on the VM at runtime; (2) SSH failures weren't caught before the first signal call -- the error appeared mid-probe rather than at a clean entry point.
+
+**Rule**: Any component that reuses vm_graph signal nodes must call `discover_node` first, in the same order as `build_vm_graph()`. If discover fails, return unreachable immediately and skip all signal nodes. Check the vm_graph node chain whenever adding a new caller.
+
+**Lesson 2 -- "Works independently" doesn't mean "skip the shared pre-check".** The probe is intentionally independent of maintenance batches (no locking, no approval, no waves). But independence from the *scheduler* is different from independence from the *node contract*. Signal nodes depend on `vm_info` being populated; discover provides it. Architectural independence doesn't excuse skipping required setup.

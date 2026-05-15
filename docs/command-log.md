@@ -30,6 +30,19 @@ git commit -m "feat: daily probe scheduling -- signals_cron config, --probe-now 
 **What**: Phase B MVP — standalone daily probe that runs independently of maintenance batches.
 **Why**: Operators need daily visibility into fleet health (disk, drift, logins) without waiting for maintenance windows.
 
+## Phase B fix — probe_vm discover_node (2026-05-15)
+
+```bash
+uv run pytest tests/agent/test_probe.py -v   # 9 passed (includes new test_probe_vm_returns_unreachable_when_discover_fails)
+uv run pytest --tb=short -q                  # 1404 passed
+uv run ruff check errander/agent/probe.py errander/main.py
+uv run mypy errander/agent/probe.py errander/main.py
+git add errander/agent/probe.py errander/main.py tests/agent/test_probe.py
+git commit -m "fix: probe_vm calls discover_node first -- SSH pre-check + vm_info before signal nodes"
+```
+**What**: Added `discover_node` call at the start of `probe_vm()`, mirroring the vm_graph ordering.
+**Why**: Without discover, signal nodes used inventory fallback values instead of runtime-detected VM state, and SSH failures weren't caught early.
+
 ## Phase A — Privilege Model Fixes (2026-05-15)
 
 ```bash

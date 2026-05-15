@@ -360,6 +360,7 @@ uv run ruff check .                                    # Lint
 uv run mypy .                                          # Type check
 uv run python -m errander --run-now --env dev --dry-run # Dry-run a batch
 uv run python -m errander --probe-now dev              # Daily probe (read-only, no maintenance)
+uv run python -m errander --ask "Any disk issues?" --env dev  # LLM fleet analysis (Layer A)
 uv run python -m errander --check-targets dev          # Pre-flight VM readiness check
 uv run python -m errander --check-llm                  # Verify LLM endpoint
 uv run python -m errander --audit --batches            # View recent batches

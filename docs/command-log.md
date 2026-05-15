@@ -1,5 +1,35 @@
 # Errander-AI Command Log
 
+## Phase D — Operator Assistant Layer MVP (2026-05-15)
+
+```bash
+# Baseline before starting
+uv run pytest --tb=no -q   # 1404 passed, 111 skipped
+
+# Commit 1: core OperatorAssistant + models
+uv run pytest tests/agent/test_operator_assistant.py -v   # 16 passed
+uv run ruff check errander/agent/operator_assistant.py errander/models/analysis.py
+uv run mypy errander/agent/operator_assistant.py errander/models/analysis.py
+
+# Commit 2: CLI wiring
+uv run pytest tests/test_main_ask.py -v   # 10 passed
+uv run ruff check errander/main.py
+uv run mypy errander/main.py
+
+# Full suite after each commit
+uv run ruff check errander/   # All checks passed
+uv run mypy errander/         # 75 source files, no issues
+uv run pytest --tb=short -q   # 1420 after Commit 1, 1430 after Commit 2
+
+# Commits
+git add errander/agent/operator_assistant.py errander/models/analysis.py tests/agent/test_operator_assistant.py
+git commit -m "feat: OperatorAssistant Layer A -- context builder, LLM synthesis, deterministic fallback"
+git add errander/main.py tests/test_main_ask.py
+git commit -m "feat: --ask CLI -- Operator Assistant investigation from command line"
+```
+**What**: Phase D MVP -- Layer A Operator Assistant. `--ask "question"` CLI queries existing stores and calls LLM to synthesize fleet health findings and recommendations.
+**Why**: Completes the two-layer architecture: Layer B executes, Layer A investigates and recommends.
+
 ## Phase B — Proactive Signals MVP (2026-05-15)
 
 ```bash

@@ -4,9 +4,16 @@
 2026-05-15
 
 ## Current Phase
-**Phase B — COMPLETE.** Proactive signals MVP (2 commits, Sonnet, 2026-05-15).
+**Phase D — COMPLETE.** Operator Assistant Layer MVP (2 commits, Sonnet, 2026-05-15).
 
-Phase C (Prometheus adapter) or Phase D (Operator Assistant Layer) is next.
+Phase C (Prometheus adapter) is next if needed; otherwise the core platform is feature-complete for HITL-first operation.
+
+### Phase D Completed (2026-05-15)
+- **Commit 1**: `errander/agent/operator_assistant.py` — `OperatorAssistant` class with `_build_context()`, `_format_prompt()`, `_fallback_response()`; `errander/models/analysis.py` — `AssistantResponse`, `VMSignalSummary`, `FleetContext`. 16 new tests.
+- **Commit 2**: `--ask "question"` CLI flag + `run_ask_query()` in `main.py`; LLM wired when `llm_base_url` set, fallback when absent. 10 new tests.
+- **1430 tests passing, 111 skipped.**
+- ruff: All checks passed. mypy: 75 source files, no issues.
+- Layer A invariant verified: zero `SandboxExecutor`/`FileLocker`/`ApprovalManager` imports in `operator_assistant.py`.
 
 ### Phase B Completed (2026-05-15)
 - **Commit 1**: `errander/agent/probe.py` — standalone probe runner calling existing SRE nodes directly (no new LangGraph); `DigestReport` + `ProbeVMResult` models; `render_digest_report()` deterministic Slack renderer; 3 new event types (`DAILY_PROBE_*`). 16 new tests.
@@ -38,8 +45,8 @@ Phase C (Prometheus adapter) or Phase D (Operator Assistant Layer) is next.
 - **SRE sign-off**: validated in `ai_sre_audit_v2.md` "Two-Layer AI Architecture Validation" section. SRE's anchor phrase: *"MCP belongs in the operator brain, not in the execution hands."*
 
 ## Next
-- Phase C: Direct Python adapters for Prometheus, ELK (optional, never required)
-- Phase D: Operator Assistant Layer (MCP / CLI / Skills for investigation and recommendation)
+- Phase C: Direct Python adapters for Prometheus, ELK (optional, additive)
+- P0-1/P0-2: Immutable plan artifact + exact deferred replay (needed for autonomous mode)
 - Phase D: Operator Assistant Layer (MCP / CLI / Skills for investigation and recommendation)
 
 ## Completed

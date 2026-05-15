@@ -711,3 +711,13 @@ fi
 **Rule**: Any component that reuses vm_graph signal nodes must call `discover_node` first, in the same order as `build_vm_graph()`. If discover fails, return unreachable immediately and skip all signal nodes. Check the vm_graph node chain whenever adding a new caller.
 
 **Lesson 2 -- "Works independently" doesn't mean "skip the shared pre-check".** The probe is intentionally independent of maintenance batches (no locking, no approval, no waves). But independence from the *scheduler* is different from independence from the *node contract*. Signal nodes depend on `vm_info` being populated; discover provides it. Architectural independence doesn't excuse skipping required setup.
+
+---
+
+## Phase D -- Operator Assistant
+
+**Lesson 1 -- Layer A violations are import-level, not runtime.** The Layer A invariant ("never executes") is enforced by what you import, not by runtime guards. If `operator_assistant.py` imports `SandboxExecutor`, a future developer could use it. The right check is `grep SandboxExecutor errander/agent/operator_assistant.py` returning 0 matches -- make it part of the definition of done for any Layer A module.
+
+**Lesson 2 -- Deferred imports inside async functions need concrete class names for isinstance.** `from __future__ import annotations` makes all annotations lazy strings at runtime. If you put a class in `TYPE_CHECKING` and then try `isinstance(x, TheClass)`, you get `NameError` because `TheClass` is never imported at runtime. Fix: inside the function body, import the concrete class with a short alias (`from errander.safety.disk_history import VMDiskHistoryStore as _DiskStore`) and use that alias for isinstance checks.
+
+**Rule**: TYPE_CHECKING imports are for type annotations only. isinstance checks always need a runtime import.

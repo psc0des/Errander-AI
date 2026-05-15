@@ -1,5 +1,18 @@
 # Errander-AI — Task Tracking
 
+## Phase D — Operator Assistant Layer MVP (2026-05-15, completed)
+
+- [x] Commit 1: `errander/models/analysis.py` — `AssistantResponse` (Pydantic), `VMSignalSummary`, `FleetContext` dataclasses
+- [x] Commit 1: `errander/agent/operator_assistant.py` — `OperatorAssistant.investigate()`, `_build_context()`, `_format_prompt()`, `_fallback_response()`
+- [x] Commit 1: 16 new tests (`test_operator_assistant.py`)
+- [x] Commit 2: `--ask "question"` CLI flag + `run_ask_query()` in `main.py`
+- [x] Commit 2: LLM wired when `llm_base_url` set; deterministic fallback when absent
+- [x] Commit 2: 10 new tests (`test_main_ask.py`)
+- [x] 1430 tests passing, 111 skipped — 0 regressions
+- [x] ruff: All checks passed. mypy: 75 source files, no issues.
+- [x] Layer A invariant: no SandboxExecutor/FileLocker/ApprovalManager in operator_assistant.py
+- [x] `docs/learning/35-operator-assistant.md` created
+
 ## Phase B — Proactive Signals MVP (2026-05-15, completed)
 
 - [x] Commit 1: `errander/agent/probe.py` — `probe_vm()` + `run_env_probe()` calling existing SRE nodes directly

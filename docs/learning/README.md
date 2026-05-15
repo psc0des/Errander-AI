@@ -40,3 +40,4 @@ Index of all learning docs created during development. Each doc explains what wa
 | 32 | [SRE Production Wiring: Making Signal Stores Active](32-sre-production-wiring.md) | SRE-audit | `32-sre-production-wiring.md` |
 | 33 | [sudo Privilege Model + Docker Wrapper Mode + check-targets CLI](33-sudo-privilege-model.md) | Phase A | `33-sudo-privilege-model.md` |
 | 34 | [Proactive Signals: Daily Probe, DigestReport, render_digest_report](34-proactive-signals.md) | Phase B | `34-proactive-signals.md` |
+| 35 | [Operator Assistant: Layer A Investigation + --ask CLI](35-operator-assistant.md) | Phase D | `35-operator-assistant.md` |

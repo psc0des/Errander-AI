@@ -206,8 +206,5 @@ def window_start_cron(window: MaintenanceWindow) -> str:
         Cron string of the form ``"0 <hour> * * <days>"``.
         When all seven days are present, the day field is ``*``.
     """
-    if set(window.days) == set(_DAYS):
-        days_str = "*"
-    else:
-        days_str = ",".join(_CRON_DAY_ABBR[d] for d in window.days)
+    days_str = "*" if set(window.days) == set(_DAYS) else ",".join(_CRON_DAY_ABBR[d] for d in window.days)
     return f"0 {window.start_hour} * * {days_str}"

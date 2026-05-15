@@ -972,7 +972,11 @@ async def _ui_inventory_get(request: web.Request) -> web.Response:
         flash_html = f'<div class="flash flash-err">{_esc(flash_err)}</div>'
 
     if store is None:
-        return _page("Inventory", flash_html + '<div class="nc">Overrides store not connected.</div>', pending_count=pending_count)
+        return _page(
+            "Inventory",
+            flash_html + '<div class="nc">Overrides store not connected.</div>',
+            pending_count=pending_count,
+        )
 
     # Build a lookup: (env_name, vm_name) → override row
     all_overrides = await store.get_all_inventory_overrides()
@@ -1026,7 +1030,11 @@ async def _ui_inventory_get(request: web.Request) -> web.Response:
             is_adhoc = bool(vm["is_adhoc"])
 
             name_cls = "inv-dis" if disabled else ""
-            source_badge = '<span class="inv-badge">+ ad-hoc</span>' if is_adhoc else '<span class="inv-badge inv-badge-yaml">YAML</span>'
+            source_badge = (
+                '<span class="inv-badge">+ ad-hoc</span>'
+                if is_adhoc else
+                '<span class="inv-badge inv-badge-yaml">YAML</span>'
+            )
             disable_label = "Enable" if disabled else "Disable"
             env_name_esc = _esc(env_name)
 
@@ -1041,7 +1049,9 @@ async def _ui_inventory_get(request: web.Request) -> web.Response:
             delete_form = ""
             if is_adhoc:
                 delete_form = (
-                    f'<form method="POST" action="/ui/inventory/delete/{_uq(env_name)}/{_uq(str(vm["vm_name"]))}" style="display:inline">'
+                    f'<form method="POST" '
+                    f'action="/ui/inventory/delete/{_uq(env_name)}/{_uq(str(vm["vm_name"]))}"'
+                    f' style="display:inline">'
                     f'<button type="submit" class="btn-del">Delete</button>'
                     f'</form>'
                 )
@@ -1058,7 +1068,8 @@ async def _ui_inventory_get(request: web.Request) -> web.Response:
 
         add_form = (
             f'<details style="margin-top:1rem">'
-            f'<summary style="cursor:pointer;font-family:var(--mono);font-size:.7rem;color:var(--t3)">+ Add VM</summary>'
+            f'<summary style="cursor:pointer;font-family:var(--mono);'
+            f'font-size:.7rem;color:var(--t3)">+ Add VM</summary>'
             f'<div class="form-card" style="margin-top:.6rem">'
             f'<form method="POST" action="/ui/inventory/add">'
             f'<input type="hidden" name="env_name" value="{_esc(env_name)}">'
@@ -1087,7 +1098,10 @@ async def _ui_inventory_get(request: web.Request) -> web.Response:
         )
 
     if not env_sections:
-        env_sections = '<div class="nc">No VMs in inventory. Add an ad-hoc entry below or configure inventory.yaml.</div>'
+        env_sections = (
+            '<div class="nc">No VMs in inventory. '
+            'Add an ad-hoc entry below or configure inventory.yaml.</div>'
+        )
 
     body = flash_html + env_sections
     return _page("Inventory", body, pending_count=pending_count, request=request)

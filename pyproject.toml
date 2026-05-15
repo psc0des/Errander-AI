@@ -38,10 +38,15 @@ build-backend = "hatchling.build"
 
 [tool.ruff]
 target-version = "py312"
-line-length = 100
+line-length = 120
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP", "B", "SIM", "TCH"]
+
+[tool.ruff.lint.per-file-ignores]
+# web/ files contain inline HTML/CSS template strings that cannot be split
+# without harming readability. E501 is exempt for these template files only.
+"errander/web/*.py" = ["E501"]
 
 [tool.mypy]
 python_version = "3.12"

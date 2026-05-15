@@ -171,10 +171,7 @@ class SlackClient:
         """Execute request with one rate-limit retry."""
 
         for attempt in range(2):
-            if http_method == "GET":
-                ctx = session.get(url, params=payload)
-            else:
-                ctx = session.post(url, json=payload)
+            ctx = session.get(url, params=payload) if http_method == "GET" else session.post(url, json=payload)
 
             async with ctx as resp:
                 if resp.status == 429:

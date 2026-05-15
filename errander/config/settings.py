@@ -354,7 +354,9 @@ def load_settings(
         "llm_api_key": _source("ERRANDER_LLM_API_KEY", _db, None),
         "llm_temperature": _source("ERRANDER_LLM_TEMPERATURE", _db, llm.temperature if llm else None),
         "llm_timeout_seconds": _source("ERRANDER_LLM_TIMEOUT", _db, llm.timeout_seconds if llm else None),
-        "approval_timeout_seconds": _source("ERRANDER_APPROVAL_TIMEOUT", _db, agent.approval_timeout_seconds if agent else None),
+        "approval_timeout_seconds": _source(
+            "ERRANDER_APPROVAL_TIMEOUT", _db, agent.approval_timeout_seconds if agent else None
+        ),
     }
 
     return Settings(

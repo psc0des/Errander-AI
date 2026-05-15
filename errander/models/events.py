@@ -39,6 +39,7 @@ class EventType(StrEnum):
     # SRE signals — Phase 1
     PREFLIGHT_LOCK_DETECTED = "preflight_lock_detected"
     PREFLIGHT_LOCK_CLEAR = "preflight_lock_clear"
+    SUDO_PREFLIGHT_FAILED = "sudo_preflight_failed"
     REBOOT_REQUIRED_DETECTED = "reboot_required_detected"
     SERVICE_HEALTH_REGRESSION = "service_health_regression"
     DISK_USAGE_CAPTURED = "disk_usage_captured"

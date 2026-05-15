@@ -54,9 +54,11 @@ def test_apt_autoremove_uses_sudo(apt: AptManager) -> None:
     assert cmd.startswith("sudo -n /usr/bin/apt-get autoremove")
 
 
-def test_apt_simulate_upgrade_uses_sudo(apt: AptManager) -> None:
+def test_apt_simulate_upgrade_no_sudo(apt: AptManager) -> None:
+    # Dry-run: must not escalate privileges
     cmd = apt.simulate_upgrade()
-    assert cmd.startswith("sudo -n /usr/bin/apt-get --simulate")
+    assert "sudo" not in cmd
+    assert "apt-get --simulate upgrade" in cmd
 
 
 # --- AptManager read-only commands (must NOT have sudo -n) ---

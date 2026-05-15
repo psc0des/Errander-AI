@@ -133,10 +133,12 @@ class AptManager(PackageManager):
         )
 
     def install_version(self, package: str, version: str) -> str:
-        return (
-            "sudo -n /usr/bin/env DEBIAN_FRONTEND=noninteractive "
-            "/usr/bin/apt-get install -y --allow-downgrades "
-            + f"{safe_pkg(package)}={safe_ver(version)}"
+        return privileged(
+            "/usr/bin/apt-get install -y "
+            "-o Dpkg::Options::=--force-confdef "
+            "-o Dpkg::Options::=--force-confold "
+            "--allow-downgrades "
+            f"{safe_pkg(package)}={safe_ver(version)}"
         )
 
     def list_installed_versions(self, packages: list[str]) -> str:
@@ -151,7 +153,8 @@ class AptManager(PackageManager):
 
     def simulate_upgrade(self) -> str:
         """Return command to simulate an upgrade (dry-run)."""
-        return privileged("/usr/bin/apt-get --simulate upgrade")
+        # Dry-run simulation does not modify state; runs unprivileged.
+        return "apt-get --simulate upgrade"
 
     def detect_lock(self) -> str:
         # fuser prints the PID holding each lock file; /proc/<pid>/comm gives the name.

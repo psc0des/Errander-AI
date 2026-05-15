@@ -17,7 +17,6 @@ from typing import TYPE_CHECKING
 
 from errander.execution.command_builder import CommandBuildError, pkg_version_spec
 from errander.execution.privilege import privileged
-
 from errander.models.actions import ActionType
 
 if TYPE_CHECKING:
@@ -30,7 +29,7 @@ async def rollback_action(
     action_type: ActionType,
     vm_id: str,
     pre_snapshot: dict[str, object],
-    executor: "SandboxExecutor | None" = None,
+    executor: SandboxExecutor | None = None,
     hostname: str = "",
     username: str = "",
     key_path: str = "",
@@ -67,7 +66,7 @@ async def rollback_action(
 async def _rollback_patching(
     vm_id: str,
     pre_snapshot: dict[str, object],
-    executor: "SandboxExecutor | None",
+    executor: SandboxExecutor | None,
     hostname: str,
     username: str,
     key_path: str,
@@ -86,7 +85,7 @@ async def _rollback_patching(
 async def _rollback_patching_apt(
     vm_id: str,
     pre_snapshot: dict[str, object],
-    executor: "SandboxExecutor | None",
+    executor: SandboxExecutor | None,
     hostname: str,
     username: str,
     key_path: str,
@@ -122,8 +121,10 @@ async def _rollback_patching_apt(
         return False, "No versioned packages in snapshot — cannot rollback"
 
     rollback_cmd = privileged(
-        "/usr/bin/env DEBIAN_FRONTEND=noninteractive "
-        "/usr/bin/apt-get install -y --allow-downgrades "
+        "/usr/bin/apt-get install -y "
+        "-o Dpkg::Options::=--force-confdef "
+        "-o Dpkg::Options::=--force-confold "
+        "--allow-downgrades "
         + " ".join(install_specs)
     )
 
@@ -205,7 +206,7 @@ async def _rollback_patching_apt(
 async def _rollback_patching_dnf(
     vm_id: str,
     pre_snapshot: dict[str, object],
-    executor: "SandboxExecutor | None",
+    executor: SandboxExecutor | None,
     hostname: str,
     username: str,
     key_path: str,
@@ -317,7 +318,7 @@ async def _rollback_patching_dnf(
 async def _rollback_docker_prune(
     vm_id: str,
     pre_snapshot: dict[str, object],
-    executor: "SandboxExecutor | None",
+    executor: SandboxExecutor | None,
     hostname: str,
     username: str,
     key_path: str,
@@ -330,7 +331,7 @@ async def _rollback_docker_prune(
 async def _rollback_disk_cleanup(
     vm_id: str,
     pre_snapshot: dict[str, object],
-    executor: "SandboxExecutor | None",
+    executor: SandboxExecutor | None,
     hostname: str,
     username: str,
     key_path: str,
@@ -343,7 +344,7 @@ async def _rollback_disk_cleanup(
 async def _rollback_log_rotation(
     vm_id: str,
     pre_snapshot: dict[str, object],
-    executor: "SandboxExecutor | None",
+    executor: SandboxExecutor | None,
     hostname: str,
     username: str,
     key_path: str,
@@ -356,7 +357,7 @@ async def _rollback_log_rotation(
 async def _rollback_backup_verify(
     vm_id: str,
     pre_snapshot: dict[str, object],
-    executor: "SandboxExecutor | None",
+    executor: SandboxExecutor | None,
     hostname: str,
     username: str,
     key_path: str,

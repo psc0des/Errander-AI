@@ -18,6 +18,9 @@ def test_dnf_rollback_downgrade_uses_sudo() -> None:
     assert cmd.startswith("sudo -n /usr/bin/dnf downgrade")
 
 
-def test_apt_rollback_preserves_debian_frontend() -> None:
+def test_apt_rollback_uses_dpkg_options() -> None:
+    # Dpkg::Options replace the DEBIAN_FRONTEND pattern — no /usr/bin/env needed.
     cmd = AptManager().install_version("nginx", "1.18.0-0ubuntu1")
-    assert "DEBIAN_FRONTEND=noninteractive" in cmd
+    assert "/usr/bin/env" not in cmd
+    assert "DEBIAN_FRONTEND" not in cmd
+    assert "Dpkg::Options" in cmd

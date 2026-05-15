@@ -17,14 +17,12 @@ Dependencies (injected at build time):
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any, TypedDict
 
 from langgraph.graph import END, StateGraph
 
 from errander.agent.decisions import prioritize_actions
-from errander.safety.ai_audit import AIDecisionStore
-from errander.safety.drift import compare_states, load_baseline, save_baseline
 from errander.agent.subgraphs.backup_verify import (
     BackupVerifyGraphState,
     build_backup_verify_subgraph,
@@ -46,6 +44,11 @@ from errander.agent.subgraphs.patching import (
     build_patching_subgraph,
 )
 from errander.execution.os_detection import detect_os
+from errander.execution.privilege import (
+    REQUIRED_BINARIES_BY_ACTION,
+    parse_capability_check,
+    sudo_capability_check,
+)
 from errander.execution.sandbox import SandboxExecutor
 from errander.execution.ssh import SSHConnectionManager
 from errander.models.actions import (
@@ -54,14 +57,11 @@ from errander.models.actions import (
     ActionType,
     RiskTier,
 )
-from errander.execution.privilege import (
-    REQUIRED_BINARIES_BY_ACTION,
-    parse_capability_check,
-    sudo_capability_check,
-)
 from errander.models.events import AuditEvent, EventType
 from errander.observability.metrics import ACTION_DURATION, ACTIONS_TOTAL, VM_LOCK_HELD
+from errander.safety.ai_audit import AIDecisionStore
 from errander.safety.audit import AuditStore
+from errander.safety.drift import compare_states, load_baseline, save_baseline
 from errander.safety.locking import FileLocker
 from errander.safety.validators import validate_action
 
@@ -147,7 +147,7 @@ async def acquire_lock_node(
             "error": f"VM {vm_id} is already locked by another batch",
         }
 
-    return {"locked": True, "lock_acquired_at": datetime.now(tz=timezone.utc).isoformat()}
+    return {"locked": True, "lock_acquired_at": datetime.now(tz=UTC).isoformat()}
 
 
 async def discover_node(
@@ -272,7 +272,7 @@ async def drift_check_node(
                 batch_id=state.get("batch_id", "unknown"),
                 vm_id=vm_id,
                 detail=f"Drift detected: {'; '.join(result.drifts)}",
-                timestamp=datetime.now(tz=timezone.utc),
+                timestamp=datetime.now(tz=UTC),
                 metadata={"drifts": result.drifts},
             )
         )
@@ -340,7 +340,7 @@ async def sudo_preflight_node(
         logger.error("SUDO PREFLIGHT FAILED (SSH error) on %s — blocking live execution", vm_id)
         if audit_store is not None:
             await audit_store.log_event(AuditEvent(
-                event_type=EventType.PREFLIGHT_LOCK_DETECTED,
+                event_type=EventType.SUDO_PREFLIGHT_FAILED,
                 batch_id=batch_id,
                 vm_id=vm_id,
                 action_type="sudo_preflight",
@@ -358,7 +358,7 @@ async def sudo_preflight_node(
         logger.error("SUDO PREFLIGHT FAILED on %s: %s", vm_id, detail)
         if audit_store is not None:
             await audit_store.log_event(AuditEvent(
-                event_type=EventType.PREFLIGHT_LOCK_DETECTED,
+                event_type=EventType.SUDO_PREFLIGHT_FAILED,
                 batch_id=batch_id,
                 vm_id=vm_id,
                 action_type="sudo_preflight",
@@ -397,7 +397,7 @@ async def dispatch_action_node(
     action_type = action["action_type"]
     vm_id = state["vm_id"]
     os_family = state.get("os_family", "ubuntu")
-    now = datetime.now(tz=timezone.utc)
+    now = datetime.now(tz=UTC)
 
     # Pre-dispatch validation
     try:
@@ -441,7 +441,7 @@ async def dispatch_action_node(
             "current_action_index": index + 1,
         }
 
-    action_start = datetime.now(tz=timezone.utc)
+    action_start = datetime.now(tz=UTC)
 
     if action_type == ActionType.DISK_CLEANUP.value:
         result_dict = await _run_disk_cleanup(state, disk_cleanup_compiled)
@@ -465,7 +465,7 @@ async def dispatch_action_node(
         }
 
     # Record metrics
-    duration = (datetime.now(tz=timezone.utc) - action_start).total_seconds()
+    duration = (datetime.now(tz=UTC) - action_start).total_seconds()
     status_str = str(result_dict.get("status", ""))
     ACTIONS_TOTAL.labels(action_type=action_type, status=status_str, vm_id=vm_id).inc()
     ACTION_DURATION.labels(action_type=action_type).observe(duration)
@@ -485,7 +485,7 @@ async def _run_disk_cleanup(
 ) -> dict[str, object]:
     """Run the disk cleanup sub-graph and return a serialised result dict."""
     vm_id = state["vm_id"]
-    now = datetime.now(tz=timezone.utc)
+    now = datetime.now(tz=UTC)
 
     # Read approved action params from the plan (P1-1)
     planned = state.get("planned_actions", [])
@@ -518,7 +518,7 @@ async def _run_disk_cleanup(
             "status": ActionStatus.FAILED.value,
             "vm_id": vm_id,
             "started_at": now.isoformat(),
-            "completed_at": datetime.now(tz=timezone.utc).isoformat(),
+            "completed_at": datetime.now(tz=UTC).isoformat(),
             "detail": "sub-graph raised exception",
             "error": str(exc),
         }
@@ -529,7 +529,7 @@ async def _run_disk_cleanup(
             "status": ActionStatus.FAILED.value,
             "vm_id": vm_id,
             "started_at": now.isoformat(),
-            "completed_at": datetime.now(tz=timezone.utc).isoformat(),
+            "completed_at": datetime.now(tz=UTC).isoformat(),
             "detail": "sub-graph raised exception",
             "error": str(exc),
         }
@@ -548,7 +548,7 @@ async def _run_disk_cleanup(
         "status": status,
         "vm_id": vm_id,
         "started_at": now.isoformat(),
-        "completed_at": datetime.now(tz=timezone.utc).isoformat(),
+        "completed_at": datetime.now(tz=UTC).isoformat(),
         "detail": "; ".join(detail_parts),
         "error": error,
     }
@@ -560,7 +560,7 @@ async def _run_log_rotation(
 ) -> dict[str, object]:
     """Run the log rotation sub-graph and return a serialised result dict."""
     vm_id = state["vm_id"]
-    now = datetime.now(tz=timezone.utc)
+    now = datetime.now(tz=UTC)
 
     # Read approved action params from the plan (P1-1)
     planned = state.get("planned_actions", [])
@@ -593,7 +593,7 @@ async def _run_log_rotation(
             "status": ActionStatus.FAILED.value,
             "vm_id": vm_id,
             "started_at": now.isoformat(),
-            "completed_at": datetime.now(tz=timezone.utc).isoformat(),
+            "completed_at": datetime.now(tz=UTC).isoformat(),
             "detail": "sub-graph raised exception",
             "error": str(exc),
         }
@@ -604,7 +604,7 @@ async def _run_log_rotation(
             "status": ActionStatus.FAILED.value,
             "vm_id": vm_id,
             "started_at": now.isoformat(),
-            "completed_at": datetime.now(tz=timezone.utc).isoformat(),
+            "completed_at": datetime.now(tz=UTC).isoformat(),
             "detail": "sub-graph raised exception",
             "error": str(exc),
         }
@@ -623,7 +623,7 @@ async def _run_log_rotation(
         "status": status,
         "vm_id": vm_id,
         "started_at": now.isoformat(),
-        "completed_at": datetime.now(tz=timezone.utc).isoformat(),
+        "completed_at": datetime.now(tz=UTC).isoformat(),
         "detail": "; ".join(detail_parts),
         "error": final_state.get("error"),
     }
@@ -635,7 +635,7 @@ async def _run_docker_prune(
 ) -> dict[str, object]:
     """Run the Docker prune sub-graph and return a serialised result dict."""
     vm_id = state["vm_id"]
-    now = datetime.now(tz=timezone.utc)
+    now = datetime.now(tz=UTC)
     vm_info = state.get("vm_info", {})
 
     # Read approved action params from the plan (P1-1)
@@ -666,7 +666,7 @@ async def _run_docker_prune(
             "status": ActionStatus.FAILED.value,
             "vm_id": vm_id,
             "started_at": now.isoformat(),
-            "completed_at": datetime.now(tz=timezone.utc).isoformat(),
+            "completed_at": datetime.now(tz=UTC).isoformat(),
             "detail": "sub-graph raised exception",
             "error": str(exc),
         }
@@ -677,7 +677,7 @@ async def _run_docker_prune(
             "status": ActionStatus.FAILED.value,
             "vm_id": vm_id,
             "started_at": now.isoformat(),
-            "completed_at": datetime.now(tz=timezone.utc).isoformat(),
+            "completed_at": datetime.now(tz=UTC).isoformat(),
             "detail": "sub-graph raised exception",
             "error": str(exc),
         }
@@ -698,7 +698,7 @@ async def _run_docker_prune(
         "status": status,
         "vm_id": vm_id,
         "started_at": now.isoformat(),
-        "completed_at": datetime.now(tz=timezone.utc).isoformat(),
+        "completed_at": datetime.now(tz=UTC).isoformat(),
         "detail": "; ".join(detail_parts),
         "error": final_state.get("error"),
     }
@@ -710,7 +710,7 @@ async def _run_patching(
 ) -> dict[str, object]:
     """Run the patching sub-graph and return a serialised result dict."""
     vm_id = state["vm_id"]
-    now = datetime.now(tz=timezone.utc)
+    now = datetime.now(tz=UTC)
 
     sub_state: PatchingGraphState = {
         "vm_id": vm_id,
@@ -732,7 +732,7 @@ async def _run_patching(
             "status": ActionStatus.FAILED.value,
             "vm_id": vm_id,
             "started_at": now.isoformat(),
-            "completed_at": datetime.now(tz=timezone.utc).isoformat(),
+            "completed_at": datetime.now(tz=UTC).isoformat(),
             "detail": "sub-graph raised exception",
             "error": str(exc),
         }
@@ -743,7 +743,7 @@ async def _run_patching(
             "status": ActionStatus.FAILED.value,
             "vm_id": vm_id,
             "started_at": now.isoformat(),
-            "completed_at": datetime.now(tz=timezone.utc).isoformat(),
+            "completed_at": datetime.now(tz=UTC).isoformat(),
             "detail": "sub-graph raised exception",
             "error": str(exc),
         }
@@ -762,7 +762,7 @@ async def _run_patching(
         "status": status,
         "vm_id": vm_id,
         "started_at": now.isoformat(),
-        "completed_at": datetime.now(tz=timezone.utc).isoformat(),
+        "completed_at": datetime.now(tz=UTC).isoformat(),
         "detail": "; ".join(detail_parts),
         "error": final_state.get("error"),
     }
@@ -774,7 +774,7 @@ async def _run_backup_verify(
 ) -> dict[str, object]:
     """Run the backup verify sub-graph and return a serialised result dict."""
     vm_id = state["vm_id"]
-    now = datetime.now(tz=timezone.utc)
+    now = datetime.now(tz=UTC)
 
     # Get backup paths from action params if available
     planned = state.get("planned_actions", [])
@@ -803,7 +803,7 @@ async def _run_backup_verify(
             "status": ActionStatus.FAILED.value,
             "vm_id": vm_id,
             "started_at": now.isoformat(),
-            "completed_at": datetime.now(tz=timezone.utc).isoformat(),
+            "completed_at": datetime.now(tz=UTC).isoformat(),
             "detail": "sub-graph raised exception",
             "error": str(exc),
         }
@@ -814,7 +814,7 @@ async def _run_backup_verify(
             "status": ActionStatus.FAILED.value,
             "vm_id": vm_id,
             "started_at": now.isoformat(),
-            "completed_at": datetime.now(tz=timezone.utc).isoformat(),
+            "completed_at": datetime.now(tz=UTC).isoformat(),
             "detail": "sub-graph raised exception",
             "error": str(exc),
         }
@@ -831,7 +831,7 @@ async def _run_backup_verify(
         "status": status,
         "vm_id": vm_id,
         "started_at": now.isoformat(),
-        "completed_at": datetime.now(tz=timezone.utc).isoformat(),
+        "completed_at": datetime.now(tz=UTC).isoformat(),
         "detail": "; ".join(detail_parts),
         "error": final_state.get("error"),
     }
@@ -865,7 +865,7 @@ async def audit_results_node(
                 vm_id=vm_id,
                 action_type=str(r.get("action_type", "")),
                 detail=str(r.get("detail", "")),
-                timestamp=datetime.now(tz=timezone.utc),
+                timestamp=datetime.now(tz=UTC),
                 metadata={
                     "status": str(r.get("status", "")),
                     "error": r.get("error"),
@@ -880,7 +880,7 @@ async def audit_results_node(
                 batch_id=batch_id,
                 vm_id=vm_id,
                 detail=error,
-                timestamp=datetime.now(tz=timezone.utc),
+                timestamp=datetime.now(tz=UTC),
             )
         )
 
@@ -922,8 +922,8 @@ async def release_lock_node(
         if acquired_at_str:
             acquired_at = datetime.fromisoformat(str(acquired_at_str))
             if acquired_at.tzinfo is None:
-                acquired_at = acquired_at.replace(tzinfo=timezone.utc)
-            held_seconds = (datetime.now(tz=timezone.utc) - acquired_at).total_seconds()
+                acquired_at = acquired_at.replace(tzinfo=UTC)
+            held_seconds = (datetime.now(tz=UTC) - acquired_at).total_seconds()
             VM_LOCK_HELD.labels(vm_id=vm_id).observe(held_seconds)
         return {"locked": False}
 

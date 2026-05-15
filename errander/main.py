@@ -124,6 +124,16 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="SSH to every VM in ENV and report sudo / binary / wrapper readiness. Read-only.",
     )
 
+    parser.add_argument(
+        "--probe-now",
+        metavar="ENV",
+        default=None,
+        help=(
+            "Run a proactive signal probe immediately for ENV and post digest to Slack. "
+            "Read-only — no maintenance actions executed."
+        ),
+    )
+
     # SSH known-hosts bootstrap (finding #9)
     parser.add_argument(
         "--bootstrap-known-hosts",
@@ -546,6 +556,95 @@ async def run_check_targets(env_name: str, inventory_path: Path) -> int:
 
 
 # ---------------------------------------------------------------------------
+# Probe CLI
+# ---------------------------------------------------------------------------
+
+
+async def run_env_probe_main(env_name: str, inventory_path: Path) -> int:
+    """Run a proactive signal probe for ENV and post digest to Slack.
+
+    Read-only — collects disk growth, drift, and failed-login signals
+    without executing any maintenance actions.
+    """
+    from errander.agent.probe import run_env_probe
+    from errander.config.schema import validate_inventory
+    from errander.config.settings import load_settings
+    from errander.execution.sandbox import SandboxExecutor
+    from errander.execution.ssh import SSHConnectionManager
+    from errander.integrations.slack import SlackClient
+    from errander.observability.reporting import render_digest_report
+    from errander.safety.audit import AuditStore
+    from errander.safety.baselines import BaselineStore
+    from errander.safety.disk_history import VMDiskHistoryStore
+
+    try:
+        inventory = validate_inventory(inventory_path)
+    except Exception as exc:  # noqa: BLE001
+        print(f"Error loading inventory: {exc}")
+        return 1
+
+    env = inventory.environments.get(env_name)
+    if env is None:
+        print(f"Unknown environment: {env_name}")
+        return 1
+
+    try:
+        settings = load_settings()
+    except Exception as exc:  # noqa: BLE001
+        print(f"Error loading settings: {exc}")
+        return 1
+
+    audit_store = AuditStore(settings.audit_db_url, strict_mode=(settings.audit_mode == "strict"))
+    disk_history_store = VMDiskHistoryStore(settings.audit_db_url)
+    baseline_store = BaselineStore(settings.audit_db_url)
+    ssh_manager = SSHConnectionManager()
+    executor = SandboxExecutor(ssh_manager=ssh_manager, dry_run=False)
+
+    slack: SlackClient | None = None
+    if settings.slack_bot_token and settings.slack_channel_id:
+        slack = SlackClient(
+            bot_token=settings.slack_bot_token,
+            channel_id=settings.slack_channel_id,
+        )
+
+    async with audit_store:
+        await disk_history_store.initialize()
+        await baseline_store.initialize()
+
+        vms = [
+            {
+                "vm_id": t.name,
+                "hostname": t.host,
+                "ssh_user": t.ssh_user or env.ssh_user,
+                "ssh_key_path": str(Path(t.ssh_key_path or env.ssh_key_path).expanduser()),
+                "os_family": t.os_family,
+                "disable_failed_login_check": t.disable_failed_login_check,
+            }
+            for t in env.targets
+        ]
+
+        report = await run_env_probe(
+            env_name=env_name,
+            vms=vms,
+            executor=executor,
+            disk_history_store=disk_history_store,
+            baseline_store=baseline_store,
+            audit_store=audit_store,
+            sre_settings=settings.sre_signals,
+        )
+
+    digest_text = render_digest_report(report)
+    print(digest_text)
+
+    if slack is not None:
+        await slack.post_digest(digest_text)
+        logger.info("Daily probe digest posted to Slack", env=env_name)
+
+    await ssh_manager.close_all()
+    return 0
+
+
+# ---------------------------------------------------------------------------
 # Audit CLI
 # ---------------------------------------------------------------------------
 
@@ -900,6 +999,12 @@ async def async_main(args: argparse.Namespace) -> int:
             inventory_path=args.inventory,
         )
 
+    if args.probe_now:
+        return await run_env_probe_main(
+            env_name=args.probe_now,
+            inventory_path=args.inventory,
+        )
+
     # --- Configuration (first pass: no DB overrides yet) ---
     try:
         settings = load_settings(
@@ -1106,6 +1211,52 @@ async def async_main(args: argparse.Namespace) -> int:
                     opener_cron,
                     job_id=f"window-opener-{env_name}",
                 )
+
+            # Register daily probe job when signals cron is configured.
+            signals_cron: str | None = None
+            if scheduler_settings and env_name in scheduler_settings.schedules:
+                signals_cron = scheduler_settings.schedules[env_name].signals
+
+            if signals_cron:
+                async def _run_probe(
+                    _env: str = env_name,
+                    _schema: EnvironmentSchema = env_schema,
+                ) -> None:
+                    from errander.agent.probe import run_env_probe
+                    from errander.observability.reporting import render_digest_report
+
+                    vms = [
+                        {
+                            "vm_id": t.name,
+                            "hostname": t.host,
+                            "ssh_user": t.ssh_user or _schema.ssh_user,
+                            "ssh_key_path": str(Path(t.ssh_key_path or _schema.ssh_key_path).expanduser()),
+                            "os_family": t.os_family,
+                            "disable_failed_login_check": t.disable_failed_login_check,
+                        }
+                        for t in _schema.targets
+                    ]
+                    report = await run_env_probe(
+                        env_name=_env,
+                        vms=vms,
+                        executor=executor,
+                        disk_history_store=disk_history_store,
+                        baseline_store=baseline_store,
+                        audit_store=audit_store,
+                        sre_settings=settings.sre_signals,
+                    )
+                    digest_text = render_digest_report(report)
+                    if slack is not None:
+                        await slack.post_digest(digest_text)
+                    else:
+                        logger.info("Probe digest (no Slack):\n%s", digest_text)
+
+                scheduler.add_maintenance_job(
+                    _run_probe,
+                    signals_cron,
+                    job_id=f"probe-{env_name}",
+                )
+                logger.info("Registered daily probe job", env=env_name, cron=signals_cron)
 
         await scheduler.start()
 

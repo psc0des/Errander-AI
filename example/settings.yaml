@@ -108,12 +108,18 @@ llm:
 schedules:
   production:
     maintenance: "0 2 * * tue,thu"   # 02:00 UTC on Tuesdays and Thursdays
+    # signals: "0 6 * * *"           # Daily probe at 06:00 UTC (optional)
+    #   Runs disk-growth, drift, and failed-login probes against all VMs.
+    #   Posts a digest to Slack. Read-only — no maintenance actions executed.
+    #   CLI equivalent: uv run python -m errander --probe-now production
 
   staging:
     maintenance: "0 22 * * mon-fri"  # 22:00 UTC weeknights
+    # signals: "0 7 * * *"           # Daily probe at 07:00 UTC
 
   dev:
     maintenance: "0 9 * * mon-fri"   # 09:00 UTC weekday mornings
+    # signals: "0 8 * * mon-fri"     # Probe on weekday mornings before maintenance window
 
 # SRE signal collection — runs alongside every maintenance batch.
 # All checks default to enabled. Set enabled: false to disable globally,

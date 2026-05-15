@@ -121,6 +121,15 @@ class SlackClient:
         """
         await self.post_message(f":rotating_light: *ALERT* :rotating_light:\n{text}", channel_id=channel_id)
 
+    async def post_digest(self, text: str, channel_id: str | None = None) -> None:
+        """Post a daily probe digest to Slack.
+
+        Args:
+            text: Rendered digest text from render_digest_report().
+            channel_id: Override default channel.
+        """
+        await self.post_message(text, channel_id=channel_id)
+
     async def _get_session(self) -> aiohttp.ClientSession:
         """Get or create a reusable aiohttp session."""
         if self._session is None or self._session.closed:

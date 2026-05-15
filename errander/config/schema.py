@@ -229,6 +229,7 @@ class ScheduleSchema(BaseModel):
 
     maintenance: str | None = None
     discovery: str | None = None
+    signals: str | None = None
 
 
 class DiskGrowthTrendSchema(BaseModel):

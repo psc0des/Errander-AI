@@ -238,9 +238,9 @@ class TestFleetBatchGraph:
         async def _ssh(*args: object, **kwargs: object) -> SSHResult:
             nonlocal call_count
             call_count += 1
-            # 12 validate_targets (os-release) + 12×5 plan_vm (detect_os) + 3 wave-0 health = 75 succeed
-            # wave-1 health check calls (76-78) fail
-            return _ssh_ok() if call_count <= 75 else _ssh_ok("", 1)
+            # 12 validate_targets + 12×5 plan_vm + 12×2 enrich_plan (disk_cleanup preview) + 3 wave-0 health = 99 succeed
+            # wave-1 health check calls (100-102) fail
+            return _ssh_ok() if call_count <= 99 else _ssh_ok("", 1)
 
         with (
             patch.object(ssh, "execute", side_effect=_ssh),

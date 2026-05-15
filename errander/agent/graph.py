@@ -21,6 +21,8 @@ Dependencies (injected at build time):
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import logging
 import math
 import uuid
@@ -740,6 +742,147 @@ async def collect_plans_node(state: BatchGraphState) -> dict[str, Any]:
     return {}
 
 
+async def enrich_plan_node(
+    state: BatchGraphState,
+    *,
+    ssh_manager: SSHConnectionManager,
+) -> dict[str, Any]:
+    """Assess exact packages/space per planned action before the plan is hashed.
+
+    Runs SSH read commands per VM per action type so the plan hash covers
+    the exact packages/versions the operator will approve -- not just action
+    categories. Failures are best-effort; an unreachable VM gets
+    preview={"error": "..."} and the batch continues.
+
+    P0-1: what makes the HITL guarantee honest.
+    """
+    vm_plans: list[dict[str, object]] = list(state.get("vm_plans", []))
+    targets: list[dict[str, object]] = list(state.get("targets", []))
+    target_by_id: dict[str, dict[str, object]] = {
+        str(t.get("vm_id", "")): t for t in targets
+    }
+
+    enriched_plans: list[dict[str, object]] = list(
+        await asyncio.gather(*[
+            _enrich_vm_plan(plan, target_by_id, ssh_manager)
+            for plan in vm_plans
+        ])
+    )
+    return {"vm_plans": enriched_plans}
+
+
+async def _enrich_vm_plan(
+    plan: dict[str, object],
+    target_by_id: dict[str, dict[str, object]],
+    ssh_manager: SSHConnectionManager,
+) -> dict[str, object]:
+    """Enrich one VM's planned actions with preview data. Best-effort."""
+    vm_id = str(plan.get("vm_id", ""))
+    os_family = str(plan.get("os_family", "ubuntu"))
+    target = target_by_id.get(vm_id, {})
+    hostname = str(target.get("hostname", ""))
+    username = str(target.get("ssh_user", "errander-ai"))
+    key_path = str(target.get("ssh_key_path", ""))
+
+    actions_raw = plan.get("planned_actions")
+    if not isinstance(actions_raw, list):
+        return plan
+
+    enriched_actions: list[dict[str, object]] = []
+    for action in actions_raw:
+        if not isinstance(action, dict):
+            enriched_actions.append(action)
+            continue
+
+        action_type = str(action.get("action_type", ""))
+        preview: dict[str, object] = {}
+
+        try:
+            if action_type == "patching" and hostname:
+                preview = await _preview_patching(
+                    vm_id, hostname, username, key_path, os_family, ssh_manager
+                )
+            elif action_type == "disk_cleanup" and hostname:
+                preview = await _preview_disk_cleanup(
+                    vm_id, hostname, username, key_path, ssh_manager
+                )
+            # docker_prune / log_rotation / backup_verify: no preview for MVP
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "enrich_plan: preview failed for %s/%s: %s", vm_id, action_type, exc
+            )
+            preview = {"error": str(exc)[:200]}
+
+        enriched_actions.append({**action, "preview": preview})
+
+    return {**plan, "planned_actions": enriched_actions}
+
+
+async def _preview_patching(
+    vm_id: str,
+    hostname: str,
+    username: str,
+    key_path: str,
+    os_family: str,
+    ssh_manager: SSHConnectionManager,
+) -> dict[str, object]:
+    """Query exact upgradable packages with versions for patching preview."""
+    import fnmatch
+
+    from errander.agent.subgraphs.disk_cleanup import get_package_manager_by_name
+    from errander.agent.subgraphs.patching import (
+        MANDATORY_KERNEL_EXCLUDES,
+        _parse_upgradable_with_versions,
+    )
+
+    pkg_mgr = get_package_manager_by_name(os_family)
+    result = await ssh_manager.execute(
+        vm_id, hostname, username, key_path, pkg_mgr.list_upgradable(),
+    )
+    if not result.success:
+        return {"error": f"could not list packages: {result.stderr[:200]}"}
+
+    packages = _parse_upgradable_with_versions(result.stdout, os_family)
+    filtered = [
+        p for p in packages
+        if not any(fnmatch.fnmatch(p["name"], pat) for pat in MANDATORY_KERNEL_EXCLUDES)
+    ]
+    return {
+        "packages": filtered,
+        "package_count": len(filtered),
+        "total_upgradable": len(packages),
+    }
+
+
+async def _preview_disk_cleanup(
+    vm_id: str,
+    hostname: str,
+    username: str,
+    key_path: str,
+    ssh_manager: SSHConnectionManager,
+) -> dict[str, object]:
+    """Query disk usage and apt cache size for disk_cleanup preview."""
+    preview: dict[str, object] = {}
+
+    df_result = await ssh_manager.execute(
+        vm_id, hostname, username, key_path,
+        "df -BM / 2>/dev/null | awk 'NR==2{print $5}' | tr -d '%'",
+    )
+    if df_result.success:
+        with contextlib.suppress(ValueError):
+            preview["disk_pct"] = int(df_result.stdout.strip())
+
+    cache_result = await ssh_manager.execute(
+        vm_id, hostname, username, key_path,
+        "du -sm /var/cache/apt/archives 2>/dev/null | awk '{print $1}'",
+    )
+    if cache_result.success:
+        with contextlib.suppress(ValueError):
+            preview["apt_cache_mb"] = int(cache_result.stdout.strip())
+
+    return preview
+
+
 async def generate_plan_artifact_node(state: BatchGraphState) -> dict[str, Any]:
     """Build ImmutableBatchPlan from collected VM plans and compute hash.
 
@@ -1414,6 +1557,11 @@ def build_batch_graph(
     builder.add_node("check_fleet_health", _check_fleet)
     builder.add_node("plan_vm", _plan_vm)  # type: ignore[type-var]
     builder.add_node("collect_plans", collect_plans_node)
+
+    async def _enrich_plan(state: BatchGraphState) -> dict[str, Any]:
+        return await enrich_plan_node(state, ssh_manager=ssh_manager)
+
+    builder.add_node("enrich_plan", _enrich_plan)
     builder.add_node("generate_plan_artifact", generate_plan_artifact_node)
     builder.add_node("approval_gate", _approval_gate)
     builder.add_node("verify_plan_hash", verify_plan_hash_node)
@@ -1441,7 +1589,8 @@ def build_batch_graph(
         "plan_vms", _route_plan_vms, ["plan_vm", "generate_report"],
     )
     builder.add_edge("plan_vm", "collect_plans")
-    builder.add_edge("collect_plans", "generate_plan_artifact")
+    builder.add_edge("collect_plans", "enrich_plan")
+    builder.add_edge("enrich_plan", "generate_plan_artifact")
     # Approval happens BEFORE execution (finding #3)
     builder.add_edge("generate_plan_artifact", "approval_gate")
     builder.add_conditional_edges(

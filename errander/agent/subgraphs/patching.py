@@ -604,6 +604,52 @@ def _parse_upgradable(output: str, os_family: str) -> list[str]:
     return packages
 
 
+def _parse_upgradable_with_versions(
+    output: str, os_family: str
+) -> list[dict[str, str]]:
+    """Parse package names with current and target versions from upgradable output.
+
+    Returns list of {"name": str, "current": str, "target": str}.
+    Falls back to name-only (empty version strings) when version parsing fails.
+
+    apt format: 'nginx/focal-updates 1.24.0-1ubuntu1 amd64 [upgradable from: 1.18.0-0ubuntu1]'
+    dnf format: 'nginx.x86_64  1:1.24.0-1.el9  @appstream'  (no current version in output)
+    """
+    import re
+
+    packages: list[dict[str, str]] = []
+    for raw in output.strip().splitlines():
+        line = raw.strip()
+        if not line or line.startswith("Listing") or line.startswith("Last metadata"):
+            continue
+
+        if os_family in ("ubuntu", "debian"):
+            m = re.match(
+                r"^(\S+)/\S+\s+(\S+)\s+\S+\s+\[upgradable from:\s+(\S+)\]", line
+            )
+            if m:
+                packages.append({
+                    "name": m.group(1),
+                    "target": m.group(2),
+                    "current": m.group(3),
+                })
+            elif "/" in line:
+                # Fallback: name only, no version info
+                name = line.split("/")[0]
+                if name:
+                    packages.append({"name": name, "target": "", "current": ""})
+        else:
+            # dnf/rpm: 'nginx.x86_64  1:1.24.0-1.el9  @appstream'
+            parts = line.split()
+            if parts:
+                name = parts[0].rsplit(".", 1)[0] if "." in parts[0] else parts[0]
+                target = parts[1] if len(parts) > 1 else ""
+                if name:
+                    packages.append({"name": name, "target": target, "current": ""})
+
+    return packages
+
+
 def _parse_versions(output: str) -> dict[str, str]:
     """Parse package=version pairs from dpkg-query or rpm -q output."""
     versions: dict[str, str] = {}

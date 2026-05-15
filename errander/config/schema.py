@@ -10,7 +10,7 @@ Config inheritance: Global defaults → Environment settings → Host overrides.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, field_validator
@@ -104,6 +104,7 @@ class EnvironmentSchema(BaseModel):
     ssh_key_path: str = "~/.ssh/errander"
     # Environment-level default; host-level list overrides when set.
     critical_services: list[str] = []
+    docker_command_mode: Literal["wrapper", "direct_sudo", "disabled"] = "wrapper"
     targets: list[TargetSchema]
 
     @field_validator("approval_policy")

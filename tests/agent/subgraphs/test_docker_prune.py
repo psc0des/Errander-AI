@@ -36,6 +36,7 @@ def _base_state(**overrides: object) -> DockerPruneGraphState:
         "status": ActionStatus.PENDING.value,
         "error": None,
         "docker_available": True,
+        "docker_command_mode": "direct_sudo",  # existing tests exercise direct_sudo path
         "hostname": "10.0.1.10",  # type: ignore[typeddict-item]
         "username": "errander-ai",  # type: ignore[typeddict-item]
         "key_path": "/key",  # type: ignore[typeddict-item]

@@ -1,11 +1,19 @@
 """Docker prune sub-graph — reclaim disk from unused Docker resources.
 
 Lifecycle:
-1. Validate: Check Docker is installed and running.
+1. Validate: Check Docker is available / not disabled by mode.
 2. Assess: Count dangling images, stopped containers, reclaimable space.
    Idempotent — if nothing to prune, sets nothing_to_do=True.
 3. Execute: Run docker system prune (or simulate in dry-run mode).
 4. Verify: Re-check disk usage after pruning (skip in dry-run).
+
+docker_command_mode controls how Docker is invoked:
+  "wrapper"     — root-owned wrapper scripts at /usr/local/sbin/errander-docker-*.
+                  This is the secure production default. Narrow sudoers, no raw
+                  `sudo docker`.
+  "direct_sudo" — `sudo -n /usr/bin/docker ...` directly. Lab/pre-prod only.
+                  Logs a warning every batch. Not enterprise-hardened.
+  "disabled"    — Errander will not plan or execute docker_prune on this env.
 
 Risk tier: Low (automatic).
 Rollback strategy: Re-pull only — pruned resources are gone.
@@ -38,6 +46,9 @@ class DockerPruneGraphState(TypedDict, total=False):
 
     docker_available: bool
 
+    # "wrapper" | "direct_sudo" | "disabled" (default: "wrapper")
+    docker_command_mode: str
+
     # Prune scope (finding #12):
     # aggressive=False (default) → prune dangling images + stopped containers only
     # aggressive=True            → prune ALL unused images (-a); reclassified HIGH
@@ -63,13 +74,23 @@ class DockerPruneGraphState(TypedDict, total=False):
 # --- Node functions ---
 
 def validate_node(state: DockerPruneGraphState) -> dict[str, Any]:
-    """Validate that Docker is available on this VM.
+    """Validate that Docker is available and mode is not disabled.
 
     Uses docker_available from VM discovery. If not set, defaults to True
     (will fail at assess if Docker is actually missing).
     """
-    docker_available = state.get("docker_available", True)
+    mode = state.get("docker_command_mode", "wrapper")
+    if mode == "disabled":
+        logger.info(
+            "Docker prune disabled for %s (docker_command_mode=disabled)",
+            state.get("vm_id", "unknown"),
+        )
+        return {
+            "status": ActionStatus.SKIPPED.value,
+            "reason": "docker_command_mode=disabled",
+        }
 
+    docker_available = state.get("docker_available", True)
     if not docker_available:
         logger.info(
             "Docker not available on %s — skipping prune",
@@ -91,15 +112,78 @@ async def assess_node(
     """Assess Docker resource usage: dangling images, stopped containers.
 
     Idempotency: if nothing to prune, sets nothing_to_do=True.
+    Branches on docker_command_mode: wrapper calls the assess wrapper script;
+    direct_sudo uses the original 4-call pattern.
     """
     vm_id = state["vm_id"]
     target = _get_connection_params(state)
+    mode = state.get("docker_command_mode", "wrapper")
 
-    # Assessment calls always use dry_run=False — must inspect real Docker state.
+    if mode == "wrapper":
+        return await _assess_wrapper(vm_id, target, executor)
+    # direct_sudo (disabled is already filtered by validate_node)
+    return await _assess_direct(vm_id, target, executor)
 
-    # Check docker is actually reachable.
-    # Production: replace sudo -n /usr/bin/docker with root-owned wrapper scripts.
-    # See SETUP.md "Docker hardening" for the enterprise wrapper approach.
+
+async def _assess_wrapper(
+    vm_id: str,
+    target: dict[str, str],
+    executor: SandboxExecutor,
+) -> dict[str, Any]:
+    """Assess via root-owned wrapper script."""
+    result = await executor.execute(
+        vm_id, target["hostname"], target["username"], target["key_path"],
+        command=privileged("/usr/local/sbin/errander-docker-assess"),
+        dry_run=False,
+    )
+    if not result.success:
+        return {
+            "status": ActionStatus.SKIPPED.value,
+            "error": "Docker assess wrapper failed",
+            "nothing_to_do": True,
+        }
+
+    parsed = parse_assess_output(result.stdout)
+    if not parsed["reachable"]:
+        return {
+            "status": ActionStatus.SKIPPED.value,
+            "error": parsed["error"] or "Docker daemon not reachable",
+            "nothing_to_do": True,
+        }
+
+    dangling = parsed["dangling_images"]
+    stopped = parsed["stopped_containers"]
+    system_df = parsed["system_df"]
+
+    if dangling == 0 and stopped == 0:
+        logger.info("No dangling images or stopped containers on %s — nothing to do", vm_id)
+        return {
+            "dangling_images": 0,
+            "stopped_containers": 0,
+            "system_df_output": system_df,
+            "nothing_to_do": True,
+            "status": ActionStatus.SKIPPED.value,
+        }
+
+    logger.info(
+        "Docker prune assessment on %s: %d dangling images, %d stopped containers",
+        vm_id, dangling, stopped,
+    )
+    return {
+        "dangling_images": dangling,
+        "stopped_containers": stopped,
+        "system_df_output": system_df,
+        "disk_before": system_df,
+        "nothing_to_do": False,
+    }
+
+
+async def _assess_direct(
+    vm_id: str,
+    target: dict[str, str],
+    executor: SandboxExecutor,
+) -> dict[str, Any]:
+    """Assess via raw sudo -n /usr/bin/docker calls (direct_sudo mode)."""
     docker_check = await executor.execute(
         vm_id, target["hostname"], target["username"], target["key_path"],
         command=privileged("/usr/bin/docker info >/dev/null 2>&1 && echo ok"),
@@ -112,7 +196,6 @@ async def assess_node(
             "nothing_to_do": True,
         }
 
-    # Get system df
     df_result = await executor.execute(
         vm_id, target["hostname"], target["username"], target["key_path"],
         command=privileged("/usr/bin/docker system df 2>/dev/null"),
@@ -120,7 +203,6 @@ async def assess_node(
     )
     system_df = df_result.stdout.strip() if df_result.success else ""
 
-    # Count dangling images
     dangling_result = await executor.execute(
         vm_id, target["hostname"], target["username"], target["key_path"],
         command=privileged("/usr/bin/docker images -f dangling=true -q 2>/dev/null | wc -l"),
@@ -134,7 +216,6 @@ async def assess_node(
         }
     dangling = _parse_int(dangling_result.stdout) if dangling_result.success else 0
 
-    # Count stopped containers
     stopped_result = await executor.execute(
         vm_id, target["hostname"], target["username"], target["key_path"],
         command=privileged("/usr/bin/docker ps -a -f status=exited -q 2>/dev/null | wc -l"),
@@ -178,13 +259,9 @@ async def execute_node(
 ) -> dict[str, Any]:
     """Execute docker prune.
 
-    Default (aggressive=False, finding #12):
-      docker image prune -f        — dangling images only
-      docker container prune -f    — exited containers only
-      Does NOT use 'docker system prune -a' which removes ALL unused images.
-
-    Aggressive (aggressive=True, risk tier HIGH, requires approval):
-      docker system prune -af      — all unused images + containers + networks.
+    Branches on docker_command_mode:
+    - wrapper: calls errander-docker-prune-safe or errander-docker-prune-aggressive
+    - direct_sudo: original behavior with sudo -n /usr/bin/docker
 
     Dry-run: docker system df (show reclaimable space).
     """
@@ -192,20 +269,29 @@ async def execute_node(
     target = _get_connection_params(state)
     dry_run = state.get("dry_run", True)
     aggressive = state.get("docker_prune_aggressive", False)
+    mode = state.get("docker_command_mode", "wrapper")
 
-    if aggressive:
-        live_cmd = privileged("/usr/bin/docker system prune -af 2>&1")
-    else:
-        # Safe default: dangling images + stopped containers only
-        live_cmd = (
-            privileged("/usr/bin/docker image prune -f 2>&1") + " && "
-            + privileged("/usr/bin/docker container prune -f 2>&1")
+    if mode == "wrapper":
+        wrapper = (
+            "errander-docker-prune-aggressive" if aggressive else "errander-docker-prune-safe"
         )
+        live_cmd = privileged(f"/usr/local/sbin/{wrapper}")
+        simulate_cmd = privileged("/usr/local/sbin/errander-docker-assess")
+    else:
+        # direct_sudo
+        if aggressive:
+            live_cmd = privileged("/usr/bin/docker system prune -af 2>&1")
+        else:
+            live_cmd = (
+                privileged("/usr/bin/docker image prune -f 2>&1") + " && "
+                + privileged("/usr/bin/docker container prune -f 2>&1")
+            )
+        simulate_cmd = privileged("/usr/bin/docker system df 2>/dev/null")
 
     result = await executor.execute(
         vm_id, target["hostname"], target["username"], target["key_path"],
         command=live_cmd,
-        simulate_command=privileged("/usr/bin/docker system df 2>/dev/null"),
+        simulate_command=simulate_cmd,
         dry_run=dry_run,
     )
 
@@ -236,17 +322,29 @@ async def verify_node(
 
     vm_id = state["vm_id"]
     target = _get_connection_params(state)
+    mode = state.get("docker_command_mode", "wrapper")
+
+    if mode == "wrapper":
+        cmd = privileged("/usr/local/sbin/errander-docker-assess")
+    else:
+        cmd = privileged("/usr/bin/docker system df 2>/dev/null")
 
     result = await executor.execute(
         vm_id, target["hostname"], target["username"], target["key_path"],
-        command=privileged("/usr/bin/docker system df 2>/dev/null"),
+        command=cmd,
         dry_run=False,
     )
 
     if not result.success:
         return {"error": "Failed to verify Docker disk usage after prune"}
 
-    return {"disk_after": result.stdout.strip()}
+    if mode == "wrapper":
+        parsed = parse_assess_output(result.stdout)
+        disk_after = parsed["system_df"]
+    else:
+        disk_after = result.stdout.strip()
+
+    return {"disk_after": disk_after}
 
 
 # --- Helpers ---
@@ -266,6 +364,64 @@ def _parse_int(s: str) -> int:
         return int(s.strip())
     except (ValueError, AttributeError):
         return 0
+
+
+def parse_assess_output(stdout: str) -> dict[str, Any]:
+    """Parse the errander-docker-assess wrapper output.
+
+    Expected format:
+        reachable=yes|no
+        dangling_images=N
+        stopped_containers=N
+        error=<optional error message>
+        system_df_begin
+        <raw docker system df output>
+        system_df_end
+
+    Returns a dict with parsed fields. Missing fields default to safe values.
+    """
+    result: dict[str, Any] = {
+        "reachable": False,
+        "dangling_images": 0,
+        "stopped_containers": 0,
+        "error": None,
+        "system_df": "",
+    }
+    lines = stdout.splitlines()
+    in_df_block = False
+    df_lines: list[str] = []
+    for raw in lines:
+        line = raw.rstrip()
+        if line == "system_df_begin":
+            in_df_block = True
+            continue
+        if line == "system_df_end":
+            in_df_block = False
+            continue
+        if in_df_block:
+            df_lines.append(line)
+            continue
+        if "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip()
+        value = value.strip()
+        if key == "reachable":
+            result["reachable"] = value.lower() in ("yes", "true", "1")
+        elif key == "dangling_images":
+            try:
+                result["dangling_images"] = int(value)
+            except ValueError:
+                pass
+        elif key == "stopped_containers":
+            try:
+                result["stopped_containers"] = int(value)
+            except ValueError:
+                pass
+        elif key == "error":
+            result["error"] = value or None
+    result["system_df"] = "\n".join(df_lines)
+    return result
 
 
 # --- Routing ---

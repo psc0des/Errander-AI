@@ -694,6 +694,7 @@ async def run_env_batch(
         "vm_results": [],
         "env_name": env_name,
         "env_policy": env_schema.approval_policy,
+        "docker_command_mode": env_schema.docker_command_mode,
         "ai_db_path": ai_db_path,
         "is_deferred_reapproval": is_deferred_reapproval,
     }

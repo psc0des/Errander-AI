@@ -127,6 +127,9 @@ class VMGraphState(TypedDict, total=False):
     # Critical services monitored pre/post patching for health regressions.
     critical_services: list[str]
 
+    # Docker command mode: "wrapper" | "direct_sudo" | "disabled" (default: "wrapper")
+    docker_command_mode: str
+
 
 # --- Node functions ---
 
@@ -309,17 +312,41 @@ async def sudo_preflight_node(
     action_types = {a.get("action_type") for a in planned}
     batch_id = state.get("batch_id", "unknown")
 
+    docker_mode = state.get("docker_command_mode", "wrapper")
+
     # Collect binaries required by the planned action types + OS family.
     required: list[str] = []
     for action_type in action_types:
         if action_type == "patching":
             key = "patching_dnf" if os_family == "rhel" else "patching_apt"
+        elif action_type == "docker_prune":
+            if docker_mode == "disabled":
+                continue  # no preflight needed
+            # Map mode to privilege key: "wrapper" → "docker_prune_wrapper",
+            # "direct_sudo" → "docker_prune_direct"
+            key = "docker_prune_wrapper" if docker_mode == "wrapper" else "docker_prune_direct"
         else:
             key = str(action_type)
         required.extend(REQUIRED_BINARIES_BY_ACTION.get(key, []))
 
     if not required:
         return {}
+
+    # Emit a warning audit event when direct_sudo Docker mode is planned.
+    if docker_mode == "direct_sudo" and any(a.get("action_type") == "docker_prune" for a in planned):
+        logger.warning(
+            "VM %s using direct_sudo Docker mode — not production hardened",
+            vm_id,
+        )
+        if audit_store is not None:
+            await audit_store.log_event(AuditEvent(
+                event_type=EventType.SUDO_PREFLIGHT_FAILED,
+                batch_id=batch_id,
+                vm_id=vm_id,
+                action_type="docker_prune",
+                detail="WARNING: direct_sudo Docker mode is not production hardened",
+                metadata={"docker_command_mode": "direct_sudo"},
+            ), dry_run=False)
 
     # Deduplicate while preserving order.
     seen: set[str] = set()
@@ -652,6 +679,7 @@ async def _run_docker_prune(
         "dry_run": state.get("dry_run", True),
         "docker_available": bool(vm_info.get("docker_available", True)),
         "docker_prune_aggressive": bool(action_params.get("aggressive", False)),
+        "docker_command_mode": str(state.get("docker_command_mode", "wrapper")),
         "hostname": state.get("hostname", ""),  # type: ignore[typeddict-unknown-key]
         "username": state.get("ssh_user", ""),
         "key_path": state.get("ssh_key_path", ""),

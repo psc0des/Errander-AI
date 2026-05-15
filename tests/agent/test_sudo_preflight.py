@@ -120,3 +120,80 @@ def test_apt_simulate_no_sudo() -> None:
     apt = AptManager()
     cmd = apt.simulate_upgrade()
     assert "sudo" not in cmd
+
+
+# --- Docker command mode preflight tests ---
+
+@pytest.mark.asyncio
+async def test_wrapper_mode_preflight_checks_wrapper_paths() -> None:
+    state = {
+        "dry_run": False, "vm_id": "v1",
+        "hostname": "h", "ssh_user": "u", "ssh_key_path": "k",
+        "os_family": "ubuntu",
+        "docker_command_mode": "wrapper",
+        "planned_actions": [{"action_type": "docker_prune"}],
+    }
+    executor = MagicMock()
+    mock_result = MagicMock(success=True, stdout="SUDO_OK /usr/local/sbin/errander-docker-assess\n", stderr="")
+    executor.execute = AsyncMock(return_value=mock_result)
+    await sudo_preflight_node(state, executor=executor)
+    called_cmd = executor.execute.await_args.kwargs.get("command") or ""
+    assert "errander-docker-assess" in called_cmd
+    assert "/usr/bin/docker" not in called_cmd
+
+
+@pytest.mark.asyncio
+async def test_direct_sudo_mode_preflight_checks_usr_bin_docker() -> None:
+    state = {
+        "dry_run": False, "vm_id": "v1",
+        "hostname": "h", "ssh_user": "u", "ssh_key_path": "k",
+        "os_family": "ubuntu",
+        "docker_command_mode": "direct_sudo",
+        "planned_actions": [{"action_type": "docker_prune"}],
+    }
+    executor = MagicMock()
+    mock_result = MagicMock(success=True, stdout="SUDO_OK /usr/bin/docker\n", stderr="")
+    executor.execute = AsyncMock(return_value=mock_result)
+    await sudo_preflight_node(state, executor=executor)
+    called_cmd = executor.execute.await_args.kwargs.get("command") or ""
+    assert "/usr/bin/docker" in called_cmd
+
+
+@pytest.mark.asyncio
+async def test_direct_sudo_mode_emits_warning_audit_event() -> None:
+    state = {
+        "dry_run": False, "vm_id": "v1",
+        "hostname": "h", "ssh_user": "u", "ssh_key_path": "k",
+        "os_family": "ubuntu",
+        "docker_command_mode": "direct_sudo",
+        "batch_id": "b1",
+        "planned_actions": [{"action_type": "docker_prune"}],
+    }
+    executor = MagicMock()
+    mock_result = MagicMock(success=True, stdout="SUDO_OK /usr/bin/docker\n", stderr="")
+    executor.execute = AsyncMock(return_value=mock_result)
+    audit_store = MagicMock()
+    audit_store.log_event = AsyncMock()
+    await sudo_preflight_node(state, executor=executor, audit_store=audit_store)
+    # At least one logged event should contain the direct_sudo warning
+    logged_events = [c.args[0] for c in audit_store.log_event.await_args_list]
+    assert any("direct_sudo" in (e.detail or "") for e in logged_events)
+
+
+@pytest.mark.asyncio
+async def test_disabled_mode_preflight_skips_docker() -> None:
+    state = {
+        "dry_run": False, "vm_id": "v1",
+        "hostname": "h", "ssh_user": "u", "ssh_key_path": "k",
+        "os_family": "ubuntu",
+        "docker_command_mode": "disabled",
+        "planned_actions": [{"action_type": "docker_prune"}],
+    }
+    executor = MagicMock()
+    mock_result = MagicMock(success=True, stdout="", stderr="")
+    executor.execute = AsyncMock(return_value=mock_result)
+    await sudo_preflight_node(state, executor=executor)
+    # Either executor was not called at all (no other actions), or docker paths absent
+    if executor.execute.await_count > 0:
+        called_cmd = executor.execute.await_args.kwargs.get("command") or ""
+        assert "docker" not in called_cmd

@@ -24,7 +24,7 @@ from __future__ import annotations
 import logging
 import math
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Annotated, Any, TypedDict
 
 from langgraph.graph import END, StateGraph
@@ -150,6 +150,9 @@ class BatchGraphState(TypedDict, total=False):
     # Per-decision AI audit DB path (finding #3.4) — serializable for Send()
     ai_db_path: str
 
+    # Docker command mode: "wrapper" | "direct_sudo" | "disabled" (default: "wrapper")
+    docker_command_mode: str
+
 
 # --- Node functions ---
 
@@ -167,7 +170,7 @@ async def init_batch_node(
 
     return {
         "batch_id": batch_id,
-        "batch_started_at": datetime.now(tz=timezone.utc).isoformat(),
+        "batch_started_at": datetime.now(tz=UTC).isoformat(),
         # Rolling updates
         "rolling_update_percentage": _s.rolling_update_percentage,
         "wave_failure_threshold": _s.wave_failure_threshold,
@@ -208,7 +211,7 @@ async def validate_window_node(
         logger.debug("No maintenance window configured — proceeding")
         return {}
 
-    now = datetime.now(tz=timezone.utc)
+    now = datetime.now(tz=UTC)
     if check_window_from_config(now, window):
         logger.info("Maintenance window check passed")
         return {}
@@ -282,7 +285,7 @@ async def validate_targets_node(
                         batch_id=batch_id,
                         vm_id=vm_id,
                         detail=msg,
-                        timestamp=datetime.now(tz=timezone.utc),
+                        timestamp=datetime.now(tz=UTC),
                         metadata={
                             "declared": declared_os,
                             "detected": detected_family.value,
@@ -312,7 +315,7 @@ async def validate_targets_node(
                     batch_id=batch_id,
                     vm_id=vm_id,
                     detail=f"Target validation failed: {exc}",
-                    timestamp=datetime.now(tz=timezone.utc),
+                    timestamp=datetime.now(tz=UTC),
                 )
             )
         except ValueError as exc:
@@ -325,7 +328,7 @@ async def validate_targets_node(
                     batch_id=batch_id,
                     vm_id=vm_id,
                     detail=f"Unsupported OS: {exc}",
-                    timestamp=datetime.now(tz=timezone.utc),
+                    timestamp=datetime.now(tz=UTC),
                 )
             )
 
@@ -371,7 +374,7 @@ async def check_fleet_health_node(
                 event_type=EventType.FLEET_ABORT,
                 batch_id=batch_id,
                 detail=msg,
-                timestamp=datetime.now(tz=timezone.utc),
+                timestamp=datetime.now(tz=UTC),
                 metadata={
                     "healthy": len(healthy),
                     "failed": len(failed),
@@ -563,8 +566,8 @@ async def run_vm_node(
                 "action_type": "unknown",
                 "status": ActionStatus.FAILED.value,
                 "vm_id": state.get("vm_id", "unknown"),
-                "started_at": datetime.now(tz=timezone.utc).isoformat(),
-                "completed_at": datetime.now(tz=timezone.utc).isoformat(),
+                "started_at": datetime.now(tz=UTC).isoformat(),
+                "completed_at": datetime.now(tz=UTC).isoformat(),
                 "detail": "vm graph raised exception",
                 "error": str(exc),
             }],
@@ -642,7 +645,7 @@ async def generate_report_node(state: BatchGraphState) -> dict[str, Any]:
 
     batch_report = BatchReport(
         batch_id=batch_id,
-        generated_at=datetime.now(tz=timezone.utc),
+        generated_at=datetime.now(tz=UTC),
         vm_action_results=raw_results,
         disk_growth_alerts=disk_growth_alerts,
         drift_changes=drift_changes,
@@ -656,8 +659,8 @@ async def generate_report_node(state: BatchGraphState) -> dict[str, Any]:
         try:
             started_at = datetime.fromisoformat(started_at_str)
             if started_at.tzinfo is None:
-                started_at = started_at.replace(tzinfo=timezone.utc)
-            batch_duration = (datetime.now(tz=timezone.utc) - started_at).total_seconds()
+                started_at = started_at.replace(tzinfo=UTC)
+            batch_duration = (datetime.now(tz=UTC) - started_at).total_seconds()
             BATCH_DURATION.observe(batch_duration)
         except (ValueError, TypeError):
             pass  # Skip metric if timestamp is unparseable
@@ -951,7 +954,7 @@ async def approval_gate_node(
     # Live approved outside window → defer execution to next window start.
     # Dry-run always runs immediately (sandbox is window-agnostic).
     if approved and not dry_run and window is not None:
-        now = datetime.now(tz=timezone.utc)
+        now = datetime.now(tz=UTC)
         if not check_window_from_config(now, window):
             next_open = next_window_open(now, window)
             if deferred_store is not None:
@@ -1117,6 +1120,7 @@ def make_fan_out_router(
         batch_id = state.get("batch_id", "unknown")
         dry_run = state.get("dry_run", True)
         env_policy = state.get("env_policy", "strict")
+        docker_command_mode = state.get("docker_command_mode", "wrapper")
 
         return [
             Send(
@@ -1130,6 +1134,7 @@ def make_fan_out_router(
                     ssh_key_path=str(t["ssh_key_path"]),
                     os_family=str(t.get("os_family", "ubuntu")),
                     env_policy=env_policy,
+                    docker_command_mode=docker_command_mode,
                     locked=False,
                     results=[],
                     current_action_index=0,
@@ -1196,6 +1201,7 @@ def make_wave_dispatcher(
 
         env_policy = state.get("env_policy", "strict")
         ai_db_path = state.get("ai_db_path", "")
+        docker_command_mode = state.get("docker_command_mode", "wrapper")
 
         # Build approved plan lookup: vm_id → planned_actions.
         # Execution MUST follow the approved plan — the VM graph skips re-planning
@@ -1238,6 +1244,7 @@ def make_wave_dispatcher(
                         os_family=str(t.get("os_family", "ubuntu")),
                         env_policy=env_policy,
                         ai_db_path=ai_db_path,
+                        docker_command_mode=docker_command_mode,
                         locked=False,
                         results=[],
                         current_action_index=0,

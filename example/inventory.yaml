@@ -39,6 +39,14 @@ environments:
       - tuesday
       - thursday
     maintenance_timezone: UTC
+    # docker_command_mode controls how Errander invokes Docker on this env's VMs.
+    # - "wrapper" (default, production): uses root-owned wrapper scripts at
+    #     /usr/local/sbin/errander-docker-{assess,prune-safe,prune-aggressive}.
+    #     This is the secure mode — narrow sudoers, no raw `sudo docker`.
+    # - "direct_sudo": uses `sudo -n /usr/bin/docker ...` directly. Lab/pre-prod
+    #     only. Logs a warning every batch. Not enterprise-hardened.
+    # - "disabled": Errander will not plan or execute docker_prune on this env.
+    docker_command_mode: wrapper
     # Environment-wide critical services — applies to all hosts unless overridden.
     critical_services:
       - prometheus-node-exporter

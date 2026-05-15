@@ -1,10 +1,18 @@
 # Errander-AI — Project Status
 
 ## Last Updated
-2026-05-15
+2026-05-16
 
 ## Current Phase
-**Phase D — COMPLETE.** Operator Assistant Layer MVP (2 commits, Sonnet, 2026-05-15).
+**Phase C — COMPLETE.** Prometheus HTTP adapter (2 commits, Sonnet, 2026-05-16).
+
+P0-1 (immutable signed plan artifact) is next.
+
+### Phase C Completed (2026-05-16)
+- **Commit 1**: `errander/integrations/prometheus.py` — `PrometheusClient` (3 node_exporter metrics, 5s timeout, best-effort); `prometheus_base_url` in Settings; `prometheus_metrics` field on `VMSignalSummary` + `ProbeVMResult`; `all_prometheus_metrics` property on `DigestReport`. 10 new tests.
+- **Commit 2**: Wired into `probe_vm()`, `run_env_probe()`, `_build_context()`, `_format_prompt()`, `render_digest_report()`, and all 3 main.py call sites. 12 new tests.
+- **1452 tests passing, 111 skipped.**
+- ruff: All checks passed. mypy: 76 source files, no issues.
 
 Phase C (Prometheus adapter) is next if needed; otherwise the core platform is feature-complete for HITL-first operation.
 
@@ -45,8 +53,9 @@ Phase C (Prometheus adapter) is next if needed; otherwise the core platform is f
 - **SRE sign-off**: validated in `ai_sre_audit_v2.md` "Two-Layer AI Architecture Validation" section. SRE's anchor phrase: *"MCP belongs in the operator brain, not in the execution hands."*
 
 ## Next
-- Phase C: Direct Python adapters for Prometheus, ELK (optional, additive)
-- P0-1/P0-2: Immutable plan artifact + exact deferred replay (needed for autonomous mode)
+- P0-1: Immutable signed plan artifact — operator approves exact packages/versions/commands
+- P0-2: Deferred replay of exact artifact (no re-planning at window open time)
+- Note: `autonomous_live_apply_enabled = False` stays False after P0-1/P0-2. Flipping it is a separate conscious decision.
 - Phase D: Operator Assistant Layer (MCP / CLI / Skills for investigation and recommendation)
 
 ## Completed

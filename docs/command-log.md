@@ -1,5 +1,31 @@
 # Errander-AI Command Log
 
+## Phase C — Prometheus HTTP Adapter (2026-05-16)
+
+```bash
+# Baseline
+uv run pytest --tb=no -q   # 1430 passed, 111 skipped
+
+# Commit 1: PrometheusClient + model fields
+uv run pytest tests/integrations/test_prometheus.py -v   # 10 passed
+uv run ruff check errander/integrations/prometheus.py errander/config/settings.py
+uv run mypy errander/integrations/prometheus.py errander/config/settings.py
+
+# Commit 2: wiring
+uv run pytest tests/agent/test_probe_prometheus.py tests/agent/test_operator_assistant_prometheus.py -v   # 12 passed
+uv run ruff check errander/
+uv run mypy errander/
+uv run pytest --tb=short -q   # 1452 passed
+
+# Commits
+git add errander/integrations/prometheus.py errander/config/settings.py errander/models/analysis.py errander/models/reports.py tests/integrations/test_prometheus.py
+git commit -m "feat: PrometheusClient adapter -- instant query, fetch_vm_metrics, best-effort"
+git add errander/agent/probe.py errander/agent/operator_assistant.py errander/observability/reporting.py errander/main.py example/settings.yaml tests/agent/test_probe_prometheus.py tests/agent/test_operator_assistant_prometheus.py
+git commit -m "feat: wire PrometheusClient into probe digest and --ask context"
+```
+**What**: Phase C -- thin Prometheus HTTP adapter enriching probe digests and --ask context with CPU/memory/load metrics.
+**Why**: Phase B probe and Phase D --ask had no live time-series data; Prometheus fills the gap when deployed.
+
 ## Phase D — Operator Assistant Layer MVP (2026-05-15)
 
 ```bash

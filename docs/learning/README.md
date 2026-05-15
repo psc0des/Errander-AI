@@ -41,3 +41,4 @@ Index of all learning docs created during development. Each doc explains what wa
 | 33 | [sudo Privilege Model + Docker Wrapper Mode + check-targets CLI](33-sudo-privilege-model.md) | Phase A | `33-sudo-privilege-model.md` |
 | 34 | [Proactive Signals: Daily Probe, DigestReport, render_digest_report](34-proactive-signals.md) | Phase B | `34-proactive-signals.md` |
 | 35 | [Operator Assistant: Layer A Investigation + --ask CLI](35-operator-assistant.md) | Phase D | `35-operator-assistant.md` |
+| 36 | [Prometheus HTTP Adapter: node_exporter metrics in probe + --ask](36-prometheus-adapter.md) | Phase C | `36-prometheus-adapter.md` |

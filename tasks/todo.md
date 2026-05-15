@@ -1,5 +1,20 @@
 # Errander-AI — Task Tracking
 
+## Phase C — Prometheus HTTP Adapter (2026-05-16, completed)
+
+- [x] Commit 1: `errander/integrations/prometheus.py` — `PrometheusClient`, 3 node_exporter metrics, best-effort
+- [x] Commit 1: `Settings.prometheus_base_url` (env: `ERRANDER_PROMETHEUS_BASE_URL`, default `""`)
+- [x] Commit 1: `VMSignalSummary.prometheus_metrics` + `ProbeVMResult.prometheus_metrics` + `DigestReport.all_prometheus_metrics`
+- [x] Commit 1: 10 new tests (`tests/integrations/test_prometheus.py`)
+- [x] Commit 2: Wire into `probe_vm()`, `run_env_probe()`, `OperatorAssistant._build_context()`, `_format_prompt()`, `render_digest_report()`
+- [x] Commit 2: Wire into 3 main.py call sites (`run_env_probe_main`, `run_ask_query`, scheduler closure) with `try/finally close()`
+- [x] Commit 2: `example/settings.yaml` documents `prometheus_base_url`
+- [x] Commit 2: 12 new tests (`test_probe_prometheus.py`, `test_operator_assistant_prometheus.py`)
+- [x] 1452 tests passing, 111 skipped — 0 regressions
+- [x] ruff: All checks passed. mypy: 76 source files, no issues.
+- [x] Optional invariant: `prometheus_base_url=""` → no client built, probe + ask unaffected
+- [x] `docs/learning/36-prometheus-adapter.md` created
+
 ## Phase D — Operator Assistant Layer MVP (2026-05-15, completed)
 
 - [x] Commit 1: `errander/models/analysis.py` — `AssistantResponse` (Pydantic), `VMSignalSummary`, `FleetContext` dataclasses

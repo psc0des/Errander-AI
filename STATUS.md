@@ -14,8 +14,6 @@ P0-1 (immutable signed plan artifact) is next.
 - **1452 tests passing, 111 skipped.**
 - ruff: All checks passed. mypy: 76 source files, no issues.
 
-Phase C (Prometheus adapter) is next if needed; otherwise the core platform is feature-complete for HITL-first operation.
-
 ### Phase D Completed (2026-05-15)
 - **Commit 1**: `errander/agent/operator_assistant.py` — `OperatorAssistant` class with `_build_context()`, `_format_prompt()`, `_fallback_response()`; `errander/models/analysis.py` — `AssistantResponse`, `VMSignalSummary`, `FleetContext`. 16 new tests.
 - **Commit 2**: `--ask "question"` CLI flag + `run_ask_query()` in `main.py`; LLM wired when `llm_base_url` set, fallback when absent. 10 new tests.

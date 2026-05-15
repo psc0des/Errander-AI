@@ -721,3 +721,13 @@ fi
 **Lesson 2 -- Deferred imports inside async functions need concrete class names for isinstance.** `from __future__ import annotations` makes all annotations lazy strings at runtime. If you put a class in `TYPE_CHECKING` and then try `isinstance(x, TheClass)`, you get `NameError` because `TheClass` is never imported at runtime. Fix: inside the function body, import the concrete class with a short alias (`from errander.safety.disk_history import VMDiskHistoryStore as _DiskStore`) and use that alias for isinstance checks.
 
 **Rule**: TYPE_CHECKING imports are for type annotations only. isinstance checks always need a runtime import.
+
+---
+
+## Phase C -- Prometheus adapter
+
+**Lesson 1 -- Camelcase class aliases must also be CamelCase (N814).** Ruff rule N814 fires when a CamelCase class is imported with a constant-style alias: `from errander.integrations.prometheus import PrometheusClient as _PC`. The underscore-prefixed all-caps alias `_PC` reads as a constant. Fix: keep the alias CamelCase (`as _PrometheusClient`). Same rule applies to any `from X import ClassName as _ALIAS` pattern.
+
+**Lesson 2 -- `resp.json()` returns `object`, not `Any`, in typed aiohttp stubs.** mypy sees `await resp.json()` as returning `object`. Accessing `.get()` on `object` is an `[attr-defined]` error. Fix: `isinstance(raw, dict)` first, then `isinstance(data_block, dict)`, then `isinstance(rows, list)` at each level of nesting. This narrowing chain is required for every JSON response body that has nested structure -- don't assign to `dict[str, object]` directly, narrow step by step.
+
+**Rule**: Every `await resp.json()` in a typed file needs explicit isinstance narrowing before any attribute access. The pattern from `_query_instant()` is the reference implementation.

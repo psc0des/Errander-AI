@@ -367,12 +367,12 @@ class PlannedAction(BaseModel):
     estimated_duration_seconds: int
 ```
 
-> **Current implementation note (pre-P0-1):** The plan artifact contains action categories
-> and parameters, not exact pinned commands or package versions. Commands are generated at
-> live execution time against current VM state. Operators approving a batch are approving
-> action types and parameters — not exact package versions or shell commands.
-> `commands`, `dry_run_output`, and `rollback_commands` are target fields for the P0-1
-> immutable artifact milestone and are not yet populated.
+> **P0-1 implemented:** The plan artifact includes exact packages and versions for patching
+> actions, assessed via SSH before the plan hash is computed (`enrich_plan_node`). The
+> operator approval message shows exact package names with current→target versions. The plan
+> hash commits to this data — not just action categories. Disk cleanup shows disk usage %
+> and apt cache size. The honest disclaimer ("approving categories, not exact commands") has
+> been removed; operators now approve a cryptographically-committed artifact.
 
 ---
 

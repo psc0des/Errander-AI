@@ -953,35 +953,83 @@ def _format_plan_for_approval(
     plan_hash: str,
     is_deferred_reapproval: bool = False,
 ) -> str:
-    """Format a batch plan for the Slack approval message."""
+    """Format a batch plan for the Slack approval message.
+
+    P0-1: Shows exact packages/versions from enrich_plan_node preview data.
+    Hash commits to this exact artifact.
+    """
     header = (
-        f":repeat: *Deferred Re-Approval Required* — Batch `{batch_id}`"
+        f":repeat: *Deferred Re-Approval Required* -- Batch `{batch_id}`"
         if is_deferred_reapproval
-        else f"*Live Execution Approval* — Batch `{batch_id}`"
+        else f"*Live Execution Approval* -- Batch `{batch_id}`"
     )
     lines = [
         header,
-        f"Plan: {plan_id} | Hash: `{plan_hash[:12]}`",
+        f"Plan: `{plan_id}` | Hash: `{plan_hash[:16]}`",
         f"{len(vm_plans)} VM(s):",
     ]
     for plan in vm_plans:
         vm_id = plan.get("vm_id", "?")
-        action_summaries: list[str] = []
-        _pa2 = plan.get("planned_actions")
-        for a in (_pa2 if isinstance(_pa2, list) else []):
-            label = str(a.get("action_type", "?"))
-            params = a.get("params") or {}
-            if isinstance(params, dict) and params:
-                param_str = ", ".join(f"{k}={v}" for k, v in list(params.items())[:3])
-                label = f"{label}({param_str})"
-            action_summaries.append(label)
-        lines.append(f"  • `{vm_id}`: {', '.join(action_summaries) or 'no actions planned'}")
+        lines.append(f"\n  *`{vm_id}`*:")
+        raw_actions = plan.get("planned_actions")
+        for a in (raw_actions if isinstance(raw_actions, list) else []):
+            action_type = str(a.get("action_type", "?"))
+            preview = a.get("preview") if isinstance(a.get("preview"), dict) else {}
+            assert isinstance(preview, dict)
+
+            if action_type == "patching":
+                packages = preview.get("packages")
+                if packages and isinstance(packages, list):
+                    lines.append(f"    - patching: {len(packages)} package(s)")
+                    for pkg in packages[:10]:
+                        if not isinstance(pkg, dict):
+                            continue
+                        name = str(pkg.get("name", "?"))
+                        cur = str(pkg.get("current", ""))
+                        tgt = str(pkg.get("target", ""))
+                        if cur and tgt:
+                            lines.append(f"      `{name}`  {cur} -> {tgt}")
+                        else:
+                            lines.append(f"      `{name}`")
+                    if len(packages) > 10:
+                        lines.append(f"      ... and {len(packages) - 10} more")
+                elif "error" in preview:
+                    lines.append(
+                        f"    - patching (preview unavailable: {str(preview['error'])[:80]})"
+                    )
+                else:
+                    # No preview data — show params as before (dry-run or enrich skipped)
+                    params = a.get("params") or {}
+                    label = "patching"
+                    if isinstance(params, dict) and params:
+                        param_str = ", ".join(f"{k}={v}" for k, v in list(params.items())[:3])
+                        label = f"patching({param_str})"
+                    lines.append(f"    - {label}")
+
+            elif action_type == "disk_cleanup":
+                disk_pct = preview.get("disk_pct")
+                cache_mb = preview.get("apt_cache_mb")
+                detail_parts = []
+                if isinstance(disk_pct, int):
+                    detail_parts.append(f"{disk_pct}% disk used")
+                if isinstance(cache_mb, int):
+                    detail_parts.append(f"~{cache_mb}MB apt cache")
+                detail = f": {', '.join(detail_parts)}" if detail_parts else ""
+                lines.append(f"    - disk_cleanup{detail}")
+
+            else:
+                params = a.get("params") or {}
+                label = action_type
+                if isinstance(params, dict) and params:
+                    param_str = ", ".join(f"{k}={v}" for k, v in list(params.items())[:3])
+                    label = f"{action_type}({param_str})"
+                lines.append(f"    - {label}")
+
     lines.extend([
         "",
-        ":warning: *You are approving action categories and parameters, not exact pinned "
-        "commands or package versions. VM state will be re-evaluated at execution time.*",
+        f"Hash `{plan_hash[:16]}` commits to the exact packages and actions listed above.",
         "",
-        "Reply :white_check_mark: to approve or :x: to reject (timeout → auto-REJECT)",
+        "Reply :white_check_mark: to approve or :x: to reject (timeout -> auto-REJECT)",
     ])
     return "\n".join(lines)
 

@@ -608,10 +608,10 @@ async def _basic_auth_middleware(
     ui_password: str = request.app.get(_UI_PASSWORD_KEY, "")
 
     if not ui_user or not ui_password:
-        return await handler(request)
+        return await handler(request)  # type: ignore[operator, no-any-return]
 
     if not request.path.startswith("/ui"):
-        return await handler(request)
+        return await handler(request)  # type: ignore[operator, no-any-return]
 
     auth_header = request.headers.get("Authorization", "")
     if auth_header.startswith("Basic "):
@@ -622,7 +622,7 @@ async def _basic_auth_middleware(
             user_ok = secrets.compare_digest(provided_user, ui_user)
             pass_ok = secrets.compare_digest(provided_pass, ui_password)
             if user_ok and pass_ok:
-                return await handler(request)
+                return await handler(request)  # type: ignore[operator, no-any-return]
         except Exception:
             pass
 
@@ -642,7 +642,7 @@ async def _csrf_middleware(
     if request.method == "POST" and request.path.startswith("/ui") and not await _csrf_verify(request):
         logger.warning("CSRF check failed for %s %s", request.method, request.path)
         raise web.HTTPForbidden(reason="CSRF token missing or invalid")
-    return await handler(request)
+    return await handler(request)  # type: ignore[operator, no-any-return]
 
 
 # ---------------------------------------------------------------------------
@@ -805,7 +805,8 @@ async def _ui_settings_get(request: web.Request) -> web.Response:
         elif has_db:
             source_label = '<span class="form-src db">overridden in UI</span>'
             disabled = ""
-            display_val = "••••••••" if (is_secret and db_row.get("is_secret")) else str(db_row.get("value", ""))
+            _val = db_row.get("value", "") if db_row is not None else ""
+            display_val = "••••••••" if (is_secret and db_row is not None and db_row.get("is_secret")) else str(_val)
         else:
             source_label = '<span class="form-src yaml">from YAML/default</span>'
             disabled = ""
@@ -1022,12 +1023,12 @@ async def _ui_inventory_get(request: web.Request) -> web.Response:
 
     for env_name, vms in sorted(by_env.items()):
         items_html = ""
-        for vm in vms:
-            vm_name = _esc(str(vm["vm_name"]))
-            host = _esc(str(vm["host"]))
-            os_fam = _esc(str(vm["os_family"]))
-            disabled = bool(vm["disabled"])
-            is_adhoc = bool(vm["is_adhoc"])
+        for vm_row in vms:
+            vm_name = _esc(str(vm_row["vm_name"]))
+            host = _esc(str(vm_row["host"]))
+            os_fam = _esc(str(vm_row["os_family"]))
+            disabled = bool(vm_row["disabled"])
+            is_adhoc = bool(vm_row["is_adhoc"])
 
             name_cls = "inv-dis" if disabled else ""
             source_badge = (
@@ -1050,7 +1051,7 @@ async def _ui_inventory_get(request: web.Request) -> web.Response:
             if is_adhoc:
                 delete_form = (
                     f'<form method="POST" '
-                    f'action="/ui/inventory/delete/{_uq(env_name)}/{_uq(str(vm["vm_name"]))}"'
+                    f'action="/ui/inventory/delete/{_uq(env_name)}/{_uq(str(vm_row["vm_name"]))}"'
                     f' style="display:inline">'
                     f'<button type="submit" class="btn-del">Delete</button>'
                     f'</form>'
@@ -1583,7 +1584,7 @@ async def start_metrics_server(
     import os as _os
     csrf_secret = _os.urandom(32).hex()  # fresh per server start
 
-    app = web.Application(middlewares=[_basic_auth_middleware, _csrf_middleware])
+    app = web.Application(middlewares=[_basic_auth_middleware, _csrf_middleware])  # type: ignore[list-item]
     app[_AUDIT_STORE_KEY] = audit_store
     app[_APPROVAL_MANAGER_KEY] = approval_manager
     app[_OVERRIDES_STORE_KEY] = overrides_store

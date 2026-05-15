@@ -741,7 +741,7 @@ def page_fleet() -> str:
     <div class="card batch-card">
       <div class="batch-header">
         <span class="batch-id">{b['id']}</span>
-        {audit_badge(b['status'])}
+        {audit_badge(str(b['status']))}
       </div>
       <div class="batch-bars">
         <div class="bar-row">

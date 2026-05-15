@@ -811,7 +811,8 @@ async def _run_backup_verify(
     index = state.get("current_action_index", 0)
     backup_paths: list[str] = []
     if index < len(planned):
-        params = planned[index].get("params", {})
+        params_raw = planned[index].get("params")
+        params: dict[str, object] = params_raw if isinstance(params_raw, dict) else {}
         bp_raw = params.get("backup_paths")
         backup_paths = [str(p) for p in bp_raw] if isinstance(bp_raw, list) else []
 

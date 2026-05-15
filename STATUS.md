@@ -4,9 +4,18 @@
 2026-05-15
 
 ## Current Phase
-**Phase A — COMPLETE.** Privilege model fixes (3 commits, Sonnet, 2026-05-15).
+**Phase A.5 — COMPLETE.** Static gates cleanup (6 commits, Sonnet, 2026-05-15).
 
-Phase B (proactive signals) and Phase C (observability adapters) are next. No work started on either yet.
+Phase B (proactive signals) is next. No work started yet.
+
+### Phase A.5 Completed (2026-05-15)
+- `uv run ruff check errander/` → **All checks passed** (382 → 0 errors)
+- `uv run mypy errander/` → **Success: no issues found in 72 source files** (112 → 0 errors)
+- 1378 tests passing, 111 skipped, 0 regressions
+- 28 `# type: ignore` comments total (down from ~30 pre-existing before this session)
+- line-length bumped 100 → 120; `errander/web/` exempt from E501 (inline HTML/CSS templates)
+- Real bug fixed: `run_bootstrap_known_hosts` used `load_inventory` (returns `list[VMTarget]`) instead of `validate_inventory` (returns `InventoryConfig`)
+- APScheduler import-untyped suppressed via `[[tool.mypy.overrides]]` in pyproject.toml
 
 ### Phase A Completed (2026-05-15)
 - **Commit 1**: `/usr/bin/env` removed from apt privileged commands; `apt --simulate` drops sudo; `SUDO_PREFLIGHT_FAILED` event type added; `sudo_preflight_node` migrated. 9 new tests.

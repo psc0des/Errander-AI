@@ -792,7 +792,8 @@ def _max_risk_tier_from_plans(vm_plans: list[dict[str, object]]) -> RiskTier:
     max_tier = RiskTier.LOW
     tier_order = {RiskTier.LOW: 0, RiskTier.MEDIUM: 1, RiskTier.HIGH: 2, RiskTier.CRITICAL: 3}
     for plan in vm_plans:
-        for action in (plan.get("planned_actions") or []):
+        _pa = plan.get("planned_actions")
+        for action in (_pa if isinstance(_pa, list) else []):
             try:
                 tier = RiskTier(str(action.get("risk_tier", "low")))
                 if tier_order.get(tier, 0) > tier_order.get(max_tier, 0):
@@ -823,7 +824,8 @@ def _format_plan_for_approval(
     for plan in vm_plans:
         vm_id = plan.get("vm_id", "?")
         action_summaries: list[str] = []
-        for a in (plan.get("planned_actions") or []):
+        _pa2 = plan.get("planned_actions")
+        for a in (_pa2 if isinstance(_pa2, list) else []):
             label = str(a.get("action_type", "?"))
             params = a.get("params") or {}
             if isinstance(params, dict) and params:
@@ -1145,7 +1147,7 @@ def make_fan_out_router(
                     drift_detection_enabled=state.get("drift_detection_enabled", False),
                     drift_abort_on_detection=state.get("drift_abort_on_detection", False),
                     disable_failed_login_check=bool(t.get("disable_failed_login_check", False)),
-                    critical_services=list(t.get("critical_services") or []),
+                    critical_services=list(t.get("critical_services") or []),  # type: ignore[call-overload]
                 ),
             )
             for t in healthy
@@ -1209,7 +1211,7 @@ def make_wave_dispatcher(
         # Execution MUST follow the approved plan — the VM graph skips re-planning
         # when pre_approved_plan_set=True.
         vm_id_to_approved_actions: dict[str, list[dict[str, object]]] = {
-            str(p["vm_id"]): list(p.get("planned_actions") or [])  # type: ignore[arg-type]
+            str(p["vm_id"]): list(p.get("planned_actions") or [])  # type: ignore[call-overload]
             for p in state.get("vm_plans", [])
         }
 
@@ -1258,7 +1260,7 @@ def make_wave_dispatcher(
                         drift_detection_enabled=state.get("drift_detection_enabled", False),
                         drift_abort_on_detection=state.get("drift_abort_on_detection", False),
                         disable_failed_login_check=bool(t.get("disable_failed_login_check", False)),
-                        critical_services=list(t.get("critical_services") or []),
+                        critical_services=list(t.get("critical_services") or []),  # type: ignore[call-overload]
                     ),
                 )
             )
@@ -1410,7 +1412,7 @@ def build_batch_graph(
     builder.add_node("validate_window", _validate_window)
     builder.add_node("validate_targets", _validate_targets)
     builder.add_node("check_fleet_health", _check_fleet)
-    builder.add_node("plan_vm", _plan_vm)
+    builder.add_node("plan_vm", _plan_vm)  # type: ignore[type-var]
     builder.add_node("collect_plans", collect_plans_node)
     builder.add_node("generate_plan_artifact", generate_plan_artifact_node)
     builder.add_node("approval_gate", _approval_gate)

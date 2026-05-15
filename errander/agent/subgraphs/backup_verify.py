@@ -206,9 +206,9 @@ def verify_node(state: BackupVerifyGraphState) -> dict[str, Any]:
 def _get_connection_params(state: BackupVerifyGraphState) -> dict[str, str]:
     """Extract SSH connection params from state."""
     return {
-        "hostname": state.get("hostname", ""),
-        "username": state.get("username", ""),
-        "key_path": state.get("key_path", ""),
+        "hostname": str(state.get("hostname", "")),
+        "username": str(state.get("username", "")),
+        "key_path": str(state.get("key_path", "")),
     }
 
 

@@ -15,9 +15,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from errander.models.reports import DriftChange
     from errander.models.actions import ActionResult
-    from errander.models.reports import BatchReport
+    from errander.models.reports import BatchReport, DriftChange
     from errander.safety.vm_state import VMState
 
 

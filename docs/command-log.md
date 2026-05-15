@@ -1242,3 +1242,23 @@ git push origin main
 **Why**: Audit identified that empty approved plan was falsy → re-planned after approval (plan/apply violation); missing VM in live mode silently re-planned; verify_node could return synthetic data; DNF rollback declared success without verifying versions.
 
 ## Phase A — Privilege Model Fixes (2026-05-15)
+
+## Phase A.5 — Static gates cleanup (2026-05-15)
+
+```bash
+# Diagnostic baseline
+uv run ruff check errander/ --statistics    # 382 errors
+uv run mypy errander/ 2>&1 | grep "error:" | sed 's/.*\[\(.*\)\]$/\1/' | sort | uniq -c | sort -rn  # 112 errors
+
+# 6-commit cleanup sequence
+uv run ruff check errander/ --fix           # Commit 1: auto-fixes
+uv run ruff check errander/ --statistics    # track burn-down
+uv run mypy errander/                       # check mypy after each commit
+uv run pytest --tb=short -q                 # verify 1378 passing after each commit
+
+# Final state
+uv run ruff check errander/   # All checks passed
+uv run mypy errander/         # Success: no issues found in 72 source files
+```
+**What**: Phase A.5 — closed the SRE audit's persistent ruff (~382) and mypy (~112) findings. Zero errors in both linters.
+**Why**: README/CLAUDE.md claimed "strict mypy" but it didn't pass. Closes the honesty gap before Phase B.

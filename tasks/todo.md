@@ -1,5 +1,17 @@
 # Errander-AI — Task Tracking
 
+## Phase A.5 — Static gates cleanup (2026-05-15, completed)
+
+- [x] Commit 1: ruff auto-fixes (382 → 327, -76)
+- [x] Commit 2: ruff manual — TC001/TC003/E402/N814/SIM/B905/F841 (327 → 270, -57)
+- [x] Commit 3: ruff E501 — line-length 100→120, per-file-ignores for web/, surgical splits (270 → 0)
+- [x] Commit 4: mypy unused-ignore + type-arg (112 → 86, -26)
+- [x] Commit 5: mypy call-overload/arg-type/attr-defined (86 → 38, -48); fix real bug run_bootstrap_known_hosts
+- [x] Commit 6: remaining mypy + docs (38 → 0)
+- [x] `uv run ruff check errander/` passes clean
+- [x] `uv run mypy errander/` passes clean (72 source files, no issues)
+- [x] 1378 tests passing, 111 skipped
+
 ## Phase A — Privilege Model Fixes (2026-05-15) — handed to Sonnet
 
 Implementation plan: `tasks/sonnet-phase-a-plan.md`

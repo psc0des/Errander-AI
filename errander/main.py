@@ -452,7 +452,7 @@ async def run_bootstrap_known_hosts(env_name: str, inventory_path: Path) -> int:
     errors = 0
 
     for target in targets:
-        hostname = target.hostname
+        hostname = target.host
         ssh_user = env.ssh_user
         key_path = str(Path(env.ssh_key_path).expanduser())
 
@@ -1050,8 +1050,8 @@ async def async_main(args: argparse.Namespace) -> int:
                 continue
 
             async def _run(
-                _env=env_name,
-                _schema=env_schema,
+                _env: str = env_name,
+                _schema: EnvironmentSchema = env_schema,
             ) -> None:
                 await run_env_batch(
                     env_name=_env,
@@ -1080,8 +1080,8 @@ async def async_main(args: argparse.Namespace) -> int:
                 opener_cron = window_start_cron(env_window)
 
                 async def _open_window(
-                    _env=env_name,
-                    _schema=env_schema,
+                    _env: str = env_name,
+                    _schema: EnvironmentSchema = env_schema,
                 ) -> None:
                     await _window_opener(
                         env_name=_env,

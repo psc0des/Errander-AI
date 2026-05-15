@@ -355,10 +355,12 @@ After starting, visit `http://localhost:9090/ui`:
 ## Key Commands
 
 ```bash
-uv run pytest                                          # Run all 1303 tests
+uv run pytest                                          # Run all 1403 tests
 uv run ruff check .                                    # Lint
 uv run mypy .                                          # Type check
 uv run python -m errander --run-now --env dev --dry-run # Dry-run a batch
+uv run python -m errander --probe-now dev              # Daily probe (read-only, no maintenance)
+uv run python -m errander --check-targets dev          # Pre-flight VM readiness check
 uv run python -m errander --check-llm                  # Verify LLM endpoint
 uv run python -m errander --audit --batches            # View recent batches
 uv run python -m errander --audit --batch-id <id>      # Events for a batch

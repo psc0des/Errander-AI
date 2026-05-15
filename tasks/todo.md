@@ -1,5 +1,22 @@
 # Errander-AI — Task Tracking
 
+## Phase B — Proactive Signals MVP (2026-05-15, completed)
+
+- [x] Commit 1: `errander/agent/probe.py` — `probe_vm()` + `run_env_probe()` calling existing SRE nodes directly
+- [x] Commit 1: `ProbeVMResult` + `DigestReport` dataclasses in `errander/models/reports.py`
+- [x] Commit 1: `render_digest_report()` in `errander/observability/reporting.py`
+- [x] Commit 1: `DAILY_PROBE_STARTED`, `DAILY_PROBE_COMPLETE`, `DAILY_PROBE_FAILED` event types
+- [x] Commit 1: 16 new tests (`test_probe.py`, `test_digest_reporting.py`)
+- [x] Commit 2: `signals: str | None` field in `ScheduleSchema`
+- [x] Commit 2: `post_digest()` on `SlackClient`
+- [x] Commit 2: `run_env_probe_main()` + `--probe-now <env>` CLI in `main.py`
+- [x] Commit 2: Probe cron job registration in scheduler loop
+- [x] Commit 2: `example/settings.yaml` documenting `signals` cron
+- [x] Commit 2: 9 new tests (`test_main_probe.py`)
+- [x] 1403 tests passing, 111 skipped — 0 regressions
+- [x] ruff: All checks passed. mypy: 73 source files, no issues.
+- [x] `docs/learning/34-proactive-signals.md` created
+
 ## Phase A.5 — Static gates cleanup (2026-05-15, completed)
 
 - [x] Commit 1: ruff auto-fixes (382 → 327, -76)

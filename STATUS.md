@@ -4,9 +4,15 @@
 2026-05-15
 
 ## Current Phase
-**Phase A.5 — COMPLETE.** Static gates cleanup (6 commits, Sonnet, 2026-05-15).
+**Phase B — COMPLETE.** Proactive signals MVP (2 commits, Sonnet, 2026-05-15).
 
-Phase B (proactive signals) is next. No work started yet.
+Phase C (Prometheus adapter) or Phase D (Operator Assistant Layer) is next.
+
+### Phase B Completed (2026-05-15)
+- **Commit 1**: `errander/agent/probe.py` — standalone probe runner calling existing SRE nodes directly (no new LangGraph); `DigestReport` + `ProbeVMResult` models; `render_digest_report()` deterministic Slack renderer; 3 new event types (`DAILY_PROBE_*`). 16 new tests.
+- **Commit 2**: `signals` field in `ScheduleSchema`; `post_digest()` on `SlackClient`; `run_env_probe_main()` and `--probe-now <env>` CLI; probe cron job wired into scheduler loop. 9 new tests.
+- **1403 tests passing, 111 skipped.**
+- ruff: All checks passed. mypy: 73 source files, no issues.
 
 ### Phase A.5 Completed (2026-05-15)
 - `uv run ruff check errander/` → **All checks passed** (382 → 0 errors)
@@ -31,8 +37,8 @@ Phase B (proactive signals) is next. No work started yet.
 - **SRE sign-off**: validated in `ai_sre_audit_v2.md` "Two-Layer AI Architecture Validation" section. SRE's anchor phrase: *"MCP belongs in the operator brain, not in the execution hands."*
 
 ## Next
-- Phase B: ProactiveSignal engine + signal catalog + native SSH probes + daily digest
-- Phase C: Direct Python adapters for Prometheus, ELK (optional)
+- Phase C: Direct Python adapters for Prometheus, ELK (optional, never required)
+- Phase D: Operator Assistant Layer (MCP / CLI / Skills for investigation and recommendation)
 - Phase D: Operator Assistant Layer (MCP / CLI / Skills for investigation and recommendation)
 
 ## Completed

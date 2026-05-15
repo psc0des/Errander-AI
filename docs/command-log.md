@@ -1,5 +1,35 @@
 # Errander-AI Command Log
 
+## Phase B — Proactive Signals MVP (2026-05-15)
+
+```bash
+# Baseline before starting
+uv run pytest --tb=no -q   # 1378 passed, 111 skipped
+
+# Commit 1: core probe infrastructure
+uv run pytest tests/agent/test_probe.py tests/observability/test_digest_reporting.py -v
+uv run ruff check errander/agent/probe.py errander/models/reports.py errander/observability/reporting.py
+uv run mypy errander/agent/probe.py errander/models/reports.py errander/observability/reporting.py
+
+# Commit 2: scheduling + CLI + Slack
+uv run pytest tests/test_main_probe.py -v
+uv run ruff check errander/config/schema.py errander/integrations/slack.py errander/main.py
+uv run mypy errander/config/schema.py errander/integrations/slack.py errander/main.py
+
+# Full suite after each commit
+uv run pytest --tb=short -q   # 1394 after Commit 1, 1403 after Commit 2
+uv run ruff check errander/
+uv run mypy errander/
+
+# Commits
+git add errander/agent/probe.py errander/models/reports.py errander/models/events.py errander/observability/reporting.py tests/agent/test_probe.py tests/observability/test_digest_reporting.py
+git commit -m "feat: proactive signals core -- probe runner, DigestReport, render_digest_report"
+git add errander/config/schema.py errander/integrations/slack.py errander/main.py example/settings.yaml tests/test_main_probe.py
+git commit -m "feat: daily probe scheduling -- signals_cron config, --probe-now CLI, Slack digest posting"
+```
+**What**: Phase B MVP — standalone daily probe that runs independently of maintenance batches.
+**Why**: Operators need daily visibility into fleet health (disk, drift, logins) without waiting for maintenance windows.
+
 ## Phase A — Privilege Model Fixes (2026-05-15)
 
 ```bash

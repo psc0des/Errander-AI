@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import aiosqlite
 
@@ -110,7 +110,7 @@ class DeferredExecutionStore:
         If a record with the same batch_id already exists it is replaced.
         """
         assert self._db is not None, "Call initialize() first"
-        now = datetime.now(tz=timezone.utc)
+        now = datetime.now(tz=UTC)
         expiry_at = window_start + timedelta(days=_EXPIRY_DAYS)
         await self._db.execute(
             _UPSERT_SQL,
@@ -137,7 +137,7 @@ class DeferredExecutionStore:
     async def get_pending(self, env_name: str) -> list[DeferredExecution]:
         """Return all non-expired pending records for an environment."""
         assert self._db is not None, "Call initialize() first"
-        now = datetime.now(tz=timezone.utc).isoformat()
+        now = datetime.now(tz=UTC).isoformat()
         cursor = await self._db.execute(
             """
             SELECT batch_id, env_name, approved_at, approved_by,
@@ -165,7 +165,7 @@ class DeferredExecutionStore:
     async def mark_done(self, batch_id: str) -> None:
         """Transition a record from executing → done and stamp executed_at."""
         assert self._db is not None, "Call initialize() first"
-        now = datetime.now(tz=timezone.utc).isoformat()
+        now = datetime.now(tz=UTC).isoformat()
         await self._db.execute(
             "UPDATE deferred_executions SET status = 'done', executed_at = ? WHERE batch_id = ?",
             (now, batch_id),
@@ -175,7 +175,7 @@ class DeferredExecutionStore:
     async def expire_old(self) -> int:
         """Mark all past-expiry pending records as expired. Returns count expired."""
         assert self._db is not None, "Call initialize() first"
-        now = datetime.now(tz=timezone.utc).isoformat()
+        now = datetime.now(tz=UTC).isoformat()
         cursor = await self._db.execute(
             "UPDATE deferred_executions SET status = 'expired' WHERE status = 'pending' AND expiry_at <= ?",
             (now,),

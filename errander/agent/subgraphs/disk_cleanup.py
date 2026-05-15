@@ -25,7 +25,7 @@ from typing import Any, TypedDict
 
 from langgraph.graph import END, StateGraph
 
-from errander.execution.commands import AptManager, DnfManager, get_package_manager
+from errander.execution.commands import AptManager, DnfManager
 from errander.execution.privilege import privileged
 from errander.execution.sandbox import SandboxExecutor
 from errander.execution.ssh import SSHResult

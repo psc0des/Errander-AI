@@ -10,7 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from errander.models.actions import Action, ActionResult
 
@@ -72,7 +72,7 @@ class ImmutablePlan:
     plan_id: str
     batch_id: str
     env_name: str
-    created_at: datetime = field(default_factory=lambda: datetime.now(tz=timezone.utc))
+    created_at: datetime = field(default_factory=lambda: datetime.now(tz=UTC))
     vm_plans: list[dict[str, object]] = field(default_factory=list)
     plan_hash: str = field(init=False)
 

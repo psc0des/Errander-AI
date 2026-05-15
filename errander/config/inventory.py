@@ -11,7 +11,12 @@ from __future__ import annotations
 from pathlib import Path
 
 from errander.config.policies import BUILTIN_POLICIES
-from errander.config.schema import EnvironmentSchema, InventoryConfig, TargetSchema, validate_inventory
+from errander.config.schema import (
+    EnvironmentSchema,
+    InventoryConfig,
+    TargetSchema,
+    validate_inventory,
+)
 from errander.models.vm import OSFamily, VMTarget
 
 

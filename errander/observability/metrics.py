@@ -18,7 +18,7 @@ from __future__ import annotations
 import html as _html_mod
 import logging
 import secrets
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from urllib.parse import quote as _url_quote
 
 _esc = _html_mod.escape  # escape untrusted data before HTML interpolation
@@ -34,8 +34,8 @@ from prometheus_client import (
 )
 
 from errander.models.events import EventType
-from errander.safety.approval import ApprovalManager
 from errander.models.vm import VMTarget
+from errander.safety.approval import ApprovalManager
 from errander.safety.audit import AuditStore
 from errander.safety.overrides import OverridesStore
 
@@ -523,7 +523,7 @@ def _page(
     badge = (
         f'<span class="sb-badge">{pending_count}</span>' if pending_count > 0 else ""
     )
-    ts = datetime.now(tz=timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    ts = datetime.now(tz=UTC).strftime("%Y-%m-%d %H:%M UTC")
 
     html = f"""<!doctype html>
 <html lang="en">
@@ -722,9 +722,9 @@ def _inject_csrf(request: web.Request, html: str) -> tuple[str, str]:
 
     The nonce is returned so it can be set as a cookie on the response.
     """
-    import os
     import hashlib
     import hmac
+    import os
 
     secret = request.app.get(_CSRF_SECRET_KEY, "")
     nonce = request.cookies.get(_CSRF_COOKIE, "") or os.urandom(16).hex()
@@ -840,7 +840,7 @@ async def _ui_settings_get(request: web.Request) -> web.Response:
         + datalist_tag
         + _section("LLM Provider")
         + '<div class="form-card">'
-        + f'<form method="POST" action="/ui/settings">'
+        + '<form method="POST" action="/ui/settings">'
         + rows_html
         + '<div style="margin-top:1.2rem">'
         + '<button type="submit" class="btn-save">Save Changes</button>'
@@ -893,7 +893,6 @@ async def _ui_settings_post(request: web.Request) -> web.Response:
         )
 
         if audit is not None:
-            from datetime import UTC
             from errander.models.events import AuditEvent, EventType
             await audit.log_event(AuditEvent(
                 event_type=EventType.SETTINGS_CHANGED,
@@ -925,6 +924,7 @@ async def _ui_settings_test_llm(request: web.Request) -> web.Response:
     Accepts POST so secrets never appear in URLs, browser history, or access logs.
     """
     import os as _os
+
     from errander.integrations.llm import LLMClient
 
     data = await request.post()
@@ -1255,8 +1255,8 @@ async def _ui_dashboard(request: web.Request) -> web.Response:
         cards
         + _section("Recent Batches", batch_count)
         + table
-        + f'<p class="note">Auto-refreshes every 30s &nbsp;&middot;&nbsp;'
-        f'<a href="/ui/batches">See all Batches &rarr;</a></p>'
+        + '<p class="note">Auto-refreshes every 30s &nbsp;&middot;&nbsp;'
+        '<a href="/ui/batches">See all Batches &rarr;</a></p>'
     )
     return _page("Dashboard", body, refresh=30, pending_count=pending_count)
 
@@ -1296,7 +1296,7 @@ async def _ui_batch_detail(request: web.Request) -> web.Response:
         return _page(f"Batch: {batch_id}", '<div class="nc">Audit store not connected.</div>')
 
     events = await store.get_events(batch_id=batch_id, limit=500)
-    back = f'<a class="back-a" href="/ui/batches">\u2190 All batches</a>'
+    back = '<a class="back-a" href="/ui/batches">\u2190 All batches</a>'
 
     if not events:
         return _page(
@@ -1387,7 +1387,7 @@ async def _ui_approvals(request: web.Request) -> web.Response:
         cards: list[str] = []
         for p in pending:
             elapsed_min = int(
-                (datetime.now(tz=timezone.utc) - p.posted_at).total_seconds()
+                (datetime.now(tz=UTC) - p.posted_at).total_seconds()
             ) // 60
             channel = "also posted to Slack" if p.slack_message_ts else "UI only"
             rpt = (

@@ -15,7 +15,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import asyncssh
 
@@ -43,8 +43,8 @@ class SSHResult:
     stderr: str
     command: str
     duration_seconds: float = 0.0
-    started_at: datetime = field(default_factory=lambda: datetime.now(tz=timezone.utc))
-    completed_at: datetime = field(default_factory=lambda: datetime.now(tz=timezone.utc))
+    started_at: datetime = field(default_factory=lambda: datetime.now(tz=UTC))
+    completed_at: datetime = field(default_factory=lambda: datetime.now(tz=UTC))
 
     @property
     def success(self) -> bool:
@@ -226,7 +226,7 @@ class SSHConnectionManager:
         effective_timeout = timeout if timeout is not None else self._command_timeout
         conn = await self.get_connection(vm_id, hostname, username, key_path)
 
-        started_at = datetime.now(tz=timezone.utc)
+        started_at = datetime.now(tz=UTC)
         try:
             result = await asyncio.wait_for(
                 conn.run(command, check=False),
@@ -244,7 +244,7 @@ class SSHConnectionManager:
             msg = f"SSH command failed on {vm_id}: {e}"
             raise ConnectionError(msg) from e
 
-        completed_at = datetime.now(tz=timezone.utc)
+        completed_at = datetime.now(tz=UTC)
         duration = (completed_at - started_at).total_seconds()
 
         exit_code = result.exit_status if result.exit_status is not None else 255

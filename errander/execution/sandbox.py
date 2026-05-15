@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from errander.execution.ssh import SSHConnectionManager, SSHResult
 
@@ -33,7 +33,7 @@ class CommandRecord:
     simulate_command: str | None
     result: SSHResult
     vm_id: str
-    timestamp: datetime = field(default_factory=lambda: datetime.now(tz=timezone.utc))
+    timestamp: datetime = field(default_factory=lambda: datetime.now(tz=UTC))
 
 
 class SandboxExecutor:
@@ -160,7 +160,7 @@ class SandboxExecutor:
             "[DRY-RUN] %s: would execute: %s",
             vm_id, command,
         )
-        now = datetime.now(tz=timezone.utc)
+        now = datetime.now(tz=UTC)
         return SSHResult(
             exit_code=0,
             stdout=f"[DRY-RUN] Would execute: {command}",

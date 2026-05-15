@@ -1,10 +1,9 @@
 """errander — Operations Hub development UI server."""
 from __future__ import annotations
 
-import asyncio
 from aiohttp import web
 
-from .data import VMS, APPROVALS, AUDIT_EVENTS, BATCHES, VM_ACTIONS, ACTIVE_BATCH
+from .data import ACTIVE_BATCH, APPROVALS, AUDIT_EVENTS, BATCHES, VM_ACTIONS, VMS
 
 PORT = 8099
 
@@ -568,10 +567,10 @@ def env_tag(env: str) -> str:
 
 def os_tag(os_str: str) -> str:
     if "Ubuntu" in os_str:
-        return f'<span class="tag tag-ubuntu">Ubuntu</span>'
+        return '<span class="tag tag-ubuntu">Ubuntu</span>'
     if "RHEL" in os_str:
-        return f'<span class="tag tag-rhel">RHEL</span>'
-    return f'<span class="tag tag-debian">Debian</span>'
+        return '<span class="tag tag-rhel">RHEL</span>'
+    return '<span class="tag tag-debian">Debian</span>'
 
 
 def env_badge_top(env: str) -> str:
@@ -842,7 +841,7 @@ def page_approvals() -> str:
           </div>
         </div>"""
 
-    resolved = f"""
+    resolved = """
     <div class="card resolved-card" style="margin-top:8px">
       <span class="resolved-label">RESOLVED TODAY — 14 actions</span>
       <span style="margin-left:auto; color:#94a3b8; font-size:1rem">›</span>
@@ -913,7 +912,7 @@ def page_vm(hostname: str) -> str:
 
     callout = ""
     if vm["disk"] >= 75:
-        callout = f'<div class="callout callout-amber">⚠ Root partition above 75% threshold. Disk cleanup recommended: /tmp eligible, apt cache ~1.2 GB available.</div>'
+        callout = '<div class="callout callout-amber">⚠ Root partition above 75% threshold. Disk cleanup recommended: /tmp eligible, apt cache ~1.2 GB available.</div>'
 
     return f"""
     <div class="detail-top">
@@ -1031,7 +1030,7 @@ def page_batches() -> str:
     completed = sum(1 for b in BATCHES if b["status"] == "completed")
     success_rate = round(completed / total * 100, 1)
 
-    kpis = f"""
+    kpis = """
     <div class="kpi-grid" style="margin-bottom:20px">
       <div class="card kpi-tile kpi-top-border" style="border-color:#4f46e5">
         <div class="kpi-label">Total Batches (30d)</div>
@@ -1921,8 +1920,8 @@ def create_app() -> web.Application:
 
 def run() -> None:
     app = create_app()
-    print(f"\n  errander-ai Operations Hub")
-    print(f"  ---------------------------------")
+    print("\n  errander-ai Operations Hub")
+    print("  ---------------------------------")
     print(f"  http://localhost:{PORT}\n")
     web.run_app(app, host="127.0.0.1", port=PORT, print=lambda _: None)
 

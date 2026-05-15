@@ -17,7 +17,7 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from errander.models.events import AuditEvent, EventType
 from errander.safety.audit import AuditStore
@@ -49,7 +49,7 @@ async def save_baseline(
             batch_id="",
             vm_id=vm_id,
             detail="Baseline snapshot saved",
-            timestamp=datetime.now(tz=timezone.utc),
+            timestamp=datetime.now(tz=UTC),
             metadata={"baseline": json.dumps(vm_info, default=str)},
         )
     )

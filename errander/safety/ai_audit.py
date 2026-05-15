@@ -11,10 +11,9 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-import json
 import logging
-from datetime import datetime, timezone
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 
 import aiosqlite
 
@@ -93,7 +92,7 @@ class AIDecision:
     latency_ms: float | None = None
     prompt_tokens: int | None = None
     completion_tokens: int | None = None
-    timestamp: datetime = field(default_factory=lambda: datetime.now(tz=timezone.utc))
+    timestamp: datetime = field(default_factory=lambda: datetime.now(tz=UTC))
 
     @staticmethod
     def hash_prompt(prompt: str) -> str:

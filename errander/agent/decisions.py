@@ -15,7 +15,7 @@ from __future__ import annotations
 import logging
 import re
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
@@ -385,7 +385,7 @@ def _parse_action_types(
 # --- Template report (fallback) ---
 
 def _template_report(results: list[ActionResult], batch_id: str) -> str:
-    now = datetime.now(tz=timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    now = datetime.now(tz=UTC).strftime("%Y-%m-%d %H:%M UTC")
     by_vm: dict[str, list[ActionResult]] = {}
     for r in results:
         by_vm.setdefault(r.vm_id, []).append(r)

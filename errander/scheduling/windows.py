@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 logger = logging.getLogger(__name__)
@@ -188,7 +188,7 @@ def next_window_open(now: datetime, window: MaintenanceWindow) -> datetime:
         )
         day_name = candidate_start.strftime("%A").lower()
         if day_name in window.days and candidate_start > local_now:
-            return candidate_start.astimezone(timezone.utc)
+            return candidate_start.astimezone(UTC)
 
     msg = "Could not find next window open within 8 days"
     raise RuntimeError(msg)

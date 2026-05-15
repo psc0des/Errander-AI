@@ -643,8 +643,8 @@ async def rollback_node(
     Always sets status=FAILED (the upgrade itself failed); error details
     include rollback outcome for the audit trail.
     """
-    from errander.safety.rollback import rollback_action
     from errander.models.actions import ActionType as _AT
+    from errander.safety.rollback import rollback_action
 
     vm_id = state["vm_id"]
     target = _get_connection_params(state)

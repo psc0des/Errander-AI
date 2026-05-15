@@ -20,7 +20,7 @@ import logging
 import os
 import re
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -45,11 +45,11 @@ class LockInfo:
     def is_expired(self, now: datetime | None = None) -> bool:
         """Check if the lock has expired based on TTL."""
         if now is None:
-            now = datetime.now(tz=timezone.utc)
+            now = datetime.now(tz=UTC)
         acquired = datetime.fromisoformat(self.acquired_at)
         # Ensure acquired has timezone info for comparison
         if acquired.tzinfo is None:
-            acquired = acquired.replace(tzinfo=timezone.utc)
+            acquired = acquired.replace(tzinfo=UTC)
         elapsed = (now - acquired).total_seconds()
         return elapsed > self.ttl_seconds
 
@@ -116,7 +116,7 @@ class FileLocker:
         lock_info = LockInfo(
             vm_id=vm_id,
             batch_id=batch_id,
-            acquired_at=datetime.now(tz=timezone.utc).isoformat(),
+            acquired_at=datetime.now(tz=UTC).isoformat(),
             ttl_seconds=ttl_seconds,
         )
         payload: dict[str, object] = asdict(lock_info)

@@ -20,7 +20,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from errander.integrations.slack import APPROVE_REACTION, REJECT_REACTION, SlackClient, SlackError
 
@@ -92,10 +92,10 @@ async def poll_approval(
     Returns:
         (approved: bool, approver_user_id: str | None)
     """
-    deadline = datetime.now(tz=timezone.utc).timestamp() + timeout_seconds
+    deadline = datetime.now(tz=UTC).timestamp() + timeout_seconds
     polls = 0
 
-    while datetime.now(tz=timezone.utc).timestamp() < deadline:
+    while datetime.now(tz=UTC).timestamp() < deadline:
         polls += 1
         try:
             reactions = await slack_client.get_reactions(message_ts)
@@ -125,7 +125,7 @@ async def poll_approval(
                 )
                 return True, users[0]
 
-        remaining = int(deadline - datetime.now(tz=timezone.utc).timestamp())
+        remaining = int(deadline - datetime.now(tz=UTC).timestamp())
         logger.debug(
             "Poll %d: no decision yet — waiting %ds (%ds remaining)",
             polls, poll_interval_seconds, remaining,
@@ -209,7 +209,7 @@ class ApprovalManager:
         approval = PendingApproval(
             batch_id=batch_id,
             report=report,
-            posted_at=datetime.now(tz=timezone.utc),
+            posted_at=datetime.now(tz=UTC),
             slack_message_ts=slack_message_ts,
         )
         self._pending[batch_id] = approval
@@ -259,7 +259,7 @@ class ApprovalManager:
                 approval._event.wait(),
                 timeout=float(timeout_seconds),
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             self.decide(batch_id, approved=False, user_id=None)
             return False, None
         return approval.result
@@ -307,7 +307,7 @@ async def await_dual_approval(
     Returns:
         (approved: bool, approver_user_id: str | None)
     """
-    wait_start = datetime.now(tz=timezone.utc)
+    wait_start = datetime.now(tz=UTC)
 
     # --- Step 1: post to Slack ---
     slack_ts: str | None = None
@@ -341,7 +341,7 @@ async def await_dual_approval(
                 pending._event.wait(),
                 timeout=float(timeout_seconds),
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             return False, None
         return pending.result
 
@@ -371,7 +371,7 @@ async def await_dual_approval(
 
     # Record approval wait duration (lazy import to avoid circular dependency)
     from errander.observability.metrics import APPROVAL_WAIT
-    wait_seconds = (datetime.now(tz=timezone.utc) - wait_start).total_seconds()
+    wait_seconds = (datetime.now(tz=UTC) - wait_start).total_seconds()
     APPROVAL_WAIT.observe(wait_seconds)
 
     return approved, user_id

@@ -8,9 +8,8 @@ the expected OS from inventory configuration.
 from __future__ import annotations
 
 import logging
-import re
 
-from errander.execution.ssh import SSHConnectionManager, SSHResult
+from errander.execution.ssh import SSHConnectionManager
 from errander.models.vm import OSFamily, VMInfo
 
 logger = logging.getLogger(__name__)

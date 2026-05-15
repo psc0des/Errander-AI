@@ -355,7 +355,7 @@ After starting, visit `http://localhost:9090/ui`:
 ## Key Commands
 
 ```bash
-uv run pytest                                          # Run all 1403 tests
+uv run pytest                                          # Run all 1430 tests
 uv run ruff check .                                    # Lint
 uv run mypy .                                          # Type check
 uv run python -m errander --run-now --env dev --dry-run # Dry-run a batch

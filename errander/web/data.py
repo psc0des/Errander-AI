@@ -1,7 +1,7 @@
 """Dummy data for the development UI."""
 from __future__ import annotations
 
-VMS: list[dict] = [
+VMS: list[dict[str, object]] = [
     {"hostname": "prod-web-01",    "os": "Ubuntu 22.04", "env": "PROD",    "status": "ok",      "disk": 34, "last_action": "2026-04-23 02:14", "ip": "10.0.1.10", "uptime": "62d 4h 11m",  "note": ""},
     {"hostname": "prod-web-02",    "os": "Ubuntu 22.04", "env": "PROD",    "status": "ok",      "disk": 41, "last_action": "2026-04-23 02:12", "ip": "10.0.1.11", "uptime": "62d 4h 11m",  "note": ""},
     {"hostname": "prod-api-01",    "os": "RHEL 8.7",     "env": "PROD",    "status": "warning", "disk": 78, "last_action": "2026-04-23 02:08", "ip": "10.0.1.12", "uptime": "47d 14h 22m", "note": "Disk usage high"},
@@ -15,7 +15,7 @@ VMS: list[dict] = [
     {"hostname": "dev-api-01",     "os": "Ubuntu 22.04", "env": "DEV",     "status": "ok",      "disk": 55, "last_action": "2026-04-22 14:00", "ip": "10.0.3.12", "uptime": "3d 8h 47m",   "note": ""},
 ]
 
-APPROVALS: list[dict] = [
+APPROVALS: list[dict[str, object]] = [
     {
         "id": "appr-001",
         "action": "SERVICE RESTART",
@@ -60,7 +60,7 @@ APPROVALS: list[dict] = [
     },
 ]
 
-AUDIT_EVENTS: list[dict] = [
+AUDIT_EVENTS: list[dict[str, object]] = [
     {"ts": "2026-04-23 02:14:33", "batch": "prod-0423-0200", "vm": "prod-api-01",    "action": "Log Rotation",   "status": "ok",      "duration": "12s",    "op": "agent", "detail": "Rotated 1.2 GB /var/log"},
     {"ts": "2026-04-23 02:12:01", "batch": "prod-0423-0200", "vm": "prod-web-02",    "action": "OS Patching",    "status": "ok",      "duration": "3m 47s", "op": "agent", "detail": "11 packages updated"},
     {"ts": "2026-04-23 02:09:44", "batch": "prod-0423-0200", "vm": "prod-db-01",     "action": "Pre-Validation", "status": "pending", "duration": "—",      "op": "agent", "detail": "Awaiting approval: service restart"},
@@ -75,7 +75,7 @@ AUDIT_EVENTS: list[dict] = [
     {"ts": "2026-04-22 02:05:08", "batch": "prod-0422-0200", "vm": "staging-web-01", "action": "Disk Cleanup",   "status": "ok",      "duration": "6s",     "op": "agent", "detail": "Freed 1.1 GB from /tmp"},
 ]
 
-BATCHES: list[dict] = [
+BATCHES: list[dict[str, object]] = [
     {"id": "prod-0423-0200",     "started": "2026-04-23 02:00", "env": "PROD",    "vms": 11, "actions": 87, "status": "completed", "duration": "14m 32s", "errors": 2},
     {"id": "prod-0422-0200",     "started": "2026-04-22 02:00", "env": "PROD",    "vms": 11, "actions": 91, "status": "completed", "duration": "12m 08s", "errors": 0},
     {"id": "staging-0422-1400",  "started": "2026-04-22 14:00", "env": "STAGING", "vms":  3, "actions": 24, "status": "completed", "duration": "4m 22s",  "errors": 0},
@@ -86,7 +86,7 @@ BATCHES: list[dict] = [
     {"id": "prod-0416-0200",     "started": "2026-04-16 02:00", "env": "PROD",    "vms": 11, "actions": 88, "status": "completed", "duration": "10m 59s", "errors": 0},
 ]
 
-VM_ACTIONS: dict[str, list[dict]] = {
+VM_ACTIONS: dict[str, list[dict[str, object]]] = {
     "prod-api-01": [
         {"ts": "2026-04-23 02:08", "action": "Log Rotation",   "status": "ok",      "duration": "12s",    "op": "agent", "detail": "/var/log rotated 1.2 GB"},
         {"ts": "2026-04-23 02:06", "action": "OS Patching",    "status": "ok",      "duration": "4m 18s", "op": "agent", "detail": "8 packages updated"},

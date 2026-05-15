@@ -388,7 +388,7 @@ def build_disk_cleanup_nodes() -> dict[str, Any]:
 
 def build_disk_cleanup_subgraph(
     executor: SandboxExecutor,
-) -> StateGraph:
+) -> StateGraph[DiskCleanupGraphState]:
     """Construct the disk cleanup sub-graph.
 
     Args:
@@ -397,7 +397,7 @@ def build_disk_cleanup_subgraph(
     Returns:
         StateGraph for disk cleanup (call .compile() to use).
     """
-    builder: StateGraph = StateGraph(DiskCleanupGraphState)
+    builder: StateGraph[DiskCleanupGraphState] = StateGraph(DiskCleanupGraphState)
 
     # Wrap async nodes with executor — must be async def, not lambda
     async def _assess(state: DiskCleanupGraphState) -> dict[str, Any]:

@@ -206,9 +206,9 @@ def verify_node(state: BackupVerifyGraphState) -> dict[str, Any]:
 def _get_connection_params(state: BackupVerifyGraphState) -> dict[str, str]:
     """Extract SSH connection params from state."""
     return {
-        "hostname": state.get("hostname", ""),  # type: ignore[typeddict-item]
-        "username": state.get("username", ""),  # type: ignore[typeddict-item]
-        "key_path": state.get("key_path", ""),  # type: ignore[typeddict-item]
+        "hostname": state.get("hostname", ""),
+        "username": state.get("username", ""),
+        "key_path": state.get("key_path", ""),
     }
 
 
@@ -225,7 +225,7 @@ def route_after_validate(state: BackupVerifyGraphState) -> str:
 
 def build_backup_verify_subgraph(
     executor: SandboxExecutor,
-) -> StateGraph:
+) -> StateGraph[BackupVerifyGraphState]:
     """Construct the backup verification sub-graph.
 
     Args:
@@ -234,7 +234,7 @@ def build_backup_verify_subgraph(
     Returns:
         StateGraph for backup verification (call .compile() to use).
     """
-    builder: StateGraph = StateGraph(BackupVerifyGraphState)
+    builder: StateGraph[BackupVerifyGraphState] = StateGraph(BackupVerifyGraphState)
 
     async def _assess(state: BackupVerifyGraphState) -> dict[str, Any]:
         return await assess_node(state, executor=executor)

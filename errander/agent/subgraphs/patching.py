@@ -568,9 +568,9 @@ async def service_health_post_node(
 def _get_connection_params(state: PatchingGraphState) -> dict[str, str]:
     """Extract SSH connection params from state."""
     return {
-        "hostname": state.get("hostname", ""),  # type: ignore[typeddict-item]
-        "username": state.get("username", ""),  # type: ignore[typeddict-item]
-        "key_path": state.get("key_path", ""),  # type: ignore[typeddict-item]
+        "hostname": state.get("hostname", ""),
+        "username": state.get("username", ""),
+        "key_path": state.get("key_path", ""),
     }
 
 
@@ -707,7 +707,7 @@ def build_patching_subgraph(
     sre_preflight_lock_check: bool = True,
     sre_reboot_check: bool = True,
     sre_service_check: bool = True,
-) -> StateGraph:
+) -> StateGraph[PatchingGraphState]:
     """Construct the patching sub-graph.
 
     Args:
@@ -726,7 +726,7 @@ def build_patching_subgraph(
     Returns:
         StateGraph for patching (call .compile() to use).
     """
-    builder: StateGraph = StateGraph(PatchingGraphState)
+    builder: StateGraph[PatchingGraphState] = StateGraph(PatchingGraphState)
 
     async def _preflight_lock(state: PatchingGraphState) -> dict[str, Any]:
         return await preflight_lock_node(

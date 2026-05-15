@@ -1294,7 +1294,7 @@ def build_batch_graph(
     sre_drift_settings: object = None,
     sre_failed_logins_settings: object = None,
     vm_state_store: object = None,
-) -> StateGraph:
+) -> StateGraph[BatchGraphState]:
     """Construct the batch orchestrator graph.
 
     New plan/apply flow (finding #3):
@@ -1321,7 +1321,7 @@ def build_batch_graph(
     from errander.config.settings import Settings as _Settings
     _settings: _Settings = settings if settings is not None else _Settings()
 
-    builder: StateGraph = StateGraph(BatchGraphState)
+    builder: StateGraph[BatchGraphState] = StateGraph(BatchGraphState)
 
     # --- Closures capturing injected dependencies ---
 

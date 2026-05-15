@@ -165,7 +165,7 @@ def render_batch_report(report: BatchReport) -> str:
     if drift:
         lines.append("")
         lines.append(f"*Configuration Drift* ({len(drift)} change(s))")
-        by_kind: dict[str, list] = {}
+        by_kind: dict[str, list[object]] = {}
         for d in drift:
             by_kind.setdefault(d.kind, []).append(d)
         for kind, changes in sorted(by_kind.items()):

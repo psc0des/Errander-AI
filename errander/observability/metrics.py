@@ -1262,8 +1262,7 @@ async def _ui_dashboard(request: web.Request) -> web.Response:
             str(b["event_count"]),
             ", ".join(
                 f'<a href="/ui/vms/{_uq(v)}">{_esc(v)}</a>'
-                for v in b["vm_ids"]  # type: ignore[union-attr]
-            ) or '<span style="color:var(--t3)">—</span>',
+                for v in b["vm_ids"]            ) or '<span style="color:var(--t3)">—</span>',
         ]
         for b in batches
     ]
@@ -1295,8 +1294,7 @@ async def _ui_batches(request: web.Request) -> web.Response:
             str(b["event_count"]),
             ", ".join(
                 f'<a href="/ui/vms/{_uq(v)}">{_esc(v)}</a>'
-                for v in b["vm_ids"]  # type: ignore[union-attr]
-            ) or '<span style="color:var(--t3)">—</span>',
+                for v in b["vm_ids"]            ) or '<span style="color:var(--t3)">—</span>',
         ]
         for b in batches
     ]

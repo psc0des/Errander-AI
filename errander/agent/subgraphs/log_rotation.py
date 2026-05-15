@@ -331,7 +331,7 @@ def route_after_execute(state: LogRotationGraphState) -> str:
 
 def build_log_rotation_subgraph(
     executor: SandboxExecutor,
-) -> StateGraph:
+) -> StateGraph[LogRotationGraphState]:
     """Construct the log rotation sub-graph.
 
     Args:
@@ -340,7 +340,7 @@ def build_log_rotation_subgraph(
     Returns:
         StateGraph for log rotation (call .compile() to use).
     """
-    builder: StateGraph = StateGraph(LogRotationGraphState)
+    builder: StateGraph[LogRotationGraphState] = StateGraph(LogRotationGraphState)
 
     async def _assess(state: LogRotationGraphState) -> dict[str, Any]:
         return await assess_node(state, executor=executor)

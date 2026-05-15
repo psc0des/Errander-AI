@@ -644,7 +644,7 @@ _HEALTH_CHECKS = [
     {"label": "APScheduler",      "detail": "next: 2026-05-14 02:00 UTC",  "status": "ok",   "meta": "running"},
 ]
 
-_ACTIVE_LOCKS: list[dict] = []  # empty = clean state; add dicts with vm/since/path to simulate stuck locks
+_ACTIVE_LOCKS: list[dict[str, object]] = []  # empty = clean state; add dicts with vm/since/path to simulate stuck locks
 
 _OVERRIDES = [
     ("Dry Run Mode",            "All batches simulate actions without executing on real VMs.",        True),

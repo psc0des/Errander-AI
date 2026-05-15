@@ -450,7 +450,7 @@ def route_after_execute(state: DockerPruneGraphState) -> str:
 
 def build_docker_prune_subgraph(
     executor: SandboxExecutor,
-) -> StateGraph:
+) -> StateGraph[DockerPruneGraphState]:
     """Construct the Docker prune sub-graph.
 
     Args:
@@ -459,7 +459,7 @@ def build_docker_prune_subgraph(
     Returns:
         StateGraph for Docker prune (call .compile() to use).
     """
-    builder: StateGraph = StateGraph(DockerPruneGraphState)
+    builder: StateGraph[DockerPruneGraphState] = StateGraph(DockerPruneGraphState)
 
     async def _assess(state: DockerPruneGraphState) -> dict[str, Any]:
         return await assess_node(state, executor=executor)

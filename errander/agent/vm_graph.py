@@ -209,7 +209,7 @@ async def plan_actions_node(
     vm_info = VMInfo(
         os_family=OSFamily(str(vm_info_dict.get("os_family", "ubuntu"))),
         os_version=str(vm_info_dict.get("os_version", "")),
-        disk_usage=dict(vm_info_dict.get("disk_usage", {})),  # type: ignore[arg-type]
+        disk_usage=dict(vm_info_dict.get("disk_usage", {})),
         docker_available=bool(vm_info_dict.get("docker_available", False)),
         pending_packages=int(vm_info_dict.get("pending_packages", 0)),
         uptime_seconds=float(vm_info_dict.get("uptime_seconds", 0.0)),
@@ -433,7 +433,7 @@ async def dispatch_action_node(
         action_obj = Action(
             action_type=ActionType(str(action_type)),
             risk_tier=RiskTier(str(action.get("risk_tier", "medium"))),
-            params=dict(action.get("params", {})),  # type: ignore[arg-type]
+            params=dict(action.get("params", {})),
         )
     except ValueError:
         logger.warning("Unknown action type %s on %s — skipping", action_type, vm_id)
@@ -746,11 +746,11 @@ async def _run_patching(
         "vm_id": vm_id,
         "os_family": state.get("os_family", "ubuntu"),
         "dry_run": state.get("dry_run", True),
-        "hostname": state.get("hostname", ""),  # type: ignore[typeddict-item]
-        "username": state.get("ssh_user", ""),  # type: ignore[typeddict-item]
-        "key_path": state.get("ssh_key_path", ""),  # type: ignore[typeddict-item]
-        "batch_id": state.get("batch_id", ""),  # type: ignore[typeddict-item]
-        "critical_services": list(state.get("critical_services") or []),  # type: ignore[typeddict-item]
+        "hostname": state.get("hostname", ""),  # type: ignore[typeddict-unknown-key]
+        "username": state.get("ssh_user", ""),
+        "key_path": state.get("ssh_key_path", ""),
+        "batch_id": state.get("batch_id", ""),
+        "critical_services": list(state.get("critical_services") or []),
     }
 
     try:
@@ -812,16 +812,16 @@ async def _run_backup_verify(
     backup_paths: list[str] = []
     if index < len(planned):
         params = planned[index].get("params", {})
-        backup_paths = list(params.get("backup_paths", []))  # type: ignore[union-attr]
+        backup_paths = list(params.get("backup_paths", []))
 
     sub_state: BackupVerifyGraphState = {
         "vm_id": vm_id,
         "os_family": state.get("os_family", "ubuntu"),
         "dry_run": state.get("dry_run", True),
         "backup_paths": backup_paths,
-        "hostname": state.get("hostname", ""),  # type: ignore[typeddict-item]
-        "username": state.get("ssh_user", ""),  # type: ignore[typeddict-item]
-        "key_path": state.get("ssh_key_path", ""),  # type: ignore[typeddict-item]
+        "hostname": state.get("hostname", ""),  # type: ignore[typeddict-unknown-key]
+        "username": state.get("ssh_user", ""),
+        "key_path": state.get("ssh_key_path", ""),
     }
 
     try:
@@ -1010,14 +1010,14 @@ async def disk_snapshot_node(
             detail=(
                 f"{alert.mountpoint}: {alert.used_pct_start:.1f}% → "
                 f"{alert.used_pct_end:.1f}% (+{alert.delta_pct:.1f}%) "
-                f"over {settings.window_days}d"  # type: ignore[union-attr]
+                f"over {settings.window_days}d"
             ),
             metadata={
                 "mountpoint": alert.mountpoint,
                 "used_pct_start": alert.used_pct_start,
                 "used_pct_end": alert.used_pct_end,
                 "delta_pct": alert.delta_pct,
-                "window_days": settings.window_days,  # type: ignore[union-attr]
+                "window_days": settings.window_days,
             },
         ), dry_run=state.get("dry_run", True))
 
@@ -1270,7 +1270,7 @@ def build_vm_graph(
     sre_drift_settings: object = None,
     sre_failed_logins_settings: object = None,
     vm_state_store: object = None,
-) -> StateGraph:
+) -> StateGraph[VMGraphState]:
     """Construct the per-VM maintenance graph.
 
     Args:
@@ -1282,7 +1282,7 @@ def build_vm_graph(
     Returns:
         StateGraph for per-VM maintenance (call .compile() to use).
     """
-    builder: StateGraph = StateGraph(VMGraphState)
+    builder: StateGraph[VMGraphState] = StateGraph(VMGraphState)
 
     # Compile sub-graphs once — reused across all dispatches
     disk_cleanup_compiled = build_disk_cleanup_subgraph(executor).compile()

@@ -107,8 +107,7 @@ async def poll_approval(
         # Check for reject first — explicit rejection takes priority
         for reaction in reactions:
             name = str(reaction.get("name", ""))
-            users: list[str] = list(reaction.get("users", []))  # type: ignore[arg-type]
-
+            users: list[str] = list(reaction.get("users", []))
             if name == REJECT_REACTION and users:
                 logger.info(
                     "Batch rejected by %s (reaction: %s)", users[0], name,
@@ -117,8 +116,7 @@ async def poll_approval(
 
         for reaction in reactions:
             name = str(reaction.get("name", ""))
-            users = list(reaction.get("users", []))  # type: ignore[arg-type]
-
+            users = list(reaction.get("users", []))
             if name == APPROVE_REACTION and users:
                 logger.info(
                     "Batch approved by %s (reaction: %s)", users[0], name,

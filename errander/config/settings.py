@@ -100,6 +100,7 @@ class Settings:
     llm_base_url: str = ""
     llm_api_key: str = "not-needed"
     audit_db_url: str = "errander.sqlite"
+    prometheus_base_url: str = ""  # ERRANDER_PROMETHEUS_BASE_URL; empty = disabled
 
     # LLM provider
     llm_model: str = ""
@@ -456,6 +457,8 @@ def load_settings(
         ui_bind_address=_load_env_str("ERRANDER_UI_BIND", "127.0.0.1"),
         # SRE signals — build from YAML block, falling back to all defaults
         sre_signals=_build_sre_settings(sre_yaml),
+        # Prometheus adapter — optional, empty = disabled
+        prometheus_base_url=_load_env_str("ERRANDER_PROMETHEUS_BASE_URL", ""),
         # Source tracking
         sources=sources,
     )

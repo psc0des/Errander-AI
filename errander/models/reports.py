@@ -144,6 +144,7 @@ class ProbeVMResult:
     drift_changes: list[dict[str, object]] = field(default_factory=list)
     failed_login_summary: dict[str, object] | None = None
     error: str | None = None
+    prometheus_metrics: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -173,4 +174,13 @@ class DigestReport:
             r.failed_login_summary
             for r in self.vm_results
             if r.failed_login_summary is not None
+        ]
+
+    @property
+    def all_prometheus_metrics(self) -> list[tuple[str, str, list[str]]]:
+        """(vm_id, hostname, metrics) tuples for VMs that have Prometheus data."""
+        return [
+            (r.vm_id, r.hostname, r.prometheus_metrics)
+            for r in self.vm_results
+            if r.prometheus_metrics
         ]

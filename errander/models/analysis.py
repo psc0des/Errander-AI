@@ -31,6 +31,7 @@ class VMSignalSummary:
     drift_kinds: list[str] = field(default_factory=list)
     failed_login_count: int = 0
     last_action_types: list[str] = field(default_factory=list)
+    prometheus_metrics: list[str] = field(default_factory=list)
 
 
 @dataclass

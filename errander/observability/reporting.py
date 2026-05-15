@@ -254,6 +254,12 @@ def render_digest_report(report: DigestReport) -> str:
             if count > 0:
                 lines.append(f"  - `{s.get('vm_id')}` -- {count} failed attempts")
 
+    prom_vms = report.all_prometheus_metrics
+    if prom_vms:
+        lines.append(f"\n*:bar_chart: Prometheus Metrics ({len(prom_vms)} VM(s))*")
+        for vm_id, hostname, metrics in prom_vms:
+            lines.append(f"  `{vm_id}` ({hostname}): {', '.join(metrics)}")
+
     if not unreachable and not disk_alerts and not drift_changes and not failed_logins:
         lines.append("\n:white_check_mark: No signals detected -- fleet healthy")
 

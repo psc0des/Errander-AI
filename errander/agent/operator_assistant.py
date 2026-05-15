@@ -24,6 +24,7 @@ from errander.models.analysis import AssistantResponse, FleetContext, VMSignalSu
 if TYPE_CHECKING:
     from errander.config.schema import InventoryConfig
     from errander.integrations.llm import LLMClient
+    from errander.integrations.prometheus import PrometheusClient
     from errander.safety.audit import AuditStore
     from errander.safety.baselines import BaselineStore
     from errander.safety.disk_history import VMDiskHistoryStore
@@ -53,6 +54,7 @@ class OperatorAssistant:
         inventory: InventoryConfig,
         env_name: str | None = None,
         llm_client: LLMClient | None = None,
+        prometheus_client: PrometheusClient | None = None,
     ) -> AssistantResponse:
         """Build fleet context, call LLM, return structured findings.
 
@@ -64,6 +66,7 @@ class OperatorAssistant:
             baseline_store=baseline_store,
             inventory=inventory,
             env_name=env_name,
+            prometheus_client=prometheus_client,
         )
 
         if llm_client is not None:
@@ -85,6 +88,7 @@ class OperatorAssistant:
         baseline_store: BaselineStore,
         inventory: InventoryConfig,
         env_name: str | None,
+        prometheus_client: PrometheusClient | None = None,
     ) -> FleetContext:
         """Query stores and assemble a FleetContext for the LLM prompt."""
         from errander.models.events import EventType
@@ -169,6 +173,10 @@ class OperatorAssistant:
                 count_raw = event.metadata.get("total_count", 0)
                 summary.failed_login_count += int(str(count_raw))
 
+            # Prometheus metrics — optional, best-effort
+            if prometheus_client is not None:
+                summary.prometheus_metrics = await prometheus_client.fetch_vm_metrics(target.host)
+
             vm_summaries.append(summary)
 
         return FleetContext(
@@ -207,6 +215,8 @@ def _format_prompt(question: str, context: FleetContext) -> str:
             lines.append(f"  Config drift detected: {', '.join(vm.drift_kinds)}")
         if vm.failed_login_count > 0:
             lines.append(f"  Failed SSH logins: {vm.failed_login_count}")
+        if vm.prometheus_metrics:
+            lines.append(f"  Prometheus: {', '.join(vm.prometheus_metrics)}")
 
     lines += [
         "",

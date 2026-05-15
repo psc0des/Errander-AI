@@ -617,6 +617,11 @@ async def run_env_probe_main(env_name: str, inventory_path: Path) -> int:
             channel_id=settings.slack_channel_id,
         )
 
+    from errander.integrations.prometheus import PrometheusClient as _PromClient
+    prom: _PromClient | None = (
+        _PromClient(settings.prometheus_base_url) if settings.prometheus_base_url else None
+    )
+
     async with audit_store:
         await disk_history_store.initialize()
         await baseline_store.initialize()
@@ -633,16 +638,21 @@ async def run_env_probe_main(env_name: str, inventory_path: Path) -> int:
             for t in env.targets
         ]
 
-        report = await run_env_probe(
-            env_name=env_name,
-            vms=vms,
-            ssh_manager=ssh_manager,
-            executor=executor,
-            disk_history_store=disk_history_store,
-            baseline_store=baseline_store,
-            audit_store=audit_store,
-            sre_settings=settings.sre_signals,
-        )
+        try:
+            report = await run_env_probe(
+                env_name=env_name,
+                vms=vms,
+                ssh_manager=ssh_manager,
+                executor=executor,
+                disk_history_store=disk_history_store,
+                baseline_store=baseline_store,
+                audit_store=audit_store,
+                sre_settings=settings.sre_signals,
+                prometheus_client=prom,
+            )
+        finally:
+            if prom is not None:
+                await prom.close()
 
     digest_text = render_digest_report(report)
     print(digest_text)
@@ -699,20 +709,30 @@ async def run_ask_query(
             temperature=settings.llm_temperature,
         )
 
+    from errander.integrations.prometheus import PrometheusClient as _PromClient
+    prom: _PromClient | None = (
+        _PromClient(settings.prometheus_base_url) if settings.prometheus_base_url else None
+    )
+
     async with audit_store:
         await disk_history_store.initialize()
         await baseline_store.initialize()
 
-        assistant = OperatorAssistant()
-        response = await assistant.investigate(
-            question,
-            audit_store=audit_store,
-            disk_history_store=disk_history_store,
-            baseline_store=baseline_store,
-            inventory=inventory,
-            env_name=env_name,
-            llm_client=llm,
-        )
+        try:
+            assistant = OperatorAssistant()
+            response = await assistant.investigate(
+                question,
+                audit_store=audit_store,
+                disk_history_store=disk_history_store,
+                baseline_store=baseline_store,
+                inventory=inventory,
+                env_name=env_name,
+                llm_client=llm,
+                prometheus_client=prom,
+            )
+        finally:
+            if prom is not None:
+                await prom.close()
 
     print(f"\n[{response.risk_level.upper()} RISK] {response.summary}\n")
     print("Findings:")
@@ -1311,6 +1331,7 @@ async def async_main(args: argparse.Namespace) -> int:
                     _schema: EnvironmentSchema = env_schema,
                 ) -> None:
                     from errander.agent.probe import run_env_probe
+                    from errander.integrations.prometheus import PrometheusClient as _PrometheusClient
                     from errander.observability.reporting import render_digest_report
 
                     vms = [
@@ -1324,16 +1345,22 @@ async def async_main(args: argparse.Namespace) -> int:
                         }
                         for t in _schema.targets
                     ]
-                    report = await run_env_probe(
-                        env_name=_env,
-                        vms=vms,
-                        ssh_manager=ssh_manager,
-                        executor=executor,
-                        disk_history_store=disk_history_store,
-                        baseline_store=baseline_store,
-                        audit_store=audit_store,
-                        sre_settings=settings.sre_signals,
-                    )
+                    _prom = _PrometheusClient(settings.prometheus_base_url) if settings.prometheus_base_url else None
+                    try:
+                        report = await run_env_probe(
+                            env_name=_env,
+                            vms=vms,
+                            ssh_manager=ssh_manager,
+                            executor=executor,
+                            disk_history_store=disk_history_store,
+                            baseline_store=baseline_store,
+                            audit_store=audit_store,
+                            sre_settings=settings.sre_signals,
+                            prometheus_client=_prom,
+                        )
+                    finally:
+                        if _prom is not None:
+                            await _prom.close()
                     digest_text = render_digest_report(report)
                     if slack is not None:
                         await slack.post_digest(digest_text)

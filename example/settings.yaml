@@ -84,6 +84,13 @@ slack:
   # How often to poll for ✅/❌ reactions on the approval message.
   poll_interval_seconds: 30
 
+# Optional Prometheus adapter. When set, CPU/memory/load metrics from node_exporter
+# are included in --probe-now digests and --ask analysis context.
+# Leave unset (or empty) to disable — probe and --ask work without it.
+# Queries instance=~"<VM_IP>:.*" so no per-VM config needed.
+#
+# prometheus_base_url: "http://prometheus.internal:9090"
+
 llm:
   # Required: model ID (provider-specific — see docs/LLM-PROVIDERS.md)
   # Examples: "Qwen/Qwen3-8B-AWQ" (vLLM), "gpt-4o-mini" (OpenAI),

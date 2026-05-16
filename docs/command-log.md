@@ -1,5 +1,17 @@
 # Errander-AI Command Log
 
+## Per-env Prometheus/ELK URL overrides (2026-05-17)
+
+```bash
+uv run pytest tests/config/test_env_url_overrides.py -v   # 14 passed
+uv run pytest --tb=short -q                                 # 1707 passed, 0 skipped
+uv run ruff check errander/                                 # All checks passed
+uv run mypy errander/                                       # 77 source files, no issues
+git add errander/config/schema.py errander/main.py tests/config/test_env_url_overrides.py example/inventory.yaml scripts/configure.sh SETUP.md STATUS.md tasks/todo.md
+git commit -m "feat: per-env Prometheus/ELK URL overrides -- env-level wins over global settings"
+git push origin main
+```
+
 ## P0-1 — Immutable Signed Plan Artifact (2026-05-16)
 
 ```bash

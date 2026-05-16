@@ -18,6 +18,7 @@ class AssistantResponse(BaseModel):
     findings: list[str]
     recommendations: list[str]
     risk_level: str  # "low" | "medium" | "high" | "unknown"
+    data_sources: list[str] = []
 
 
 @dataclass
@@ -46,3 +47,4 @@ class FleetContext:
     recent_batch_count: int
     last_batch_at: str | None
     total_failures_7d: int
+    sources_used: list[str] = field(default_factory=list)

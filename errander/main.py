@@ -766,6 +766,15 @@ async def run_ask_query(
         print("\nRecommendations:")
         for rec in response.recommendations:
             print(f"  - {rec}")
+    if response.data_sources:
+        print(f"\nSources consulted: {', '.join(response.data_sources)}")
+        tips: list[str] = []
+        if not any("elk" in s for s in response.data_sources):
+            tips.append("set ERRANDER_ELK_BASE_URL for log analysis")
+        if not any("live" in s for s in response.data_sources):
+            tips.append("use --live for SSH probe")
+        if tips:
+            print(f"Tip: {' | '.join(tips)}")
     return 0
 
 

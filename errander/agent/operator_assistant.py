@@ -78,6 +78,7 @@ class OperatorAssistant:
                 AssistantResponse,
             )
             if result is not None:
+                result.data_sources = context.sources_used
                 return result
             logger.warning("LLM unavailable or response unparseable -- using fallback")
 
@@ -187,12 +188,31 @@ class OperatorAssistant:
 
             vm_summaries.append(summary)
 
+        sources: list[str] = ["audit_store"]
+        if any(v.disk_alerts for v in vm_summaries):
+            sources.append("disk_history")
+        if any(v.drift_kinds for v in vm_summaries):
+            sources.append("drift_baselines")
+        if prometheus_client is not None:
+            if any(v.prometheus_metrics for v in vm_summaries):
+                sources.append(f"prometheus({prometheus_client._base_url})")
+            else:
+                sources.append("prometheus(no_data)")
+        if elk_client is not None:
+            if any(v.elk_errors for v in vm_summaries):
+                sources.append(f"elk({elk_client._base_url})")
+            else:
+                sources.append("elk(no_data)")
+        if any(v.journal_errors or v.failed_services for v in vm_summaries):
+            sources.append("live_ssh_probe")
+
         return FleetContext(
             env_name=env_name,
             vm_summaries=vm_summaries,
             recent_batch_count=len(recent_batches),
             last_batch_at=last_batch_at,
             total_failures_7d=total_failures,
+            sources_used=sources,
         )
 
 
@@ -231,6 +251,9 @@ def _format_prompt(question: str, context: FleetContext) -> str:
             lines.append(f"  Failed services: {', '.join(vm.failed_services)}")
         if vm.journal_errors and not vm.elk_errors:
             lines.append(f"  Journal errors: {'; '.join(vm.journal_errors[:3])}")
+
+    if context.sources_used:
+        lines += ["", "## Data sources consulted", ", ".join(context.sources_used)]
 
     lines += [
         "",
@@ -334,4 +357,5 @@ def _fallback_response(question: str, context: FleetContext) -> AssistantRespons
         findings=findings,
         recommendations=recommendations,
         risk_level=risk,
+        data_sources=context.sources_used,
     )

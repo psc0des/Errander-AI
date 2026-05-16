@@ -32,6 +32,7 @@ class VMSignalSummary:
     failed_login_count: int = 0
     last_action_types: list[str] = field(default_factory=list)
     prometheus_metrics: list[str] = field(default_factory=list)
+    elk_errors: list[str] = field(default_factory=list)
 
 
 @dataclass

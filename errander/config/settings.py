@@ -101,6 +101,9 @@ class Settings:
     llm_api_key: str = "not-needed"
     audit_db_url: str = "errander.sqlite"
     prometheus_base_url: str = ""  # ERRANDER_PROMETHEUS_BASE_URL; empty = disabled
+    elk_base_url: str = ""          # ERRANDER_ELK_BASE_URL; empty = disabled
+    elk_api_key: str = ""           # ERRANDER_ELK_API_KEY; optional
+    elk_index_pattern: str = "filebeat-*,logstash-*"  # ERRANDER_ELK_INDEX_PATTERN
 
     # LLM provider
     llm_model: str = ""
@@ -459,6 +462,10 @@ def load_settings(
         sre_signals=_build_sre_settings(sre_yaml),
         # Prometheus adapter — optional, empty = disabled
         prometheus_base_url=_load_env_str("ERRANDER_PROMETHEUS_BASE_URL", ""),
+        # ELK/Elasticsearch adapter — optional, empty = disabled
+        elk_base_url=_load_env_str("ERRANDER_ELK_BASE_URL", ""),
+        elk_api_key=_load_env_str("ERRANDER_ELK_API_KEY", ""),
+        elk_index_pattern=_load_env_str("ERRANDER_ELK_INDEX_PATTERN", "filebeat-*,logstash-*"),
         # Source tracking
         sources=sources,
     )

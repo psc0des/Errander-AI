@@ -203,11 +203,14 @@ async def run_env_probe(
     ]
     results: list[ProbeVMResult] = list(await asyncio.gather(*tasks))
 
+    escalation_needed, escalation_reasons = _check_escalation(results)
     report = DigestReport(
         probe_id=probe_id,
         env_name=env_name,
         generated_at=datetime.now(UTC),
         vm_results=results,
+        escalation_needed=escalation_needed,
+        escalation_reasons=escalation_reasons,
     )
 
     await audit_store.log_event(AuditEvent(
@@ -267,3 +270,34 @@ def _parse_failed_services(stdout: str) -> list[str]:
         if unit and "." in unit and not unit.startswith("#"):
             services.append(unit)
     return services
+
+
+def _check_escalation(results: list[ProbeVMResult]) -> tuple[bool, list[str]]:
+    """Determine if probe findings warrant an urgent operator alert.
+
+    Thresholds are conservative — this is a HITL signal, not an autonomous trigger.
+    """
+    reasons: list[str] = []
+
+    for r in results:
+        if not r.reachable:
+            continue
+        for alert in r.disk_growth_alerts:
+            pct = float(str(alert.get("used_pct_end", 0)))
+            delta = float(str(alert.get("delta_pct", 0)))
+            if pct >= 90.0 or delta >= 15.0:
+                reasons.append(
+                    f"{r.vm_id}: disk {alert.get('mountpoint', '?')} at {pct:.0f}%"
+                    + (f" (+{delta:.0f}% over window)" if delta >= 15 else "")
+                )
+        if len(r.failed_services) >= 2:
+            reasons.append(f"{r.vm_id}: {len(r.failed_services)} failed services")
+        has_drift = bool(r.drift_changes)
+        has_logins = bool(
+            r.failed_login_summary
+            and int(str(r.failed_login_summary.get("total_count", 0))) > 20
+        )
+        if has_drift and has_logins:
+            reasons.append(f"{r.vm_id}: config drift + failed SSH logins detected together")
+
+    return bool(reasons), reasons

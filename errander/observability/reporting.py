@@ -216,6 +216,13 @@ def render_digest_report(report: DigestReport) -> str:
     """
     lines: list[str] = []
     ts = report.generated_at.strftime("%Y-%m-%d %H:%M UTC")
+
+    if report.escalation_needed:
+        lines.append(":rotating_light: *ESCALATION: Critical signals require attention*")
+        for reason in report.escalation_reasons:
+            lines.append(f"  • {reason}")
+        lines.append("")
+
     lines.append(f"*Daily Fleet Digest -- {report.env_name}* | {ts}")
     lines.append(f"{report.reachable_count}/{len(report.vm_results)} VMs reachable")
 

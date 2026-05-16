@@ -673,6 +673,19 @@ async def run_env_probe_main(env_name: str, inventory_path: Path) -> int:
         await slack.post_digest(digest_text)
         logger.info("Daily probe digest posted to Slack", env=env_name)
 
+    if report.escalation_needed and slack is not None:
+        reasons_text = "\n".join(f"• {r}" for r in report.escalation_reasons)
+        await slack.post_alert(
+            f":rotating_light: *Probe escalation: {env_name}*\n"
+            f"Critical signals detected — consider running an emergency batch:\n"
+            f"{reasons_text}\n\n"
+            f"Run: `errander --run-now --env {env_name} --force"
+            f" --force-reason 'probe escalation'`"
+        )
+        logger.warning(
+            "Probe escalation for %s: %d reason(s)", env_name, len(report.escalation_reasons)
+        )
+
     await ssh_manager.close_all()
     return 0
 

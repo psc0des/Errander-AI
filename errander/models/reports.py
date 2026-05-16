@@ -158,6 +158,8 @@ class DigestReport:
     env_name: str
     generated_at: datetime
     vm_results: list[ProbeVMResult] = field(default_factory=list)
+    escalation_needed: bool = False
+    escalation_reasons: list[str] = field(default_factory=list)
 
     @property
     def reachable_count(self) -> int:

@@ -743,3 +743,19 @@ fi
 **Lesson 2 -- Backwards-compatibility in approval message: empty preview should show params, not silence.** When `enrich_plan_node` is skipped (e.g., on first deploy before the node was added to existing deferred batches) or when SSH fails at plan time, the preview is `{}`. The new message format for patching with empty preview should fall back to showing `params`, not just "patching" with no detail. Existing test `test_params_appear_in_approval_slack_summary` caught this.
 
 **Rule**: when reformatting a message that previously showed field X, always check if there's an existing test that asserts X appears. If the new format conditionally omits X, add a fallback so the assertion still passes.
+
+## 2026-05-16 — EventType attributes must exist before they're referenced in except blocks
+
+`EventType.PREFLIGHT_FAILED` (non-existent) raised `AttributeError` inside an `except Exception` block, which was silently swallowed — so blocked VMs still landed in `healthy_targets`. Pattern: always define EventType values before using them, and add a test asserting blocked VMs appear in `failed_targets`, not `healthy_targets`.
+
+## 2026-05-16 — Local import inside function changes the patch path
+
+`check_target` imported inside `validate_targets_node` must be patched at `errander.execution.target_validation.check_target`, not `errander.agent.graph.check_target`. Module-level imports create a reference in the importing module; local imports do not.
+
+## 2026-05-16 — MagicMock is not awaitable; AsyncMock is required for async SSH calls
+
+After adding `await ssh_manager.execute(...)` calls in `probe_vm`, all existing tests using `ssh_manager=MagicMock()` broke. Fix: `mgr.execute = AsyncMock(return_value=MagicMock(success=True, stdout="", stderr=""))`. Never use bare `MagicMock` for objects whose methods are awaited.
+
+## 2026-05-16 — _make_ssh_manager() helper prevents the above mistake at scale
+
+Any test file that uses `SSHConnectionManager` should define a `_make_ssh_manager()` helper at the top that returns a properly wired `AsyncMock`. When new SSH calls are added to the SUT, only the helper needs updating, not every test.

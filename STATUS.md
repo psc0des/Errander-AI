@@ -4,9 +4,11 @@
 2026-05-16
 
 ## Current Phase
-**P0-1 — COMPLETE.** Immutable signed plan artifact (2 commits, Sonnet, 2026-05-16).
+**Phase F — COMPLETE.** LangGraph signal integration (4 commits, Sonnet, 2026-05-16).
 
-P0-2 (deferred replay of exact artifact) is next.
+Phase F closed four gaps between the daily probe and the batch graph: stored signals feed into LLM planning, early readiness check at validate-time, probe escalation Slack alert, post-cleanup disk gate before patching.
+
+Next: doc sync commit, then P0-2 (deferred replay of exact plan artifact).
 
 ### P0-1 Completed (2026-05-16)
 - **Commit 1**: `enrich_plan_node` in `graph.py` — SSHes each VM at plan time, populates `preview` dict per planned action with exact packages/versions (patching) and disk usage (disk_cleanup); wired between `collect_plans` and `generate_plan_artifact` so preview is in the hash. `_parse_upgradable_with_versions` added to `patching.py`. Load test call count updated. 15 new tests.
@@ -14,6 +16,20 @@ P0-2 (deferred replay of exact artifact) is next.
 - **1480 tests passing, 111 skipped.**
 - ruff: All checks passed. mypy: 76 source files, no issues.
 - `autonomous_live_apply_enabled = False` unchanged — enabling autonomous mode is a separate decision.
+
+### Phase F Completed (2026-05-16)
+- **F1**: `StoredSignalContext` dataclass; `_load_stored_signals()` in `graph.py`; `plan_vm_node` now reads disk trends, drift kinds, failure count, last patch date, login count from stores and passes to `prioritize_actions()`. 9 new tests.
+- **F2**: Early sudo/wrapper readiness check in `validate_targets_node` immediately after OS detection; `TARGET_READINESS_BLOCKED` EventType added; blocks VMs early rather than mid-batch. 8 new tests.
+- **F3**: `_check_escalation()` in `probe.py` evaluates critical signals (disk ≥90%, 2+ failed services, drift+logins); `DigestReport.escalation_needed`/`escalation_reasons`; `render_digest_report()` escalation header; `main.py` posts separate Slack alert. 14 new tests.
+- **F4**: `post_cleanup_disk_gate_node` in `vm_graph.py` wired between `dispatch_action` and `check_more_actions`; re-checks / disk after disk_cleanup/log_rotation before patching; blocks (skip) at ≥95%, warns at 90–94%; `DISK_GATE_BLOCKED` EventType. 12 new tests.
+- **1582 tests passing, 111 skipped.**
+- ruff: All checks passed. mypy: 77 source files, no issues.
+
+### Phase E Completed (2026-05-16)
+- **E2**: `ElkClient` wired into `probe_vm`, `--ask`, `--probe-now`; `elk_errors` on `ProbeVMResult`.
+- **E3**: `probe_vm` now SSHes `journalctl -p err` and `systemctl --failed`; `_parse_journal_errors` / `_parse_failed_services` helpers; `journal_errors` + `failed_services` on `ProbeVMResult`. 11 new tests.
+- **E4**: `sources_used` on `FleetContext`; `data_sources` on `AssistantResponse`; `--ask` prints "Sources consulted:" with tips for missing sources. 8 new tests.
+- **1570 tests passing, 111 skipped.**
 
 ### Phase C Completed (2026-05-16)
 - **Commit 1**: `errander/integrations/prometheus.py` — `PrometheusClient` (3 node_exporter metrics, 5s timeout, best-effort); `prometheus_base_url` in Settings; `prometheus_metrics` field on `VMSignalSummary` + `ProbeVMResult`; `all_prometheus_metrics` property on `DigestReport`. 10 new tests.

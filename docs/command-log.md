@@ -1388,3 +1388,44 @@ uv run mypy errander/         # Success: no issues found in 72 source files
 ```
 **What**: Phase A.5 — closed the SRE audit's persistent ruff (~382) and mypy (~112) findings. Zero errors in both linters.
 **Why**: README/CLAUDE.md claimed "strict mypy" but it didn't pass. Closes the honesty gap before Phase B.
+
+## Phase E + F (2026-05-16)
+
+```bash
+# Phase E3 — journalctl + systemctl enrichment
+uv run pytest tests/agent/test_probe_live_enrich.py -x -q
+uv run ruff check errander/ tests/agent/test_probe_live_enrich.py
+uv run mypy errander/
+git add errander/agent/probe.py errander/models/reports.py tests/agent/test_probe_live_enrich.py
+git commit -m "feat: Phase E3 journalctl + systemctl --failed enrichment in probe_vm"
+
+# Phase E4 — data source transparency
+uv run pytest tests/agent/test_operator_assistant_sources.py -x -q
+uv run pytest -x -q   # full suite: 1570 passed
+git commit -m "feat: Phase E4 data source transparency -- sources_used in FleetContext, --ask prints Sources consulted"
+
+# Phase F1 — stored signals
+uv run pytest tests/agent/test_plan_vm_stored_signals.py -x -q
+git commit -m "feat: Phase F1 stored signals feed into plan_vm_node -- StoredSignalContext, _load_stored_signals, prioritize_actions gets history"
+
+# Phase F2 — early readiness check
+uv run pytest tests/agent/test_validate_targets_readiness.py -x -q
+uv run pytest -x -q   # full suite: verified
+git commit -m "feat: Phase F2 validate_targets_node adds sudo/wrapper readiness check early -- TARGET_READINESS_BLOCKED event"
+
+# Phase F3 — probe escalation
+uv run pytest tests/agent/test_probe_escalation.py -x -q   # 14 passed
+uv run pytest -x -q   # 1582 passed, 111 skipped
+uv run ruff check errander/   # All checks passed
+uv run mypy errander/          # 77 source files, no issues
+git add errander/main.py errander/agent/probe.py errander/models/reports.py errander/observability/reporting.py tests/agent/test_probe_escalation.py
+git commit -m "feat: Phase F3 probe escalation -- critical signals trigger Slack alert, DigestReport.escalation_needed"
+
+# Phase F4 — post-cleanup disk gate
+uv run pytest tests/agent/test_disk_gate.py -x -q   # 12 passed
+uv run pytest -x -q   # 1582 passed, 111 skipped
+uv run ruff check errander/ tests/agent/test_disk_gate.py   # All checks passed
+uv run mypy errander/   # 77 source files, no issues
+git add errander/agent/vm_graph.py errander/models/events.py tests/agent/test_disk_gate.py
+git commit -m "feat: Phase F4 post_cleanup_disk_gate_node -- re-check disk after cleanup before patching, block at 95%"
+```

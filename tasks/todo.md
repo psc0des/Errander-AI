@@ -1,3 +1,21 @@
+## Phase F — LangGraph Signal Integration (2026-05-16, completed)
+
+- [x] F1: `StoredSignalContext` dataclass in `decisions.py`; `_load_stored_signals()` in `graph.py`; `plan_vm_node` reads disk/drift/patch/login history and passes to `prioritize_actions()`; 9 new tests (`test_plan_vm_stored_signals.py`)
+- [x] F2: Early readiness check in `validate_targets_node` after OS detection; `TARGET_READINESS_BLOCKED` EventType; `check_target()` called at validate-time; 8 new tests (`test_validate_targets_readiness.py`)
+- [x] F3: `_check_escalation()` in `probe.py`; `DigestReport.escalation_needed/escalation_reasons`; `render_digest_report()` escalation header; `main.py` posts Slack alert when escalation_needed; 14 new tests (`test_probe_escalation.py`)
+- [x] F4: `post_cleanup_disk_gate_node` wired `dispatch_action → gate → check_more_actions`; ≥95% injects skipped result for patching; 90-94% warns only; `DISK_GATE_BLOCKED` EventType; 12 new tests (`test_disk_gate.py`)
+- [x] 1582 tests passing, 111 skipped — 0 regressions
+- [x] ruff: All checks passed. mypy: 77 source files, no issues.
+- [x] `docs/learning/38-elk-journalctl-enrichment.md` created
+- [x] `docs/learning/39-langgraph-signal-integration.md` created
+
+## Phase E — ELK + journalctl Enrichment (2026-05-16, completed)
+
+- [x] E2: `ElkClient` wired into `probe_vm`, `--ask`, `--probe-now`; `elk_errors` on `ProbeVMResult`
+- [x] E3: `probe_vm` SSH-calls `journalctl -p err` + `systemctl --failed`; `_parse_journal_errors` / `_parse_failed_services`; `journal_errors` + `failed_services` on `ProbeVMResult`; `render_digest_report()` updated; 11 new tests (`test_probe_live_enrich.py`)
+- [x] E4: `sources_used` on `FleetContext`; `data_sources` on `AssistantResponse`; `--ask` prints "Sources consulted:"; 8 new tests (`test_operator_assistant_sources.py`)
+- [x] 1570 tests passing, 111 skipped — 0 regressions
+
 ## P0-1 — Immutable Signed Plan Artifact (2026-05-16, completed)
 
 - [x] Commit 1: `enrich_plan_node` + `_enrich_vm_plan` + `_preview_patching` + `_preview_disk_cleanup` in `graph.py`

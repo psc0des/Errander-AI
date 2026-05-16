@@ -759,3 +759,9 @@ After adding `await ssh_manager.execute(...)` calls in `probe_vm`, all existing 
 ## 2026-05-16 — _make_ssh_manager() helper prevents the above mistake at scale
 
 Any test file that uses `SSHConnectionManager` should define a `_make_ssh_manager()` helper at the top that returns a properly wired `AsyncMock`. When new SSH calls are added to the SUT, only the helper needs updating, not every test.
+
+## 2026-05-17 — `server.py` and `metrics.py` are two separate servers; routes in one don't exist in the other
+
+`server.py` has `create_app()` with routes at `/`, `/glossary`, `/inventory`, etc. — this is a standalone demo. The actual production server is `metrics.py`'s `start_metrics_server()` with routes under `/ui/`. Navigating to `/glossary` on the metrics server returns 404 because the route is only registered in `server.py`.
+
+**Rule**: when adding a UI page, add the route and handler to **both** `server.py` (standalone demo) and `metrics.py` (production). Check which server is actually running before debugging a 404.

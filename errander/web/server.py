@@ -377,8 +377,8 @@ body { font-family: 'Inter', system-ui, sans-serif; background: #f0f2ff; color: 
 @keyframes dash-flow { to { stroke-dashoffset: -26; } }
 .wf-outer-card { background: #0f172a; border-radius: 12px; padding: 24px; margin-bottom: 8px; }
 .wf-diagram-wrap { overflow-x: auto; padding-bottom: 8px; }
-.wf-diagram { position: relative; width: 960px; height: 760px; margin: 0 auto; }
-.wf-svg { position: absolute; top: 0; left: 0; width: 960px; height: 760px; pointer-events: none; overflow: visible; }
+.wf-diagram { position: relative; width: 960px; height: 845px; margin: 0 auto; }
+.wf-svg { position: absolute; top: 0; left: 0; width: 960px; height: 845px; pointer-events: none; overflow: visible; }
 .wf-node {
   position: absolute; width: 160px; height: 50px; border-radius: 8px;
   display: flex; align-items: center; gap: 10px; padding: 0 14px;
@@ -1439,6 +1439,7 @@ def page_admin() -> str:
 # ── Glossary data ────────────────────────────────────────────────────────────
 
 _GLOSS: list[tuple[str, str, str, str, str]] = [
+    # ── CORE ─────────────────────────────────────────────────────────────────
     ("Batch",              "CORE",    "#4f46e5", "gloss-chip-core",
      "A single end-to-end maintenance run across all VMs in the fleet. Identified by a unique ID like prod-0423-0200."),
     ("Agent",              "CORE",    "#4f46e5", "gloss-chip-core",
@@ -1451,30 +1452,53 @@ _GLOSS: list[tuple[str, str, str, str, str]] = [
      "The full collection of target VMs managed by the agent across all environments (PROD, STAGING, DEV)."),
     ("Idempotent",         "CORE",    "#4f46e5", "gloss-chip-core",
      "Running the same action twice produces the same result. A core design invariant for all agent actions."),
+    ("Stored Signals",     "CORE",    "#4f46e5", "gloss-chip-core",
+     "Historical data (disk trends, drift events, failure counts, login spikes) loaded from monitoring stores before planning. Feeds into LLM decisions so the agent acts on trends, not just current state."),
+    ("Daily Probe",        "CORE",    "#4f46e5", "gloss-chip-core",
+     "Read-only signal sweep (disk growth, drift, failed logins, journal errors, failed services). Runs on schedule or --probe-now. Never executes maintenance actions — observation only."),
+    ("Operator Assist.",   "CORE",    "#4f46e5", "gloss-chip-core",
+     "Layer A CLI (--ask) that investigates fleet state using audit data, Prometheus, and ELK, then answers questions via LLM. Strictly read-only — never executes infrastructure changes."),
+    # ── SAFETY ───────────────────────────────────────────────────────────────
     ("Approval Gate",      "SAFETY",  "#7c3aed", "gloss-chip-safety",
-     "High-risk actions pause here. The agent posts to Slack and polls for a ✅ or ❌ reaction before proceeding."),
+     "High-risk actions pause here. The agent posts a Slack message showing exact packages and versions, then polls for a ✅ or ❌ reaction before proceeding."),
+    ("Plan Hash",          "SAFETY",  "#7c3aed", "gloss-chip-safety",
+     "SHA-256 fingerprint of the approved plan including exact package names and versions. Guarantees the operator approved precisely what was executed — prevents plan-substitution attacks."),
+    ("Plan Enrichment",    "SAFETY",  "#7c3aed", "gloss-chip-safety",
+     "SSH assessment at plan time to collect exact package versions and disk state before the plan hash is computed. The Slack approval message then shows nginx 1.18→1.24, not just 'patching'."),
+    ("Deferred Exec.",     "SAFETY",  "#7c3aed", "gloss-chip-safety",
+     "When a batch runs outside a maintenance window, the exact approved plan artifact is stored and replayed at window-open time — no re-approval needed, same hash verified."),
+    ("Probe Escalation",   "SAFETY",  "#7c3aed", "gloss-chip-safety",
+     "When the daily probe detects critical signals (disk ≥90%, 2+ failed services, drift+login spikes), a separate Slack alert is sent prompting the operator to run an emergency batch."),
+    ("Disk Gate",          "SAFETY",  "#7c3aed", "gloss-chip-safety",
+     "Post-cleanup guard node in the VM graph. After disk_cleanup or log_rotation, re-checks disk usage before proceeding to patching. Blocks at ≥95%, warns at 90–94%."),
     ("Rollback",           "SAFETY",  "#7c3aed", "gloss-chip-safety",
-     "Automatic revert to pre-action state on failure. Strategy differs per action: full, re-pull, or no-op."),
+     "Automatic revert to pre-action state on failure. Strategy differs per action: full package rollback (patching), re-pull (Docker), or no-op (log/disk)."),
     ("Risk Tier",          "SAFETY",  "#7c3aed", "gloss-chip-safety",
-     "Action classification by impact: Low (auto), Medium (log+notify), High (approval), Critical (blocked)."),
+     "Action classification by impact: Low (auto), Medium (log+notify), High (approval required), Critical (blocked — never automated)."),
     ("Maintenance Window", "SAFETY",  "#7c3aed", "gloss-chip-safety",
-     "Configured time slots when the agent is permitted to run. The agent refuses to act outside these windows."),
+     "Configured time slots when the agent is permitted to run. The agent refuses to act outside these windows unless --force is passed with a mandatory reason."),
     ("Audit Log",          "SAFETY",  "#7c3aed", "gloss-chip-safety",
-     "Immutable before-and-after record of every agent action. Written to SQLite and never deleted."),
+     "Immutable before-and-after record of every agent action. Written to SQLite. In strict mode, a write failure halts the batch — audit integrity takes priority over execution."),
+    # ── ACTIONS ──────────────────────────────────────────────────────────────
     ("OS Patching",        "ACTIONS", "#0891b2", "gloss-chip-action",
-     "Non-kernel security and package updates via apt (Ubuntu/Debian) or dnf (RHEL). Kernel updates are blocked."),
+     "Non-kernel security and package updates via apt (Ubuntu/Debian) or dnf (RHEL). Kernel updates are blocked. Exact packages shown in Slack approval message."),
     ("Docker Prune",       "ACTIONS", "#0891b2", "gloss-chip-action",
      "Removal of stopped containers, dangling images, unused networks, and volumes to reclaim disk space."),
     ("Log Rotation",       "ACTIONS", "#0891b2", "gloss-chip-action",
      "Compression and archival of old log files in /var/log via logrotate or journalctl vacuum."),
     ("Disk Cleanup",       "ACTIONS", "#0891b2", "gloss-chip-action",
-     "Frees temp files from a strict whitelist: /tmp, apt/yum cache, old journals, orphaned deps only."),
+     "Frees temp files from a strict whitelist: /tmp, apt/yum cache, old journals, orphaned deps only. Followed by the Disk Gate before any patching action."),
+    # ── INFRA ─────────────────────────────────────────────────────────────────
     ("vLLM",               "INFRA",   "#d97706", "gloss-chip-infra",
-     "Self-hosted LLM (Qwen3-8B-AWQ) on a private GPU VM. Used for planning with a hardcoded fallback if unreachable."),
+     "Self-hosted LLM (Qwen3-8B-AWQ) on a private GPU VM. Used for planning with a hardcoded fallback if unreachable. Any OpenAI-compatible endpoint is also supported."),
     ("SSH",                "INFRA",   "#d97706", "gloss-chip-infra",
-     "Key-based Secure Shell protocol used exclusively to connect to and execute commands on target VMs."),
+     "Key-based Secure Shell protocol used exclusively to connect to and execute commands on target VMs. Password auth is not supported."),
     ("APScheduler",        "INFRA",   "#d97706", "gloss-chip-infra",
-     "Python scheduling library that fires maintenance batches on a configured cron schedule inside the agent process."),
+     "Python scheduling library that fires maintenance batches and daily probe runs on configured cron schedules inside the agent process."),
+    ("Prometheus",         "INFRA",   "#d97706", "gloss-chip-infra",
+     "Optional HTTP adapter for VM metrics (CPU, memory, disk usage) from node_exporter. Enriches probe digests and --ask fleet analysis. Per-env URL override supported."),
+    ("ELK",                "INFRA",   "#d97706", "gloss-chip-infra",
+     "Optional Elasticsearch integration for log error analysis. Enriches probes and --ask. Falls back to journalctl SSH calls when ELK is not configured. Per-env URL override supported."),
 ]
 
 # Node detail data for JS — plain string avoids f-string brace escaping
@@ -1489,66 +1513,73 @@ document.addEventListener('keydown', function(e) { if (e.key === 'Escape') close
 const WF_NODES = {
   'apscheduler': {
     title: 'APScheduler', badge: 'BATCH TRIGGER', badgeColor: '#d97706',
-    checks: 'Cron expression evaluated · Maintenance window verified · No active batch running',
+    checks: 'Cron expression evaluated · Maintenance window verified · No active batch running · Daily probe jobs also registered here',
     onfail: 'Batch skipped silently — next scheduled run continues normally',
     code: 'errander/scheduling/scheduler.py · errander/scheduling/windows.py',
-    note: 'The scheduler is the only automated entry point. Use --run-now to trigger a batch manually.'
+    note: 'The scheduler is the only automated entry point. Use --run-now to trigger a batch manually, or --probe-now for a read-only signal sweep.'
   },
   'parent-graph': {
     title: 'Parent Graph', badge: 'ORCHESTRATOR', badgeColor: '#4f46e5',
-    checks: 'Loads VM inventory · Acquires per-VM file locks · Fans out to parallel sub-graphs',
+    checks: 'Loads VM inventory · Applies DB overrides (disabled/added VMs) · Acquires per-VM file locks · Fans out to parallel per-VM sub-graphs',
     onfail: 'Individual VM failures do not abort the batch — each VM runs independently',
     code: 'errander/agent/graph.py · errander/config/inventory.py · errander/safety/locking.py',
-    note: 'LangGraph parent graph fans out to one per-VM sub-graph execution in parallel across the fleet.'
+    note: 'LangGraph parent graph fans out to one per-VM sub-graph in parallel. After all VMs plan, enrich_plan_node SSHes for exact package previews before the hash is computed.'
   },
   'pre-validation': {
     title: 'Pre-Validation', badge: 'RUNS ON EVERY VM', badgeColor: '#16a34a',
-    checks: 'SSH reachable · OS detected · Maintenance window active · VM not locked',
-    onfail: 'VM skipped for this batch — audit event written with reason',
-    code: 'errander/safety/validators.py · errander/execution/os_detection.py',
-    note: 'This is the first node run for every VM. No action is taken until all checks pass.'
+    checks: 'SSH reachable · OS detected · Maintenance window active · VM not locked · Sudo/wrapper readiness verified · Docker command mode checked',
+    onfail: 'VM removed from batch early — audit event written with reason. Sudo/wrapper failures are caught here rather than mid-batch.',
+    code: 'errander/safety/validators.py · errander/execution/os_detection.py · errander/execution/target_validation.py',
+    note: 'F2 addition: check_target() now runs at validate-time so a batch never wastes an approval window on a VM that would have failed the sudo preflight.'
   },
   'llm-planning': {
     title: 'LLM Planning', badge: 'AI DECISION', badgeColor: '#7c3aed',
-    checks: 'Queries vLLM endpoint · Outputs ordered action plan as JSON · Classifies risk tier per action',
+    checks: 'Loads stored signals (disk trends, drift events, failure counts, login spikes) · Queries vLLM endpoint · Outputs ordered action plan as JSON · Classifies risk tier per action',
     onfail: 'Falls back to hardcoded default action priority — agent never blocks on LLM unavailability',
-    code: 'errander/agent/decisions.py · errander/integrations/llm.py · errander/models/plans.py',
-    note: 'All LLM responses are validated via Pydantic models. Invalid responses trigger the hardcoded fallback.'
+    code: 'errander/agent/decisions.py · errander/agent/graph.py (_load_stored_signals) · errander/integrations/llm.py',
+    note: 'F1 addition: StoredSignalContext feeds historical monitoring data into the LLM prompt so it plans based on trends, not just current SSH state.'
+  },
+  'plan-enrichment': {
+    title: 'Plan Enrichment', badge: 'P0-1', badgeColor: '#7c3aed',
+    checks: 'SSH to each VM · apt/dnf list --upgradable → exact package names + current + target versions · df / → disk usage snapshot · Kernel packages excluded · Results stored in preview dict per action',
+    onfail: 'SSH failure → preview: {"error": "unavailable"} written; batch continues. Hash still covers the error entry — operator sees transparency note in Slack.',
+    code: 'errander/agent/graph.py → enrich_plan_node · errander/agent/subgraphs/patching.py → _parse_upgradable_with_versions',
+    note: 'The plan hash (SHA-256) covers preview data. The Slack approval message shows exact packages: nginx 1.18.0 → 1.24.0. Operator approves exact actions, not categories.'
   },
   'approval-gate': {
     title: 'Approval Gate', badge: 'HIGH RISK ONLY', badgeColor: '#d97706',
-    checks: 'Posts plan to Slack · Polls for reaction every 30s · Timeout 30 min (auto-REJECT)',
+    checks: 'Posts exact plan to Slack (package names + versions from Plan Enrichment) · Plan hash shown in message · Polls for ✅/❌ reaction every 30s · Timeout 30 min (auto-REJECT)',
     onfail: 'Action skipped on REJECTED or timeout — audit event written, VM continues to next action',
-    code: 'errander/safety/approval.py · errander/integrations/slack.py',
-    note: 'Only High-tier actions enter this node. Low and Medium actions bypass it entirely.'
+    code: 'errander/safety/approval.py · errander/integrations/slack.py · errander/agent/graph.py (_format_plan_for_approval)',
+    note: 'Only High-tier actions enter this node. Low and Medium actions bypass it entirely. Hash commitment means the operator can verify nothing changed between approval and execution.'
   },
   'action-execution': {
     title: 'Action Execution', badge: 'RUNS MAINTENANCE', badgeColor: '#0891b2',
-    checks: 'Dispatches to action sub-graph · dry_run flag respected · Idempotency enforced',
+    checks: 'Dispatches to action sub-graph · dry_run flag respected · Idempotency enforced · Post-cleanup disk gate runs after disk_cleanup/log_rotation before patching',
     onfail: 'Exception caught → Rollback node entered → Audit event written with error detail',
     code: 'errander/agent/vm_graph.py · errander/agent/subgraphs/ · errander/execution/commands.py',
-    note: 'Sub-graphs: patching.py, log_rotation.py, docker_prune.py, disk_cleanup.py, backup_verify.py'
+    note: 'F4 addition: post_cleanup_disk_gate_node re-checks disk after cleanup. Blocks patching at ≥95% disk used, warns at 90–94%. Sub-graphs: patching, log_rotation, docker_prune, disk_cleanup.'
   },
   'rollback': {
     title: 'Rollback', badge: 'FAILURE PATH ONLY', badgeColor: '#ef4444',
-    checks: 'Restores package snapshot (patching) · Re-pull images (Docker) · No-op for log/disk',
+    checks: 'Restores full package snapshot (patching) · Re-pull images (Docker) · No-op for log/disk',
     onfail: 'Critical alert fired if rollback itself fails — requires manual intervention',
     code: 'errander/safety/rollback.py',
-    note: 'Not all actions support full rollback. See Rollback Tiers in the spec for strategy per action type.'
+    note: 'Not all actions support full rollback. Patching: full version rollback. Docker: re-pull only. Log rotation and disk cleanup: no rollback needed (non-destructive).'
   },
   'audit-logging': {
     title: 'Audit Logging', badge: 'ALWAYS RUNS', badgeColor: '#16a34a',
-    checks: 'Writes before-event · Writes after-event · Records duration, operator, status, detail',
-    onfail: 'If audit write fails — agent halts. Audit integrity takes priority over execution.',
+    checks: 'Writes before-event · Writes after-event · Records duration, operator, status, detail · Strict mode: write failure halts batch',
+    onfail: 'In strict mode — agent halts. Audit integrity takes priority over execution. In best-effort mode — logs and continues.',
     code: 'errander/safety/audit.py · errander/models/events.py',
-    note: 'Every action produces two audit events: one before execution and one after. Never deleted.'
+    note: 'Every action produces two audit events: one before execution and one after. Events are never deleted. Browse them in the Batches UI.'
   },
   'report': {
     title: 'Report', badge: 'BATCH SUMMARY', badgeColor: '#4f46e5',
-    checks: 'LLM generates human-readable summary · Falls back to template if LLM unavailable · Posted to Slack',
+    checks: 'LLM generates human-readable batch summary · Falls back to template if LLM unavailable · Posted to Slack · Probe digest posted separately on probe runs',
     onfail: 'Template fallback always succeeds — batch report is never skipped',
     code: 'errander/observability/reporting.py · errander/integrations/slack.py',
-    note: 'Report includes: VMs processed, actions taken, errors, rollbacks triggered, and total time elapsed.'
+    note: 'Report includes: VMs processed, actions taken, errors, rollbacks, duration. Probe digests also include disk growth alerts, failed services, journal errors, and escalation flags.'
   },
 };
 
@@ -1600,15 +1631,16 @@ def page_glossary() -> str:
     # ── Workflow diagram ───────────────────────────────────────────────────────
     # Node definitions: (id, left, top, extra_classes, dot_cls, name, sublabel)
     _nodes = [
-        ("apscheduler",      400, 20,  "",                        "wf-dot-amber",  "APScheduler",   "cron trigger"),
-        ("parent-graph",     400, 110, "",                        "wf-dot-indigo", "Parent Graph",  "fan-out · VMs"),
-        ("pre-validation",   400, 200, "active",                  "wf-dot-white",  "Pre-Validation","SSH · OS · window"),
-        ("llm-planning",     400, 290, "",                        "wf-dot-violet", "LLM Planning",  "decide action plan"),
-        ("approval-gate",    120, 385, "wf-node-conditional",     "wf-dot-amber",  "Approval Gate", "high-risk · Slack"),
-        ("action-execution", 650, 385, "",                        "wf-dot-teal",   "Action Exec.",  "patch·rotate·prune"),
-        ("rollback",         755, 480, "wf-node-failure-node",    "wf-dot-red",    "Rollback",      "revert snapshot"),
-        ("audit-logging",    400, 575, "",                        "wf-dot-green",  "Audit Logging", "before + after"),
-        ("report",           400, 665, "",                        "wf-dot-indigo", "Report",        "LLM or template"),
+        ("apscheduler",      400, 20,  "",                        "wf-dot-amber",  "APScheduler",    "cron trigger"),
+        ("parent-graph",     400, 110, "",                        "wf-dot-indigo", "Parent Graph",   "fan-out · VMs"),
+        ("pre-validation",   400, 200, "active",                  "wf-dot-white",  "Pre-Validation", "SSH · OS · readiness"),
+        ("llm-planning",     400, 290, "",                        "wf-dot-violet", "LLM Planning",   "signals · plan · risk"),
+        ("plan-enrichment",  400, 375, "",                        "wf-dot-violet", "Plan Enrichment","exact pkgs · hash · P0-1"),
+        ("approval-gate",    120, 470, "wf-node-conditional",     "wf-dot-amber",  "Approval Gate",  "high-risk · Slack"),
+        ("action-execution", 650, 470, "",                        "wf-dot-teal",   "Action Exec.",   "patch·rotate·prune"),
+        ("rollback",         755, 565, "wf-node-failure-node",    "wf-dot-red",    "Rollback",       "revert snapshot"),
+        ("audit-logging",    400, 660, "",                        "wf-dot-green",  "Audit Logging",  "before + after"),
+        ("report",           400, 750, "",                        "wf-dot-indigo", "Report",         "LLM or template"),
     ]
     nodes_html = ""
     for nid, left, top, extra, dot, name, sub in _nodes:
@@ -1620,9 +1652,9 @@ def page_glossary() -> str:
             f'<div><div class="wf-node-name">{name}</div>'
             f'<div class="wf-node-sub">{sub}</div></div></div>'
         )
-    nodes_html += '<div class="wf-node-terminal" style="left:50px;top:480px">✕ SKIPPED</div>'
+    nodes_html += '<div class="wf-node-terminal" style="left:50px;top:565px">✕ SKIPPED</div>'
 
-    # SVG arrow overlay — all coordinates are pixel-exact for 960×760 container
+    # SVG arrow overlay — all coordinates are pixel-exact for 960×845 container
     svg = """<svg class="wf-svg" xmlns="http://www.w3.org/2000/svg">
   <defs>
     <marker id="mh" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
@@ -1635,7 +1667,7 @@ def page_glossary() -> str:
       <polygon points="0 0,8 3,0 6" fill="#ef4444"/></marker>
   </defs>
 
-  <!-- Happy-path: animated flowing dashes, indigo glow -->
+  <!-- Happy-path: APScheduler → Parent Graph → Pre-Validation → LLM Planning -->
   <path d="M 480,70 L 480,110"
         stroke="#4f46e5" stroke-width="2" fill="none" stroke-dasharray="8 5"
         marker-end="url(#mh)"
@@ -1649,57 +1681,63 @@ def page_glossary() -> str:
         marker-end="url(#mh)"
         style="animation:dash-flow 0.8s linear infinite;filter:drop-shadow(0 0 3px #4f46e5)"/>
 
-  <!-- LLM Planning → Action Execution (low/med, happy) -->
-  <path d="M 515,340 C 585,365 670,378 730,385"
+  <!-- LLM Planning → Plan Enrichment (P0-1, violet) -->
+  <path d="M 480,340 L 480,375"
+        stroke="#7c3aed" stroke-width="2" fill="none" stroke-dasharray="8 5"
+        marker-end="url(#mh)"
+        style="animation:dash-flow 0.8s linear infinite;filter:drop-shadow(0 0 3px #7c3aed)"/>
+
+  <!-- Plan Enrichment → Action Execution (low/med, happy indigo) -->
+  <path d="M 515,425 C 585,450 670,463 730,470"
         stroke="#4f46e5" stroke-width="2" fill="none" stroke-dasharray="8 5"
         marker-end="url(#mh)"
         style="animation:dash-flow 0.8s linear infinite;filter:drop-shadow(0 0 3px #4f46e5)"/>
 
-  <!-- LLM Planning → Approval Gate (high risk, amber dashed) -->
-  <path d="M 445,340 C 375,362 265,375 200,385"
+  <!-- Plan Enrichment → Approval Gate (high risk, amber dashed) -->
+  <path d="M 445,425 C 375,447 265,460 200,470"
         stroke="#d97706" stroke-width="1.5" fill="none" stroke-dasharray="5 5"
         marker-end="url(#ma)"/>
 
   <!-- Approval Gate → Action Execution (APPROVED, green animated) -->
-  <path d="M 280,410 C 430,410 500,410 650,410"
+  <path d="M 280,495 C 430,495 500,495 650,495"
         stroke="#16a34a" stroke-width="2" fill="none" stroke-dasharray="8 5"
         marker-end="url(#mg)"
         style="animation:dash-flow 0.9s linear infinite"/>
 
   <!-- Approval Gate → SKIPPED (REJECTED, red dashed) -->
-  <path d="M 185,435 C 165,455 130,468 105,480"
+  <path d="M 185,520 C 165,540 130,553 105,565"
         stroke="#ef4444" stroke-width="1.5" fill="none" stroke-dasharray="4 5"
         marker-end="url(#mr)"/>
 
   <!-- Action Execution → Rollback (FAILURE, red dashed) -->
-  <path d="M 810,410 C 848,432 850,458 835,480"
+  <path d="M 810,495 C 848,517 850,543 835,565"
         stroke="#ef4444" stroke-width="1.5" fill="none" stroke-dasharray="4 5"
         marker-end="url(#mr)"/>
 
   <!-- Action Execution → Audit Logging (SUCCESS, green animated) -->
-  <path d="M 730,435 C 700,490 635,558 560,600"
+  <path d="M 730,520 C 700,575 635,643 560,685"
         stroke="#16a34a" stroke-width="2" fill="none" stroke-dasharray="8 5"
         marker-end="url(#mg)"
         style="animation:dash-flow 0.9s linear infinite"/>
 
   <!-- Rollback → Audit Logging (rejoins, amber dashed) -->
-  <path d="M 800,530 C 762,558 660,583 560,600"
+  <path d="M 800,615 C 762,643 660,668 560,685"
         stroke="#d97706" stroke-width="1.5" fill="none" stroke-dasharray="5 5"
         marker-end="url(#ma)"/>
 
   <!-- Audit Logging → Report (happy) -->
-  <path d="M 480,625 L 480,665"
+  <path d="M 480,710 L 480,750"
         stroke="#4f46e5" stroke-width="2" fill="none" stroke-dasharray="8 5"
         marker-end="url(#mh)"
         style="animation:dash-flow 0.8s linear infinite;filter:drop-shadow(0 0 3px #4f46e5)"/>
 
   <!-- Edge labels -->
-  <text x="308" y="354" fill="#d97706" font-family="JetBrains Mono,monospace" font-size="9" font-weight="700">HIGH RISK</text>
-  <text x="576" y="356" fill="#818cf8" font-family="JetBrains Mono,monospace" font-size="9" font-weight="700">LOW / MED</text>
-  <text x="428" y="402" fill="#4ade80" font-family="JetBrains Mono,monospace" font-size="9" font-weight="700">APPROVED</text>
-  <text x="116" y="455" fill="#f87171" font-family="JetBrains Mono,monospace" font-size="9" font-weight="700">REJECTED</text>
-  <text x="820" y="448" fill="#f87171" font-family="JetBrains Mono,monospace" font-size="9" font-weight="700">FAILURE</text>
-  <text x="650" y="508" fill="#4ade80" font-family="JetBrains Mono,monospace" font-size="9" font-weight="700">SUCCESS</text>
+  <text x="308" y="439" fill="#d97706" font-family="JetBrains Mono,monospace" font-size="9" font-weight="700">HIGH RISK</text>
+  <text x="576" y="441" fill="#818cf8" font-family="JetBrains Mono,monospace" font-size="9" font-weight="700">LOW / MED</text>
+  <text x="428" y="487" fill="#4ade80" font-family="JetBrains Mono,monospace" font-size="9" font-weight="700">APPROVED</text>
+  <text x="116" y="540" fill="#f87171" font-family="JetBrains Mono,monospace" font-size="9" font-weight="700">REJECTED</text>
+  <text x="820" y="533" fill="#f87171" font-family="JetBrains Mono,monospace" font-size="9" font-weight="700">FAILURE</text>
+  <text x="650" y="593" fill="#4ade80" font-family="JetBrains Mono,monospace" font-size="9" font-weight="700">SUCCESS</text>
 </svg>"""
 
     legend = """

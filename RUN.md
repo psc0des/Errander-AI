@@ -192,6 +192,17 @@ uv run python -m errander --check-llm
 # Latency : ~1100 ms
 ```
 
+### Pre-flight VM readiness check
+
+Verify SSH access, sudo privilege, and OS detection for every VM in an environment before running a batch:
+
+```bash
+uv run python -m errander --check-targets dev
+uv run python -m errander --check-targets production
+```
+
+Prints a readiness table (hostname, SSH status, sudo status, OS detected). Fix any failures before running live batches.
+
 ---
 
 ## Monitoring with Prometheus + Grafana
@@ -264,6 +275,7 @@ The agent will not interrupt a running SSH command mid-flight — it finishes th
 | `--force` | Bypass maintenance window check |
 | `--force-reason <text>` | Required with `--force` — logged to audit trail |
 | `--check-llm` | Test vLLM connectivity and print latency |
+| `--check-targets <env>` | Pre-flight SSH + sudo + OS readiness check for all VMs in an environment |
 | `--audit --batches` | Print recent batch history |
 | `--audit --batch-id <id>` | Print all events for a specific batch |
 

@@ -31,6 +31,7 @@ from errander.config.settings import Settings
 from errander.execution.sandbox import SandboxExecutor
 from errander.execution.ssh import SSHConnectionManager, SSHResult
 from errander.models.actions import ActionStatus
+from errander.execution.target_validation import TargetReadiness
 from errander.safety.audit import AuditStore
 from errander.safety.locking import FileLocker
 
@@ -53,6 +54,11 @@ def _make_targets(n: int) -> list[dict[str, object]]:
 
 
 _OS_RELEASE = 'ID=ubuntu\nVERSION_ID="22.04"\nPRETTY_NAME="Ubuntu 22.04 LTS"\n'
+
+_PATCH_CHECK_TARGET = patch(
+    "errander.execution.target_validation.check_target",
+    new=AsyncMock(return_value=TargetReadiness(vm_id="", hostname="")),
+)
 
 
 def _ssh_ok(stdout: str = _OS_RELEASE, exit_code: int = 0) -> SSHResult:
@@ -198,6 +204,7 @@ class TestFleetBatchGraph:
         with (
             patch.object(ssh, "execute", AsyncMock(return_value=_ssh_ok())),
             patch("errander.agent.graph.build_vm_graph", return_value=_make_fast_vm_mock()),
+            _PATCH_CHECK_TARGET,
         ):
             final = await build_batch_graph(
                 executor, locker, audit_store, ssh, settings=settings,
@@ -215,6 +222,7 @@ class TestFleetBatchGraph:
         with (
             patch.object(ssh, "execute", AsyncMock(return_value=_ssh_ok())),
             patch("errander.agent.graph.build_vm_graph", return_value=_make_fast_vm_mock()),
+            _PATCH_CHECK_TARGET,
         ):
             final = await build_batch_graph(
                 executor, locker, audit_store, ssh, settings=settings,
@@ -245,6 +253,7 @@ class TestFleetBatchGraph:
         with (
             patch.object(ssh, "execute", side_effect=_ssh),
             patch("errander.agent.graph.build_vm_graph", return_value=_make_fast_vm_mock()),
+            _PATCH_CHECK_TARGET,
         ):
             final = await build_batch_graph(
                 executor, locker, audit_store, ssh, settings=settings,
@@ -276,6 +285,7 @@ class TestFleetBatchGraph:
         with (
             patch.object(ssh, "execute", side_effect=_ssh),
             patch("errander.agent.graph.build_vm_graph", return_value=_make_fast_vm_mock()),
+            _PATCH_CHECK_TARGET,
         ):
             final = await build_batch_graph(
                 executor, locker, audit_store, ssh, settings=settings,
@@ -294,6 +304,7 @@ class TestFleetBatchGraph:
         with (
             patch.object(ssh, "execute", AsyncMock(return_value=_ssh_ok())),
             patch("errander.agent.graph.build_vm_graph", return_value=_make_fast_vm_mock()),
+            _PATCH_CHECK_TARGET,
         ):
             final = await build_batch_graph(
                 executor, locker, audit_store, ssh, settings=settings,
@@ -347,6 +358,7 @@ class TestFleetBatchGraph:
         with (
             patch.object(ssh, "execute", AsyncMock(return_value=_ssh_ok())),
             patch("errander.agent.graph.build_vm_graph", return_value=mock_graph),
+            _PATCH_CHECK_TARGET,
         ):
             final = await build_batch_graph(
                 executor, locker, audit_store, ssh, settings=settings,

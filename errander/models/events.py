@@ -36,6 +36,7 @@ class EventType(StrEnum):
     DEFERRED_EXECUTION_STARTED = "deferred_execution_started"
     FLEET_ABORT = "fleet_abort"
     OS_MISMATCH = "os_mismatch"
+    TARGET_READINESS_BLOCKED = "target_readiness_blocked"
     # SRE signals — Phase 1
     PREFLIGHT_LOCK_DETECTED = "preflight_lock_detected"
     PREFLIGHT_LOCK_CLEAR = "preflight_lock_clear"

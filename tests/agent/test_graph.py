@@ -201,11 +201,14 @@ class TestValidateWindowNode:
 class TestValidateTargetsNode:
     @pytest.mark.asyncio
     async def test_healthy_target_on_success(self) -> None:
+        from errander.execution.target_validation import TargetReadiness
         ssh = SSHConnectionManager()
         os_release = 'ID=ubuntu\nVERSION_ID="22.04"\nPRETTY_NAME="Ubuntu 22.04"\n'
+        ready = TargetReadiness(vm_id="dev/web-01", hostname="10.0.1.10")
         async with AuditStore(":memory:") as store:
-            with patch.object(
-                ssh, "execute", AsyncMock(return_value=_make_ssh_result(os_release)),
+            with (
+                patch.object(ssh, "execute", AsyncMock(return_value=_make_ssh_result(os_release))),
+                patch("errander.execution.target_validation.check_target", new=AsyncMock(return_value=ready)),
             ):
                 result = await validate_targets_node(
                     _base_state(batch_id="b-001"),
@@ -254,6 +257,7 @@ class TestValidateTargetsNode:
 
     @pytest.mark.asyncio
     async def test_partitions_multiple_targets(self) -> None:
+        from errander.execution.target_validation import TargetReadiness
         ssh = SSHConnectionManager()
         targets = [
             _make_target(vm_id="dev/web-01", hostname="10.0.1.10"),
@@ -264,9 +268,11 @@ class TestValidateTargetsNode:
             _make_ssh_result(os_release),          # web-01 succeeds
             _make_ssh_result("", exit_code=1),     # web-02 fails
         ]
+        ready = TargetReadiness(vm_id="dev/web-01", hostname="10.0.1.10")
         async with AuditStore(":memory:") as store:
-            with patch.object(
-                ssh, "execute", AsyncMock(side_effect=ssh_results),
+            with (
+                patch.object(ssh, "execute", AsyncMock(side_effect=ssh_results)),
+                patch("errander.execution.target_validation.check_target", new=AsyncMock(return_value=ready)),
             ):
                 result = await validate_targets_node(
                     _base_state(batch_id="b-004", targets=targets),
@@ -441,45 +447,37 @@ class TestBuildBatchGraph:
 
         # ssh_main.execute is used by validate_targets (1 os-release call)
         # executor._ssh.execute is used by discover + disk_cleanup sub-graph
+        from errander.execution.target_validation import TargetReadiness
         os_release = 'ID=ubuntu\nVERSION_ID="22.04"\nPRETTY_NAME="Ubuntu 22.04"\n'
-        with patch.object(
-            ssh_main, "execute",
-            AsyncMock(return_value=_make_ssh_result(os_release)),
+        ready = TargetReadiness(vm_id="dev/web-01", hostname="10.0.1.10")
+        disk_cleanup_responses = [
+            # assess: df + 5 paths (both apt-cache AND yum-cache, frozenset order varies)
+            _make_ssh_result(df_output),
+            _make_ssh_result("1.0M\ttotal"),
+            _make_ssh_result("500K"),
+            _make_ssh_result("200M"),
+            _make_ssh_result("0 packages"),
+            _make_ssh_result("500K"),    # 6th assess: second cache path
+            # execute: 5 paths × simulate_command (dry_run=True)
+            _make_ssh_result("done"),
+            _make_ssh_result("done"),
+            _make_ssh_result("done"),
+            _make_ssh_result("done"),
+            _make_ssh_result("done"),    # 5th execute: second cache path
+            # log_rotation assess (dry_run=False): no large files → nothing_to_do
+            _make_ssh_result(""),
+        ]
+        with (
+            patch.object(ssh_main, "execute", AsyncMock(return_value=_make_ssh_result(os_release))),
+            patch("errander.execution.target_validation.check_target", new=AsyncMock(return_value=ready)),
+            patch("errander.agent.graph.detect_os", AsyncMock(return_value=vm_info)),
+            patch("errander.agent.vm_graph.detect_os", AsyncMock(return_value=vm_info)),
+            patch.object(executor._ssh, "execute", AsyncMock(side_effect=disk_cleanup_responses)),
         ):
-            # patch graph.detect_os so plan_vm_node plans disk_cleanup (disk=55%)
-            with patch(
-                "errander.agent.graph.detect_os",
-                AsyncMock(return_value=vm_info),
-            ):
-                with patch(
-                    "errander.agent.vm_graph.detect_os",
-                    AsyncMock(return_value=vm_info),
-                ):
-                    disk_cleanup_responses = [
-                        # assess: df + 5 paths (both apt-cache AND yum-cache, frozenset order varies)
-                        _make_ssh_result(df_output),
-                        _make_ssh_result("1.0M\ttotal"),
-                        _make_ssh_result("500K"),
-                        _make_ssh_result("200M"),
-                        _make_ssh_result("0 packages"),
-                        _make_ssh_result("500K"),    # 6th assess: second cache path
-                        # execute: 5 paths × simulate_command (dry_run=True)
-                        _make_ssh_result("done"),
-                        _make_ssh_result("done"),
-                        _make_ssh_result("done"),
-                        _make_ssh_result("done"),
-                        _make_ssh_result("done"),    # 5th execute: second cache path
-                        # log_rotation assess (dry_run=False): no large files → nothing_to_do
-                        _make_ssh_result(""),
-                    ]
-                    with patch.object(
-                        executor._ssh, "execute",
-                        AsyncMock(side_effect=disk_cleanup_responses),
-                    ):
-                        compiled = build_batch_graph(
-                            executor, locker, audit_store, ssh_main,
-                        ).compile()
-                        final = await compiled.ainvoke(_base_state())
+            compiled = build_batch_graph(
+                executor, locker, audit_store, ssh_main,
+            ).compile()
+            final = await compiled.ainvoke(_base_state())
 
         assert final.get("batch_id", "").startswith("batch-")
         assert len(final.get("healthy_targets", [])) == 1

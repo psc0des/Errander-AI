@@ -13,6 +13,7 @@ from errander.agent.graph import (
     validate_targets_node,
 )
 from errander.execution.ssh import SSHConnectionManager, SSHResult
+from errander.execution.target_validation import TargetReadiness
 from errander.models.actions import Action, ActionType, RiskTier
 from errander.models.events import EventType
 from errander.safety.audit import AuditStore
@@ -204,8 +205,12 @@ class TestOSVerification:
     @pytest.mark.asyncio
     async def test_ubuntu_match_is_healthy(self) -> None:
         ssh = SSHConnectionManager()
+        ready = TargetReadiness(vm_id="dev/web-01", hostname="10.0.1.10")
         async with AuditStore(":memory:") as store:
-            with patch.object(ssh, "execute", AsyncMock(return_value=_ssh_result(_OS_RELEASE_UBUNTU))):
+            with (
+                patch.object(ssh, "execute", AsyncMock(return_value=_ssh_result(_OS_RELEASE_UBUNTU))),
+                patch("errander.execution.target_validation.check_target", new=AsyncMock(return_value=ready)),
+            ):
                 state = _batch_state(targets=[_make_target(os_family="ubuntu")])
                 result = await validate_targets_node(state, ssh_manager=ssh, audit_store=store)
 
@@ -271,8 +276,12 @@ class TestOSVerification:
     async def test_detected_os_stored_in_target(self) -> None:
         """Detected OS family and version are stored in the target dict."""
         ssh = SSHConnectionManager()
+        ready = TargetReadiness(vm_id="dev/web-01", hostname="10.0.1.10")
         async with AuditStore(":memory:") as store:
-            with patch.object(ssh, "execute", AsyncMock(return_value=_ssh_result(_OS_RELEASE_UBUNTU))):
+            with (
+                patch.object(ssh, "execute", AsyncMock(return_value=_ssh_result(_OS_RELEASE_UBUNTU))),
+                patch("errander.execution.target_validation.check_target", new=AsyncMock(return_value=ready)),
+            ):
                 state = _batch_state(targets=[_make_target(os_family="ubuntu")])
                 result = await validate_targets_node(state, ssh_manager=ssh, audit_store=store)
 
@@ -284,8 +293,12 @@ class TestOSVerification:
     async def test_rhel_declared_and_detected_is_healthy(self) -> None:
         """rhel declared + rhel detected → healthy."""
         ssh = SSHConnectionManager()
+        ready = TargetReadiness(vm_id="dev/web-01", hostname="10.0.1.10")
         async with AuditStore(":memory:") as store:
-            with patch.object(ssh, "execute", AsyncMock(return_value=_ssh_result(_OS_RELEASE_RHEL))):
+            with (
+                patch.object(ssh, "execute", AsyncMock(return_value=_ssh_result(_OS_RELEASE_RHEL))),
+                patch("errander.execution.target_validation.check_target", new=AsyncMock(return_value=ready)),
+            ):
                 state = _batch_state(targets=[_make_target(os_family="rhel")])
                 result = await validate_targets_node(state, ssh_manager=ssh, audit_store=store)
 

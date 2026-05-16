@@ -310,6 +310,44 @@ async def validate_targets_node(
             validated = dict(t)
             validated["os_family"] = detected_family.value
             validated["os_version"] = detected_ver
+
+            # Sudo/wrapper readiness check — fail early rather than mid-batch
+            try:
+                from errander.execution.target_validation import check_target
+                readiness = await check_target(
+                    vm_id=vm_id,
+                    hostname=hostname,
+                    username=ssh_user,
+                    key_path=key_path,
+                    os_family=detected_family.value,
+                    docker_command_mode=str(t.get("docker_command_mode", "wrapper")),
+                    ssh_manager=ssh_manager,
+                )
+                if readiness.verdict == "blocked":
+                    logger.warning(
+                        "Target %s readiness BLOCKED: %s — removing from batch",
+                        vm_id, "; ".join(readiness.issues),
+                    )
+                    await audit_store.log_event(
+                        AuditEvent(
+                            event_type=EventType.TARGET_READINESS_BLOCKED,
+                            batch_id=batch_id,
+                            vm_id=vm_id,
+                            detail=f"Target readiness blocked: {'; '.join(readiness.issues)}",
+                            timestamp=datetime.now(tz=UTC),
+                        )
+                    )
+                    failed.append({**validated, "error": f"readiness blocked: {'; '.join(readiness.issues)}"})
+                    continue
+                if readiness.verdict == "warnings":
+                    logger.warning(
+                        "Target %s readiness WARNINGS: %s — proceeding with caution",
+                        vm_id, "; ".join(readiness.issues),
+                    )
+                    validated["readiness_warnings"] = readiness.issues
+            except Exception as exc:
+                logger.debug("Readiness check failed for %s: %s — proceeding", vm_id, exc)
+
             healthy.append(validated)
             logger.info(
                 "Target %s validated OK (OS: %s %s)",

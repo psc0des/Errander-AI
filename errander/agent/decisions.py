@@ -15,6 +15,7 @@ from __future__ import annotations
 import logging
 import re
 import time
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
@@ -38,6 +39,21 @@ logger = logging.getLogger(__name__)
 
 # Reject LLM output strings that contain shell-like injection patterns (finding #3.2).
 _INJECTION_RE = re.compile(r"[;&|`$(){}\\\n]|\.\./")
+
+@dataclass
+class StoredSignalContext:
+    """Historical signal context loaded from stores before planning.
+
+    Assembled by plan_vm_node from existing stores and passed to
+    prioritize_actions() so the LLM sees trend data, not just current state.
+    """
+
+    disk_trend_summary: str = ""
+    drift_kinds_detected: list[str] = field(default_factory=list)
+    recent_failure_count: int = 0
+    last_patch_days_ago: int | None = None
+    failed_login_count_24h: int = 0
+
 
 #: Default priority ordering — lowest risk first, then by operational value.
 #: Disk cleanup and log rotation free space (enables other actions).
@@ -114,6 +130,7 @@ async def prioritize_actions(
     batch_id: str = "unknown",
     vm_id: str | None = None,
     ai_store: AIDecisionStore | None = None,
+    stored_signals: StoredSignalContext | None = None,
 ) -> list[Action]:
     """Order maintenance actions by priority using LLM, with hardcoded fallback.
 
@@ -138,7 +155,7 @@ async def prioritize_actions(
     policy_obj = BUILTIN_POLICIES.get(policy) or BUILTIN_POLICIES["moderate"]
 
     if llm_client is not None:
-        prompt = _build_prioritize_prompt(vm_info, available_actions)
+        prompt = _build_prioritize_prompt(vm_info, available_actions, stored_signals)
         prompt_hash = AIDecision.hash_prompt(prompt)
         t0 = time.monotonic()
         outcome = "fallback"
@@ -313,19 +330,35 @@ async def generate_report(
 def _build_prioritize_prompt(
     vm_info: VMInfo,
     available_actions: list[ActionType],
+    stored_signals: StoredSignalContext | None = None,
 ) -> str:
     applicable = filter_applicable_actions(available_actions, vm_info)
-    return (
-        f"Prioritize these maintenance actions for a VM with the following state:\n"
-        f"- OS: {vm_info.os_family.value} {vm_info.os_version}\n"
-        f"- Disk usage: {vm_info.disk_usage}\n"
-        f"- Docker available: {vm_info.docker_available}\n"
-        f"- Pending packages: {vm_info.pending_packages}\n"
-        f"- Uptime seconds: {vm_info.uptime_seconds}\n\n"
-        f"Available actions: {[a.value for a in applicable]}\n\n"
-        f"Order them from highest to lowest urgency.\n"
-        f"Respond with JSON: {{\"action_types\": [\"<action1>\", \"<action2>\", ...]}}"
-    )
+    lines = [
+        "Prioritize these maintenance actions for a VM with the following state:",
+        f"- OS: {vm_info.os_family.value} {vm_info.os_version}",
+        f"- Disk usage: {vm_info.disk_usage}",
+        f"- Docker available: {vm_info.docker_available}",
+        f"- Pending packages: {vm_info.pending_packages}",
+        f"- Uptime seconds: {vm_info.uptime_seconds}",
+    ]
+    if stored_signals is not None:
+        lines.append("\n## Historical signals from monitoring stores")
+        if stored_signals.disk_trend_summary:
+            lines.append(f"Disk trend (7d): {stored_signals.disk_trend_summary}")
+        if stored_signals.drift_kinds_detected:
+            lines.append(f"Config drift detected: {', '.join(stored_signals.drift_kinds_detected)}")
+        if stored_signals.recent_failure_count > 0:
+            lines.append(f"Action failures (14d): {stored_signals.recent_failure_count}")
+        if stored_signals.last_patch_days_ago is not None:
+            lines.append(f"Last patched: {stored_signals.last_patch_days_ago} days ago")
+        if stored_signals.failed_login_count_24h > 0:
+            lines.append(f"Failed SSH logins (24h): {stored_signals.failed_login_count_24h}")
+    lines += [
+        f"\nAvailable actions: {[a.value for a in applicable]}",
+        "\nOrder them from highest to lowest urgency.",
+        'Respond with JSON: {"action_types": ["<action1>", "<action2>", ...]}',
+    ]
+    return "\n".join(lines)
 
 
 def _build_failure_prompt(

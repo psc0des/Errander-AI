@@ -680,12 +680,101 @@ async def generate_report_node(state: BatchGraphState) -> dict[str, Any]:
 
 # --- Planning phase nodes ---
 
+async def _load_stored_signals(
+    vm_id: str,
+    audit_store: Any,
+    disk_history_store: Any,
+    baseline_store: Any,
+) -> Any:
+    """Read pre-existing store data for a VM to inform planning.
+
+    Best-effort: all failures return empty StoredSignalContext rather than blocking planning.
+    """
+    from errander.agent.decisions import StoredSignalContext
+    from errander.models.events import EventType
+    from errander.safety.disk_history import VMDiskHistoryStore as _DiskStore
+
+    ctx = StoredSignalContext()
+
+    if isinstance(disk_history_store, _DiskStore):
+        try:
+            mountpoints = await disk_history_store.get_distinct_mountpoints(vm_id)
+            trend_parts: list[str] = []
+            for mp in mountpoints[:3]:
+                points = await disk_history_store.get_window(vm_id, mp, window_days=7)
+                if len(points) >= 2:
+                    delta = points[-1].used_pct - points[0].used_pct
+                    trend_parts.append(
+                        f"{mp}: {points[-1].used_pct:.0f}%"
+                        + (f" (+{delta:.0f}% over 7d)" if delta >= 2 else "")
+                    )
+            ctx.disk_trend_summary = "; ".join(trend_parts)
+        except Exception:
+            pass
+
+    if audit_store is not None:
+        try:
+            drift_events = await audit_store.get_events(
+                vm_id=vm_id,
+                event_type=EventType.DRIFT_KIND_CHANGED,
+                limit=20,
+            )
+            ctx.drift_kinds_detected = sorted({
+                str(e.metadata.get("kind", ""))
+                for e in drift_events
+                if e.metadata.get("kind")
+            })
+        except Exception:
+            pass
+
+    if audit_store is not None:
+        try:
+            failures = await audit_store.get_events(
+                vm_id=vm_id,
+                event_type=EventType.ACTION_FAILED,
+                limit=50,
+            )
+            ctx.recent_failure_count = len(failures)
+
+            patch_completed = await audit_store.get_events(
+                vm_id=vm_id,
+                event_type=EventType.ACTION_COMPLETED,
+                limit=20,
+            )
+            import datetime as _dt
+            for ev in patch_completed:
+                if str(ev.action_type) == "patching":
+                    if ev.timestamp:
+                        delta = _dt.datetime.now(_dt.UTC) - ev.timestamp.replace(tzinfo=_dt.UTC)
+                        ctx.last_patch_days_ago = delta.days
+                    break
+        except Exception:
+            pass
+
+    if audit_store is not None:
+        try:
+            login_events = await audit_store.get_events(
+                vm_id=vm_id,
+                event_type=EventType.FAILED_SSH_LOGINS_OBSERVED,
+                limit=5,
+            )
+            for ev in login_events:
+                ctx.failed_login_count_24h += int(str(ev.metadata.get("total_count", 0)))
+        except Exception:
+            pass
+
+    return ctx
+
+
 async def plan_vm_node(
     state: dict[str, Any],
     *,
     ssh_manager: SSHConnectionManager,
     llm_client: Any = None,
     ai_decision_store: Any = None,
+    audit_store: Any = None,
+    disk_history_store: Any = None,
+    baseline_store: Any = None,
 ) -> dict[str, Any]:
     """Plan actions for a single VM without any execution.
 
@@ -715,6 +804,13 @@ async def plan_vm_node(
         logger.warning("Planning SSH failed for %s: %s — VM excluded from plan", vm_id, exc)
         return {"vm_plans": []}
 
+    stored_signals = await _load_stored_signals(
+        vm_id=vm_id,
+        audit_store=audit_store,
+        disk_history_store=disk_history_store,
+        baseline_store=baseline_store,
+    )
+
     actions = await prioritize_actions(
         vm_info,
         llm_client=llm_client,
@@ -722,6 +818,7 @@ async def plan_vm_node(
         batch_id=batch_id,
         vm_id=vm_id,
         ai_store=ai_decision_store,
+        stored_signals=stored_signals,
     )
 
     return {
@@ -1626,6 +1723,9 @@ def build_batch_graph(
             ssh_manager=ssh_manager,
             llm_client=llm_client,
             ai_decision_store=ai_decision_store,
+            audit_store=audit_store,
+            disk_history_store=disk_history_store,
+            baseline_store=baseline_store,
         )
 
     async def _check_wave_health(state: BatchGraphState) -> dict[str, Any]:

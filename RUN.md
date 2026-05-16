@@ -276,6 +276,8 @@ The agent will not interrupt a running SSH command mid-flight — it finishes th
 | `--force-reason <text>` | Required with `--force` — logged to audit trail |
 | `--check-llm` | Test vLLM connectivity and print latency |
 | `--check-targets <env>` | Pre-flight SSH + sudo + OS readiness check for all VMs in an environment |
+| `--probe-now <env>` | Run daily probe (disk, drift, failed logins, journal errors, ELK) — read-only |
+| `--ask "<question>"` | LLM fleet analysis (Layer A — read-only, no changes) |
 | `--audit --batches` | Print recent batch history |
 | `--audit --batch-id <id>` | Print all events for a specific batch |
 

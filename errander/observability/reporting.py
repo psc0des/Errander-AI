@@ -260,6 +260,14 @@ def render_digest_report(report: DigestReport) -> str:
         for vm_id, hostname, metrics in prom_vms:
             lines.append(f"  `{vm_id}` ({hostname}): {', '.join(metrics)}")
 
+    elk_vms = [(r.vm_id, r.hostname, r.elk_errors) for r in report.vm_results if r.elk_errors]
+    if elk_vms:
+        lines.append(f"\n*:mag: ELK Errors — Last 24h ({len(elk_vms)} VM(s))*")
+        for vm_id, hostname, errors in elk_vms:
+            lines.append(f"  `{vm_id}` ({hostname}):")
+            for err in errors[:3]:
+                lines.append(f"    {err}")
+
     if not unreachable and not disk_alerts and not drift_changes and not failed_logins:
         lines.append("\n:white_check_mark: No signals detected -- fleet healthy")
 

@@ -27,6 +27,7 @@ if TYPE_CHECKING:
     from errander.config.settings import SRESignalSettings
     from errander.execution.sandbox import SandboxExecutor
     from errander.execution.ssh import SSHConnectionManager
+    from errander.integrations.elk import ElkClient
     from errander.integrations.prometheus import PrometheusClient
     from errander.safety.audit import AuditStore
 
@@ -48,6 +49,7 @@ async def probe_vm(
     audit_store: AuditStore,
     sre_settings: SRESignalSettings,
     prometheus_client: PrometheusClient | None = None,
+    elk_client: ElkClient | None = None,
 ) -> ProbeVMResult:
     """Run all signal probes against one VM. Read-only — never modifies state.
 
@@ -117,6 +119,10 @@ async def probe_vm(
         if prometheus_client is not None:
             prom_metrics = await prometheus_client.fetch_vm_metrics(hostname)
 
+        elk_errors: list[str] = []
+        if elk_client is not None:
+            elk_errors = await elk_client.fetch_vm_errors(hostname)
+
         return ProbeVMResult(
             vm_id=vm_id,
             hostname=hostname,
@@ -125,6 +131,7 @@ async def probe_vm(
             drift_changes=raw_drift if isinstance(raw_drift, list) else [],
             failed_login_summary=raw_login if isinstance(raw_login, dict) else None,
             prometheus_metrics=prom_metrics,
+            elk_errors=elk_errors,
         )
     except Exception as exc:
         logger.warning("probe_vm failed for %s: %s", vm_id, exc)
@@ -142,6 +149,7 @@ async def run_env_probe(
     audit_store: AuditStore,
     sre_settings: SRESignalSettings,
     prometheus_client: PrometheusClient | None = None,
+    elk_client: ElkClient | None = None,
 ) -> DigestReport:
     """Probe every VM in an environment concurrently and return a DigestReport."""
     probe_id = f"probe-{env_name}-{datetime.now(UTC).strftime('%Y%m%dT%H%M%S')}"
@@ -169,6 +177,7 @@ async def run_env_probe(
             audit_store=audit_store,
             sre_settings=sre_settings,
             prometheus_client=prometheus_client,
+            elk_client=elk_client,
         )
         for vm in vms
     ]

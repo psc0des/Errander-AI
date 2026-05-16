@@ -91,6 +91,14 @@ slack:
 #
 # prometheus_base_url: "http://prometheus.internal:9090"
 
+# ELK / Elasticsearch (optional — Layer A investigation data source)
+# Leave blank to disable. Activates automatically when elk_base_url is set.
+# Queries error/warn log events per VM using ECS fields (Filebeat 7+/8).
+#
+# elk_base_url: "http://elasticsearch:9200"
+# elk_api_key: ""                             # Elasticsearch API key (optional)
+# elk_index_pattern: "filebeat-*,logstash-*"  # Comma-separated index patterns
+
 llm:
   # Required: model ID (provider-specific — see docs/LLM-PROVIDERS.md)
   # Examples: "Qwen/Qwen3-8B-AWQ" (vLLM), "gpt-4o-mini" (OpenAI),

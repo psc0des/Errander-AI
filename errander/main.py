@@ -617,9 +617,18 @@ async def run_env_probe_main(env_name: str, inventory_path: Path) -> int:
             channel_id=settings.slack_channel_id,
         )
 
+    from errander.integrations.elk import ElkClient as _ElkClient
     from errander.integrations.prometheus import PrometheusClient as _PromClient
     prom: _PromClient | None = (
         _PromClient(settings.prometheus_base_url) if settings.prometheus_base_url else None
+    )
+    elk: _ElkClient | None = (
+        _ElkClient(
+            settings.elk_base_url,
+            api_key=settings.elk_api_key,
+            index_pattern=settings.elk_index_pattern,
+        )
+        if settings.elk_base_url else None
     )
 
     async with audit_store:
@@ -649,10 +658,13 @@ async def run_env_probe_main(env_name: str, inventory_path: Path) -> int:
                 audit_store=audit_store,
                 sre_settings=settings.sre_signals,
                 prometheus_client=prom,
+                elk_client=elk,
             )
         finally:
             if prom is not None:
                 await prom.close()
+            if elk is not None:
+                await elk.close()
 
     digest_text = render_digest_report(report)
     print(digest_text)
@@ -709,9 +721,18 @@ async def run_ask_query(
             temperature=settings.llm_temperature,
         )
 
+    from errander.integrations.elk import ElkClient as _ElkClientAsk
     from errander.integrations.prometheus import PrometheusClient as _PromClient
     prom: _PromClient | None = (
         _PromClient(settings.prometheus_base_url) if settings.prometheus_base_url else None
+    )
+    elk_ask: _ElkClientAsk | None = (
+        _ElkClientAsk(
+            settings.elk_base_url,
+            api_key=settings.elk_api_key,
+            index_pattern=settings.elk_index_pattern,
+        )
+        if settings.elk_base_url else None
     )
 
     async with audit_store:
@@ -729,10 +750,13 @@ async def run_ask_query(
                 env_name=env_name,
                 llm_client=llm,
                 prometheus_client=prom,
+                elk_client=elk_ask,
             )
         finally:
             if prom is not None:
                 await prom.close()
+            if elk_ask is not None:
+                await elk_ask.close()
 
     print(f"\n[{response.risk_level.upper()} RISK] {response.summary}\n")
     print("Findings:")

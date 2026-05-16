@@ -145,6 +145,7 @@ class ProbeVMResult:
     failed_login_summary: dict[str, object] | None = None
     error: str | None = None
     prometheus_metrics: list[str] = field(default_factory=list)
+    elk_errors: list[str] = field(default_factory=list)
 
 
 @dataclass

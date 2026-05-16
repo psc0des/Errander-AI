@@ -10,15 +10,28 @@ from __future__ import annotations
 
 import glob
 import os
+import sys
 
 import pytest
 
 
 def _chromium_installed() -> bool:
-    pattern = os.path.expanduser(
-        "~/.cache/ms-playwright/chromium*/chrome-headless-shell-linux64/chrome-headless-shell"
-    )
-    return bool(glob.glob(pattern))
+    if sys.platform == "win32":
+        patterns = [
+            os.path.expandvars(
+                r"%LOCALAPPDATA%\ms-playwright\chromium*\chrome-win64\chrome.exe"
+            ),
+            os.path.expandvars(
+                r"%LOCALAPPDATA%\ms-playwright\chromium*\chrome-win\chrome.exe"
+            ),
+        ]
+    else:
+        patterns = [
+            os.path.expanduser(
+                "~/.cache/ms-playwright/chromium*/chrome-headless-shell-linux64/chrome-headless-shell"
+            ),
+        ]
+    return any(glob.glob(p) for p in patterns)
 
 
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:

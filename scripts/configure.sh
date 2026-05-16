@@ -50,7 +50,7 @@ echo "  This script will:"
 echo "    1. Collect your LLM credentials and verify the connection"
 echo "    2. Add your target VMs"
 echo "    3. Verify your SSH key exists (see SETUP.md Step 2 to create one)"
-echo "    4. Optionally configure Slack notifications"
+echo "    4. Optionally configure Slack, Prometheus, and ELK (all optional — press N to skip)"
 echo "    5. Set web UI credentials, optionally encrypt secrets, write .env and inventory.yaml"
 echo ""
 echo "  Have your LLM endpoint URL, model name, and API key ready."
@@ -290,6 +290,49 @@ case "${SLACK_CHOICE,,}" in
     ;;
 esac
 
+# ── 4b. Prometheus (optional) ────────────────────────────────────────────────
+echo ""
+printf "  Do you use Prometheus for VM metrics? (y/N): "
+read -r PROM_CHOICE
+echo ""
+
+PROMETHEUS_BASE_URL=""
+case "${PROM_CHOICE,,}" in
+  y|yes)
+    prompt_val "Prometheus URL" "http://localhost:9090"
+    PROMETHEUS_BASE_URL="$REPLY"
+    ok "Prometheus configured: $PROMETHEUS_BASE_URL"
+    ;;
+  *)
+    ok "Skipping Prometheus — live VM metrics will use SSH-only probes"
+    ;;
+esac
+
+# ── 4c. ELK / Elasticsearch (optional) ───────────────────────────────────────
+echo ""
+printf "  Do you use ELK / Elasticsearch for log aggregation? (y/N): "
+read -r ELK_CHOICE
+echo ""
+
+ELK_BASE_URL=""
+ELK_API_KEY=""
+ELK_INDEX_PATTERN="filebeat-*,logstash-*"
+
+case "${ELK_CHOICE,,}" in
+  y|yes)
+    prompt_val "Elasticsearch URL" "http://localhost:9200"
+    ELK_BASE_URL="$REPLY"
+    prompt_val "API key  (press Enter to skip for unauthenticated)" ""
+    ELK_API_KEY="$REPLY"
+    prompt_val "Index pattern" "filebeat-*,logstash-*"
+    ELK_INDEX_PATTERN="$REPLY"
+    ok "ELK configured: $ELK_BASE_URL  index=$ELK_INDEX_PATTERN"
+    ;;
+  *)
+    ok "Skipping ELK — journal errors will be read via journalctl over SSH"
+    ;;
+esac
+
 # ── 5. Write files ────────────────────────────────────────────────────────────
 step "5/5" "Writing .env and inventory.yaml"
 
@@ -446,6 +489,24 @@ _env_slack_token=""
     echo ""
     echo "ERRANDER_UI_USER=${_ui_user}"
     echo "ERRANDER_UI_PASSWORD=${_env_ui_pass}"
+    echo ""
+    if [ -n "$PROMETHEUS_BASE_URL" ]; then
+        echo "ERRANDER_PROMETHEUS_BASE_URL=${PROMETHEUS_BASE_URL}"
+    else
+        echo "# Prometheus not configured (optional — enables VM metrics in --ask and probe digest)"
+        echo "# ERRANDER_PROMETHEUS_BASE_URL=http://localhost:9090"
+    fi
+    echo ""
+    if [ -n "$ELK_BASE_URL" ]; then
+        echo "ERRANDER_ELK_BASE_URL=${ELK_BASE_URL}"
+        [ -n "$ELK_API_KEY" ] && echo "ERRANDER_ELK_API_KEY=${ELK_API_KEY}"
+        echo "ERRANDER_ELK_INDEX_PATTERN=${ELK_INDEX_PATTERN}"
+    else
+        echo "# ELK not configured (optional — adds log error summaries to --ask and probe digest)"
+        echo "# ERRANDER_ELK_BASE_URL=http://localhost:9200"
+        echo "# ERRANDER_ELK_API_KEY=your-api-key"
+        echo "# ERRANDER_ELK_INDEX_PATTERN=filebeat-*,logstash-*"
+    fi
 } > .env
 
 chmod 600 .env

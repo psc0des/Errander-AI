@@ -189,9 +189,12 @@ class TestBatchDetail:
         expect(page.get_by_text("SSH timeout after 300s")).to_be_visible()
 
     def test_vm_link_navigates_to_vm_page(self, page: Page, ui_base_url: str) -> None:
+        from urllib.parse import quote
         page.goto(f"{ui_base_url}/ui/batches/batch-2026-04-01")
         page.get_by_role("link", name="prod/web-01").first.click()
-        expect(page).to_have_url(f"{ui_base_url}/ui/vms/prod/web-01")
+        # vm_ids containing "/" are URL-encoded in the href; browser preserves %2F
+        encoded = quote("prod/web-01", safe="")
+        expect(page).to_have_url(f"{ui_base_url}/ui/vms/{encoded}")
 
     def test_back_link_returns_to_list(self, page: Page, ui_base_url: str) -> None:
         page.goto(f"{ui_base_url}/ui/batches/batch-2026-04-01")

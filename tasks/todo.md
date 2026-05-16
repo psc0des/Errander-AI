@@ -174,7 +174,7 @@ Implementation plan: `tasks/sonnet-phase-a-plan.md`
 - [x] mypy: 112 errors (down from 142 at second-pass audit — net improvement)
 - [x] 1307 tests passing, 111 skipped — no regressions
 - [ ] P0-1 — Immutable approved plan artifact (architecture work — deferred)
-- [ ] P0-2 — Deferred execution applies exact approved artifact (architecture work — deferred)
+- [x] P0-2 — Deferred execution applies exact approved artifact (commits 29e72de, b4641e1 — 2026-05-16)
 
 ## SRE Production Wiring Fix (2026-05-14)
 

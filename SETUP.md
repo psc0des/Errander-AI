@@ -718,6 +718,32 @@ ERRANDER_SLACK_BOT_TOKEN=xoxb-your-token-here
 ERRANDER_SLACK_CHANNEL_ID=C0123456789
 ```
 
+### Prometheus metrics *(optional)*
+
+> **Skip if you don't have Prometheus.** The agent runs fully without it. Prometheus adds VM CPU, memory, and disk metrics to the `--ask` fleet analysis and daily probe digest.
+
+If you have a Prometheus instance scraping your VMs via `node_exporter`:
+
+```
+ERRANDER_PROMETHEUS_BASE_URL=http://<prometheus-host>:9090
+```
+
+Add this to your `.env`. Leave it blank or omit it entirely to disable.
+
+### ELK / Elasticsearch log aggregation *(optional)*
+
+> **Skip if you don't use ELK.** Without it the agent reads `journalctl` directly from each VM via SSH. ELK adds aggregated log error counts and error summaries to the probe digest and `--ask` analysis.
+
+If you have an Elasticsearch endpoint (Elastic Cloud, self-hosted, or OpenSearch):
+
+```
+ERRANDER_ELK_BASE_URL=http://<elasticsearch-host>:9200
+ERRANDER_ELK_API_KEY=<your-api-key>           # omit if no auth required
+ERRANDER_ELK_INDEX_PATTERN=filebeat-*,logstash-*   # default; change if needed
+```
+
+Add these to your `.env`. Leave `ERRANDER_ELK_BASE_URL` blank or omit it to disable.
+
 ---
 
 ## Step 6 — Verify everything

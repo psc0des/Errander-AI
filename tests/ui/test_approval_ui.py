@@ -11,6 +11,8 @@ Tests cover:
 
 from __future__ import annotations
 
+import re
+
 import pytest
 from aiohttp.test_utils import TestClient, TestServer
 
@@ -36,6 +38,29 @@ async def _make_client(
     client = TestClient(TestServer(app))
     await client.start_server()
     return client, store
+
+
+async def _csrf_post(
+    client: TestClient,
+    url: str,
+    *,
+    allow_redirects: bool = True,
+    data: dict[str, str] | None = None,
+) -> object:
+    """GET /ui/approvals to receive the CSRF cookie, then POST with the token.
+
+    The CSRF middleware uses a double-submit cookie pattern: a GET to any /ui/*
+    page sets the cookie and injects the HMAC token into forms. This helper
+    replicates that flow so unit tests don't need to be aware of the internals.
+    """
+    # /ui/settings always renders a form → reliable CSRF token source
+    # (approvals page has no form when there are no pending approvals)
+    get_resp = await client.get("/ui/settings")
+    html = await get_resp.text()
+    m = re.search(r'name="_csrf_token"\s+value="([^"]+)"', html)
+    token = m.group(1) if m else ""
+    post_data = {"_csrf_token": token, **(data or {})}
+    return await client.post(url, data=post_data, allow_redirects=allow_redirects)
 
 
 # ---------------------------------------------------------------------------
@@ -183,9 +208,8 @@ class TestApprovalDecideApprove:
         manager.register("batch-app-01", "report")
         client, store = await _make_client(manager=manager)
         try:
-            resp = await client.post(
-                "/ui/approvals/batch-app-01/approve",
-                allow_redirects=False,
+            resp = await _csrf_post(
+                client, "/ui/approvals/batch-app-01/approve", allow_redirects=False,
             )
             assert resp.status == 302
             assert resp.headers["Location"] == "/ui/approvals"
@@ -199,7 +223,7 @@ class TestApprovalDecideApprove:
         manager.register("batch-app-02", "report")
         client, store = await _make_client(manager=manager)
         try:
-            await client.post("/ui/approvals/batch-app-02/approve")
+            await _csrf_post(client, "/ui/approvals/batch-app-02/approve")
 
             assert len(manager.get_pending()) == 0
             history = manager.get_history()
@@ -229,7 +253,7 @@ class TestApprovalDecideApprove:
             task = asyncio.create_task(_waiter())
             await asyncio.sleep(0)  # let the waiter start
 
-            await client.post("/ui/approvals/batch-app-03/approve")
+            await _csrf_post(client, "/ui/approvals/batch-app-03/approve")
             await asyncio.wait_for(task, timeout=2)
 
             assert result == [(True, "ui")]
@@ -249,9 +273,8 @@ class TestApprovalDecideReject:
         manager.register("batch-rej-01", "report")
         client, store = await _make_client(manager=manager)
         try:
-            resp = await client.post(
-                "/ui/approvals/batch-rej-01/reject",
-                allow_redirects=False,
+            resp = await _csrf_post(
+                client, "/ui/approvals/batch-rej-01/reject", allow_redirects=False,
             )
             assert resp.status == 302
             assert resp.headers["Location"] == "/ui/approvals"
@@ -265,7 +288,7 @@ class TestApprovalDecideReject:
         manager.register("batch-rej-02", "report")
         client, store = await _make_client(manager=manager)
         try:
-            await client.post("/ui/approvals/batch-rej-02/reject")
+            await _csrf_post(client, "/ui/approvals/batch-rej-02/reject")
 
             history = manager.get_history()
             assert len(history) == 1
@@ -293,7 +316,7 @@ class TestApprovalDecideReject:
             task = asyncio.create_task(_waiter())
             await asyncio.sleep(0)
 
-            await client.post("/ui/approvals/batch-rej-03/reject")
+            await _csrf_post(client, "/ui/approvals/batch-rej-03/reject")
             await asyncio.wait_for(task, timeout=2)
 
             assert result == [(False, "ui")]
@@ -307,9 +330,8 @@ class TestApprovalDecideReject:
         manager = ApprovalManager()
         client, store = await _make_client(manager=manager)
         try:
-            resp = await client.post(
-                "/ui/approvals/no-such-batch/approve",
-                allow_redirects=False,
+            resp = await _csrf_post(
+                client, "/ui/approvals/no-such-batch/approve", allow_redirects=False,
             )
             # Should still redirect — idempotent, not an error
             assert resp.status == 302
@@ -327,9 +349,8 @@ class TestApprovalDecideNoManager:
     async def test_approve_returns_503_without_manager(self) -> None:
         client, store = await _make_client(manager=None)
         try:
-            resp = await client.post(
-                "/ui/approvals/b-any/approve",
-                allow_redirects=False,
+            resp = await _csrf_post(
+                client, "/ui/approvals/b-any/approve", allow_redirects=False,
             )
             assert resp.status == 503
         finally:

@@ -730,6 +730,17 @@ ERRANDER_PROMETHEUS_BASE_URL=http://<prometheus-host>:9090
 
 Add this to your `.env`. Leave it blank or omit it entirely to disable.
 
+**Per-environment override:** If each environment has its own Prometheus cluster, set `prometheus_url:` under the environment block in `inventory.yaml`. The env-level value takes priority over the global `.env` setting:
+
+```yaml
+# inventory.yaml
+environments:
+  production:
+    prometheus_url: http://10.0.1.100:9090   # overrides ERRANDER_PROMETHEUS_BASE_URL
+  staging:
+    # no prometheus_url → uses global ERRANDER_PROMETHEUS_BASE_URL
+```
+
 ### ELK / Elasticsearch log aggregation *(optional)*
 
 > **Skip if you don't use ELK.** Without it the agent reads `journalctl` directly from each VM via SSH. ELK adds aggregated log error counts and error summaries to the probe digest and `--ask` analysis.
@@ -743,6 +754,19 @@ ERRANDER_ELK_INDEX_PATTERN=filebeat-*,logstash-*   # default; change if needed
 ```
 
 Add these to your `.env`. Leave `ERRANDER_ELK_BASE_URL` blank or omit it to disable.
+
+**Per-environment override:** Each ELK field can be overridden independently in `inventory.yaml`. Fields not set in the env block fall back to the global `.env` values:
+
+```yaml
+# inventory.yaml
+environments:
+  production:
+    elk_url: http://10.0.1.101:9200          # overrides ERRANDER_ELK_BASE_URL
+    elk_index_pattern: prod-logs-*           # overrides ERRANDER_ELK_INDEX_PATTERN
+    # elk_api_key not set → uses global ERRANDER_ELK_API_KEY
+  staging:
+    # no elk_* → all use global .env values
+```
 
 ---
 

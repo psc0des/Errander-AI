@@ -107,6 +107,16 @@ class EnvironmentSchema(BaseModel):
     # Environment-level default; host-level list overrides when set.
     critical_services: list[str] = []
     docker_command_mode: Literal["wrapper", "direct_sudo", "disabled"] = "wrapper"
+
+    # Per-environment Prometheus/ELK URL overrides.
+    # When set, these override the global ERRANDER_PROMETHEUS_BASE_URL /
+    # ERRANDER_ELK_BASE_URL values for probes scoped to this environment.
+    # Leave unset to use the global default from .env / environment variables.
+    prometheus_url: str | None = None
+    elk_url: str | None = None
+    elk_api_key: str | None = None
+    elk_index_pattern: str | None = None
+
     targets: list[TargetSchema]
 
     @field_validator("approval_policy")

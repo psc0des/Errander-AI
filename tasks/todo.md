@@ -1,3 +1,16 @@
+## Per-environment Prometheus/ELK URL overrides (2026-05-17, completed)
+
+- [x] `EnvironmentSchema` in `schema.py`: `prometheus_url`, `elk_url`, `elk_api_key`, `elk_index_pattern` (all `str | None = None`)
+- [x] `main.py`: `_resolve_prometheus_url(env, settings)` + `_resolve_elk_config(env, settings)` resolver functions
+- [x] `run_env_probe_main()`: uses resolver — env URL wins over global
+- [x] `run_ask_query()`: looks up env schema by `env_name`, uses resolver
+- [x] Scheduler `_run_probe` closure: uses resolver for prom + now also wires ELK for first time
+- [x] `example/inventory.yaml`: per-env override examples (commented)
+- [x] `SETUP.md`: two-level resolution documented under Prometheus and ELK sections
+- [x] `scripts/configure.sh`: prompts updated to say "global default — override per-env in inventory.yaml"
+- [x] 14 new tests in `tests/config/test_env_url_overrides.py`
+- [x] 1707 tests passing, 0 regressions; ruff clean; mypy clean
+
 ## Phase F — LangGraph Signal Integration (2026-05-16, completed)
 
 - [x] F1: `StoredSignalContext` dataclass in `decisions.py`; `_load_stored_signals()` in `graph.py`; `plan_vm_node` reads disk/drift/patch/login history and passes to `prioritize_actions()`; 9 new tests (`test_plan_vm_stored_signals.py`)

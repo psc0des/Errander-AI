@@ -25,6 +25,15 @@
 #             counts are expected and would produce noisy false alerts.
 #             Default: false (probe is enabled for all hosts).
 #
+# Per-environment Prometheus/ELK URL overrides (all optional):
+#   prometheus_url: http://10.0.1.100:9090   # overrides global ERRANDER_PROMETHEUS_BASE_URL
+#   elk_url: http://10.0.1.101:9200          # overrides global ERRANDER_ELK_BASE_URL
+#   elk_api_key: env-scoped-key              # overrides global ERRANDER_ELK_API_KEY
+#   elk_index_pattern: prod-logs-*           # overrides global ERRANDER_ELK_INDEX_PATTERN
+#
+# Each field is resolved independently: set only the ones that differ from the global default.
+# Useful when each environment has its own Prometheus/ELK cluster.
+#
 # Note: SSH keys are referenced by path. Never inline key material.
 # The agent uses key-based auth only — passwords are not supported.
 
@@ -34,6 +43,10 @@ environments:
     ssh_user: errander
     ssh_key_path: ~/.ssh/errander_prod
     approval_policy: strict
+    # Production uses a dedicated Prometheus instance — override the global URL here.
+    # prometheus_url: http://10.0.1.100:9090
+    # elk_url: http://10.0.1.101:9200
+    # elk_index_pattern: prod-logs-*
     maintenance_window: "02:00-06:00"
     maintenance_days:
       - tuesday
@@ -86,6 +99,8 @@ environments:
     ssh_user: errander
     ssh_key_path: ~/.ssh/errander_staging
     approval_policy: strict
+    # Staging shares the global Prometheus/ELK — no override needed.
+    # Set prometheus_url / elk_url here if your staging cluster is separate.
     maintenance_window: "22:00-06:00"   # overnight window crosses midnight
     maintenance_timezone: UTC
     maintenance_days:

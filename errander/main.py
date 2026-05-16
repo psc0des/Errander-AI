@@ -242,6 +242,28 @@ def _build_maintenance_window(env: EnvironmentSchema) -> MaintenanceWindow | Non
         return None
 
 
+def _resolve_prometheus_url(env: EnvironmentSchema | None, settings: Settings) -> str:
+    """Return the effective Prometheus URL: env-level override takes priority."""
+    if env is not None and env.prometheus_url:
+        return env.prometheus_url
+    return settings.prometheus_base_url
+
+
+def _resolve_elk_config(
+    env: EnvironmentSchema | None, settings: Settings
+) -> tuple[str, str, str]:
+    """Return (elk_url, elk_api_key, elk_index_pattern) with env-level priority."""
+    if env is not None:
+        url = env.elk_url or settings.elk_base_url
+        api_key = env.elk_api_key or settings.elk_api_key
+        index_pattern = env.elk_index_pattern or settings.elk_index_pattern
+    else:
+        url = settings.elk_base_url
+        api_key = settings.elk_api_key
+        index_pattern = settings.elk_index_pattern
+    return url, api_key, index_pattern
+
+
 def _build_components(settings: Settings) -> tuple[
     SSHConnectionManager,
     SandboxExecutor,
@@ -619,16 +641,12 @@ async def run_env_probe_main(env_name: str, inventory_path: Path) -> int:
 
     from errander.integrations.elk import ElkClient as _ElkClient
     from errander.integrations.prometheus import PrometheusClient as _PromClient
-    prom: _PromClient | None = (
-        _PromClient(settings.prometheus_base_url) if settings.prometheus_base_url else None
-    )
+    _prom_url = _resolve_prometheus_url(env, settings)
+    _elk_url, _elk_api_key, _elk_index = _resolve_elk_config(env, settings)
+    prom: _PromClient | None = _PromClient(_prom_url) if _prom_url else None
     elk: _ElkClient | None = (
-        _ElkClient(
-            settings.elk_base_url,
-            api_key=settings.elk_api_key,
-            index_pattern=settings.elk_index_pattern,
-        )
-        if settings.elk_base_url else None
+        _ElkClient(_elk_url, api_key=_elk_api_key, index_pattern=_elk_index)
+        if _elk_url else None
     )
 
     async with audit_store:
@@ -734,18 +752,17 @@ async def run_ask_query(
             temperature=settings.llm_temperature,
         )
 
-    from errander.integrations.elk import ElkClient as _ElkClientAsk
-    from errander.integrations.prometheus import PrometheusClient as _PromClient
-    prom: _PromClient | None = (
-        _PromClient(settings.prometheus_base_url) if settings.prometheus_base_url else None
+    _ask_env: EnvironmentSchema | None = (
+        inventory.environments.get(env_name) if env_name else None
     )
+    from errander.integrations.elk import ElkClient as _ElkClientAsk
+    from errander.integrations.prometheus import PrometheusClient as _PromClientAsk
+    _ask_prom_url = _resolve_prometheus_url(_ask_env, settings)
+    _ask_elk_url, _ask_elk_key, _ask_elk_idx = _resolve_elk_config(_ask_env, settings)
+    prom: _PromClientAsk | None = _PromClientAsk(_ask_prom_url) if _ask_prom_url else None
     elk_ask: _ElkClientAsk | None = (
-        _ElkClientAsk(
-            settings.elk_base_url,
-            api_key=settings.elk_api_key,
-            index_pattern=settings.elk_index_pattern,
-        )
-        if settings.elk_base_url else None
+        _ElkClientAsk(_ask_elk_url, api_key=_ask_elk_key, index_pattern=_ask_elk_idx)
+        if _ask_elk_url else None
     )
 
     async with audit_store:
@@ -1422,6 +1439,7 @@ async def async_main(args: argparse.Namespace) -> int:
                     _schema: EnvironmentSchema = env_schema,
                 ) -> None:
                     from errander.agent.probe import run_env_probe
+                    from errander.integrations.elk import ElkClient as _SchedElkClient
                     from errander.integrations.prometheus import PrometheusClient as _PrometheusClient
                     from errander.observability.reporting import render_digest_report
 
@@ -1436,7 +1454,13 @@ async def async_main(args: argparse.Namespace) -> int:
                         }
                         for t in _schema.targets
                     ]
-                    _prom = _PrometheusClient(settings.prometheus_base_url) if settings.prometheus_base_url else None
+                    _sched_prom_url = _resolve_prometheus_url(_schema, settings)
+                    _sched_elk_url, _sched_elk_key, _sched_elk_idx = _resolve_elk_config(_schema, settings)
+                    _prom = _PrometheusClient(_sched_prom_url) if _sched_prom_url else None
+                    _sched_elk = (
+                        _SchedElkClient(_sched_elk_url, api_key=_sched_elk_key, index_pattern=_sched_elk_idx)
+                        if _sched_elk_url else None
+                    )
                     try:
                         report = await run_env_probe(
                             env_name=_env,
@@ -1448,10 +1472,13 @@ async def async_main(args: argparse.Namespace) -> int:
                             audit_store=audit_store,
                             sre_settings=settings.sre_signals,
                             prometheus_client=_prom,
+                            elk_client=_sched_elk,
                         )
                     finally:
                         if _prom is not None:
                             await _prom.close()
+                        if _sched_elk is not None:
+                            await _sched_elk.close()
                     digest_text = render_digest_report(report)
                     if slack is not None:
                         await slack.post_digest(digest_text)

@@ -292,14 +292,17 @@ esac
 
 # ── 4b. Prometheus (optional) ────────────────────────────────────────────────
 echo ""
-printf "  Do you use Prometheus for VM metrics? (y/N): "
+echo "  Prometheus is optional. This sets the global default URL used by --ask and"
+echo "  --probe-now. You can override it per-environment in inventory.yaml via"
+echo "  'prometheus_url:' under the environment block."
+printf "  Do you have Prometheus running? (y/N): "
 read -r PROM_CHOICE
 echo ""
 
 PROMETHEUS_BASE_URL=""
 case "${PROM_CHOICE,,}" in
   y|yes)
-    prompt_val "Prometheus URL" "http://localhost:9090"
+    prompt_val "Prometheus URL (global default)" "http://localhost:9090"
     PROMETHEUS_BASE_URL="$REPLY"
     ok "Prometheus configured: $PROMETHEUS_BASE_URL"
     ;;
@@ -310,6 +313,9 @@ esac
 
 # ── 4c. ELK / Elasticsearch (optional) ───────────────────────────────────────
 echo ""
+echo "  ELK is optional. This sets the global default used by --ask and --probe-now."
+echo "  You can override it per-environment in inventory.yaml via 'elk_url:',"
+echo "  'elk_api_key:', and 'elk_index_pattern:' under the environment block."
 printf "  Do you use ELK / Elasticsearch for log aggregation? (y/N): "
 read -r ELK_CHOICE
 echo ""
@@ -320,7 +326,7 @@ ELK_INDEX_PATTERN="filebeat-*,logstash-*"
 
 case "${ELK_CHOICE,,}" in
   y|yes)
-    prompt_val "Elasticsearch URL" "http://localhost:9200"
+    prompt_val "Elasticsearch URL (global default)" "http://localhost:9200"
     ELK_BASE_URL="$REPLY"
     prompt_val "API key  (press Enter to skip for unauthenticated)" ""
     ELK_API_KEY="$REPLY"

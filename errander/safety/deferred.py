@@ -31,7 +31,9 @@ CREATE TABLE IF NOT EXISTS deferred_executions (
     expiry_at    TEXT    NOT NULL,
     status       TEXT    NOT NULL DEFAULT 'pending',
     created_at   TEXT    NOT NULL,
-    executed_at  TEXT
+    executed_at  TEXT,
+    plan_json    TEXT,
+    plan_hash    TEXT
 )
 """
 
@@ -42,15 +44,18 @@ _CREATE_INDEX_SQL = [
 
 _UPSERT_SQL = """
 INSERT INTO deferred_executions
-    (batch_id, env_name, approved_at, approved_by, window_start, expiry_at, status, created_at)
-VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)
+    (batch_id, env_name, approved_at, approved_by, window_start, expiry_at, status, created_at,
+     plan_json, plan_hash)
+VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)
 ON CONFLICT(batch_id) DO UPDATE SET
     approved_at  = excluded.approved_at,
     approved_by  = excluded.approved_by,
     window_start = excluded.window_start,
     expiry_at    = excluded.expiry_at,
     status       = 'pending',
-    executed_at  = NULL
+    executed_at  = NULL,
+    plan_json    = excluded.plan_json,
+    plan_hash    = excluded.plan_hash
 """
 
 
@@ -67,6 +72,8 @@ class DeferredExecution:
     status: str
     created_at: datetime
     executed_at: datetime | None
+    plan_json: str | None = None
+    plan_hash: str | None = None
 
 
 class DeferredExecutionStore:
@@ -97,6 +104,15 @@ class DeferredExecutionStore:
         for idx_sql in _CREATE_INDEX_SQL:
             await self._db.execute(idx_sql)
         await self._db.commit()
+        # P0-2 migration: add plan_json / plan_hash columns to existing tables
+        for col, col_type in [("plan_json", "TEXT"), ("plan_hash", "TEXT")]:
+            try:
+                await self._db.execute(
+                    f"ALTER TABLE deferred_executions ADD COLUMN {col} {col_type}"  # noqa: S608
+                )
+                await self._db.commit()
+            except Exception:
+                pass  # column already exists
 
     async def save(
         self,
@@ -104,10 +120,13 @@ class DeferredExecutionStore:
         env_name: str,
         approved_by: str | None,
         window_start: datetime,
+        plan_json: str | None = None,
+        plan_hash: str | None = None,
     ) -> None:
         """Persist a deferred execution approval.
 
         If a record with the same batch_id already exists it is replaced.
+        plan_json and plan_hash store the exact approved artifact for P0-2 replay.
         """
         assert self._db is not None, "Call initialize() first"
         now = datetime.now(tz=UTC)
@@ -122,6 +141,8 @@ class DeferredExecutionStore:
                 window_start.isoformat(),
                 expiry_at.isoformat(),
                 now.isoformat(),
+                plan_json,
+                plan_hash,
             ),
         )
         await self._db.commit()
@@ -141,7 +162,8 @@ class DeferredExecutionStore:
         cursor = await self._db.execute(
             """
             SELECT batch_id, env_name, approved_at, approved_by,
-                   window_start, expiry_at, status, created_at, executed_at
+                   window_start, expiry_at, status, created_at, executed_at,
+                   plan_json, plan_hash
             FROM   deferred_executions
             WHERE  env_name = ?
               AND  status   = 'pending'
@@ -207,4 +229,6 @@ def _row_to_deferred(row: aiosqlite.Row) -> DeferredExecution:
         status=str(row["status"]),
         created_at=datetime.fromisoformat(str(row["created_at"])),
         executed_at=_dt(row["executed_at"]),
+        plan_json=row["plan_json"] if row["plan_json"] is not None else None,
+        plan_hash=row["plan_hash"] if row["plan_hash"] is not None else None,
     )

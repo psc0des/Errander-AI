@@ -1153,11 +1153,19 @@ async def approval_gate_node(
         if not check_window_from_config(now, window):
             next_open = next_window_open(now, window)
             if deferred_store is not None:
+                # P0-2: serialize exact plan artifact for faithful replay at window time
+                import json as _json
+                _plan_json = _json.dumps(
+                    {"plan_id": plan_id, "vm_plans": vm_plans},
+                    default=str,
+                )
                 await deferred_store.save(
                     batch_id=batch_id,
                     env_name=env_name,
                     approved_by=approver,
                     window_start=next_open,
+                    plan_json=_plan_json,
+                    plan_hash=plan_hash,
                 )
             if audit_store is not None:
                 await audit_store.log_event(AuditEvent(
@@ -1168,6 +1176,7 @@ async def approval_gate_node(
                         "window_start": next_open.isoformat(),
                         "approved_by": approver,
                         "plan_hash": plan_hash[:12],
+                        "artifact_saved": True,
                     },
                 ))
             if slack_client is not None:

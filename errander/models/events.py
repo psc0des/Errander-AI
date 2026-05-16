@@ -52,6 +52,8 @@ class EventType(StrEnum):
     DAILY_PROBE_STARTED = "daily_probe_started"
     DAILY_PROBE_COMPLETE = "daily_probe_complete"
     DAILY_PROBE_FAILED = "daily_probe_failed"
+    # Phase F — LangGraph integration
+    DISK_GATE_BLOCKED = "disk_gate_blocked"
 
 
 @dataclass

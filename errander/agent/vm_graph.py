@@ -1257,6 +1257,93 @@ def route_check_more(state: VMGraphState) -> str:
     return "audit_results"
 
 
+async def post_cleanup_disk_gate_node(
+    state: VMGraphState,
+    *,
+    ssh_manager: SSHConnectionManager,
+    audit_store: AuditStore | None = None,
+) -> dict[str, Any]:
+    """Re-check / disk usage after disk_cleanup or log_rotation, before patching.
+
+    Only fires when:
+      - last completed action was disk_cleanup or log_rotation
+      - next planned action is patching
+
+    ≥95%: inject a skipped result for patching, advance index.
+    90–94%: warn only, allow patching to proceed.
+    SSH failure: pass silently (best-effort).
+    """
+    results = list(state.get("results", []))
+    planned = state.get("planned_actions", [])
+    index = state.get("current_action_index", 0)
+
+    if not results:
+        return {}
+    last_action_type = str(results[-1].get("action_type", ""))
+    if last_action_type not in ("disk_cleanup", "log_rotation"):
+        return {}
+    if index >= len(planned):
+        return {}
+    next_action_type = str(planned[index].get("action_type", ""))
+    if next_action_type != "patching":
+        return {}
+
+    vm_id = state["vm_id"]
+    hostname = str(state.get("hostname", ""))
+    ssh_user = str(state.get("ssh_user", "errander-ai"))
+    ssh_key_path = str(state.get("ssh_key_path", ""))
+    batch_id = str(state.get("batch_id", ""))
+
+    disk_pct: int | None = None
+    try:
+        ssh_result = await ssh_manager.execute(
+            vm_id, hostname, ssh_user, ssh_key_path,
+            "df -BM / 2>/dev/null | awk 'NR==2{print $5}' | tr -d '%M'",
+        )
+        if ssh_result.success and ssh_result.stdout.strip():
+            disk_pct = int(ssh_result.stdout.strip())
+    except Exception as exc:
+        logger.warning("post_cleanup_disk_gate: SSH failed for %s: %s", vm_id, exc)
+        return {}
+
+    if disk_pct is None:
+        return {}
+
+    if disk_pct >= 95:
+        detail = (
+            f"post_cleanup_disk_gate: / still at {disk_pct}% after "
+            f"{last_action_type} — patching skipped"
+        )
+        logger.warning("%s: %s", vm_id, detail)
+        if audit_store is not None:
+            await audit_store.log_event(AuditEvent(
+                event_type=EventType.DISK_GATE_BLOCKED,
+                batch_id=batch_id,
+                vm_id=vm_id,
+                action_type="patching",
+                detail=detail,
+                metadata={"disk_pct": disk_pct, "gate": "post_cleanup_disk_gate"},
+            ), dry_run=False)
+        now = datetime.now(tz=UTC)
+        results.append({
+            "action_type": "patching",
+            "status": ActionStatus.SKIPPED.value,
+            "vm_id": vm_id,
+            "started_at": now.isoformat(),
+            "completed_at": now.isoformat(),
+            "detail": detail,
+        })
+        return {"results": results, "current_action_index": index + 1}
+
+    if disk_pct >= 90:
+        logger.warning(
+            "post_cleanup_disk_gate: %s disk at %d%% after %s — proceeding with caution",
+            vm_id, disk_pct, last_action_type,
+        )
+
+    return {}
+
+
 # --- Graph builder ---
 
 def build_vm_graph(
@@ -1336,9 +1423,15 @@ def build_vm_graph(
     async def _sudo_preflight(state: VMGraphState) -> dict[str, Any]:
         return await sudo_preflight_node(state, executor=executor, audit_store=audit_store)
 
+    async def _post_cleanup_gate(state: VMGraphState) -> dict[str, Any]:
+        return await post_cleanup_disk_gate_node(
+            state, ssh_manager=ssh_manager, audit_store=audit_store
+        )
+
     builder.add_node("plan_actions", _plan_actions)
     builder.add_node("sudo_preflight", _sudo_preflight)
     builder.add_node("dispatch_action", _dispatch)
+    builder.add_node("post_cleanup_disk_gate", _post_cleanup_gate)
     builder.add_node("check_more_actions", lambda state: {})
     builder.add_node("audit_results", _audit)
     builder.add_node("release_lock", _release)
@@ -1413,7 +1506,8 @@ def build_vm_graph(
     builder.add_conditional_edges(
         "sudo_preflight", route_after_sudo_preflight, ["dispatch_action", "audit_results"],
     )
-    builder.add_edge("dispatch_action", "check_more_actions")
+    builder.add_edge("dispatch_action", "post_cleanup_disk_gate")
+    builder.add_edge("post_cleanup_disk_gate", "check_more_actions")
     builder.add_conditional_edges(
         "check_more_actions", route_check_more, ["dispatch_action", "audit_results"],
     )

@@ -1,5 +1,19 @@
 # Errander-AI Command Log
 
+## Glossary UI in production metrics server (2026-05-17)
+
+```bash
+# Verified route 404 → found routes are under /ui/ in metrics.py, not server.py
+uv run python -c "from errander.observability.metrics import start_metrics_server; from errander.web.server import page_glossary; print('imports OK')"
+# Added _ui_glossary handler, GLOSS_CSS export, /ui/glossary route, Glossary sidebar nav link
+uv run python -c "import asyncio; from errander.safety.audit import AuditStore; from errander.observability.metrics import start_metrics_server; ..."  # started server on 9091
+curl -s -o /dev/null -w "%{http_code}" http://localhost:9091/ui/glossary  # 200
+# Verified in browser: 29-term glossary grid + animated workflow diagram + Plan Enrichment modal
+git add errander/observability/metrics.py errander/web/server.py STATUS.md docs/command-log.md tasks/todo.md
+git commit -m "feat: /ui/glossary in metrics server -- Glossary nav link + GLOSS_CSS injection"
+git push origin main
+```
+
 ## Per-env Prometheus/ELK URL overrides (2026-05-17)
 
 ```bash

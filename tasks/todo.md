@@ -1,3 +1,14 @@
+## Glossary UI in production metrics server (2026-05-17, completed)
+
+- [x] Identified root cause: production server is in `metrics.py` with `/ui/` prefix routes; `server.py` `create_app()` is standalone demo only
+- [x] Added `_ui_glossary` handler in `metrics.py` importing `page_glossary` + `GLOSS_CSS` from `server.py`
+- [x] Added Glossary nav link to `_page()` sidebar in `metrics.py`
+- [x] Added active-nav detection for "glossary & workflow" title
+- [x] Extracted `GLOSS_CSS` constant from `server.py` (all `.gloss-*` + `.wf-*` rules)
+- [x] Registered `/ui/glossary` route in `start_metrics_server()`
+- [x] Verified in browser: 29-term grid renders with full card styling + color chips
+- [x] Verified: animated workflow diagram renders; Plan Enrichment modal popup works
+
 ## Per-environment Prometheus/ELK URL overrides (2026-05-17, completed)
 
 - [x] `EnvironmentSchema` in `schema.py`: `prometheus_url`, `elk_url`, `elk_api_key`, `elk_index_pattern` (all `str | None = None`)

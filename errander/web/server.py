@@ -1605,6 +1605,67 @@ function selectNode(id) {
 """
 
 
+GLOSS_CSS = """
+/* ── Glossary grid ── */
+.gloss-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 28px; }
+.gloss-card { background: #fff; border-radius: 8px; padding: 14px 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+.gloss-card-hdr { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.gloss-term { font-family: 'JetBrains Mono', monospace; font-size: 0.875rem; font-weight: 700; color: #4f46e5; }
+.gloss-chip { font-family: 'JetBrains Mono', monospace; font-size: 0.55rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; padding: 2px 6px; border-radius: 3px; flex-shrink: 0; }
+.gloss-chip-core   { background: #e0e7ff; color: #3730a3; }
+.gloss-chip-safety { background: #ede9fe; color: #5b21b6; }
+.gloss-chip-action { background: #cffafe; color: #155e75; }
+.gloss-chip-infra  { background: #fef3c7; color: #92400e; }
+.gloss-defn { font-size: 0.8125rem; color: #475569; line-height: 1.55; }
+/* ── Workflow diagram ── */
+@keyframes dash-flow { to { stroke-dashoffset: -26; } }
+.wf-outer-card { background: #0f172a; border-radius: 12px; padding: 24px; margin-bottom: 8px; }
+.wf-diagram-wrap { overflow-x: auto; padding-bottom: 8px; }
+.wf-diagram { position: relative; width: 960px; height: 845px; margin: 0 auto; }
+.wf-svg { position: absolute; top: 0; left: 0; width: 960px; height: 845px; pointer-events: none; overflow: visible; }
+.wf-node { position: absolute; width: 160px; height: 50px; border-radius: 8px; display: flex; align-items: center; gap: 10px; padding: 0 14px; cursor: pointer; transition: all 0.18s; background: #1e293b; user-select: none; }
+.wf-node:hover { background: #243348; transform: translateY(-1px); box-shadow: 0 4px 16px rgba(79,70,229,0.3); }
+.wf-node.active { background: linear-gradient(135deg, #3525cd, #712ae2) !important; box-shadow: 0 4px 24px rgba(79,70,229,0.5); border: none !important; }
+.wf-node.active .wf-node-name { color: #fff !important; }
+.wf-node.active .wf-node-sub  { color: rgba(255,255,255,0.65) !important; }
+.wf-node-conditional { border: 1.5px dashed #d97706; background: #1e1a0f !important; }
+.wf-node-conditional:hover { background: #29240f !important; }
+.wf-node-failure-node { border: 1.5px dashed #ef4444; background: #1e1010 !important; }
+.wf-node-failure-node:hover { background: #2a1515 !important; }
+.wf-node-terminal { position: absolute; width: 110px; height: 38px; border-radius: 6px; display: flex; align-items: center; justify-content: center; background: #1e1010; border: 1.5px dashed #ef4444; font-family: 'JetBrains Mono', monospace; font-size: 0.6875rem; font-weight: 700; color: #ef4444; letter-spacing: 0.05em; }
+.wf-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.wf-dot-amber  { background: #fbbf24; box-shadow: 0 0 6px #fbbf24; }
+.wf-dot-indigo { background: #818cf8; box-shadow: 0 0 6px #818cf8; }
+.wf-dot-violet { background: #a78bfa; box-shadow: 0 0 6px #a78bfa; }
+.wf-dot-teal   { background: #22d3ee; box-shadow: 0 0 6px #22d3ee; }
+.wf-dot-red    { background: #f87171; box-shadow: 0 0 6px #f87171; }
+.wf-dot-green  { background: #4ade80; box-shadow: 0 0 6px #4ade80; }
+.wf-dot-white  { background: rgba(255,255,255,0.85); }
+.wf-node-name { font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; font-weight: 700; color: #e2e8f0; white-space: nowrap; }
+.wf-node-sub  { font-size: 0.585rem; color: #64748b; font-family: 'Inter', sans-serif; white-space: nowrap; margin-top: 2px; }
+.wf-legend { display: flex; align-items: center; gap: 20px; margin-bottom: 16px; flex-wrap: wrap; }
+.wf-legend-item { display: flex; align-items: center; gap: 8px; font-size: 0.75rem; color: #94a3b8; font-family: 'JetBrains Mono', monospace; }
+.wf-detail { background: #fff; border-radius: 8px; border-left: 4px solid #4f46e5; padding: 16px 20px; margin-top: 16px; transition: border-color 0.2s; }
+.wf-detail-hdr { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+.wf-detail-title { font-family: 'Space Grotesk', sans-serif; font-size: 1rem; font-weight: 700; color: #4f46e5; transition: color 0.2s; }
+.wf-detail-badge { font-family: 'JetBrains Mono', monospace; font-size: 0.6rem; font-weight: 700; letter-spacing: 0.08em; padding: 3px 8px; border-radius: 4px; color: #fff; transition: background 0.2s; }
+.wf-detail-rows { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
+.wf-detail-row { display: flex; gap: 14px; }
+.wf-detail-lbl { font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 0.6875rem; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.06em; width: 68px; flex-shrink: 0; padding-top: 1px; }
+.wf-detail-val { font-family: 'JetBrains Mono', monospace; font-size: 0.775rem; color: #0f172a; line-height: 1.55; }
+.wf-detail-note { font-size: 0.8rem; color: #64748b; font-style: italic; border-top: 1px solid #f1f5f9; padding-top: 10px; }
+.wf-hint { text-align: center; font-family: 'JetBrains Mono', monospace; font-size: 0.6875rem; color: #334155; padding: 12px 0 4px; letter-spacing: 0.04em; }
+.wf-modal-backdrop { display: none; position: fixed; inset: 0; background: rgba(15,23,42,0.55); backdrop-filter: blur(4px); z-index: 200; }
+.wf-modal-backdrop.open { display: block; }
+@keyframes modal-in { from { opacity: 0; transform: translate(-50%, -48%); } to { opacity: 1; transform: translate(-50%, -50%); } }
+.wf-modal { display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 520px; max-width: 92vw; background: #fff; border-radius: 12px; border-left: 4px solid #4f46e5; padding: 22px 26px; z-index: 201; box-shadow: 0 24px 64px -12px rgba(24,20,69,0.28); }
+.wf-modal.open { display: block; animation: modal-in 0.17s ease; }
+.wf-modal-close { position: absolute; top: 12px; right: 14px; background: none; border: none; cursor: pointer; font-size: 0.9rem; color: #94a3b8; font-family: 'JetBrains Mono', monospace; font-weight: 700; padding: 3px 8px; border-radius: 4px; transition: all 0.12s; line-height: 1; }
+.wf-modal-close:hover { background: #f1f5f9; color: #0f172a; }
+@media (max-width: 1100px) { .gloss-grid { grid-template-columns: repeat(2, 1fr); } }
+"""
+
+
 def page_glossary() -> str:
     # ── Glossary grid ─────────────────────────────────────────────────────────
     cards = ""

@@ -4,13 +4,11 @@
 2026-05-17
 
 ## Current Phase
-**Per-environment Prometheus/ELK URL overrides — COMPLETE (2026-05-17).**
+**Glossary UI wired into production metrics server — COMPLETE (2026-05-17).**
 
-`EnvironmentSchema` gains `prometheus_url`, `elk_url`, `elk_api_key`, `elk_index_pattern` (all optional). Two resolver functions in `main.py` apply env-level priority over global settings. All three Prometheus/ELK call sites updated (`run_env_probe_main`, `run_ask_query`, scheduler probe). Scheduler probe now wires ELK for the first time. 14 new tests in `tests/config/test_env_url_overrides.py`. `example/inventory.yaml` and `SETUP.md` document per-env override syntax. `configure.sh` prompts updated.
+`/ui/glossary` route added to `metrics.py` (`_ui_glossary` handler + Glossary nav link in sidebar). `GLOSS_CSS` constant extracted from `server.py` and injected into the metrics page so all 29 glossary terms render with full card styling, color-coded chips, animated workflow diagram, and click-to-expand node modals.
 
 **1707 tests passing, 0 skipped, 0 regressions.**
-
-Next: P0-1 (immutable signed plan artifact — `enrich_plan_node` per the plan file).
 
 ### P0-1 Completed (2026-05-16)
 - **Commit 1**: `enrich_plan_node` in `graph.py` — SSHes each VM at plan time, populates `preview` dict per planned action with exact packages/versions (patching) and disk usage (disk_cleanup); wired between `collect_plans` and `generate_plan_artifact` so preview is in the hash. `_parse_upgradable_with_versions` added to `patching.py`. Load test call count updated. 15 new tests.

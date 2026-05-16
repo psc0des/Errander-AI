@@ -524,6 +524,8 @@ def _page(
         nav["settings"] = " on"
     elif t == "inventory":
         nav["inventory"] = " on"
+    elif t == "glossary & workflow":
+        nav["glossary"] = " on"
 
     refresh_tag = f'<meta http-equiv="refresh" content="{refresh}">' if refresh else ""
     badge = (
@@ -564,6 +566,9 @@ def _page(
     </a>
     <a href="/ui/inventory" class="sb-a{nav.get('inventory','')}">
       <span class="sb-ico" aria-hidden="true">&#9782;</span>Inventory
+    </a>
+    <a href="/ui/glossary" class="sb-a{nav.get('glossary','')}">
+      <span class="sb-ico" aria-hidden="true">&#9635;</span>Glossary
     </a>
     <div class="sb-divider"></div>
     <a href="/metrics" target="_blank" class="sb-a sb-ext">
@@ -1220,6 +1225,15 @@ async def _ui_inventory_delete(request: web.Request) -> web.Response:
     raise web.HTTPFound(f"/ui/inventory?flash={vm_name}+deleted")
 
 
+async def _ui_glossary(request: web.Request) -> web.Response:
+    """GET /ui/glossary — render Glossary & Workflow page."""
+    from errander.web.server import page_glossary, GLOSS_CSS
+    manager: ApprovalManager | None = request.app.get(_APPROVAL_MANAGER_KEY)
+    pending_count = len(manager.get_pending()) if manager is not None else 0
+    body = f"<style>{GLOSS_CSS}</style>" + page_glossary()
+    return _page("Glossary & Workflow", body, pending_count=pending_count)
+
+
 # ---------------------------------------------------------------------------
 # UI — route handlers
 # ---------------------------------------------------------------------------
@@ -1612,6 +1626,7 @@ async def start_metrics_server(
     app.router.add_post("/ui/inventory/toggle", _ui_inventory_toggle)
     app.router.add_post("/ui/inventory/add", _ui_inventory_add)
     app.router.add_post(r"/ui/inventory/delete/{env_name:[^/]+}/{vm_name:[^/]+}", _ui_inventory_delete)
+    app.router.add_get("/ui/glossary", _ui_glossary)
 
     runner = web.AppRunner(app, access_log=None)
     await runner.setup()

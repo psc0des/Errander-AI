@@ -268,6 +268,15 @@ def render_digest_report(report: DigestReport) -> str:
             for err in errors[:3]:
                 lines.append(f"    {err}")
 
+    for result in report.vm_results:
+        if result.failed_services:
+            lines.append(f"  `{result.vm_id}` failed services: {', '.join(result.failed_services)}")
+        if result.journal_errors and not result.elk_errors:
+            lines.append(
+                f"  `{result.vm_id}` journal errors (last 100): "
+                f"{'; '.join(result.journal_errors[:3])}"
+            )
+
     if not unreachable and not disk_alerts and not drift_changes and not failed_logins:
         lines.append("\n:white_check_mark: No signals detected -- fleet healthy")
 

@@ -27,6 +27,12 @@ def _make_executor() -> MagicMock:
     return executor
 
 
+def _make_ssh_manager() -> MagicMock:
+    mgr = MagicMock()
+    mgr.execute = AsyncMock(return_value=MagicMock(success=True, stdout="", stderr=""))
+    return mgr
+
+
 def _make_audit_store() -> MagicMock:
     store = MagicMock()
     store.log_event = AsyncMock()
@@ -74,7 +80,7 @@ async def test_probe_vm_returns_reachable_result_on_success() -> None:
             ssh_user="ubuntu",
             ssh_key_path="/key",
             os_family="ubuntu",
-            ssh_manager=MagicMock(),
+            ssh_manager=_make_ssh_manager(),
             executor=_make_executor(),
             disk_history_store=MagicMock(),
             baseline_store=MagicMock(),
@@ -99,7 +105,7 @@ async def test_probe_vm_populates_disk_alerts() -> None:
     ):
         result = await probe_vm(
             vm_id="vm-1", hostname="h", ssh_user="u", ssh_key_path="k",
-            os_family="ubuntu", ssh_manager=MagicMock(), executor=_make_executor(),
+            os_family="ubuntu", ssh_manager=_make_ssh_manager(), executor=_make_executor(),
             disk_history_store=MagicMock(), baseline_store=MagicMock(),
             audit_store=_make_audit_store(), sre_settings=_sre_settings(),
         )
@@ -119,7 +125,7 @@ async def test_probe_vm_populates_drift_changes() -> None:
     ):
         result = await probe_vm(
             vm_id="vm-1", hostname="h", ssh_user="u", ssh_key_path="k",
-            os_family="ubuntu", ssh_manager=MagicMock(), executor=_make_executor(),
+            os_family="ubuntu", ssh_manager=_make_ssh_manager(), executor=_make_executor(),
             disk_history_store=MagicMock(), baseline_store=MagicMock(),
             audit_store=_make_audit_store(), sre_settings=_sre_settings(),
         )
@@ -139,7 +145,7 @@ async def test_probe_vm_populates_failed_logins() -> None:
     ):
         result = await probe_vm(
             vm_id="vm-1", hostname="h", ssh_user="u", ssh_key_path="k",
-            os_family="ubuntu", ssh_manager=MagicMock(), executor=_make_executor(),
+            os_family="ubuntu", ssh_manager=_make_ssh_manager(), executor=_make_executor(),
             disk_history_store=MagicMock(), baseline_store=MagicMock(),
             audit_store=_make_audit_store(), sre_settings=_sre_settings(),
         )
@@ -165,7 +171,7 @@ async def test_probe_vm_returns_unreachable_when_discover_fails() -> None:
     ):
         result = await probe_vm(
             vm_id="vm-fail", hostname="h", ssh_user="u", ssh_key_path="k",
-            os_family="ubuntu", ssh_manager=MagicMock(), executor=_make_executor(),
+            os_family="ubuntu", ssh_manager=_make_ssh_manager(), executor=_make_executor(),
             disk_history_store=MagicMock(), baseline_store=MagicMock(),
             audit_store=_make_audit_store(), sre_settings=_sre_settings(),
         )
@@ -184,7 +190,7 @@ async def test_probe_vm_returns_unreachable_on_exception() -> None:
     ):
         result = await probe_vm(
             vm_id="vm-fail", hostname="h", ssh_user="u", ssh_key_path="k",
-            os_family="ubuntu", ssh_manager=MagicMock(), executor=_make_executor(),
+            os_family="ubuntu", ssh_manager=_make_ssh_manager(), executor=_make_executor(),
             disk_history_store=MagicMock(), baseline_store=MagicMock(),
             audit_store=_make_audit_store(), sre_settings=_sre_settings(),
         )
@@ -214,7 +220,7 @@ async def test_run_env_probe_fans_out_to_all_vms() -> None:
         report = await run_env_probe(
             env_name="dev",
             vms=vms,
-            ssh_manager=MagicMock(),
+            ssh_manager=_make_ssh_manager(),
             executor=_make_executor(),
             disk_history_store=MagicMock(),
             baseline_store=MagicMock(),
@@ -240,7 +246,7 @@ async def test_run_env_probe_emits_audit_events() -> None:
         await run_env_probe(
             env_name="dev",
             vms=[{"vm_id": "v1", "hostname": "h1", "ssh_user": "u", "ssh_key_path": "k"}],
-            ssh_manager=MagicMock(),
+            ssh_manager=_make_ssh_manager(),
             executor=_make_executor(),
             disk_history_store=MagicMock(),
             baseline_store=MagicMock(),
@@ -281,7 +287,7 @@ async def test_run_env_probe_tolerates_single_vm_failure() -> None:
                 {"vm_id": "v1", "hostname": "h1", "ssh_user": "u", "ssh_key_path": "k"},
                 {"vm_id": "v2", "hostname": "h2", "ssh_user": "u", "ssh_key_path": "k"},
             ],
-            ssh_manager=MagicMock(),
+            ssh_manager=_make_ssh_manager(),
             executor=_make_executor(),
             disk_history_store=MagicMock(),
             baseline_store=MagicMock(),

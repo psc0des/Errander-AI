@@ -28,6 +28,12 @@ def _discover_ok() -> AsyncMock:
     })
 
 
+def _make_ssh_manager() -> MagicMock:
+    mgr = MagicMock()
+    mgr.execute = AsyncMock(return_value=MagicMock(success=True, stdout="", stderr=""))
+    return mgr
+
+
 def _make_prom_client(metrics: list[str]) -> MagicMock:
     client = MagicMock()
     client.fetch_vm_metrics = AsyncMock(return_value=metrics)
@@ -51,7 +57,7 @@ async def test_probe_vm_fetches_prometheus_metrics_when_client_present() -> None
     ):
         result = await probe_vm(
             vm_id="v1", hostname="10.0.0.1", ssh_user="u", ssh_key_path="k",
-            os_family="ubuntu", ssh_manager=MagicMock(), executor=MagicMock(),
+            os_family="ubuntu", ssh_manager=_make_ssh_manager(), executor=MagicMock(),
             disk_history_store=MagicMock(), baseline_store=MagicMock(),
             audit_store=MagicMock(log_event=AsyncMock()),
             sre_settings=_sre(),
@@ -72,7 +78,7 @@ async def test_probe_vm_empty_metrics_when_client_none() -> None:
     ):
         result = await probe_vm(
             vm_id="v1", hostname="10.0.0.1", ssh_user="u", ssh_key_path="k",
-            os_family="ubuntu", ssh_manager=MagicMock(), executor=MagicMock(),
+            os_family="ubuntu", ssh_manager=_make_ssh_manager(), executor=MagicMock(),
             disk_history_store=MagicMock(), baseline_store=MagicMock(),
             audit_store=MagicMock(log_event=AsyncMock()),
             sre_settings=_sre(),
@@ -102,7 +108,7 @@ async def test_run_env_probe_passes_client_to_each_probe_vm() -> None:
     ):
         report = await run_env_probe(
             env_name="dev", vms=vms,
-            ssh_manager=MagicMock(), executor=MagicMock(),
+            ssh_manager=_make_ssh_manager(), executor=MagicMock(),
             disk_history_store=MagicMock(), baseline_store=MagicMock(),
             audit_store=MagicMock(log_event=AsyncMock()),
             sre_settings=_sre(),

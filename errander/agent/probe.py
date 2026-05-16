@@ -123,6 +123,24 @@ async def probe_vm(
         if elk_client is not None:
             elk_errors = await elk_client.fetch_vm_errors(hostname)
 
+        # journalctl — recent errors (covers teams with no ELK; systemd is always present)
+        journal_errors: list[str] = []
+        journal_result = await ssh_manager.execute(
+            vm_id, hostname, ssh_user, ssh_key_path,
+            "journalctl -n 100 --no-pager -p err 2>/dev/null | tail -50 || true",
+        )
+        if journal_result.success and journal_result.stdout.strip():
+            journal_errors = _parse_journal_errors(journal_result.stdout)
+
+        # systemctl --failed — services currently in failed state
+        failed_services: list[str] = []
+        failed_result = await ssh_manager.execute(
+            vm_id, hostname, ssh_user, ssh_key_path,
+            "systemctl --failed --no-legend --no-pager 2>/dev/null || true",
+        )
+        if failed_result.success and failed_result.stdout.strip():
+            failed_services = _parse_failed_services(failed_result.stdout)
+
         return ProbeVMResult(
             vm_id=vm_id,
             hostname=hostname,
@@ -132,6 +150,8 @@ async def probe_vm(
             failed_login_summary=raw_login if isinstance(raw_login, dict) else None,
             prometheus_metrics=prom_metrics,
             elk_errors=elk_errors,
+            journal_errors=journal_errors,
+            failed_services=failed_services,
         )
     except Exception as exc:
         logger.warning("probe_vm failed for %s: %s", vm_id, exc)
@@ -203,3 +223,47 @@ async def run_env_probe(
         ),
     ))
     return report
+
+
+def _parse_journal_errors(stdout: str) -> list[str]:
+    """Extract up to 5 unique error messages from journalctl -p err output.
+
+    journalctl format: "May 16 12:34:56 hostname unit[pid]: message"
+    Strip timestamps/hostnames, deduplicate by normalised pattern.
+    """
+    import re
+    seen: set[str] = set()
+    patterns: list[str] = []
+    for line in stdout.splitlines():
+        parts = line.split(": ", 1)
+        if len(parts) < 2:
+            continue
+        msg = parts[1].strip()
+        if not msg:
+            continue
+        key = re.sub(r"\d+", "N", msg)[:80]
+        if key not in seen:
+            seen.add(key)
+            patterns.append(msg[:120])
+        if len(patterns) >= 5:
+            break
+    return patterns
+
+
+def _parse_failed_services(stdout: str) -> list[str]:
+    """Parse 'systemctl --failed --no-legend' output into unit names.
+
+    Format: "  ● sshd.service  loaded failed failed  OpenSSH Daemon"
+    or:     "  sshd.service    loaded failed failed  OpenSSH Daemon"
+    Returns list of unit names only.
+    """
+    services: list[str] = []
+    for line in stdout.splitlines():
+        stripped = line.strip().lstrip("●").strip()
+        if not stripped:
+            continue
+        parts = stripped.split()
+        unit = parts[0] if parts else ""
+        if unit and "." in unit and not unit.startswith("#"):
+            services.append(unit)
+    return services

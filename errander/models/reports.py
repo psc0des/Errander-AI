@@ -146,6 +146,8 @@ class ProbeVMResult:
     error: str | None = None
     prometheus_metrics: list[str] = field(default_factory=list)
     elk_errors: list[str] = field(default_factory=list)
+    journal_errors: list[str] = field(default_factory=list)    # journalctl -p err (live only)
+    failed_services: list[str] = field(default_factory=list)   # systemctl --failed (live only)
 
 
 @dataclass

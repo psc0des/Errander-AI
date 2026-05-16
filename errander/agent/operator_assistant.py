@@ -227,6 +227,10 @@ def _format_prompt(question: str, context: FleetContext) -> str:
             lines.append(f"  Prometheus: {', '.join(vm.prometheus_metrics)}")
         if vm.elk_errors:
             lines.append(f"  ELK errors (24h): {'; '.join(vm.elk_errors[:3])}")
+        if vm.failed_services:
+            lines.append(f"  Failed services: {', '.join(vm.failed_services)}")
+        if vm.journal_errors and not vm.elk_errors:
+            lines.append(f"  Journal errors: {'; '.join(vm.journal_errors[:3])}")
 
     lines += [
         "",
@@ -292,6 +296,17 @@ def _fallback_response(question: str, context: FleetContext) -> AssistantRespons
         )
         recommendations.append(
             "Review ELK dashboard for error patterns before next maintenance batch"
+        )
+
+    service_fail_vms = [v for v in context.vm_summaries if v.failed_services]
+    if service_fail_vms:
+        findings.append(
+            f"{len(service_fail_vms)} VM(s) have failed systemd services: "
+            + ", ".join(v.vm_id for v in service_fail_vms)
+        )
+        recommendations.append(
+            "Run --probe-now --live to capture current service state; "
+            "investigate with: systemctl status <unit>"
         )
 
     if not findings:

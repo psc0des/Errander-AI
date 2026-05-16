@@ -854,6 +854,9 @@ async def run_env_batch(
     baseline_store: object = None,
     vm_state_store: object = None,
     is_deferred_reapproval: bool = False,
+    preloaded_plan_json: str | None = None,
+    preloaded_plan_hash: str | None = None,
+    preloaded_plan_id: str | None = None,
 ) -> None:
     """Run a full maintenance batch for one environment.
 
@@ -956,6 +959,10 @@ async def run_env_batch(
         "docker_command_mode": env_schema.docker_command_mode,
         "ai_db_path": ai_db_path,
         "is_deferred_reapproval": is_deferred_reapproval,
+        "preloaded_plan_json": preloaded_plan_json,
+        "preloaded_plan_hash": preloaded_plan_hash,
+        "preloaded_plan_id": preloaded_plan_id,
+        "is_deferred_replay": preloaded_plan_json is not None,
     }
 
     logger.info(
@@ -1023,41 +1030,79 @@ async def _window_opener(
             approved_by=record.approved_by,
         )
         await deferred_store.mark_executing(record.batch_id)
+        # P0-2: distinguish exact-artifact replay from legacy re-plan fallback
+        _has_artifact = bool(record.plan_json and record.plan_hash)
         await audit_store.log_event(AuditEvent(
             event_type=EventType.DEFERRED_EXECUTION_STARTED,
             batch_id=record.batch_id,
             detail=(
-                f"Deferred batch window opened — re-planning and requesting fresh "
-                f"human re-approval (original approval by {record.approved_by} "
-                f"at {record.approved_at.isoformat()}). "
-                f"Original approval was for action categories only, not pinned commands."
+                f"P0-2 replay: executing exact approved artifact "
+                f"(original approval by {record.approved_by} at {record.approved_at.isoformat()})"
+                if _has_artifact else
+                f"Legacy re-plan: no stored artifact — re-planning and requesting fresh "
+                f"approval (original approval by {record.approved_by} "
+                f"at {record.approved_at.isoformat()})"
             ),
+            metadata={"replay_mode": _has_artifact},
         ))
         try:
-            await run_env_batch(
-                env_name=env_name,
-                env_schema=env_schema,
-                settings=settings,
-                executor=executor,
-                locker=locker,
-                ssh_manager=ssh_manager,
-                audit_store=audit_store,
-                dry_run=False,
-                force=True,
-                force_reason=(
-                    f"Deferred re-approval: original approval by {record.approved_by} "
-                    f"at {record.approved_at.isoformat()} — fresh re-approval required at window time"
-                ),
-                approval_manager=approval_manager,
-                slack_client=slack_client,
-                overrides_store=overrides_store,
-                deferred_store=deferred_store,
-                llm_client=llm_client,
-                disk_history_store=disk_history_store,
-                baseline_store=baseline_store,
-                vm_state_store=vm_state_store,
-                is_deferred_reapproval=True,
-            )
+            if _has_artifact:
+                # P0-2: replay exact artifact — no re-planning, no Slack re-approval
+                await run_env_batch(
+                    env_name=env_name,
+                    env_schema=env_schema,
+                    settings=settings,
+                    executor=executor,
+                    locker=locker,
+                    ssh_manager=ssh_manager,
+                    audit_store=audit_store,
+                    dry_run=False,
+                    force=True,
+                    force_reason=(
+                        f"P0-2 replay: original approval by {record.approved_by} "
+                        f"at {record.approved_at.isoformat()}"
+                    ),
+                    approval_manager=approval_manager,
+                    slack_client=slack_client,
+                    overrides_store=overrides_store,
+                    deferred_store=deferred_store,
+                    llm_client=llm_client,
+                    disk_history_store=disk_history_store,
+                    baseline_store=baseline_store,
+                    vm_state_store=vm_state_store,
+                    preloaded_plan_json=record.plan_json,
+                    preloaded_plan_hash=record.plan_hash,
+                )
+            else:
+                # Legacy records saved before P0-2 — fall back to re-plan + re-approve
+                logger.warning(
+                    "Deferred record %s has no stored artifact — falling back to re-plan",
+                    record.batch_id,
+                )
+                await run_env_batch(
+                    env_name=env_name,
+                    env_schema=env_schema,
+                    settings=settings,
+                    executor=executor,
+                    locker=locker,
+                    ssh_manager=ssh_manager,
+                    audit_store=audit_store,
+                    dry_run=False,
+                    force=True,
+                    force_reason=(
+                        f"Deferred re-approval: original approval by {record.approved_by} "
+                        f"at {record.approved_at.isoformat()} — fresh re-approval required at window time"
+                    ),
+                    approval_manager=approval_manager,
+                    slack_client=slack_client,
+                    overrides_store=overrides_store,
+                    deferred_store=deferred_store,
+                    llm_client=llm_client,
+                    disk_history_store=disk_history_store,
+                    baseline_store=baseline_store,
+                    vm_state_store=vm_state_store,
+                    is_deferred_reapproval=True,
+                )
         finally:
             await deferred_store.mark_done(record.batch_id)
 

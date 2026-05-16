@@ -151,6 +151,12 @@ class BatchGraphState(TypedDict, total=False):
     env_name: str
     deferred: bool
 
+    # P0-2: preloaded artifact for exact deferred replay
+    preloaded_plan_json: str | None
+    preloaded_plan_hash: str | None
+    preloaded_plan_id: str | None
+    is_deferred_replay: bool
+
     # Per-decision AI audit DB path (finding #3.4) — serializable for Send()
     ai_db_path: str
 
@@ -1096,6 +1102,26 @@ async def approval_gate_node(
     else:  # moderate
         _approval_tiers = frozenset({RiskTier.HIGH, RiskTier.CRITICAL})
 
+    # P0-2: deferred replay — carry forward the original operator approval.
+    # The hash was verified by load_deferred_artifact_node; no re-approval needed.
+    if bool(state.get("is_deferred_replay", False)):
+        if audit_store is not None:
+            await audit_store.log_event(AuditEvent(
+                event_type=EventType.APPROVAL_GRANTED,
+                batch_id=batch_id,
+                detail=(
+                    f"P0-2 replay: carrying forward original approval — "
+                    f"artifact hash {plan_hash[:12]} verified. "
+                    f"No re-approval required."
+                ),
+                metadata={"replay_mode": True, "plan_hash": plan_hash[:12]},
+            ))
+        logger.info(
+            "Batch %s P0-2 replay: auto-approved (hash=%s verified)",
+            batch_id, plan_hash[:12],
+        )
+        return {"approved": True}
+
     if dry_run:
         # Sandbox execution is safe — no operator approval needed.
         # Graduating dry-run → live is a separate operator-initiated action (finding #4).
@@ -1273,12 +1299,68 @@ def route_after_window(state: BatchGraphState) -> str:
     return "validate_targets"
 
 
+async def load_deferred_artifact_node(state: BatchGraphState) -> dict[str, Any]:
+    """P0-2 replay mode: deserialize stored artifact, verify hash, skip planning.
+
+    Populates vm_plans + plan_id + plan_hash from the stored JSON blob.
+    Hash mismatch → returns error so route_after_approval aborts cleanly.
+    """
+    import hashlib
+    import json
+
+    raw_json = state.get("preloaded_plan_json") or ""
+    stored_hash = state.get("preloaded_plan_hash") or ""
+    batch_id = state.get("batch_id", "unknown")
+    env_name = state.get("env_name", "")
+
+    if not raw_json or not stored_hash:
+        return {"error": "P0-2 replay: missing plan artifact — aborting"}
+
+    try:
+        artifact = json.loads(raw_json)
+    except json.JSONDecodeError as exc:
+        return {"error": f"P0-2 replay: corrupt plan artifact JSON — {exc}"}
+
+    vm_plans = artifact.get("vm_plans", [])
+    plan_id = artifact.get("plan_id", "replayed")
+
+    canonical = json.dumps(
+        {"batch_id": batch_id, "env_name": env_name, "vm_plans": vm_plans},
+        sort_keys=True, default=str,
+    )
+    computed = hashlib.sha256(canonical.encode()).hexdigest()
+    if computed != stored_hash:
+        logger.error(
+            "P0-2 replay: hash mismatch for batch %s — stored=%s computed=%s",
+            batch_id, stored_hash[:12], computed[:12],
+        )
+        return {
+            "error": (
+                f"P0-2 replay: artifact hash mismatch — possible tampering (batch {batch_id})"
+            ),
+        }
+
+    logger.info(
+        "P0-2 replay: artifact verified for batch %s (hash=%s, %d VMs)",
+        batch_id, stored_hash[:12], len(vm_plans),
+    )
+    return {
+        "vm_plans": vm_plans,
+        "plan_id": plan_id,
+        "plan_hash": stored_hash,
+        "is_deferred_replay": True,
+    }
+
+
 def route_after_fleet_check(state: BatchGraphState) -> str:
-    """Route after fleet health check: abort (too many failures) or continue."""
+    """Route after fleet health check: abort (too many failures), replay, or continue."""
     if state.get("error"):
         return "generate_report"
     if not state.get("healthy_targets"):
         return "generate_report"
+    # P0-2: if a preloaded artifact is present, skip planning entirely
+    if state.get("preloaded_plan_json"):
+        return "load_deferred_artifact"
     return "plan_vms"
 
 
@@ -1620,6 +1702,7 @@ def build_batch_graph(
 
     builder.add_node("enrich_plan", _enrich_plan)
     builder.add_node("generate_plan_artifact", generate_plan_artifact_node)
+    builder.add_node("load_deferred_artifact", load_deferred_artifact_node)
     builder.add_node("approval_gate", _approval_gate)
     builder.add_node("verify_plan_hash", verify_plan_hash_node)
     builder.add_node("prepare_waves", prepare_waves_node)
@@ -1638,8 +1721,11 @@ def build_batch_graph(
     # Fleet health gate (finding #7): abort if too many targets failed validation
     builder.add_edge("validate_targets", "check_fleet_health")
     builder.add_conditional_edges(
-        "check_fleet_health", route_after_fleet_check, ["plan_vms", "generate_report"],
+        "check_fleet_health",
+        route_after_fleet_check,
+        ["plan_vms", "load_deferred_artifact", "generate_report"],
     )
+    builder.add_edge("load_deferred_artifact", "approval_gate")
     # Planning fan-out: one plan_vm per healthy target, then collect
     builder.add_node("plan_vms", lambda state: {})   # no-op entry point for _route_plan_vms
     builder.add_conditional_edges(

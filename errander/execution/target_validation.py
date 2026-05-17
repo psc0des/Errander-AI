@@ -31,8 +31,26 @@ class TargetReadiness:
     issues: list[str] = field(default_factory=list)
 
 
+# Binaries required per action. Docker and service_restart use separate checks.
+_ACTION_BINARIES: dict[str, list[str]] = {
+    "log_rotation": ["/usr/sbin/logrotate", "/usr/bin/gzip"],
+    "disk_cleanup": ["/usr/bin/truncate", "/usr/bin/cp"],
+    "backup_verify": ["/usr/bin/cp"],
+}
+
+# Package-manager binaries are OS-specific and only needed when patching is enabled.
+_PATCHING_BINARIES: dict[str, list[str]] = {
+    "ubuntu": ["/usr/bin/apt-get", "/usr/bin/apt-mark"],
+    "debian": ["/usr/bin/apt-get", "/usr/bin/apt-mark"],
+    "rhel": ["/usr/bin/dnf"],
+    "rocky": ["/usr/bin/dnf"],
+    "alma": ["/usr/bin/dnf"],
+    "centos": ["/usr/bin/dnf"],
+}
+
+
 def _binaries_for_os(os_family: str) -> list[str]:
-    """Return the per-OS list of expected privileged binaries."""
+    """Return the full per-OS binary list (all actions — backward-compat path)."""
     base = [
         "/usr/bin/journalctl",
         "/usr/sbin/logrotate",
@@ -47,6 +65,31 @@ def _binaries_for_os(os_family: str) -> list[str]:
     return base
 
 
+def _binaries_for_enabled_actions(os_family: str, enabled_actions: list[str]) -> list[str]:
+    """Return only the binaries required by the given enabled actions.
+
+    journalctl is always included — used by the SRE probe regardless of action config.
+    """
+    enabled_set = set(enabled_actions)
+    seen: set[str] = set()
+    result: list[str] = []
+
+    def _add(b: str) -> None:
+        if b not in seen:
+            seen.add(b)
+            result.append(b)
+
+    _add("/usr/bin/journalctl")
+    for action, bins in _ACTION_BINARIES.items():
+        if action in enabled_set:
+            for b in bins:
+                _add(b)
+    if "patching" in enabled_set:
+        for b in _PATCHING_BINARIES.get(os_family, []):
+            _add(b)
+    return result
+
+
 async def check_target(
     vm_id: str,
     hostname: str,
@@ -55,10 +98,20 @@ async def check_target(
     os_family: str,
     docker_command_mode: str,
     ssh_manager: SSHConnectionManager,
+    *,
+    enabled_actions: list[str] | None = None,
 ) -> TargetReadiness:
-    """Run all readiness checks against a single target VM. Read-only."""
+    """Run all readiness checks against a single target VM. Read-only.
+
+    When ``enabled_actions`` is provided, only binaries required by those actions
+    are checked. When omitted, all binaries are checked (backward-compat path).
+    """
     readiness = TargetReadiness(vm_id=vm_id, hostname=hostname)
-    binaries = _binaries_for_os(os_family)
+    binaries = (
+        _binaries_for_enabled_actions(os_family, enabled_actions)
+        if enabled_actions is not None
+        else _binaries_for_os(os_family)
+    )
 
     # 1. Binary presence via `command -v`
     for binary in binaries:
@@ -81,8 +134,9 @@ async def check_target(
         if not ok:
             readiness.issues.append(f"sudo -n denied for: {binary}")
 
-    # 3. Docker wrapper probes
-    if docker_command_mode == "wrapper":
+    # 3. Docker wrapper probes — skip entirely when docker_prune is not enabled
+    _docker_enabled = enabled_actions is None or "docker_prune" in enabled_actions
+    if _docker_enabled and docker_command_mode == "wrapper":
         from errander.agent.subgraphs import BUILTIN_ACTIONS
         docker_manifest = BUILTIN_ACTIONS.get("docker_prune")
         wrapper_paths = list(docker_manifest.required_wrappers) if docker_manifest else []
@@ -93,7 +147,7 @@ async def check_target(
             readiness.wrappers_ok[wrapper] = ok
             if not ok:
                 readiness.issues.append(f"wrapper script not ready: {wrapper}")
-    elif docker_command_mode == "direct_sudo":
+    elif _docker_enabled and docker_command_mode == "direct_sudo":
         cmd = "sudo -n /usr/bin/docker version >/dev/null 2>&1 && echo ok || echo fail"
         result = await ssh_manager.execute(vm_id, hostname, username, key_path, cmd)
         ok = result.success and "ok" in result.stdout

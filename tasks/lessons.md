@@ -24,6 +24,10 @@ When two first-party imports from the same package are in a test file, ruff's is
 
 `subprocess` and `pytest` were left as unused imports in `tests/scripts/test_install_docker_wrappers.py` (likely from a template). ruff F401 catches these. Always run ruff on new test files before the first commit.
 
+## 2026-05-17 — Action opt-in schema is incomplete without enforcing it in the planner
+
+Introducing `actions.enabled` in the schema is not sufficient — the planner (`prioritize_actions`) also needs to receive the enabled list as `available_actions`. Without that wire-up, disabled actions still appear in plans because `available_actions=None` silently falls back to `DEFAULT_PRIORITY`. The same pattern applies to binary readiness checks: `check_target` needs to know which actions are enabled to avoid blocking on binaries for disabled actions. Enforcement gaps like this are easy to miss if the schema tests and the planner tests live in separate files with no integration test spanning both layers.
+
 ## 2026-05-17 — RUN.md must be updated whenever a new CLI flag is added
 
 `RUN.md` is the operator reference for all CLI commands. Any new `--flag` added to `main.py` must be documented in both the `## Common CLI flags` table and a dedicated section in `RUN.md`. This was missed for `--migrate-inventory` (commit 1.2) and `--restart-service`/`--unit`/`--vm`/`--vms` (commit S.3). Add a RUN.md check to the pre-commit checklist for every commit that touches `main.py`.

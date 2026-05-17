@@ -4,6 +4,25 @@
 2026-05-17
 
 ## Current Phase
+**SRE audit fix — enabled_actions enforced in planning and --check-targets (2026-05-17).**
+
+Two bugs found by SRE audit:
+1. (High) `prioritize_actions()` was called without the inventory-enabled action list — disabled actions (e.g. `docker_prune.enabled: false`) could appear in planned batches. Fixed: `enabled_actions` list built from `env_schema.actions` in `run_env_batch()`, stored in `BatchGraphState`, and passed to `prioritize_actions()` in `plan_vm_node()` as `available_actions`.
+2. (Medium) `check_target()` checked binaries for all actions regardless of which were enabled. Fixed: per-action binary mapping (`_ACTION_BINARIES`, `_PATCHING_BINARIES`), new `_binaries_for_enabled_actions()` helper, `enabled_actions` kwarg on `check_target()`. `run_check_targets()` and `validate_targets_node` both pass the enabled list. `docker_mode` now defaults to `"disabled"` when `docker_prune.enabled: false`.
+8 new tests: 4 in `test_enabled_actions_planning.py` (planning enforcement + plan_vm_node wire-up), 2 in `test_target_validation.py` (per-action binary filtering).
+
+**1893 tests passing, 0 skipped, 0 regressions.**
+
+## Files Changed (SRE audit fix)
+- `errander/execution/target_validation.py` (MODIFIED — `_ACTION_BINARIES`, `_PATCHING_BINARIES`, `_binaries_for_enabled_actions()`, `enabled_actions` param on `check_target()`)
+- `errander/agent/graph.py` (MODIFIED — `enabled_actions` in `BatchGraphState`, wire-up in `plan_vm_node` and `validate_targets_node`)
+- `errander/main.py` (MODIFIED — `_enabled_actions` in `run_env_batch` initial state; `enabled_actions` + fixed `docker_mode` in `run_check_targets`)
+- `tests/agent/test_enabled_actions_planning.py` (NEW — 6 tests)
+- `tests/execution/test_target_validation.py` (MODIFIED — 2 new tests)
+
+---
+
+## Previous Phase
 **RUN.md catch-up — --migrate-inventory and --restart-service CLI sections added (2026-05-17).**
 
 `RUN.md` was missing two CLI additions introduced during the v1-action-opt-in plan: `--migrate-inventory` (commit 1.2) and `--restart-service`/`--unit`/`--vm`/`--vms` (commit S.3). Added both to the CLI flags table, added `## Inventory migration` and `## Service restart` sections, and added a runbook entry for service restart. All 8 v1-action-opt-in commits plus this fix are now pushed and tagged v1-rc1.

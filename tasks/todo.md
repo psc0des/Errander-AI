@@ -80,6 +80,15 @@
 - [x] `RUN.md` — `--migrate-inventory` section + `--restart-service` section + CLI flags + runbook entry
 - [x] commit + push
 
+### SRE audit fix — enabled_actions enforcement (2026-05-17)
+- [x] Bug 1 (High): `enabled_actions` built from `env_schema.actions` in `run_env_batch`, added to `BatchGraphState`, passed to `prioritize_actions` in `plan_vm_node`
+- [x] Bug 2 (Medium): `check_target` now takes `enabled_actions` kwarg; per-action binary mapping replaces fixed `_binaries_for_os`; `run_check_targets` and `validate_targets_node` pass enabled list
+- [x] `docker_mode` defaults to `"disabled"` when `docker_prune.enabled: false` in both call sites
+- [x] `tests/agent/test_enabled_actions_planning.py` — 6 new tests (planning enforcement + plan_vm_node wire-up)
+- [x] `tests/execution/test_target_validation.py` — 2 new tests (per-action binary filtering, wrapper skip)
+- [x] 1893 tests, ruff clean, mypy clean
+- [x] commit + push
+
 ---
 
 ## Glossary UI in production metrics server (2026-05-17, completed)

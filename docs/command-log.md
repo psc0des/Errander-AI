@@ -1,5 +1,23 @@
 # Errander-AI Command Log
 
+## SRE audit fix — enabled_actions enforcement (2026-05-17)
+
+```bash
+# Bug 1: enabled_actions not passed to prioritize_actions
+# Bug 2: check_target binary checks not per-action
+uv run pytest tests/agent/test_enabled_actions_planning.py tests/execution/test_target_validation.py -x -q  # 14 passed
+uv run ruff check errander/execution/target_validation.py errander/agent/graph.py errander/main.py \
+  tests/agent/test_enabled_actions_planning.py tests/execution/test_target_validation.py  # All checks passed
+uv run mypy errander/execution/target_validation.py errander/agent/graph.py errander/main.py \
+  tests/agent/test_enabled_actions_planning.py tests/execution/test_target_validation.py  # Success
+uv run pytest --tb=no -q  # 1893 passed, 0 skipped
+git add errander/execution/target_validation.py errander/agent/graph.py errander/main.py \
+  tests/agent/test_enabled_actions_planning.py tests/execution/test_target_validation.py \
+  STATUS.md docs/command-log.md tasks/todo.md tasks/lessons.md
+git commit -m "fix: enforce enabled_actions in planning and check-targets binary probes"
+git push origin main
+```
+
 ## RUN.md catch-up (2026-05-17)
 
 ```bash

@@ -626,7 +626,12 @@ async def run_check_targets(env_name: str, inventory_path: Path) -> int:
     ssh_manager = SSHConnectionManager()
     results = []
     docker_prune_cfg = env.actions.get("docker_prune")
-    docker_mode = (docker_prune_cfg.command_mode or "wrapper") if docker_prune_cfg else "wrapper"
+    docker_mode = (
+        (docker_prune_cfg.command_mode or "wrapper")
+        if docker_prune_cfg and docker_prune_cfg.enabled
+        else "disabled"
+    )
+    enabled_action_names = [name for name, cfg in env.actions.items() if cfg.enabled]
 
     try:
         for target in env.targets:
@@ -640,6 +645,7 @@ async def run_check_targets(env_name: str, inventory_path: Path) -> int:
                 os_family=target.os_family,
                 docker_command_mode=docker_mode,
                 ssh_manager=ssh_manager,
+                enabled_actions=enabled_action_names,
             )
             results.append(readiness)
 
@@ -1200,7 +1206,12 @@ async def run_env_batch(
     )
 
     _docker_prune_cfg = env_schema.actions.get("docker_prune")
-    _docker_mode = (_docker_prune_cfg.command_mode or "wrapper") if _docker_prune_cfg else "wrapper"
+    _docker_mode = (
+        (_docker_prune_cfg.command_mode or "wrapper")
+        if _docker_prune_cfg and _docker_prune_cfg.enabled
+        else "disabled"
+    )
+    _enabled_actions = [name for name, cfg in env_schema.actions.items() if cfg.enabled]
 
     initial_state = {
         "targets": targets,
@@ -1211,6 +1222,7 @@ async def run_env_batch(
         "env_name": env_name,
         "env_policy": env_schema.approval_policy,
         "docker_command_mode": _docker_mode,
+        "enabled_actions": _enabled_actions,
         "ai_db_path": ai_db_path,
         "is_deferred_reapproval": is_deferred_reapproval,
         "preloaded_plan_json": preloaded_plan_json,

@@ -163,6 +163,11 @@ class BatchGraphState(TypedDict, total=False):
     # Docker command mode: "wrapper" | "direct_sudo" | "disabled" (default: "wrapper")
     docker_command_mode: str
 
+    # Action names that are enabled in this environment's inventory.
+    # Built from env_schema.actions at batch init time and used by plan_vm_node
+    # to restrict prioritize_actions() to only actions the operator has opted in to.
+    enabled_actions: list[str]
+
 
 # --- Node functions ---
 
@@ -314,6 +319,7 @@ async def validate_targets_node(
             # Sudo/wrapper readiness check — fail early rather than mid-batch
             try:
                 from errander.execution.target_validation import check_target
+                _enabled: list[str] | None = state.get("enabled_actions")
                 readiness = await check_target(
                     vm_id=vm_id,
                     hostname=hostname,
@@ -322,6 +328,7 @@ async def validate_targets_node(
                     os_family=detected_family.value,
                     docker_command_mode=str(state.get("docker_command_mode", "wrapper")),
                     ssh_manager=ssh_manager,
+                    enabled_actions=_enabled,
                 )
                 if readiness.verdict == "blocked":
                     logger.warning(
@@ -849,6 +856,16 @@ async def plan_vm_node(
         baseline_store=baseline_store,
     )
 
+    # Build available_actions from the inventory-enabled list. None falls back to
+    # DEFAULT_PRIORITY (used only when state predates this field — tests, replays).
+    _enabled_names: list[str] | None = state.get("enabled_actions")
+    _valid_action_values = {m.value for m in ActionType}
+    available_for_planning: list[ActionType] | None = (
+        [ActionType(n) for n in _enabled_names if n in _valid_action_values]
+        if _enabled_names is not None
+        else None
+    )
+
     actions = await prioritize_actions(
         vm_info,
         llm_client=llm_client,
@@ -857,6 +874,7 @@ async def plan_vm_node(
         vm_id=vm_id,
         ai_store=ai_decision_store,
         stored_signals=stored_signals,
+        available_actions=available_for_planning,
     )
 
     return {

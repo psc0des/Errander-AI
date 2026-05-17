@@ -4,21 +4,22 @@
 2026-05-17
 
 ## Current Phase
-**SRE audit fix — enabled_actions enforced in planning and --check-targets (2026-05-17).**
+**SRE audit fix Round 2 — route_plan_vms passes enabled_actions in Send payload, manifest-derived binary checks (2026-05-17).**
 
-Two bugs found by SRE audit:
-1. (High) `prioritize_actions()` was called without the inventory-enabled action list — disabled actions (e.g. `docker_prune.enabled: false`) could appear in planned batches. Fixed: `enabled_actions` list built from `env_schema.actions` in `run_env_batch()`, stored in `BatchGraphState`, and passed to `prioritize_actions()` in `plan_vm_node()` as `available_actions`.
-2. (Medium) `check_target()` checked binaries for all actions regardless of which were enabled. Fixed: per-action binary mapping (`_ACTION_BINARIES`, `_PATCHING_BINARIES`), new `_binaries_for_enabled_actions()` helper, `enabled_actions` kwarg on `check_target()`. `run_check_targets()` and `validate_targets_node` both pass the enabled list. `docker_mode` now defaults to `"disabled"` when `docker_prune.enabled: false`.
-8 new tests: 4 in `test_enabled_actions_planning.py` (planning enforcement + plan_vm_node wire-up), 2 in `test_target_validation.py` (per-action binary filtering).
+Round 1 (commit 525b143) partially fixed the two SRE audit findings. Round 2 closes the remaining gaps:
 
-**1893 tests passing, 0 skipped, 0 regressions.**
+1. **Blocker (Round 2)**: `_route_plan_vms()` (LangGraph fan-out router) did not include `enabled_actions` in the `Send()` payload — so `plan_vm_node` always received an empty state dict without the filter. Fixed: extracted to module-level `route_plan_vms()` (now importable and testable); passes `enabled_actions` through when present; omits the key (not `[]`) when absent so DEFAULT_PRIORITY fallback is preserved.
+2. **Medium (Round 2)**: `target_validation.py` used a hand-written `_ACTION_BINARIES` table that was wrong for `disk_cleanup` and `backup_verify`. Fixed: `_binaries_for_enabled_actions()` now derives binaries from `BUILTIN_ACTIONS` manifests (single source of truth). OS-appropriate package managers filtered via `_OS_PKG_MANAGERS`.
+3. **Patching manifest**: `apt-mark` was missing from `patching.py` MANIFEST `required_binaries`. Added.
+4. **Tests**: `TestRoutePlanVms` class added (5 new tests) verifying Send payload carries `enabled_actions`; missing key → key omitted from payload.
 
-## Files Changed (SRE audit fix)
-- `errander/execution/target_validation.py` (MODIFIED — `_ACTION_BINARIES`, `_PATCHING_BINARIES`, `_binaries_for_enabled_actions()`, `enabled_actions` param on `check_target()`)
-- `errander/agent/graph.py` (MODIFIED — `enabled_actions` in `BatchGraphState`, wire-up in `plan_vm_node` and `validate_targets_node`)
-- `errander/main.py` (MODIFIED — `_enabled_actions` in `run_env_batch` initial state; `enabled_actions` + fixed `docker_mode` in `run_check_targets`)
-- `tests/agent/test_enabled_actions_planning.py` (NEW — 6 tests)
-- `tests/execution/test_target_validation.py` (MODIFIED — 2 new tests)
+**1898 tests passing, 0 skipped, 0 regressions.**
+
+## Files Changed (SRE audit fix Round 2)
+- `errander/agent/graph.py` (MODIFIED — `route_plan_vms()` module-level function; `enabled_actions` in Send payload; `_route_plan_vms` closure delegates to it)
+- `errander/agent/subgraphs/patching.py` (MODIFIED — `apt-mark` added to `required_binaries`)
+- `errander/execution/target_validation.py` (MODIFIED — `_OS_PKG_MANAGERS`, `_ALL_PKG_MANAGERS`, `_DOCKER_BINARIES`; manifest-derived `_binaries_for_enabled_actions()` and `_binaries_for_os()`)
+- `tests/agent/test_enabled_actions_planning.py` (MODIFIED — `TestRoutePlanVms` class with 5 tests; imports for `Send`, `BatchGraphState`, `route_plan_vms`)
 
 ---
 

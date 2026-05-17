@@ -1,6 +1,22 @@
 # Errander-AI Command Log
 
-## SRE audit fix — enabled_actions enforcement (2026-05-17)
+## SRE audit fix Round 2 — route_plan_vms Send payload + manifest-derived binaries (2026-05-17)
+
+```bash
+# Remove unused type: ignore comments flagged by mypy
+uv run mypy errander/agent/graph.py errander/execution/target_validation.py \
+  errander/agent/subgraphs/patching.py tests/agent/test_enabled_actions_planning.py  # clean
+uv run ruff check errander/agent/graph.py errander/execution/target_validation.py \
+  errander/agent/subgraphs/patching.py tests/agent/test_enabled_actions_planning.py  # All checks passed
+uv run pytest --tb=no -q  # 1898 passed, 0 skipped
+git add errander/agent/graph.py errander/agent/subgraphs/patching.py \
+  errander/execution/target_validation.py tests/agent/test_enabled_actions_planning.py \
+  STATUS.md docs/command-log.md tasks/todo.md tasks/lessons.md
+git commit -m "fix: route_plan_vms passes enabled_actions in Send payload, manifest-derived binary checks"
+git push origin main
+```
+
+## SRE audit fix Round 1 — enabled_actions enforcement (2026-05-17)
 
 ```bash
 # Bug 1: enabled_actions not passed to prioritize_actions

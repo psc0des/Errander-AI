@@ -15,9 +15,10 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from langgraph.types import Send
 
 from errander.agent.decisions import DEFAULT_PRIORITY, prioritize_actions
-from errander.agent.graph import plan_vm_node
+from errander.agent.graph import BatchGraphState, plan_vm_node, route_plan_vms
 from errander.models.actions import ActionType
 from errander.models.vm import OSFamily, VMInfo
 
@@ -209,4 +210,87 @@ class TestPlanVmNodeEnabledActions:
         assert _captured.get("available_actions") is None, (
             "When enabled_actions is absent from state, available_actions must be None "
             "(falls back to DEFAULT_PRIORITY in prioritize_actions)"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Tests: route_plan_vms includes enabled_actions in every Send payload
+# (graph-level regression — the actual LangGraph fan-out path)
+# ---------------------------------------------------------------------------
+
+class TestRoutePlanVms:
+    """route_plan_vms must pass enabled_actions through the LangGraph Send payload."""
+
+    def _make_state(self, **overrides: Any) -> BatchGraphState:
+        state: BatchGraphState = {
+            "healthy_targets": [
+                {"vm_id": "dev/web-01", "hostname": "10.0.20.10",
+                 "ssh_user": "devops", "ssh_key_path": "~/.ssh/k"},
+            ],
+            "batch_id": "batch-test-001",
+            "env_policy": "moderate",
+            "enabled_actions": ["patching", "disk_cleanup", "log_rotation", "backup_verify"],
+        }
+        state.update(overrides)  # type: ignore[typeddict-item]
+        return state
+
+    def test_send_payload_includes_enabled_actions(self) -> None:
+        """Every Send payload must carry enabled_actions from batch state."""
+        state = self._make_state()
+        result = route_plan_vms(state)
+        assert isinstance(result, list)
+        assert len(result) == 1
+        send = result[0]
+        assert isinstance(send, Send)
+        assert "enabled_actions" in send.arg, (
+            "Send payload must include 'enabled_actions' so plan_vm_node can filter planning"
+        )
+        assert send.arg["enabled_actions"] == [
+            "patching", "disk_cleanup", "log_rotation", "backup_verify"
+        ]
+
+    def test_docker_prune_disabled_excluded_from_send_payload(self) -> None:
+        """When docker_prune is not in enabled_actions, Send payload must not include it."""
+        state = self._make_state(
+            enabled_actions=["patching", "disk_cleanup", "log_rotation", "backup_verify"]
+        )
+        result = route_plan_vms(state)
+        assert isinstance(result, list)
+        send_payload = result[0].arg
+        assert "docker_prune" not in send_payload["enabled_actions"]
+
+    def test_empty_healthy_targets_returns_generate_report(self) -> None:
+        """No healthy targets → route to generate_report, not a fan-out."""
+        state = self._make_state(healthy_targets=[])
+        result = route_plan_vms(state)
+        assert result == "generate_report"
+
+    def test_multiple_vms_each_get_enabled_actions(self) -> None:
+        """All VMs in the fan-out must receive the same enabled_actions list."""
+        state = self._make_state(
+            healthy_targets=[
+                {"vm_id": "dev/web-01", "hostname": "h1", "ssh_user": "u", "ssh_key_path": "k"},
+                {"vm_id": "dev/web-02", "hostname": "h2", "ssh_user": "u", "ssh_key_path": "k"},
+            ],
+            enabled_actions=["disk_cleanup", "log_rotation"],
+        )
+        result = route_plan_vms(state)
+        assert isinstance(result, list)
+        assert len(result) == 2
+        for send in result:
+            assert send.arg["enabled_actions"] == ["disk_cleanup", "log_rotation"]
+
+    def test_missing_enabled_actions_omits_key_from_send(self) -> None:
+        """When enabled_actions is absent from state, Send payload must NOT include it.
+
+        This ensures plan_vm_node falls back to DEFAULT_PRIORITY rather than
+        receiving an empty list and planning zero actions.
+        """
+        state = self._make_state()
+        del state["enabled_actions"]
+        result = route_plan_vms(state)
+        assert isinstance(result, list)
+        assert "enabled_actions" not in result[0].arg, (
+            "When enabled_actions is absent from batch state, it must be omitted "
+            "from the Send payload so plan_vm_node uses DEFAULT_PRIORITY fallback"
         )

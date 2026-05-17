@@ -80,13 +80,21 @@
 - [x] `RUN.md` — `--migrate-inventory` section + `--restart-service` section + CLI flags + runbook entry
 - [x] commit + push
 
-### SRE audit fix — enabled_actions enforcement (2026-05-17)
+### SRE audit fix Round 1 — enabled_actions enforcement (2026-05-17)
 - [x] Bug 1 (High): `enabled_actions` built from `env_schema.actions` in `run_env_batch`, added to `BatchGraphState`, passed to `prioritize_actions` in `plan_vm_node`
 - [x] Bug 2 (Medium): `check_target` now takes `enabled_actions` kwarg; per-action binary mapping replaces fixed `_binaries_for_os`; `run_check_targets` and `validate_targets_node` pass enabled list
 - [x] `docker_mode` defaults to `"disabled"` when `docker_prune.enabled: false` in both call sites
 - [x] `tests/agent/test_enabled_actions_planning.py` — 6 new tests (planning enforcement + plan_vm_node wire-up)
 - [x] `tests/execution/test_target_validation.py` — 2 new tests (per-action binary filtering, wrapper skip)
 - [x] 1893 tests, ruff clean, mypy clean
+- [x] commit + push
+
+### SRE audit fix Round 2 — route_plan_vms Send payload + manifest-derived binaries (2026-05-17)
+- [x] Blocker: `route_plan_vms()` extracted to module level; `enabled_actions` passed in Send payload when present; key omitted (not `[]`) when absent — preserves DEFAULT_PRIORITY fallback
+- [x] Medium: `_binaries_for_enabled_actions()` now derives from `BUILTIN_ACTIONS` manifests (not hand-written table)
+- [x] `apt-mark` added to patching MANIFEST `required_binaries`
+- [x] `TestRoutePlanVms` — 5 new tests verifying Send payload behavior
+- [x] 1898 tests, ruff clean, mypy clean
 - [x] commit + push
 
 ---

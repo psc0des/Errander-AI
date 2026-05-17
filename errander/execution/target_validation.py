@@ -31,46 +31,45 @@ class TargetReadiness:
     issues: list[str] = field(default_factory=list)
 
 
-# Binaries required per action. Docker and service_restart use separate checks.
-_ACTION_BINARIES: dict[str, list[str]] = {
-    "log_rotation": ["/usr/sbin/logrotate", "/usr/bin/gzip"],
-    "disk_cleanup": ["/usr/bin/truncate", "/usr/bin/cp"],
-    "backup_verify": ["/usr/bin/cp"],
+# Package-manager binaries in patching manifest are listed for all OS families.
+# Only the subset applicable to this OS should be checked.
+_OS_PKG_MANAGERS: dict[str, frozenset[str]] = {
+    "ubuntu": frozenset({"/usr/bin/apt-get", "/usr/bin/apt-mark"}),
+    "debian": frozenset({"/usr/bin/apt-get", "/usr/bin/apt-mark"}),
+    "rhel":   frozenset({"/usr/bin/dnf"}),
+    "rocky":  frozenset({"/usr/bin/dnf"}),
+    "alma":   frozenset({"/usr/bin/dnf"}),
+    "centos": frozenset({"/usr/bin/dnf"}),
 }
+# All package-manager binaries across all OS families — used to detect and filter them.
+_ALL_PKG_MANAGERS: frozenset[str] = frozenset(
+    b for s in _OS_PKG_MANAGERS.values() for b in s
+) | frozenset({"/usr/bin/yum"})  # yum alias in some patching manifests
 
-# Package-manager binaries are OS-specific and only needed when patching is enabled.
-_PATCHING_BINARIES: dict[str, list[str]] = {
-    "ubuntu": ["/usr/bin/apt-get", "/usr/bin/apt-mark"],
-    "debian": ["/usr/bin/apt-get", "/usr/bin/apt-mark"],
-    "rhel": ["/usr/bin/dnf"],
-    "rocky": ["/usr/bin/dnf"],
-    "alma": ["/usr/bin/dnf"],
-    "centos": ["/usr/bin/dnf"],
-}
+# Docker binary is checked separately via docker_command_mode — skip it here.
+_DOCKER_BINARIES: frozenset[str] = frozenset({"/usr/bin/docker"})
 
 
 def _binaries_for_os(os_family: str) -> list[str]:
-    """Return the full per-OS binary list (all actions — backward-compat path)."""
-    base = [
-        "/usr/bin/journalctl",
-        "/usr/sbin/logrotate",
-        "/usr/bin/gzip",
-        "/usr/bin/truncate",
-        "/usr/bin/cp",
-    ]
-    if os_family in ("ubuntu", "debian"):
-        base.extend(["/usr/bin/apt-get", "/usr/bin/apt-mark"])
-    elif os_family in ("rhel", "rocky", "alma", "centos"):
-        base.extend(["/usr/bin/dnf"])
-    return base
+    """Return the full per-OS binary list (all actions — backward-compat path).
+
+    Derived from BUILTIN_ACTIONS manifests with OS-appropriate package managers.
+    """
+    from errander.agent.subgraphs import BUILTIN_ACTIONS
+    return _binaries_for_enabled_actions(os_family, list(BUILTIN_ACTIONS.keys()))
 
 
 def _binaries_for_enabled_actions(os_family: str, enabled_actions: list[str]) -> list[str]:
-    """Return only the binaries required by the given enabled actions.
+    """Return binaries required by ``enabled_actions``, derived from action manifests.
 
-    journalctl is always included — used by the SRE probe regardless of action config.
+    The BUILTIN_ACTIONS registry is the single source of truth for binary requirements.
+    Package-manager binaries are filtered to only the OS-appropriate subset.
+    Docker binaries are excluded — handled separately by docker_command_mode.
     """
+    from errander.agent.subgraphs import BUILTIN_ACTIONS
+
     enabled_set = set(enabled_actions)
+    os_pkg = _OS_PKG_MANAGERS.get(os_family, frozenset())
     seen: set[str] = set()
     result: list[str] = []
 
@@ -79,14 +78,18 @@ def _binaries_for_enabled_actions(os_family: str, enabled_actions: list[str]) ->
             seen.add(b)
             result.append(b)
 
-    _add("/usr/bin/journalctl")
-    for action, bins in _ACTION_BINARIES.items():
-        if action in enabled_set:
-            for b in bins:
-                _add(b)
-    if "patching" in enabled_set:
-        for b in _PATCHING_BINARIES.get(os_family, []):
-            _add(b)
+    for action_name, manifest in BUILTIN_ACTIONS.items():
+        if action_name not in enabled_set:
+            continue
+        for binary in manifest.required_binaries:
+            if binary in _DOCKER_BINARIES:
+                continue  # handled by docker_command_mode wrapper path
+            if binary in _ALL_PKG_MANAGERS:
+                if binary in os_pkg:
+                    _add(binary)
+                # else: not the right package manager for this OS
+            else:
+                _add(binary)
     return result
 
 

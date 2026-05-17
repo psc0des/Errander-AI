@@ -41,7 +41,7 @@ MANIFEST = ActionManifest(
     default_enabled=True,
     risk_tier="MEDIUM",
     command_modes=None,
-    required_binaries=("/usr/bin/apt-get", "/usr/bin/dnf", "/usr/bin/yum"),
+    required_binaries=("/usr/bin/apt-get", "/usr/bin/apt-mark", "/usr/bin/dnf", "/usr/bin/yum"),
     required_wrappers=(),
     setup_doc="SETUP.md#step-3--target-vm-setup",
 )

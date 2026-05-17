@@ -1711,6 +1711,40 @@ def route_after_validate(state: BatchGraphState) -> str:
     return "fan_out"  # only used in unit test context
 
 
+def route_plan_vms(state: BatchGraphState) -> str | list[Send]:
+    """Fan-out router: emit one Send("plan_vm", ...) per healthy target.
+
+    Extracted to module level so it can be unit-tested without building the
+    full graph. Each Send payload carries the per-VM identity fields PLUS
+    ``enabled_actions`` from batch state so ``plan_vm_node`` can pass it to
+    ``prioritize_actions(available_actions=...)``.
+
+    When ``enabled_actions`` is absent from state (old states, replays), the key
+    is omitted from the Send payload so ``plan_vm_node`` falls back to
+    DEFAULT_PRIORITY rather than planning zero actions.
+    """
+    healthy = state.get("healthy_targets", [])
+    if not healthy:
+        return "generate_report"
+    batch_id = state.get("batch_id", "unknown")
+    env_policy = state.get("env_policy", "strict")
+    _enabled_raw: list[str] | None = state.get("enabled_actions")
+    sends = []
+    for t in healthy:
+        payload: dict[str, object] = {
+            "vm_id": str(t["vm_id"]),
+            "hostname": str(t["hostname"]),
+            "ssh_user": str(t["ssh_user"]),
+            "ssh_key_path": str(t["ssh_key_path"]),
+            "batch_id": batch_id,
+            "env_policy": env_policy,
+        }
+        if _enabled_raw is not None:
+            payload["enabled_actions"] = list(_enabled_raw)
+        sends.append(Send("plan_vm", payload))
+    return sends
+
+
 # --- Graph builder ---
 
 def build_batch_graph(
@@ -1828,22 +1862,7 @@ def build_batch_graph(
 
     # Fan-out router: Send one plan_vm invocation per healthy target
     def _route_plan_vms(state: BatchGraphState) -> str | list[Send]:
-        healthy = state.get("healthy_targets", [])
-        if not healthy:
-            return "generate_report"
-        batch_id = state.get("batch_id", "unknown")
-        env_policy = state.get("env_policy", "strict")
-        return [
-            Send("plan_vm", {
-                "vm_id": str(t["vm_id"]),
-                "hostname": str(t["hostname"]),
-                "ssh_user": str(t["ssh_user"]),
-                "ssh_key_path": str(t["ssh_key_path"]),
-                "batch_id": batch_id,
-                "env_policy": env_policy,  # needed for LLM-aware planning (blocker #2)
-            })
-            for t in healthy
-        ]
+        return route_plan_vms(state)
 
     # --- Nodes ---
     builder.add_node("init_batch", _init_batch)

@@ -44,6 +44,18 @@ When adding direct `ssh_manager.execute()` calls inside `run_check_targets` (for
 
 `BUILTIN_ACTIONS` in `errander/agent/subgraphs/__init__.py` imports from subgraph modules, which import from `errander/models/manifest.py`. The config schema doesn't import from subgraphs at module level — importing BUILTIN_ACTIONS inside the `model_validator` body prevents any future accidental import cycle if someone adds a cross-dependency.
 
+## 2026-05-17 — LangGraph Send() fan-out requires explicit field forwarding — parent state is NOT inherited
+
+In LangGraph's fan-out pattern, `Send("node_name", payload_dict)` delivers exactly `payload_dict` as the invoked node's state. Fields in the parent `BatchGraphState` (e.g., `enabled_actions`) are not automatically available in the per-VM node — they must be explicitly copied into the Send payload. Any schema field added to `BatchGraphState` that downstream nodes need must be threaded through every `Send()` call in `_route_plan_vms` (or equivalent router). When writing tests for fan-out routing, test `route_plan_vms()` directly and assert on `send.arg` keys rather than relying on integration tests that may not exercise this path.
+
+## 2026-05-17 — Passing [] vs omitting a key in Send payload has different semantics in plan_vm_node
+
+`plan_vm_node` reads `state.get("enabled_actions")` and checks `if _enabled_names is not None`. Passing `enabled_actions=[]` via Send means `_enabled_names = []` → `available_for_planning = []` → `prioritize_actions` plans zero actions. Omitting the key means `_enabled_names = None` → `available_for_planning = None` → DEFAULT_PRIORITY fallback. Always omit the key (not send `[]`) when the intent is "operator hasn't configured opt-in — use defaults."
+
+## 2026-05-17 — Hand-written binary tables rot; derive from manifests instead
+
+`_ACTION_BINARIES` in `target_validation.py` listed wrong binaries for `disk_cleanup` (`truncate`, `cp`) and `backup_verify` (`cp`) because the table was written from memory, not from the actual action manifests. `BUILTIN_ACTIONS` registry is the single source of truth for `required_binaries` — any helper that maps action → binary must import from there, not maintain its own table. Always add a manifest-consistency test when adding a new action.
+
 
 
 Self-improvement log. Updated after corrections, mistakes, and surprises.

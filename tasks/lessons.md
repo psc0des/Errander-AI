@@ -24,6 +24,10 @@ When two first-party imports from the same package are in a test file, ruff's is
 
 `subprocess` and `pytest` were left as unused imports in `tests/scripts/test_install_docker_wrappers.py` (likely from a template). ruff F401 catches these. Always run ruff on new test files before the first commit.
 
+## 2026-05-17 — New SSH calls in run_check_targets only trigger when action is enabled
+
+When adding direct `ssh_manager.execute()` calls inside `run_check_targets` (for the allowlist drift check), existing tests don't break if the new code path is gated by `if service_restart_cfg and service_restart_cfg.enabled:`. Existing test inventories have `service_restart.enabled: False` (the default), so the SSH call is never reached. New tests for the drift check use inventories with `service_restart.enabled: True` and must mock `SSHConnectionManager.execute` at the class level.
+
 ## 2026-05-17 — Lazy import inside validator body avoids circular dependency risk without refactoring
 
 `BUILTIN_ACTIONS` in `errander/agent/subgraphs/__init__.py` imports from subgraph modules, which import from `errander/models/manifest.py`. The config schema doesn't import from subgraphs at module level — importing BUILTIN_ACTIONS inside the `model_validator` body prevents any future accidental import cycle if someone adds a cross-dependency.

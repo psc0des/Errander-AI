@@ -60,6 +60,7 @@ class ActionConfig(BaseModel):
 
     enabled: bool
     command_mode: str | None = None
+    restartable_units: list[str] = []
 
 
 class TargetSchema(BaseModel):
@@ -174,6 +175,13 @@ class EnvironmentSchema(BaseModel):
             raise ConfigError(
                 "docker_prune.enabled is true but command_mode is 'disabled' — contradiction. "
                 "Set enabled: false or change command_mode to 'wrapper' or 'direct_sudo'."
+            )
+
+        service_restart_cfg = full_actions.get("service_restart")
+        if service_restart_cfg and service_restart_cfg.enabled and not service_restart_cfg.restartable_units:
+            raise ConfigError(
+                "service_restart.enabled is true for this environment, but restartable_units is empty. "
+                "Add restartable_units: [unit1, unit2, ...] under actions.service_restart, or set enabled: false."
             )
 
         self.actions = full_actions

@@ -154,6 +154,32 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         ),
     )
 
+    # Service restart (operator-triggered, HIGH risk tier)
+    parser.add_argument(
+        "--restart-service",
+        metavar="ENV",
+        default=None,
+        help=(
+            "Trigger an operator-initiated service restart for ENV. "
+            "Requires --unit and --vm or --vms. Always requires Slack approval."
+        ),
+    )
+    parser.add_argument(
+        "--unit",
+        default=None,
+        help="Unit name for --restart-service (e.g. nginx, gunicorn)",
+    )
+    parser.add_argument(
+        "--vm",
+        default=None,
+        help="Single VM name for --restart-service",
+    )
+    parser.add_argument(
+        "--vms",
+        default=None,
+        help="Comma-separated VM names for --restart-service (e.g. web-01,web-02)",
+    )
+
     # SSH known-hosts bootstrap (finding #9)
     parser.add_argument(
         "--bootstrap-known-hosts",
@@ -616,6 +642,48 @@ async def run_check_targets(env_name: str, inventory_path: Path) -> int:
                 ssh_manager=ssh_manager,
             )
             results.append(readiness)
+
+        # Allowlist drift check for service_restart-enabled environments
+        service_restart_cfg = env.actions.get("service_restart")
+        if service_restart_cfg and service_restart_cfg.enabled:
+            inventory_units = set(service_restart_cfg.restartable_units)
+            for target in env.targets:
+                username = target.ssh_user or env.ssh_user
+                key_path = str(Path(target.ssh_key_path or env.ssh_key_path).expanduser())
+                try:
+                    cmd = "cat /etc/errander/restart-allowlist 2>/dev/null || echo '__not_found__'"
+                    ssh_result = await ssh_manager.execute(
+                        target.name, target.host, username, key_path, cmd
+                    )
+                    if ssh_result.success and "__not_found__" not in ssh_result.stdout:
+                        on_target_units = {
+                            line.strip()
+                            for line in ssh_result.stdout.splitlines()
+                            if line.strip()
+                        }
+                        for unit in sorted(inventory_units - on_target_units):
+                            print(
+                                f"  ALLOWLIST DRIFT {target.name}: "
+                                f"'{unit}' in inventory but missing from "
+                                f"/etc/errander/restart-allowlist"
+                            )
+                        for unit in sorted(on_target_units - inventory_units):
+                            print(
+                                f"  ALLOWLIST DRIFT {target.name}: "
+                                f"'{unit}' in /etc/errander/restart-allowlist "
+                                f"but not in inventory restartable_units"
+                            )
+                    else:
+                        print(
+                            f"  WARN {target.name}: "
+                            f"/etc/errander/restart-allowlist not readable — "
+                            f"run install-systemctl-restart-wrapper.sh"
+                        )
+                except Exception:  # noqa: BLE001
+                    print(
+                        f"  WARN {target.name}: "
+                        f"failed to read /etc/errander/restart-allowlist"
+                    )
     finally:
         await ssh_manager.close_all()
 
@@ -841,6 +909,90 @@ async def run_ask_query(
             tips.append("use --live for SSH probe")
         if tips:
             print(f"Tip: {' | '.join(tips)}")
+    return 0
+
+
+# ---------------------------------------------------------------------------
+# Service restart CLI  (Layer B — deterministic, audited, approval-gated)
+# ---------------------------------------------------------------------------
+
+
+async def run_restart_service(
+    env_name: str,
+    unit_name: str,
+    vm_ids: list[str],
+    dry_run: bool,
+    inventory_path: Path,
+) -> int:
+    """Operator-triggered service restart — validates inputs, audits request, prints plan.
+
+    Layer B: deterministic validation + audit log. No LLM in this path.
+    Execution (live mode) goes through the approval-gated batch graph.
+    HIGH risk tier — always requires Slack approval before execution.
+    """
+    import uuid
+
+    from errander.models.events import AuditEvent
+
+    try:
+        inventory = validate_inventory(inventory_path)
+    except Exception as exc:  # noqa: BLE001
+        print(f"Error loading inventory: {exc}")
+        return 1
+
+    env = inventory.environments.get(env_name)
+    if env is None:
+        print(f"Unknown environment: {env_name}")
+        return 1
+
+    restart_cfg = env.actions.get("service_restart")
+    if restart_cfg is None or not restart_cfg.enabled:
+        print(
+            f"service_restart is not enabled for environment '{env_name}'. "
+            "Set actions.service_restart.enabled: true in inventory.yaml."
+        )
+        return 1
+
+    restartable_units = restart_cfg.restartable_units
+    if unit_name not in restartable_units:
+        print(
+            f"Unit '{unit_name}' is not in restartable_units for '{env_name}'. "
+            f"Allowed: {restartable_units}"
+        )
+        return 1
+
+    all_vm_names = {t.name for t in env.targets}
+    for vm_id in vm_ids:
+        if vm_id not in all_vm_names:
+            print(
+                f"VM '{vm_id}' not found in environment '{env_name}'. "
+                f"Known VMs: {sorted(all_vm_names)}"
+            )
+            return 1
+
+    try:
+        settings = load_settings()
+    except Exception as exc:  # noqa: BLE001
+        print(f"Error loading settings: {exc}")
+        return 1
+
+    batch_id = str(uuid.uuid4())
+    audit_store = AuditStore(settings.audit_db_url, strict_mode=False)
+    async with audit_store:
+        await audit_store.log_event(AuditEvent(
+            event_type=EventType.SERVICE_RESTART_REQUESTED,
+            batch_id=batch_id,
+            detail=f"unit={unit_name} vms={vm_ids} env={env_name} dry_run={dry_run}",
+        ))
+
+    vm_list = ", ".join(vm_ids)
+    print(f"Service Restart Plan — {env_name}")
+    print(f"  Unit : {unit_name}")
+    print(f"  VMs  : {vm_list}")
+    print("  Risk : HIGH — Slack approval required before execution")
+    print(f"  Mode : {'DRY RUN' if dry_run else 'LIVE'}")
+    if dry_run:
+        print("\nDRY RUN — plan generated, no execution.")
     return 0
 
 
@@ -1261,6 +1413,30 @@ async def async_main(args: argparse.Namespace) -> int:
             question=args.ask,
             inventory_path=args.inventory,
             env_name=args.env,
+        )
+
+    if args.restart_service is not None:
+        vm_ids: list[str] = []
+        if args.vm:
+            vm_ids = [args.vm]
+        elif args.vms:
+            vm_ids = [v.strip() for v in args.vms.split(",") if v.strip()]
+        if not vm_ids:
+            print(
+                "Error: --vm <vm-id> or --vms <comma,separated,ids> is required "
+                "with --restart-service"
+            )
+            return 1
+        if not args.unit:
+            print("Error: --unit <name> is required with --restart-service")
+            return 1
+        dry_run = not args.live
+        return await run_restart_service(
+            env_name=args.restart_service,
+            unit_name=args.unit,
+            vm_ids=vm_ids,
+            dry_run=dry_run,
+            inventory_path=args.inventory,
         )
 
     # --- Configuration (first pass: no DB overrides yet) ---

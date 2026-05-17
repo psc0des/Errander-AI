@@ -4,6 +4,22 @@
 2026-05-17
 
 ## Current Phase
+**v1-action-opt-in commit S.3 — --restart-service CLI, restartable_units validation, allowlist drift check (2026-05-17).**
+
+`--restart-service <env> --unit <name> --vm <vm-id>|--vms <csv>` CLI added. `ActionConfig.restartable_units` field added; `service_restart.enabled: true` with empty `restartable_units` raises `ConfigError` at config-load time. `--check-targets` now SSH-reads `/etc/errander/restart-allowlist` per VM and reports drift vs inventory `restartable_units`. `tests/agent/test_approval.py` verifies HIGH tier always routes through Slack approval (strict/moderate) and the HITL guardrail covers it in relaxed mode.
+
+**1885 tests passing, 0 skipped, 0 regressions.**
+
+## Files Changed (commit S.3)
+- `errander/config/schema.py` (MODIFIED — `restartable_units` field + ConfigError validation)
+- `errander/main.py` (MODIFIED — `--restart-service`/`--unit`/`--vm`/`--vms` flags, `run_restart_service()`, allowlist drift in `run_check_targets`)
+- `tests/config/test_schema_actions.py` (MODIFIED — 6 new `TestServiceRestartValidation` tests)
+- `tests/test_main.py` (MODIFIED — 11 new tests: args, dry-run happy path, rejections, allowlist drift)
+- `tests/agent/test_approval.py` (NEW — 7 approval guarantee tests)
+
+---
+
+## Previous Phase
 **v1-action-opt-in commit S.2 — install-systemctl-restart-wrapper.sh + drift test (2026-05-17).**
 
 `scripts/install-systemctl-restart-wrapper.sh` added: idempotent root install script for the restart wrapper + allowlist from positional args + sudoers entry with visudo validation. `tests/scripts/test_install_systemctl_restart_wrapper.py` added: 23 drift tests verifying wrapper exit codes, section markers, and output parseable by `parse_restart_output()`.

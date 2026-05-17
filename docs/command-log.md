@@ -1,5 +1,21 @@
 # Errander-AI Command Log
 
+## v1-action-opt-in commit S.3 (2026-05-17)
+
+```bash
+# --restart-service CLI + restartable_units validation + allowlist drift + approval tests
+uv run pytest tests/config/test_schema_actions.py tests/test_main.py tests/agent/test_approval.py -x -q  # 71 passed
+uv run ruff check errander/main.py errander/config/schema.py tests/config/test_schema_actions.py tests/test_main.py tests/agent/test_approval.py  # All checks passed
+uv run ruff check tests/test_main.py --fix    # fixed I001 import order (added yaml import)
+uv run mypy errander/main.py errander/config/schema.py tests/config/test_schema_actions.py tests/test_main.py tests/agent/test_approval.py  # clean
+uv run pytest --tb=no -q                      # 1885 passed, 0 skipped
+git add errander/config/schema.py errander/main.py \
+  tests/config/test_schema_actions.py tests/test_main.py tests/agent/test_approval.py \
+  STATUS.md docs/command-log.md tasks/todo.md tasks/lessons.md
+git commit -m "feat: --restart-service CLI, restartable_units validation, allowlist drift check"
+git push origin main
+```
+
 ## v1-action-opt-in commit S.2 (2026-05-17)
 
 ```bash

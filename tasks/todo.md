@@ -59,8 +59,21 @@
 - [x] 1859 tests passing, ruff clean
 - [x] commit S.2
 
-### Commits S.3–S.4 — `service_restart` CLI + docs
-- [ ] (pending)
+### Commit S.3 — CLI `--restart-service` + schema validation + allowlist drift + approval test
+- [x] `errander/config/schema.py` — `ActionConfig.restartable_units: list[str] = []` + ConfigError when service_restart enabled with empty list
+- [x] `errander/main.py` — `--restart-service`, `--unit`, `--vm`, `--vms` flags + `run_restart_service()` + allowlist drift in `run_check_targets`
+- [x] `tests/config/test_schema_actions.py` — 6 new `TestServiceRestartValidation` tests
+- [x] `tests/test_main.py` — 11 new tests (arg parsing, dry-run happy path, rejection cases, allowlist drift)
+- [x] `tests/agent/test_approval.py` — 7 new approval guarantee tests (HIGH tier, HITL invariant)
+- [x] 1885 tests passing, ruff clean, mypy clean
+- [x] commit S.3
+
+### Commit S.4 — SETUP.md + CLAUDE.md + README + learning doc
+- [ ] `SETUP.md` — add `## Optional: Service restart` section
+- [ ] `CLAUDE.md` — update v1 scope (6 actions), risk-tier table (service_restart HIGH), operator-triggered note
+- [ ] `README.md` — capability matrix: service_restart ✅ opt-in + CLI example
+- [ ] `example/inventory.yaml` — add service_restart block (disabled default + commented units)
+- [ ] `docs/learning/XX-service-restart-module.md` — design walkthrough
 
 ---
 

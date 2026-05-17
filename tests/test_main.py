@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
+from datetime import UTC
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+import yaml
 
 from errander.config.schema import EnvironmentSchema, TargetSchema
-from errander.main import _build_maintenance_window, _parse_args
-
+from errander.main import _build_maintenance_window, _parse_args, run_restart_service
 
 # ---------------------------------------------------------------------------
 # _parse_args
@@ -264,7 +265,7 @@ class TestWindowOpener:
     @pytest.mark.asyncio
     async def test_pending_record_triggers_live_run(self, tmp_path: Path) -> None:
         """When a pending deferred record exists, run_env_batch is called with dry_run=False."""
-        from datetime import datetime, timedelta, timezone
+        from datetime import datetime, timedelta
         from unittest.mock import AsyncMock, patch
 
         from errander.config.schema import EnvironmentSchema, TargetSchema
@@ -287,7 +288,7 @@ class TestWindowOpener:
 
         deferred_store = DeferredExecutionStore(":memory:")
         await deferred_store.initialize()
-        future_window = datetime.now(tz=timezone.utc).replace(hour=2, minute=0, second=0, microsecond=0) + timedelta(days=30)
+        future_window = datetime.now(tz=UTC).replace(hour=2, minute=0, second=0, microsecond=0) + timedelta(days=30)
         await deferred_store.save("b-test", "dev", "alice", future_window)
 
         async with AuditStore(":memory:") as audit_store:
@@ -320,7 +321,7 @@ class TestWindowOpener:
     @pytest.mark.asyncio
     async def test_pending_record_marked_done_after_run(self, tmp_path: Path) -> None:
         """After _window_opener runs, the deferred record is marked done."""
-        from datetime import datetime, timedelta, timezone
+        from datetime import datetime, timedelta
         from unittest.mock import AsyncMock, patch
 
         from errander.config.schema import EnvironmentSchema, TargetSchema
@@ -343,7 +344,7 @@ class TestWindowOpener:
 
         deferred_store = DeferredExecutionStore(":memory:")
         await deferred_store.initialize()
-        future_window = datetime.now(tz=timezone.utc).replace(hour=2, minute=0, second=0, microsecond=0) + timedelta(days=30)
+        future_window = datetime.now(tz=UTC).replace(hour=2, minute=0, second=0, microsecond=0) + timedelta(days=30)
         await deferred_store.save("b-test", "dev", "alice", future_window)
 
         async with AuditStore(":memory:") as audit_store:
@@ -404,6 +405,7 @@ class TestMigrateInventoryCLI:
     @pytest.mark.asyncio
     async def test_migrate_exits_0_on_success(self, tmp_path: Path) -> None:
         import yaml
+
         from errander.main import async_main
 
         inv = tmp_path / "inventory.yaml"
@@ -435,8 +437,9 @@ class TestCheckTargetsRegistryDriven:
     @pytest.mark.asyncio
     async def test_check_targets_passes_disabled_docker_mode_when_docker_disabled(self, tmp_path: Path) -> None:
         import yaml
-        from errander.main import run_check_targets
+
         from errander.execution.target_validation import TargetReadiness
+        from errander.main import run_check_targets
 
         inv = tmp_path / "inventory.yaml"
         inv.write_text(yaml.dump({
@@ -463,8 +466,9 @@ class TestCheckTargetsRegistryDriven:
     @pytest.mark.asyncio
     async def test_check_targets_warns_but_reports_when_binary_missing(self, tmp_path: Path) -> None:
         import yaml
-        from errander.main import run_check_targets
+
         from errander.execution.target_validation import TargetReadiness
+        from errander.main import run_check_targets
 
         inv = tmp_path / "inventory.yaml"
         inv.write_text(yaml.dump({
@@ -493,8 +497,8 @@ class TestCheckTargetsRegistryDriven:
 class TestRunCheckTargets:
     @pytest.mark.asyncio
     async def test_check_targets_exits_0_when_all_ready(self, tmp_path: Path) -> None:
-        from errander.main import run_check_targets
         from errander.execution.target_validation import TargetReadiness
+        from errander.main import run_check_targets
 
         inv = tmp_path / "inventory.yaml"
         inv.write_text(
@@ -525,8 +529,8 @@ class TestRunCheckTargets:
 
     @pytest.mark.asyncio
     async def test_check_targets_exits_1_when_any_blocked(self, tmp_path: Path) -> None:
-        from errander.main import run_check_targets
         from errander.execution.target_validation import TargetReadiness
+        from errander.main import run_check_targets
 
         inv = tmp_path / "inventory.yaml"
         inv.write_text(
@@ -576,3 +580,280 @@ class TestRunCheckTargets:
         )
         result = await run_check_targets(env_name="nonexistent", inventory_path=inv)
         assert result == 1
+
+
+# ---------------------------------------------------------------------------
+# --restart-service CLI
+# ---------------------------------------------------------------------------
+
+_SR_INVENTORY = {
+    "environments": {
+        "production": {
+            "targets": [{"host": "10.0.1.1", "name": "web-01", "os_family": "ubuntu"}],
+            "actions": {"service_restart": {"enabled": True, "restartable_units": ["nginx", "gunicorn"]}},
+        }
+    }
+}
+
+
+class TestRestartServiceArgs:
+    def test_restart_service_flag_parses(self) -> None:
+        args = _parse_args(["--restart-service", "production", "--unit", "nginx", "--vm", "web-01"])
+        assert args.restart_service == "production"
+        assert args.unit == "nginx"
+        assert args.vm == "web-01"
+        assert args.vms is None
+
+    def test_restart_service_multi_vm_flag(self) -> None:
+        args = _parse_args(["--restart-service", "prod", "--unit", "nginx", "--vms", "web-01,web-02"])
+        assert args.restart_service == "prod"
+        assert args.vms == "web-01,web-02"
+        assert args.vm is None
+
+    def test_restart_service_default_none(self) -> None:
+        args = _parse_args([])
+        assert args.restart_service is None
+        assert args.unit is None
+        assert args.vm is None
+        assert args.vms is None
+
+
+class TestRestartServiceCLI:
+    def _write_inventory(self, tmp_path: Path, data: object = None) -> Path:
+        inv = tmp_path / "inventory.yaml"
+        inv.write_text(yaml.dump(data if data is not None else _SR_INVENTORY))
+        return inv
+
+    @pytest.mark.asyncio
+    async def test_dry_run_returns_0(self, tmp_path: Path) -> None:
+        inv = self._write_inventory(tmp_path)
+        mock_audit = AsyncMock()
+        mock_audit.__aenter__ = AsyncMock(return_value=mock_audit)
+        mock_audit.__aexit__ = AsyncMock(return_value=None)
+        mock_audit.log_event = AsyncMock()
+        with (
+            patch("errander.main.load_settings") as mock_settings,
+            patch("errander.main.AuditStore", return_value=mock_audit),
+        ):
+            mock_settings.return_value = MagicMock(audit_db_url=":memory:")
+            result = await run_restart_service(
+                env_name="production",
+                unit_name="nginx",
+                vm_ids=["web-01"],
+                dry_run=True,
+                inventory_path=inv,
+            )
+        assert result == 0
+
+    @pytest.mark.asyncio
+    async def test_unknown_env_returns_1(self, tmp_path: Path) -> None:
+        inv = self._write_inventory(tmp_path)
+        result = await run_restart_service(
+            env_name="nonexistent",
+            unit_name="nginx",
+            vm_ids=["web-01"],
+            dry_run=True,
+            inventory_path=inv,
+        )
+        assert result == 1
+
+    @pytest.mark.asyncio
+    async def test_unit_not_in_allowlist_returns_1(self, tmp_path: Path) -> None:
+        inv = self._write_inventory(tmp_path)
+        result = await run_restart_service(
+            env_name="production",
+            unit_name="redis-server",  # not in restartable_units
+            vm_ids=["web-01"],
+            dry_run=True,
+            inventory_path=inv,
+        )
+        assert result == 1
+
+    @pytest.mark.asyncio
+    async def test_unknown_vm_returns_1(self, tmp_path: Path) -> None:
+        inv = self._write_inventory(tmp_path)
+        result = await run_restart_service(
+            env_name="production",
+            unit_name="nginx",
+            vm_ids=["nonexistent-vm"],
+            dry_run=True,
+            inventory_path=inv,
+        )
+        assert result == 1
+
+    @pytest.mark.asyncio
+    async def test_service_restart_disabled_returns_1(self, tmp_path: Path) -> None:
+        inv = self._write_inventory(tmp_path, {
+            "environments": {
+                "staging": {
+                    "targets": [{"host": "10.0.2.1", "name": "stg-01", "os_family": "ubuntu"}],
+                    "actions": {"service_restart": {"enabled": False}},
+                }
+            }
+        })
+        result = await run_restart_service(
+            env_name="staging",
+            unit_name="nginx",
+            vm_ids=["stg-01"],
+            dry_run=True,
+            inventory_path=inv,
+        )
+        assert result == 1
+
+    @pytest.mark.asyncio
+    async def test_async_main_no_vm_or_vms_returns_1(self, tmp_path: Path) -> None:
+        from errander.main import async_main
+
+        inv = self._write_inventory(tmp_path)
+        args = _parse_args([
+            "--restart-service", "production",
+            "--unit", "nginx",
+            "--inventory", str(inv),
+        ])
+        result = await async_main(args)
+        assert result == 1
+
+    @pytest.mark.asyncio
+    async def test_async_main_no_unit_returns_1(self, tmp_path: Path) -> None:
+        from errander.main import async_main
+
+        inv = self._write_inventory(tmp_path)
+        args = _parse_args([
+            "--restart-service", "production",
+            "--vm", "web-01",
+            "--inventory", str(inv),
+        ])
+        result = await async_main(args)
+        assert result == 1
+
+
+# ---------------------------------------------------------------------------
+# --check-targets allowlist drift
+# ---------------------------------------------------------------------------
+
+class TestCheckTargetsAllowlistDrift:
+    @pytest.mark.asyncio
+    async def test_allowlist_drift_prints_missing_and_extra(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        from errander.execution.ssh import SSHResult
+        from errander.execution.target_validation import TargetReadiness
+        from errander.main import run_check_targets
+
+        inv = tmp_path / "inventory.yaml"
+        inv.write_text(yaml.dump({
+            "environments": {
+                "production": {
+                    "targets": [{"host": "10.0.1.1", "name": "web-01", "os_family": "ubuntu"}],
+                    "actions": {
+                        "service_restart": {
+                            "enabled": True,
+                            "restartable_units": ["nginx", "gunicorn"],
+                        },
+                    },
+                }
+            }
+        }))
+
+        ready = TargetReadiness(vm_id="web-01", hostname="10.0.1.1", verdict="ready")
+        # On-target allowlist: has "nginx" and "redis" but NOT "gunicorn"
+        allowlist_result = SSHResult(
+            exit_code=0,
+            stdout="nginx\nredis\n",
+            stderr="",
+            command="cat /etc/errander/restart-allowlist 2>/dev/null || echo '__not_found__'",
+        )
+
+        with (
+            patch("errander.execution.target_validation.check_target", return_value=ready),
+            patch("errander.execution.ssh.SSHConnectionManager.close_all", new_callable=AsyncMock),
+            patch(
+                "errander.execution.ssh.SSHConnectionManager.execute",
+                new_callable=AsyncMock,
+                return_value=allowlist_result,
+            ),
+        ):
+            result = await run_check_targets(env_name="production", inventory_path=inv)
+
+        captured = capsys.readouterr()
+        assert "gunicorn" in captured.out
+        assert "redis" in captured.out
+        assert result == 0
+
+    @pytest.mark.asyncio
+    async def test_no_drift_when_allowlist_matches(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        from errander.execution.ssh import SSHResult
+        from errander.execution.target_validation import TargetReadiness
+        from errander.main import run_check_targets
+
+        inv = tmp_path / "inventory.yaml"
+        inv.write_text(yaml.dump({
+            "environments": {
+                "production": {
+                    "targets": [{"host": "10.0.1.1", "name": "web-01", "os_family": "ubuntu"}],
+                    "actions": {
+                        "service_restart": {
+                            "enabled": True,
+                            "restartable_units": ["nginx", "gunicorn"],
+                        },
+                    },
+                }
+            }
+        }))
+
+        ready = TargetReadiness(vm_id="web-01", hostname="10.0.1.1", verdict="ready")
+        allowlist_result = SSHResult(
+            exit_code=0,
+            stdout="nginx\ngunicorn\n",
+            stderr="",
+            command="cat /etc/errander/restart-allowlist 2>/dev/null || echo '__not_found__'",
+        )
+
+        with (
+            patch("errander.execution.target_validation.check_target", return_value=ready),
+            patch("errander.execution.ssh.SSHConnectionManager.close_all", new_callable=AsyncMock),
+            patch(
+                "errander.execution.ssh.SSHConnectionManager.execute",
+                new_callable=AsyncMock,
+                return_value=allowlist_result,
+            ),
+        ):
+            result = await run_check_targets(env_name="production", inventory_path=inv)
+
+        captured = capsys.readouterr()
+        assert "ALLOWLIST DRIFT" not in captured.out
+        assert result == 0
+
+    @pytest.mark.asyncio
+    async def test_service_restart_disabled_skips_allowlist_check(
+        self, tmp_path: Path
+    ) -> None:
+        from errander.execution.target_validation import TargetReadiness
+        from errander.main import run_check_targets
+
+        inv = tmp_path / "inventory.yaml"
+        inv.write_text(yaml.dump({
+            "environments": {
+                "dev": {
+                    "targets": [{"host": "10.0.2.1", "name": "dev-01", "os_family": "ubuntu"}],
+                    "actions": {"service_restart": {"enabled": False}},
+                }
+            }
+        }))
+
+        ready = TargetReadiness(vm_id="dev-01", hostname="10.0.2.1", verdict="ready")
+
+        with (
+            patch("errander.execution.target_validation.check_target", return_value=ready),
+            patch("errander.execution.ssh.SSHConnectionManager.close_all", new_callable=AsyncMock),
+            patch(
+                "errander.execution.ssh.SSHConnectionManager.execute",
+                new_callable=AsyncMock,
+                side_effect=AssertionError("allowlist SSH called when service_restart disabled"),
+            ),
+        ):
+            result = await run_check_targets(env_name="dev", inventory_path=inv)
+
+        assert result == 0

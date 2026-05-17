@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
+
+if TYPE_CHECKING:
+    from pathlib import Path
 import yaml
 from pydantic import ValidationError
 
@@ -21,7 +24,7 @@ _TARGET = {"host": "10.0.1.10", "name": "web-01", "os_family": "ubuntu"}
 
 
 def _env_with_actions(actions: dict | None = None) -> dict:  # type: ignore[type-arg]
-    env: dict = {"targets": [_TARGET]}
+    env: dict[str, object] = {"targets": [_TARGET]}
     if actions is not None:
         env["actions"] = actions
     return env
@@ -160,3 +163,60 @@ class TestContradictionRejected:
             actions={"docker_prune": ActionConfig(enabled=True, command_mode="direct_sudo")},
         )
         assert env.actions["docker_prune"].command_mode == "direct_sudo"
+
+
+class TestServiceRestartValidation:
+    def test_service_restart_enabled_with_empty_units_raises(self) -> None:
+        with pytest.raises((ConfigError, ValidationError, ValueError)) as exc_info:
+            EnvironmentSchema(
+                targets=[TargetSchema(**_TARGET)],  # type: ignore[arg-type]
+                actions={"service_restart": ActionConfig(enabled=True, restartable_units=[])},
+            )
+        msg = str(exc_info.value)
+        assert "restartable_units" in msg
+        assert "service_restart" in msg
+
+    def test_service_restart_enabled_with_units_accepted(self) -> None:
+        env = EnvironmentSchema(
+            targets=[TargetSchema(**_TARGET)],  # type: ignore[arg-type]
+            actions={"service_restart": ActionConfig(enabled=True, restartable_units=["nginx"])},
+        )
+        assert env.actions["service_restart"].enabled is True
+        assert "nginx" in env.actions["service_restart"].restartable_units
+
+    def test_service_restart_disabled_with_empty_units_accepted(self) -> None:
+        env = EnvironmentSchema(
+            targets=[TargetSchema(**_TARGET)],  # type: ignore[arg-type]
+            actions={"service_restart": ActionConfig(enabled=False, restartable_units=[])},
+        )
+        assert env.actions["service_restart"].enabled is False
+
+    def test_service_restart_default_disabled_no_units_required(self) -> None:
+        env = EnvironmentSchema(targets=[TargetSchema(**_TARGET)])  # type: ignore[arg-type]
+        cfg = env.actions["service_restart"]
+        assert cfg.enabled is False
+        assert cfg.restartable_units == []
+
+    def test_service_restart_enabled_via_yaml_with_units(self, tmp_path: Path) -> None:
+        config_file = tmp_path / "inventory.yaml"
+        config_file.write_text(_inventory_yaml({
+            "prod": _env_with_actions({
+                "service_restart": {"enabled": True, "restartable_units": ["nginx", "gunicorn"]},
+            }),
+        }))
+        inv = validate_inventory(config_file)
+        cfg = inv.environments["prod"].actions["service_restart"]
+        assert cfg.enabled is True
+        assert "nginx" in cfg.restartable_units
+        assert "gunicorn" in cfg.restartable_units
+
+    def test_service_restart_enabled_via_yaml_empty_units_raises(self, tmp_path: Path) -> None:
+        config_file = tmp_path / "inventory.yaml"
+        config_file.write_text(_inventory_yaml({
+            "prod": _env_with_actions({
+                "service_restart": {"enabled": True, "restartable_units": []},
+            }),
+        }))
+        with pytest.raises((ConfigError, ValidationError, ValueError)) as exc_info:
+            validate_inventory(config_file)
+        assert "restartable_units" in str(exc_info.value)

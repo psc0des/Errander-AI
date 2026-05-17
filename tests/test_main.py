@@ -391,6 +391,43 @@ class TestCheckTargetsArg:
         args = _parse_args([])
         assert args.check_targets is None
 
+    def test_migrate_inventory_default_none(self) -> None:
+        args = _parse_args([])
+        assert args.migrate_inventory is None
+
+    def test_migrate_inventory_flag_accepted(self, tmp_path: Path) -> None:
+        args = _parse_args(["--migrate-inventory", str(tmp_path / "inventory.yaml")])
+        assert args.migrate_inventory == str(tmp_path / "inventory.yaml")
+
+
+class TestMigrateInventoryCLI:
+    @pytest.mark.asyncio
+    async def test_migrate_exits_0_on_success(self, tmp_path: Path) -> None:
+        import yaml
+        from errander.main import async_main
+
+        inv = tmp_path / "inventory.yaml"
+        inv.write_text(yaml.dump({
+            "environments": {
+                "dev": {
+                    "docker_command_mode": "disabled",
+                    "targets": [{"host": "10.0.0.1", "name": "dev-01", "os_family": "ubuntu"}],
+                },
+            },
+        }))
+
+        args = _parse_args(["--migrate-inventory", str(inv)])
+        result = await async_main(args)
+        assert result == 0
+
+    @pytest.mark.asyncio
+    async def test_migrate_exits_1_when_file_missing(self, tmp_path: Path) -> None:
+        from errander.main import async_main
+
+        args = _parse_args(["--migrate-inventory", str(tmp_path / "nonexistent.yaml")])
+        result = await async_main(args)
+        assert result == 1
+
 
 class TestRunCheckTargets:
     @pytest.mark.asyncio

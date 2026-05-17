@@ -14,8 +14,12 @@
 - [ ] commit 1.1
 
 ### Commit 1.2 — migration helper (`--migrate-inventory`)
-- [ ] `errander/config/migrate.py`
-- [ ] `--migrate-inventory` CLI flag in `main.py`
+- [x] `errander/config/migrate.py` — `migrate_inventory()` + full synthesis + diff output
+- [x] `--migrate-inventory` CLI flag in `main.py` + `_run_migrate_inventory()`
+- [x] `tests/config/test_migrate.py` — 28 tests covering all migration cases
+- [x] `tests/test_main.py` — 4 new tests for arg parsing + CLI exits
+- [x] 1764 tests passing, ruff clean, mypy no new errors
+- [ ] commit 1.2
 
 ### Commit 1.3 — registry-driven `--check-targets`
 - [ ] SETUP.md restructure

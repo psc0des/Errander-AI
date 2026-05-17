@@ -125,6 +125,16 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
 
     parser.add_argument(
+        "--migrate-inventory",
+        metavar="PATH",
+        default=None,
+        help=(
+            "Migrate a legacy inventory.yaml (flat docker_command_mode field) to "
+            "the new nested actions: schema. Writes <PATH>.migrated for review."
+        ),
+    )
+
+    parser.add_argument(
         "--probe-now",
         metavar="ENV",
         default=None,
@@ -538,6 +548,29 @@ async def run_bootstrap_known_hosts(env_name: str, inventory_path: Path) -> int:
 
     print(f"\nDone. Set ERRANDER_SSH_KNOWN_HOSTS={out_path} in your .env")
     return 0
+
+
+# ---------------------------------------------------------------------------
+# --migrate-inventory: legacy schema migration helper
+
+
+def _run_migrate_inventory(path: Path) -> int:
+    from errander.config.migrate import migrate_inventory
+
+    if not path.exists():
+        print(f"Error: inventory file not found: {path}", flush=True)
+        return 1
+    try:
+        migrated = migrate_inventory(path)
+        print(f"\nMigrated inventory written to {migrated}", flush=True)
+        print("Review the diff above, then rename to use the new file.", flush=True)
+        return 0
+    except FileExistsError as exc:
+        print(f"Error: {exc}", flush=True)
+        return 1
+    except Exception as exc:  # noqa: BLE001
+        print(f"Migration failed: {exc}", flush=True)
+        return 1
 
 
 # ---------------------------------------------------------------------------
@@ -1207,6 +1240,9 @@ async def async_main(args: argparse.Namespace) -> int:
             env_name=args.bootstrap_known_hosts,
             inventory_path=args.inventory,
         )
+
+    if args.migrate_inventory:
+        return _run_migrate_inventory(Path(args.migrate_inventory))
 
     if args.check_targets:
         return await run_check_targets(

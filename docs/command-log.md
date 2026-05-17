@@ -1,5 +1,19 @@
 # Errander-AI Command Log
 
+## v1-action-opt-in commit 1.2 (2026-05-17)
+
+```bash
+# Implemented migrate_inventory() + --migrate-inventory CLI + 28 new tests
+uv run pytest tests/config/test_migrate.py tests/test_main.py -v  # 47 passed
+uv run pytest                         # 1764 passed
+uv run ruff check . 2>&1 | grep "errander/config/migrate"  # clean
+uv run mypy . 2>&1 | grep "errander/config/migrate"        # clean
+git add errander/config/migrate.py errander/main.py tests/config/test_migrate.py \
+  tests/test_main.py STATUS.md docs/command-log.md tasks/todo.md tasks/lessons.md
+git commit -m "feat: migration helper -- --migrate-inventory CLI + migrate_inventory()"
+git push origin main
+```
+
 ## v1-action-opt-in commit 1.1 (2026-05-17)
 
 ```bash

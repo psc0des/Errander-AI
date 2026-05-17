@@ -1,0 +1,162 @@
+"""Tests for per-action opt-in schema (actions: block in inventory.yaml)."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+import yaml
+from pydantic import ValidationError
+
+from errander.agent.subgraphs import BUILTIN_ACTIONS
+from errander.config.schema import (
+    ActionConfig,
+    ConfigError,
+    EnvironmentSchema,
+    TargetSchema,
+    validate_inventory,
+)
+
+_TARGET = {"host": "10.0.1.10", "name": "web-01", "os_family": "ubuntu"}
+
+
+def _env_with_actions(actions: dict | None = None) -> dict:  # type: ignore[type-arg]
+    env: dict = {"targets": [_TARGET]}
+    if actions is not None:
+        env["actions"] = actions
+    return env
+
+
+def _inventory_yaml(envs: dict) -> str:  # type: ignore[type-arg]
+    return yaml.dump({"environments": envs})
+
+
+class TestNewNestedSchemaAccepted:
+    def test_full_actions_block_accepted(self) -> None:
+        env = EnvironmentSchema(
+            targets=[TargetSchema(**_TARGET)],  # type: ignore[arg-type]
+            actions={
+                "patching": ActionConfig(enabled=True),
+                "disk_cleanup": ActionConfig(enabled=True),
+                "log_rotation": ActionConfig(enabled=True),
+                "docker_prune": ActionConfig(enabled=False, command_mode="disabled"),
+                "backup_verify": ActionConfig(enabled=False),
+            },
+        )
+        assert env.actions["patching"].enabled is True
+        assert env.actions["docker_prune"].command_mode == "disabled"
+
+    def test_partial_actions_block_accepted(self) -> None:
+        env = EnvironmentSchema(
+            targets=[TargetSchema(**_TARGET)],  # type: ignore[arg-type]
+            actions={"docker_prune": ActionConfig(enabled=True, command_mode="wrapper")},
+        )
+        assert env.actions["docker_prune"].enabled is True
+
+    def test_no_actions_block_accepted(self) -> None:
+        env = EnvironmentSchema(targets=[TargetSchema(**_TARGET)])  # type: ignore[arg-type]
+        assert isinstance(env.actions, dict)
+
+
+class TestLegacyFieldRejected:
+    def test_legacy_docker_command_mode_raises_config_error(self, tmp_path: Path) -> None:
+        config_file = tmp_path / "inventory.yaml"
+        config_file.write_text(
+            yaml.dump({
+                "environments": {
+                    "prod": {
+                        "docker_command_mode": "wrapper",
+                        "targets": [_TARGET],
+                    },
+                },
+            }),
+        )
+        with pytest.raises((ConfigError, ValidationError, ValueError)) as exc_info:
+            validate_inventory(config_file)
+        assert "docker_command_mode" in str(exc_info.value)
+        assert "--migrate-inventory" in str(exc_info.value)
+
+    def test_legacy_field_error_mentions_migration_command(self, tmp_path: Path) -> None:
+        config_file = tmp_path / "inventory.yaml"
+        config_file.write_text(
+            yaml.dump({
+                "environments": {
+                    "dev": {
+                        "docker_command_mode": "disabled",
+                        "targets": [_TARGET],
+                    },
+                },
+            }),
+        )
+        with pytest.raises((ConfigError, ValidationError, ValueError)) as exc_info:
+            validate_inventory(config_file)
+        msg = str(exc_info.value)
+        assert "uv run python -m errander --migrate-inventory" in msg
+
+
+class TestDefaultsApplied:
+    def test_missing_actions_block_applies_builtin_defaults(self) -> None:
+        env = EnvironmentSchema(targets=[TargetSchema(**_TARGET)])  # type: ignore[arg-type]
+        for name, manifest in BUILTIN_ACTIONS.items():
+            assert name in env.actions
+            assert env.actions[name].enabled is manifest.default_enabled
+
+    def test_docker_prune_default_disabled_and_command_mode_disabled(self) -> None:
+        env = EnvironmentSchema(targets=[TargetSchema(**_TARGET)])  # type: ignore[arg-type]
+        docker_cfg = env.actions["docker_prune"]
+        assert docker_cfg.enabled is False
+        assert docker_cfg.command_mode == "disabled"
+
+    def test_patching_default_enabled(self) -> None:
+        env = EnvironmentSchema(targets=[TargetSchema(**_TARGET)])  # type: ignore[arg-type]
+        assert env.actions["patching"].enabled is True
+
+    def test_partial_actions_fills_missing_with_defaults(self) -> None:
+        env = EnvironmentSchema(
+            targets=[TargetSchema(**_TARGET)],  # type: ignore[arg-type]
+            actions={"docker_prune": ActionConfig(enabled=True, command_mode="wrapper")},
+        )
+        # Other actions should have defaults applied
+        assert env.actions["patching"].enabled is True
+        assert env.actions["disk_cleanup"].enabled is True
+        assert env.actions["log_rotation"].enabled is True
+        assert env.actions["backup_verify"].enabled is False
+
+    def test_all_builtin_actions_present_after_defaults(self) -> None:
+        env = EnvironmentSchema(targets=[TargetSchema(**_TARGET)])  # type: ignore[arg-type]
+        assert set(env.actions.keys()) == set(BUILTIN_ACTIONS.keys())
+
+    def test_defaults_via_yaml_load(self, tmp_path: Path) -> None:
+        config_file = tmp_path / "inventory.yaml"
+        config_file.write_text(_inventory_yaml({"dev": {"targets": [_TARGET]}}))
+        inv = validate_inventory(config_file)
+        env = inv.environments["dev"]
+        for name, manifest in BUILTIN_ACTIONS.items():
+            assert env.actions[name].enabled is manifest.default_enabled
+
+
+class TestContradictionRejected:
+    def test_docker_prune_enabled_true_disabled_mode_raises(self) -> None:
+        with pytest.raises((ConfigError, ValidationError, ValueError)) as exc_info:
+            EnvironmentSchema(
+                targets=[TargetSchema(**_TARGET)],  # type: ignore[arg-type]
+                actions={
+                    "docker_prune": ActionConfig(enabled=True, command_mode="disabled"),
+                },
+            )
+        assert "contradiction" in str(exc_info.value).lower() or "disabled" in str(exc_info.value)
+
+    def test_docker_prune_enabled_wrapper_mode_accepted(self) -> None:
+        env = EnvironmentSchema(
+            targets=[TargetSchema(**_TARGET)],  # type: ignore[arg-type]
+            actions={"docker_prune": ActionConfig(enabled=True, command_mode="wrapper")},
+        )
+        assert env.actions["docker_prune"].enabled is True
+        assert env.actions["docker_prune"].command_mode == "wrapper"
+
+    def test_docker_prune_enabled_direct_sudo_mode_accepted(self) -> None:
+        env = EnvironmentSchema(
+            targets=[TargetSchema(**_TARGET)],  # type: ignore[arg-type]
+            actions={"docker_prune": ActionConfig(enabled=True, command_mode="direct_sudo")},
+        )
+        assert env.actions["docker_prune"].command_mode == "direct_sudo"

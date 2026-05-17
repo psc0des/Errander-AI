@@ -9,15 +9,19 @@ Config inheritance: Global defaults → Environment settings → Host overrides.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any
 
 import yaml
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, model_validator
 
 from errander.integrations.secrets import DecryptionError, SecretsManager
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+
+class ConfigError(ValueError):
+    """Raised when inventory config contains contradictions or legacy fields."""
 
 
 def _decrypt_yaml_strings(data: Any, path: str = "") -> Any:
@@ -49,6 +53,13 @@ def _decrypt_yaml_strings(data: Any, path: str = "") -> Any:
             msg = f"Failed to decrypt field '{path}': {exc}"
             raise DecryptionError(msg) from exc
     return data
+
+
+class ActionConfig(BaseModel):
+    """Per-action opt-in config within an environment's ``actions:`` block."""
+
+    enabled: bool
+    command_mode: str | None = None
 
 
 class TargetSchema(BaseModel):
@@ -106,7 +117,10 @@ class EnvironmentSchema(BaseModel):
     ssh_key_path: str = "~/.ssh/errander"
     # Environment-level default; host-level list overrides when set.
     critical_services: list[str] = []
-    docker_command_mode: Literal["wrapper", "direct_sudo", "disabled"] = "wrapper"
+
+    # Per-action opt-in config. Missing entries are filled with defaults
+    # from BUILTIN_ACTIONS at validation time.
+    actions: dict[str, ActionConfig] = {}
 
     # Per-environment Prometheus/ELK URL overrides.
     # When set, these override the global ERRANDER_PROMETHEUS_BASE_URL /
@@ -119,6 +133,18 @@ class EnvironmentSchema(BaseModel):
 
     targets: list[TargetSchema]
 
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_legacy_docker_field(cls, data: Any) -> Any:
+        if isinstance(data, dict) and "docker_command_mode" in data:
+            raise ConfigError(
+                "Legacy inventory field 'docker_command_mode' detected\n"
+                "This field was removed in v1. Run:\n"
+                "  uv run python -m errander --migrate-inventory inventory.yaml\n"
+                "A new file inventory.yaml.migrated will be written for review."
+            )
+        return data
+
     @field_validator("approval_policy")
     @classmethod
     def validate_policy(cls, v: str) -> str:
@@ -127,6 +153,31 @@ class EnvironmentSchema(BaseModel):
             msg = f"approval_policy must be one of {allowed}, got '{v}'"
             raise ValueError(msg)
         return v
+
+    @model_validator(mode="after")
+    def _apply_action_defaults_and_validate(self) -> EnvironmentSchema:
+        from errander.agent.subgraphs import BUILTIN_ACTIONS
+
+        full_actions: dict[str, ActionConfig] = {}
+        for name, manifest in BUILTIN_ACTIONS.items():
+            if name in self.actions:
+                full_actions[name] = self.actions[name]
+            else:
+                default_mode = manifest.command_modes[0] if manifest.command_modes else None
+                full_actions[name] = ActionConfig(
+                    enabled=manifest.default_enabled,
+                    command_mode=default_mode,
+                )
+
+        docker_cfg = full_actions.get("docker_prune")
+        if docker_cfg and docker_cfg.enabled and docker_cfg.command_mode == "disabled":
+            raise ConfigError(
+                "docker_prune.enabled is true but command_mode is 'disabled' — contradiction. "
+                "Set enabled: false or change command_mode to 'wrapper' or 'direct_sudo'."
+            )
+
+        self.actions = full_actions
+        return self
 
 
 class PolicySchema(BaseModel):

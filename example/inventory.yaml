@@ -25,6 +25,24 @@
 #             counts are expected and would produce noisy false alerts.
 #             Default: false (probe is enabled for all hosts).
 #
+#       actions:                         # Per-action opt-in (all optional, defaults shown)
+#         patching:
+#           enabled: true               # Headline feature — HITL Slack approval + maintenance window required
+#         disk_cleanup:
+#           enabled: true               # Bounded by whitelist + age threshold; safe to run automatically
+#         log_rotation:
+#           enabled: true               # Compresses logs; does not delete payload data
+#         docker_prune:
+#           enabled: false              # Off by default — requires wrapper install (see SETUP.md)
+#           command_mode: disabled      # disabled | wrapper | direct_sudo
+#           #   wrapper (recommended production mode): uses root-owned wrapper scripts at
+#           #     /usr/local/sbin/errander-docker-{assess,prune-safe,prune-aggressive}.
+#           #   direct_sudo: uses `sudo -n /usr/bin/docker ...` directly. Lab/pre-prod only.
+#           #   disabled: Errander will not plan or execute docker_prune on this env.
+#           # Run `scripts/install-docker-wrappers.sh` on each target to install wrappers.
+#         backup_verify:
+#           enabled: false              # Off by default — requires `backup:` section in settings.yaml
+#
 # Per-environment Prometheus/ELK URL overrides (all optional):
 #   prometheus_url: http://10.0.1.100:9090   # overrides global ERRANDER_PROMETHEUS_BASE_URL
 #   elk_url: http://10.0.1.101:9200          # overrides global ERRANDER_ELK_BASE_URL
@@ -52,14 +70,21 @@ environments:
       - tuesday
       - thursday
     maintenance_timezone: UTC
-    # docker_command_mode controls how Errander invokes Docker on this env's VMs.
-    # - "wrapper" (default, production): uses root-owned wrapper scripts at
-    #     /usr/local/sbin/errander-docker-{assess,prune-safe,prune-aggressive}.
-    #     This is the secure mode — narrow sudoers, no raw `sudo docker`.
-    # - "direct_sudo": uses `sudo -n /usr/bin/docker ...` directly. Lab/pre-prod
-    #     only. Logs a warning every batch. Not enterprise-hardened.
-    # - "disabled": Errander will not plan or execute docker_prune on this env.
-    docker_command_mode: wrapper
+    actions:
+      patching:
+        enabled: true
+      disk_cleanup:
+        enabled: true
+      log_rotation:
+        enabled: true
+      docker_prune:
+        # Skip this entire section if you are not enabling docker_prune.
+        # Leave enabled: false and continue to the next environment.
+        # To enable: install wrappers first — see SETUP.md#optional-docker-cleanup
+        enabled: false
+        command_mode: disabled
+      backup_verify:
+        enabled: false
     # Environment-wide critical services — applies to all hosts unless overridden.
     critical_services:
       - prometheus-node-exporter
@@ -109,6 +134,18 @@ environments:
       - wednesday
       - thursday
       - friday
+    actions:
+      patching:
+        enabled: true
+      disk_cleanup:
+        enabled: true
+      log_rotation:
+        enabled: true
+      docker_prune:
+        enabled: false
+        command_mode: disabled
+      backup_verify:
+        enabled: false
     targets:
       - host: 10.0.10.10
         name: staging-web-01
@@ -134,6 +171,18 @@ environments:
       - friday
       - saturday
       - sunday
+    actions:
+      patching:
+        enabled: true
+      disk_cleanup:
+        enabled: true
+      log_rotation:
+        enabled: true
+      docker_prune:
+        enabled: false
+        command_mode: disabled
+      backup_verify:
+        enabled: false
     targets:
       - host: 10.0.20.10
         name: dev-all-in-one

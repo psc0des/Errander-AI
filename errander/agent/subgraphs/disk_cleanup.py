@@ -28,12 +28,23 @@ from langgraph.graph import END, StateGraph
 from errander.execution.commands import AptManager, DnfManager
 from errander.execution.privilege import privileged
 from errander.models.actions import ActionStatus
+from errander.models.manifest import ActionManifest
 
 if TYPE_CHECKING:
     from errander.execution.sandbox import SandboxExecutor
     from errander.execution.ssh import SSHResult
 
 logger = logging.getLogger(__name__)
+
+MANIFEST = ActionManifest(
+    name="disk_cleanup",
+    default_enabled=True,
+    risk_tier="LOW",
+    command_modes=None,
+    required_binaries=("/usr/bin/find", "/usr/bin/journalctl"),
+    required_wrappers=(),
+    setup_doc="SETUP.md#step-3--target-vm-setup",
+)
 
 # --- Whitelist enforcement (hardcoded, never LLM-decided) ---
 

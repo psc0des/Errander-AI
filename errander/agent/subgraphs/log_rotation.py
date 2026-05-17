@@ -21,11 +21,22 @@ from langgraph.graph import END, StateGraph
 from errander.execution.command_builder import CommandBuildError, safe_path
 from errander.execution.privilege import privileged
 from errander.models.actions import ActionStatus
+from errander.models.manifest import ActionManifest
 
 if TYPE_CHECKING:
     from errander.execution.sandbox import SandboxExecutor
 
 logger = logging.getLogger(__name__)
+
+MANIFEST = ActionManifest(
+    name="log_rotation",
+    default_enabled=True,
+    risk_tier="LOW",
+    command_modes=None,
+    required_binaries=("/usr/sbin/logrotate", "/usr/bin/gzip", "/usr/bin/truncate"),
+    required_wrappers=(),
+    setup_doc="SETUP.md#step-3--target-vm-setup",
+)
 
 # --- Allowed log directories ---
 

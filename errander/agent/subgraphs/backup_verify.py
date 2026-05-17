@@ -22,11 +22,23 @@ from langgraph.graph import END, StateGraph
 
 from errander.execution.command_builder import CommandBuildError, safe_path
 from errander.models.actions import ActionStatus
+from errander.models.manifest import ActionManifest
 
 if TYPE_CHECKING:
     from errander.execution.sandbox import SandboxExecutor
 
 logger = logging.getLogger(__name__)
+
+MANIFEST = ActionManifest(
+    name="backup_verify",
+    default_enabled=False,
+    risk_tier="LOW",
+    command_modes=None,
+    required_binaries=("/usr/bin/stat",),
+    required_wrappers=(),
+    setup_doc="SETUP.md#optional-backup-verify",
+    requires_config_section="backup",
+)
 
 
 # --- State ---

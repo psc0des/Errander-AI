@@ -1,5 +1,26 @@
 # Errander-AI Command Log
 
+## v1-action-opt-in commit 1.1 (2026-05-17)
+
+```bash
+# Implemented ActionManifest, BUILTIN_ACTIONS, nested actions schema
+# Updated example/inventory.yaml and tests/test_main.py to new nested format
+uv run pytest                    # 1742 passed, 0 skipped
+uv run ruff check . 2>&1 | grep "errander/config/schema"  # clean
+uv run mypy . 2>&1 | tail -3     # 398 errors (all pre-existing, baseline was 425)
+git add errander/models/manifest.py errander/agent/subgraphs/__init__.py \
+  errander/agent/subgraphs/patching.py errander/agent/subgraphs/disk_cleanup.py \
+  errander/agent/subgraphs/log_rotation.py errander/agent/subgraphs/docker_prune.py \
+  errander/agent/subgraphs/backup_verify.py errander/config/schema.py \
+  errander/agent/graph.py errander/main.py example/inventory.yaml \
+  tests/test_main.py tests/models/test_manifest.py tests/agent/subgraphs/test_registry.py \
+  tests/config/test_schema_actions.py STATUS.md docs/command-log.md tasks/todo.md tasks/lessons.md
+git commit -m "feat: manifest model, per-action registry, nested actions schema"
+git push origin main
+```
+
+
+
 ## Glossary UI in production metrics server (2026-05-17)
 
 ```bash

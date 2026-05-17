@@ -4,11 +4,11 @@
 2026-05-17
 
 ## Current Phase
-**Glossary UI wired into production metrics server — COMPLETE (2026-05-17).**
+**v1-action-opt-in commit 1.1 — manifest model, BUILTIN_ACTIONS registry, nested actions schema (2026-05-17).**
 
-`/ui/glossary` route added to `metrics.py` (`_ui_glossary` handler + Glossary nav link in sidebar). `GLOSS_CSS` constant extracted from `server.py` and injected into the metrics page so all 29 glossary terms render with full card styling, color-coded chips, animated workflow diagram, and click-to-expand node modals.
+Per-action opt-in schema landed: `ActionManifest` frozen dataclass, `BUILTIN_ACTIONS` allowlist, `actions:` nested block in `EnvironmentSchema`, legacy `docker_command_mode` flat field rejected with migration hint, defaults auto-applied from registry, docker_prune contradiction validated. `example/inventory.yaml` migrated to new format.
 
-**1707 tests passing, 0 skipped, 0 regressions.**
+**1742 tests passing, 0 skipped, 0 regressions.**
 
 ### P0-1 Completed (2026-05-16)
 - **Commit 1**: `enrich_plan_node` in `graph.py` — SSHes each VM at plan time, populates `preview` dict per planned action with exact packages/versions (patching) and disk usage (disk_cleanup); wired between `collect_plans` and `generate_plan_artifact` so preview is in the hash. `_parse_upgradable_with_versions` added to `patching.py`. Load test call count updated. 15 new tests.

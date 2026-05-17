@@ -1,5 +1,19 @@
 # Errander-AI — Lessons Learned
 
+## 2026-05-17 — Pydantic model_validator(mode="before") receives raw dict from YAML
+
+When YAML loads a nested structure, Pydantic's `mode="before"` validator receives the raw Python dict before field coercion. Check for key existence with `isinstance(data, dict) and "key" in data` — don't try to access `data.key`. The `mode="after"` validator runs on the already-constructed model instance and can read `self.field_name` normally.
+
+## 2026-05-17 — from __future__ import annotations makes all string return-type annotations redundant
+
+`-> "EnvironmentSchema"` is the same as `-> EnvironmentSchema` when `from __future__ import annotations` is present (ruff UP037 catches this). Remove quotes in model_validator return types to stay ruff-clean.
+
+## 2026-05-17 — Lazy import inside validator body avoids circular dependency risk without refactoring
+
+`BUILTIN_ACTIONS` in `errander/agent/subgraphs/__init__.py` imports from subgraph modules, which import from `errander/models/manifest.py`. The config schema doesn't import from subgraphs at module level — importing BUILTIN_ACTIONS inside the `model_validator` body prevents any future accidental import cycle if someone adds a cross-dependency.
+
+
+
 Self-improvement log. Updated after corrections, mistakes, and surprises.
 
 ---

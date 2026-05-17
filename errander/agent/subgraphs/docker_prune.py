@@ -29,11 +29,26 @@ from langgraph.graph import END, StateGraph
 
 from errander.execution.privilege import privileged
 from errander.models.actions import ActionStatus
+from errander.models.manifest import ActionManifest
 
 if TYPE_CHECKING:
     from errander.execution.sandbox import SandboxExecutor
 
 logger = logging.getLogger(__name__)
+
+MANIFEST = ActionManifest(
+    name="docker_prune",
+    default_enabled=False,
+    risk_tier="MEDIUM",
+    command_modes=("disabled", "wrapper", "direct_sudo"),
+    required_binaries=("/usr/bin/docker",),
+    required_wrappers=(
+        "/usr/local/sbin/errander-docker-assess",
+        "/usr/local/sbin/errander-docker-prune-safe",
+        "/usr/local/sbin/errander-docker-prune-aggressive",
+    ),
+    setup_doc="SETUP.md#optional-docker-cleanup",
+)
 
 
 # --- State ---

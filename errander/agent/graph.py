@@ -320,7 +320,7 @@ async def validate_targets_node(
                     username=ssh_user,
                     key_path=key_path,
                     os_family=detected_family.value,
-                    docker_command_mode=str(t.get("docker_command_mode", "wrapper")),
+                    docker_command_mode=str(state.get("docker_command_mode", "wrapper")),
                     ssh_manager=ssh_manager,
                 )
                 if readiness.verdict == "blocked":

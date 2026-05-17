@@ -26,6 +26,7 @@ from errander.agent.subgraphs.disk_cleanup import get_package_manager_by_name
 from errander.execution.reboot_check import detect_reboot_required
 from errander.execution.service_check import check_services, find_regressions
 from errander.models.actions import ActionStatus
+from errander.models.manifest import ActionManifest
 from errander.safety.validators import validate_no_pkg_lock
 
 if TYPE_CHECKING:
@@ -34,6 +35,16 @@ if TYPE_CHECKING:
     from errander.safety.vm_state import VMStateStore
 
 logger = logging.getLogger(__name__)
+
+MANIFEST = ActionManifest(
+    name="patching",
+    default_enabled=True,
+    risk_tier="MEDIUM",
+    command_modes=None,
+    required_binaries=("/usr/bin/apt-get", "/usr/bin/dnf", "/usr/bin/yum"),
+    required_wrappers=(),
+    setup_doc="SETUP.md#step-3--target-vm-setup",
+)
 
 # --- Kernel exclusion (hardcoded, NEVER configurable) ---
 

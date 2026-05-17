@@ -1,3 +1,35 @@
+## v1-action-opt-in plan (2026-05-17, in progress)
+
+### Commit 1.1 — manifest model, registry, nested actions schema
+- [x] `errander/models/manifest.py` — `ActionManifest` frozen dataclass
+- [x] `MANIFEST` constants in all 5 subgraph modules
+- [x] `errander/agent/subgraphs/__init__.py` — `BUILTIN_ACTIONS` registry
+- [x] `errander/config/schema.py` — `ConfigError`, `ActionConfig`, legacy rejection, defaults + contradiction validators
+- [x] `errander/main.py` — `run_check_targets` + `run_env_batch` use `env.actions.get("docker_prune")`
+- [x] `errander/agent/graph.py` — reads `docker_command_mode` from batch state, not per-target dict
+- [x] `example/inventory.yaml` — converted to nested `actions:` block
+- [x] `tests/test_main.py` — updated 2 TestRunCheckTargets inline YAML to nested format
+- [x] 3 new test files: `test_manifest.py`, `test_registry.py`, `test_schema_actions.py` (35 new tests)
+- [x] 1742 tests passing, ruff clean (my files), mypy no new errors
+- [ ] commit 1.1
+
+### Commit 1.2 — migration helper (`--migrate-inventory`)
+- [ ] `errander/config/migrate.py`
+- [ ] `--migrate-inventory` CLI flag in `main.py`
+
+### Commit 1.3 — registry-driven `--check-targets`
+- [ ] SETUP.md restructure
+- [ ] CLAUDE.md scope note
+
+### Commit 2.1 — Docker wrapper install script
+- [ ] `scripts/install-docker-wrappers.sh`
+- [ ] SETUP.md Docker section collapse
+
+### Commits S.1–S.4 — `service_restart` module
+- [ ] (pending)
+
+---
+
 ## Glossary UI in production metrics server (2026-05-17, completed)
 
 - [x] Identified root cause: production server is in `metrics.py` with `/ui/` prefix routes; `server.py` `create_app()` is standalone demo only

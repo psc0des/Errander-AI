@@ -76,6 +76,10 @@
 - [x] `docs/learning/40-service-restart-module.md` — design walkthrough
 - [x] commit S.4
 
+### RUN.md catch-up (missed in 1.2 and S.3)
+- [x] `RUN.md` — `--migrate-inventory` section + `--restart-service` section + CLI flags + runbook entry
+- [x] commit + push
+
 ---
 
 ## Glossary UI in production metrics server (2026-05-17, completed)

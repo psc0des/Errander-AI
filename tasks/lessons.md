@@ -24,6 +24,10 @@ When two first-party imports from the same package are in a test file, ruff's is
 
 `subprocess` and `pytest` were left as unused imports in `tests/scripts/test_install_docker_wrappers.py` (likely from a template). ruff F401 catches these. Always run ruff on new test files before the first commit.
 
+## 2026-05-17 — RUN.md must be updated whenever a new CLI flag is added
+
+`RUN.md` is the operator reference for all CLI commands. Any new `--flag` added to `main.py` must be documented in both the `## Common CLI flags` table and a dedicated section in `RUN.md`. This was missed for `--migrate-inventory` (commit 1.2) and `--restart-service`/`--unit`/`--vm`/`--vms` (commit S.3). Add a RUN.md check to the pre-commit checklist for every commit that touches `main.py`.
+
 ## 2026-05-17 — Edit tool requires exact whitespace match; read file before editing comments
 
 When adding to YAML comment blocks, the Edit tool requires the old_string to match exactly — including every `#` character, every space, and every trailing space or blank line. Attempts to match comment lines without reading the file first fail with "String to replace not found." Always read the target section with Read before any Edit, especially in annotation-heavy YAML files.

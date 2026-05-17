@@ -203,6 +203,48 @@ uv run python -m errander --check-targets production
 
 Prints a readiness table (hostname, SSH status, sudo status, OS detected). Fix any failures before running live batches.
 
+Also checks allowlist drift for any environment with `service_restart.enabled: true` — prints `ALLOWLIST DRIFT` lines if inventory `restartable_units` and `/etc/errander/restart-allowlist` disagree.
+
+---
+
+## Inventory migration
+
+If you have an existing inventory using the old flat `docker_command_mode: wrapper` format, migrate it to the new nested `actions:` block:
+
+```bash
+uv run python -m errander --migrate-inventory inventory.yaml
+```
+
+Prints a unified diff. Review it, then apply:
+
+```bash
+uv run python -m errander --migrate-inventory inventory.yaml > /tmp/inventory-new.yaml
+mv inventory.yaml inventory.yaml.bak && mv /tmp/inventory-new.yaml inventory.yaml
+```
+
+---
+
+## Service restart (operator-triggered)
+
+Service restart is operator-initiated only — the agent never decides to restart a service autonomously.
+Prerequisites: wrapper installed on each target VM, `restartable_units` configured in inventory. See `SETUP.md#optional-service-restart`.
+
+```bash
+# Dry-run (default) — prints plan, no SSH
+uv run python -m errander --restart-service production --unit nginx --vm prod-web-01
+
+# Target multiple VMs
+uv run python -m errander --restart-service production --unit nginx \
+  --vms prod-web-01,prod-web-02
+
+# Live execution — routes to Slack for approval before SSH
+uv run python -m errander --restart-service production --unit nginx \
+  --vm prod-web-01 --live
+
+# Verify allowlist sync before triggering
+uv run python -m errander --check-targets production
+```
+
 ---
 
 ## Monitoring with Prometheus + Grafana
@@ -278,6 +320,11 @@ The agent will not interrupt a running SSH command mid-flight — it finishes th
 | `--check-targets <env>` | Pre-flight SSH + sudo + OS readiness check for all VMs in an environment |
 | `--probe-now <env>` | Run daily probe (disk, drift, failed logins, journal errors, ELK) — read-only |
 | `--ask "<question>"` | LLM fleet analysis (Layer A — read-only, no changes) |
+| `--migrate-inventory <path>` | Convert a legacy flat inventory to the nested `actions:` format; prints a diff |
+| `--restart-service <env>` | Trigger an operator-initiated service restart (HIGH risk, Slack approval required) |
+| `--unit <name>` | Systemd unit name to restart (required with `--restart-service`) |
+| `--vm <vm-id>` | Single VM target by name (use with `--restart-service`) |
+| `--vms <id1,id2>` | Comma-separated VM names (use with `--restart-service`) |
 | `--audit --batches` | Print recent batch history |
 | `--audit --batch-id <id>` | Print all events for a specific batch |
 
@@ -324,6 +371,17 @@ schedules:
 ```
 
 Reload the agent (restart the process) for the change to take effect.
+
+### "I deployed a config change and need to restart a service"
+
+```bash
+# 1. Dry-run first — confirms the unit is in the allowlist and the VM is reachable
+uv run python -m errander --restart-service production --unit nginx --vm prod-web-01
+
+# 2. Run live — posts to #errander-approvals and waits for your ✅ reaction
+uv run python -m errander --restart-service production --unit nginx \
+  --vm prod-web-01 --live
+```
 
 ### "I want to add a new VM"
 

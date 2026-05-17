@@ -4,6 +4,18 @@
 2026-05-17
 
 ## Current Phase
+**RUN.md catch-up — --migrate-inventory and --restart-service CLI sections added (2026-05-17).**
+
+`RUN.md` was missing two CLI additions introduced during the v1-action-opt-in plan: `--migrate-inventory` (commit 1.2) and `--restart-service`/`--unit`/`--vm`/`--vms` (commit S.3). Added both to the CLI flags table, added `## Inventory migration` and `## Service restart` sections, and added a runbook entry for service restart. All 8 v1-action-opt-in commits plus this fix are now pushed and tagged v1-rc1.
+
+**1885 tests passing, 0 skipped, 0 regressions.**
+
+## Files Changed (RUN.md catch-up)
+- `RUN.md` (MODIFIED — --migrate-inventory section, --restart-service section, CLI flags table, runbook entry)
+
+---
+
+## Previous Phase
 **v1-action-opt-in commit S.4 — SETUP.md service-restart section, CLAUDE.md/README update, example inventory, learning doc (2026-05-17).**
 
 Final documentation commit for the service-restart feature. `SETUP.md` gained an `## Optional: Service restart` section (skip callout, wrapper install, inventory snippet, check-targets verification, trigger commands). `CLAUDE.md` Risk Tiers table updated (service_restart HIGH, operator-triggered note, 6 actions in v1 scope). `README.md` capability matrix and CLI example block updated. `example/inventory.yaml` now includes `service_restart` blocks with `restartable_units: []` in all three environments. `docs/learning/40-service-restart-module.md` documents the design rationale, two-layer allowlist, sub-graph node responsibilities, and testing strategy. All 8 commits of the v1-action-opt-in plan are now complete.

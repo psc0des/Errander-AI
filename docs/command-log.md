@@ -1,5 +1,14 @@
 # Errander-AI Command Log
 
+## RUN.md catch-up (2026-05-17)
+
+```bash
+# --migrate-inventory and --restart-service sections missed in prior commits
+git add RUN.md STATUS.md docs/command-log.md tasks/todo.md tasks/lessons.md
+git commit -m "docs: RUN.md --migrate-inventory and --restart-service sections"
+git push origin main
+```
+
 ## v1-action-opt-in commit S.4 (2026-05-17)
 
 ```bash

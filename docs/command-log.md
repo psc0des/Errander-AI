@@ -1,5 +1,20 @@
 # Errander-AI Command Log
 
+## v1-action-opt-in commit S.4 (2026-05-17)
+
+```bash
+# SETUP.md service-restart section + CLAUDE.md/README update + example/inventory.yaml + learning doc
+# Documentation-only commit — no Python files changed; ruff/mypy not applicable
+uv run pytest --tb=no -q                      # 1885 passed, 0 skipped
+git add SETUP.md CLAUDE.md README.md example/inventory.yaml \
+  docs/learning/40-service-restart-module.md \
+  STATUS.md docs/command-log.md tasks/todo.md tasks/lessons.md
+git commit -m "docs: SETUP.md service-restart section, CLAUDE.md/README update, learning doc"
+git push origin main
+git tag v1-rc1
+git push origin v1-rc1
+```
+
 ## v1-action-opt-in commit S.3 (2026-05-17)
 
 ```bash

@@ -11,8 +11,15 @@ Errander-AI is a supervised maintenance agent for small-to-medium Linux fleets. 
 | `log_rotation` | ✅ enabled | No | LOW — compresses, does not delete |
 | `docker_prune` | ❌ disabled | Yes — install wrappers, set `enabled: true` | MEDIUM |
 | `backup_verify` | ❌ disabled | Yes — requires `backup:` config section | LOW |
+| `service_restart` | ❌ disabled | Yes — install wrapper + declare `restartable_units` | HIGH — Slack approval always required, operator-triggered |
 
 Each action is independently enabled per environment in `inventory.yaml` (`actions.<name>.enabled`). Actions default as shown — no YAML required to run the enabled defaults.
+
+```bash
+# Trigger a service restart (operator-initiated, always requires Slack approval)
+uv run python -m errander --restart-service production --unit nginx --vm prod-web-01 --dry-run
+uv run python -m errander --restart-service production --unit nginx --vm prod-web-01
+```
 
 The AI layer prioritizes, explains, correlates, and summarizes maintenance work for operators. The execution layer is deterministic Python — the LLM is never in the path that actually changes infrastructure.
 

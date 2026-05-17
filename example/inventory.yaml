@@ -42,6 +42,11 @@
 #           # Run `scripts/install-docker-wrappers.sh` on each target to install wrappers.
 #         backup_verify:
 #           enabled: false              # Off by default — requires `backup:` section in settings.yaml
+#         service_restart:
+#           enabled: false              # Off by default — operator-triggered only (see SETUP.md#optional-service-restart)
+#           restartable_units: []       # List exact systemd unit names allowed to be restarted
+#           #   Example: [nginx, gunicorn, redis-server]
+#           #   Must be non-empty when enabled: true. Install wrapper first — see SETUP.md#optional-service-restart.
 #
 # Per-environment Prometheus/ELK URL overrides (all optional):
 #   prometheus_url: http://10.0.1.100:9090   # overrides global ERRANDER_PROMETHEUS_BASE_URL
@@ -85,6 +90,12 @@ environments:
         command_mode: disabled
       backup_verify:
         enabled: false
+      service_restart:
+        # Skip this entire section if you are not enabling service_restart.
+        # Leave enabled: false and continue to the next environment.
+        # To enable: install wrapper first — see SETUP.md#optional-service-restart
+        enabled: false
+        restartable_units: []   # Example: [nginx, gunicorn, redis-server]
     # Environment-wide critical services — applies to all hosts unless overridden.
     critical_services:
       - prometheus-node-exporter
@@ -146,6 +157,9 @@ environments:
         command_mode: disabled
       backup_verify:
         enabled: false
+      service_restart:
+        enabled: false
+        restartable_units: []   # Example: [nginx, gunicorn, redis-server]
     targets:
       - host: 10.0.10.10
         name: staging-web-01
@@ -183,6 +197,9 @@ environments:
         command_mode: disabled
       backup_verify:
         enabled: false
+      service_restart:
+        enabled: false
+        restartable_units: []   # Example: [nginx, gunicorn, redis-server]
     targets:
       - host: 10.0.20.10
         name: dev-all-in-one

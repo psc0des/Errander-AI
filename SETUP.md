@@ -358,6 +358,58 @@ system_df_end
 
 ---
 
+## Optional: Service restart {#optional-service-restart}
+
+> **Skip this entire section if you are not enabling service_restart.**
+> In your `inventory.yaml`, leave `actions.service_restart.enabled: false` and continue to Step 4.
+
+Service restart is operator-triggered only — Errander does not auto-restart services. The operator runs `--restart-service` after seeing a failed unit in the Slack probe digest, and must approve the restart in Slack before it executes. Risk tier: **HIGH** — Slack approval is always required.
+
+### Install the wrapper on each target VM
+
+The restart wrapper enforces a per-VM allowlist so Errander can only restart pre-approved units:
+
+```bash
+scp scripts/install-systemctl-restart-wrapper.sh errander@<target>:/tmp/
+ssh errander@<target> "sudo bash /tmp/install-systemctl-restart-wrapper.sh nginx gunicorn redis-server"
+```
+
+Replace `nginx gunicorn redis-server` with the units this VM is allowed to restart. The allowlist is written to `/etc/errander/restart-allowlist` (one unit per line, mode 644).
+
+### Configure your inventory
+
+Add a `service_restart` block to each environment that needs it. `restartable_units` is required when `enabled: true`:
+
+```yaml
+actions:
+  service_restart:
+    enabled: true
+    restartable_units:
+      - nginx
+      - gunicorn
+      - redis-server
+```
+
+### Verify readiness
+
+```bash
+uv run python -m errander --check-targets <env>
+```
+
+This verifies the wrapper exists on each VM, the sudoers entry is correct, and the on-target allowlist matches your inventory `restartable_units`. Drift in either direction is reported as a warning.
+
+### Trigger a restart
+
+```bash
+uv run python -m errander --restart-service production --unit nginx --vm prod-web-01 --dry-run
+# Review plan, then live:
+uv run python -m errander --restart-service production --unit nginx --vm prod-web-01
+```
+
+Approve the plan in `#errander-approvals` with ✅. The wrapper captures pre/post status + journal; a verify step confirms the unit reached `active` state. If verification fails, a `SERVICE_RESTART_VERIFY_FAILED` event is logged and Slack is notified — no automatic re-restart attempt.
+
+---
+
 ## Steps 4–6 — Quick path (recommended)
 
 Once you have your LLM endpoint URL, model name, and API key ready, run the interactive setup script from inside the `errander/` directory:

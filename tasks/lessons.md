@@ -24,6 +24,10 @@ When two first-party imports from the same package are in a test file, ruff's is
 
 `subprocess` and `pytest` were left as unused imports in `tests/scripts/test_install_docker_wrappers.py` (likely from a template). ruff F401 catches these. Always run ruff on new test files before the first commit.
 
+## 2026-05-17 — Edit tool requires exact whitespace match; read file before editing comments
+
+When adding to YAML comment blocks, the Edit tool requires the old_string to match exactly — including every `#` character, every space, and every trailing space or blank line. Attempts to match comment lines without reading the file first fail with "String to replace not found." Always read the target section with Read before any Edit, especially in annotation-heavy YAML files.
+
 ## 2026-05-17 — New SSH calls in run_check_targets only trigger when action is enabled
 
 When adding direct `ssh_manager.execute()` calls inside `run_check_targets` (for the allowlist drift check), existing tests don't break if the new code path is gated by `if service_restart_cfg and service_restart_cfg.enabled:`. Existing test inventories have `service_restart.enabled: False` (the default), so the SSH call is never reached. New tests for the drift check use inventories with `service_restart.enabled: True` and must mock `SSHConnectionManager.execute` at the class level.

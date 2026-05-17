@@ -154,10 +154,12 @@ deploy/
 
 | Tier | Actions | Approval |
 |---|---|---|
-| Low | Disk cleanup, log rotation | Automatic |
+| Low | Disk cleanup, log rotation, backup verification | Automatic |
 | Medium | Docker prune, non-kernel patching, config changes | Log + notify |
-| High | Service restarts, backup verification | Human approval required |
+| High | Service restart (`service_restart`) — operator-triggered only in v1 | Human Slack approval required (all policy tiers) |
 | Critical | Kernel operations, data deletion | Blocked — never automated |
+
+**Service restart is operator-triggered only in v1.** Auto-detection from probe output (detect-and-propose) is deferred to v1.1. Adding a unit to the `restartable_units` allowlist in inventory + on-target `/etc/errander/restart-allowlist` is required before Errander will restart it.
 
 ## Rollback Tiers
 
@@ -194,11 +196,11 @@ When proposing any AI-related feature or contribution, classify it as Layer A or
 
 ### v1 Scope
 v1 supports Linux host maintenance only: OS patching (non-kernel), disk cleanup,
-log rotation, Docker prune, backup verification. Kubernetes, app runtimes
-(Tomcat/Nginx/Java GC), database management, network/firewall changes, and
-arbitrary user-supplied commands are explicitly out of scope. Adding new
-actions requires a new sub-graph + manifest + risk-tier classification +
-rollback strategy — not a config flag.
+log rotation, Docker prune, backup verification, and operator-triggered service restart
+(6 actions). Kubernetes, app runtimes (Tomcat/Nginx/Java GC), database management,
+network/firewall changes, and arbitrary user-supplied commands are explicitly out of
+scope. Adding new actions requires a new sub-graph + manifest + risk-tier classification
++ rollback strategy — not a config flag.
 
 - NEVER automate kernel patching — this is explicitly out of scope
 - NEVER touch files/directories outside the disk cleanup whitelist without human approval

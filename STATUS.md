@@ -4,6 +4,22 @@
 2026-05-17
 
 ## Current Phase
+**v1-action-opt-in commit S.4 — SETUP.md service-restart section, CLAUDE.md/README update, example inventory, learning doc (2026-05-17).**
+
+Final documentation commit for the service-restart feature. `SETUP.md` gained an `## Optional: Service restart` section (skip callout, wrapper install, inventory snippet, check-targets verification, trigger commands). `CLAUDE.md` Risk Tiers table updated (service_restart HIGH, operator-triggered note, 6 actions in v1 scope). `README.md` capability matrix and CLI example block updated. `example/inventory.yaml` now includes `service_restart` blocks with `restartable_units: []` in all three environments. `docs/learning/40-service-restart-module.md` documents the design rationale, two-layer allowlist, sub-graph node responsibilities, and testing strategy. All 8 commits of the v1-action-opt-in plan are now complete.
+
+**1885 tests passing, 0 skipped, 0 regressions.**
+
+## Files Changed (commit S.4)
+- `SETUP.md` (MODIFIED — `## Optional: Service restart` section added)
+- `CLAUDE.md` (MODIFIED — Risk Tiers table, v1 scope updated to 6 actions, operator-triggered note)
+- `README.md` (MODIFIED — service_restart row in capability matrix + CLI example)
+- `example/inventory.yaml` (MODIFIED — service_restart block in header comment + all 3 envs)
+- `docs/learning/40-service-restart-module.md` (NEW — design walkthrough)
+
+---
+
+## Previous Phase
 **v1-action-opt-in commit S.3 — --restart-service CLI, restartable_units validation, allowlist drift check (2026-05-17).**
 
 `--restart-service <env> --unit <name> --vm <vm-id>|--vms <csv>` CLI added. `ActionConfig.restartable_units` field added; `service_restart.enabled: true` with empty `restartable_units` raises `ConfigError` at config-load time. `--check-targets` now SSH-reads `/etc/errander/restart-allowlist` per VM and reports drift vs inventory `restartable_units`. `tests/agent/test_approval.py` verifies HIGH tier always routes through Slack approval (strict/moderate) and the HITL guardrail covers it in relaxed mode.

@@ -69,11 +69,12 @@
 - [x] commit S.3
 
 ### Commit S.4 — SETUP.md + CLAUDE.md + README + learning doc
-- [ ] `SETUP.md` — add `## Optional: Service restart` section
-- [ ] `CLAUDE.md` — update v1 scope (6 actions), risk-tier table (service_restart HIGH), operator-triggered note
-- [ ] `README.md` — capability matrix: service_restart ✅ opt-in + CLI example
-- [ ] `example/inventory.yaml` — add service_restart block (disabled default + commented units)
-- [ ] `docs/learning/XX-service-restart-module.md` — design walkthrough
+- [x] `SETUP.md` — add `## Optional: Service restart` section
+- [x] `CLAUDE.md` — update v1 scope (6 actions), risk-tier table (service_restart HIGH), operator-triggered note
+- [x] `README.md` — capability matrix: service_restart ✅ opt-in + CLI example
+- [x] `example/inventory.yaml` — add service_restart block (disabled default + commented units)
+- [x] `docs/learning/40-service-restart-module.md` — design walkthrough
+- [x] commit S.4
 
 ---
 

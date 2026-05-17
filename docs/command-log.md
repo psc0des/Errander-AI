@@ -1,5 +1,14 @@
 # Errander-AI Command Log
 
+## README test count sync (2026-05-17)
+
+```bash
+# README.md still showed 1707 — stale by 191 tests. Updated to 1898.
+git add README.md docs/command-log.md
+git commit -m "docs: update README test count to 1898"
+git push origin main
+```
+
 ## SRE audit fix Round 2 — route_plan_vms Send payload + manifest-derived binaries (2026-05-17)
 
 ```bash

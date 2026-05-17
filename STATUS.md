@@ -4,11 +4,17 @@
 2026-05-17
 
 ## Current Phase
-**v1-action-opt-in commit 1.3 — registry-driven preflight + SETUP.md + v1 scope (2026-05-17).**
+**v1-action-opt-in commit 2.1 — install-docker-wrappers.sh + SETUP.md collapse + drift test (2026-05-17).**
 
-`TARGET_PREFLIGHT_FAILED` event type + `BatchStatus` enum added. `sudo_preflight_node` emits `TARGET_PREFLIGHT_FAILED` (not `SUDO_PREFLIGHT_FAILED`) for missing wrappers; uses `BUILTIN_ACTIONS` registry for wrapper list. `target_validation.check_target()` uses manifest-derived wrappers. SETUP.md Docker section renamed `Optional: Docker cleanup` with skip callout. CLAUDE.md `## v1 Scope` note added. README capability matrix added.
+`scripts/install-docker-wrappers.sh` added: idempotent root install script for 3 wrapper binaries + sudoers entry with visudo validation. SETUP.md Docker wrapper section collapsed from ~90-line heredoc to 4-line scp+ssh+verify pattern. `tests/scripts/test_install_docker_wrappers.py` added: 18 drift tests verifying wrapper output format is parseable by `parse_assess_output()`.
 
-**1772 tests passing, 0 skipped, 0 regressions.**
+**1790 tests passing, 0 skipped, 0 regressions.**
+
+## Files Changed (commit 2.1)
+- `scripts/install-docker-wrappers.sh` (NEW)
+- `SETUP.md` (Docker wrapper section collapsed)
+- `tests/scripts/__init__.py` (NEW)
+- `tests/scripts/test_install_docker_wrappers.py` (NEW, 18 tests)
 
 ### P0-1 Completed (2026-05-16)
 - **Commit 1**: `enrich_plan_node` in `graph.py` — SSHes each VM at plan time, populates `preview` dict per planned action with exact packages/versions (patching) and disk usage (disk_cleanup); wired between `collect_plans` and `generate_plan_artifact` so preview is in the hash. `_parse_upgradable_with_versions` added to `patching.py`. Load test call count updated. 15 new tests.

@@ -1,5 +1,20 @@
 # Errander-AI Command Log
 
+## v1-action-opt-in commit 2.1 (2026-05-17)
+
+```bash
+# Created scripts/install-docker-wrappers.sh, collapsed SETUP.md Docker section, added drift tests
+uv run pytest tests/scripts/ -v          # 18 passed
+uv run pytest --tb=no -q                 # 1790 passed
+uv run ruff check tests/scripts/         # All checks passed (after removing unused subprocess+pytest imports)
+uv run mypy tests/scripts/               # Success: no issues found in 2 source files
+git add scripts/install-docker-wrappers.sh SETUP.md tests/scripts/__init__.py \
+  tests/scripts/test_install_docker_wrappers.py \
+  STATUS.md docs/command-log.md tasks/todo.md tasks/lessons.md
+git commit -m "feat: install-docker-wrappers.sh, SETUP.md collapse, wrapper drift test"
+git push origin main
+```
+
 ## v1-action-opt-in commit 1.3 (2026-05-17)
 
 ```bash

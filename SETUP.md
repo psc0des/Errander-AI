@@ -327,74 +327,19 @@ Errander supports three Docker modes per environment (`actions.docker_prune.comm
 | `direct_sudo` | `sudo -n /usr/bin/docker ...` directly | Lab / pre-prod only. Logs a warning every batch. |
 | `disabled` | No docker_prune actions planned or executed | Envs without Docker |
 
-### Wrapper scripts *(production mode — required when `docker_command_mode: wrapper`)*
+### Wrapper scripts *(production mode — required when `command_mode: wrapper`)*
 
-Create three root-owned wrapper scripts. Each supports `--check` for sudo capability probing.
+Copy the install script to the target and run it as root:
 
 ```bash
-# /usr/local/sbin/errander-docker-assess
-sudo tee /usr/local/sbin/errander-docker-assess << 'EOF'
-#!/bin/bash
-set -euo pipefail
+scp scripts/install-docker-wrappers.sh errander@<target>:/tmp/
+ssh errander@<target> "sudo bash /tmp/install-docker-wrappers.sh"
+```
 
-if [ "${1:-}" = "--check" ]; then
-    echo "ok"
-    exit 0
-fi
+Then verify from the controller:
 
-if ! /usr/bin/docker info >/dev/null 2>&1; then
-    echo "reachable=no"
-    echo "error=docker daemon not reachable"
-    exit 0
-fi
-
-echo "reachable=yes"
-dangling=$(/usr/bin/docker images -f dangling=true -q 2>/dev/null | wc -l)
-echo "dangling_images=${dangling}"
-stopped=$(/usr/bin/docker ps -a -f status=exited -q 2>/dev/null | wc -l)
-echo "stopped_containers=${stopped}"
-echo "error="
-echo "system_df_begin"
-/usr/bin/docker system df 2>/dev/null || true
-echo "system_df_end"
-EOF
-
-# /usr/local/sbin/errander-docker-prune-safe
-sudo tee /usr/local/sbin/errander-docker-prune-safe << 'EOF'
-#!/bin/bash
-set -euo pipefail
-
-if [ "${1:-}" = "--check" ]; then
-    echo "ok"
-    exit 0
-fi
-
-# Dangling images + stopped containers only. No -a flag.
-/usr/bin/docker image prune -f 2>&1
-/usr/bin/docker container prune -f 2>&1
-EOF
-
-# /usr/local/sbin/errander-docker-prune-aggressive
-sudo tee /usr/local/sbin/errander-docker-prune-aggressive << 'EOF'
-#!/bin/bash
-set -euo pipefail
-
-if [ "${1:-}" = "--check" ]; then
-    echo "ok"
-    exit 0
-fi
-
-# Full system prune including ALL unused images.
-# Only used when aggressive=true is approved in the maintenance plan.
-/usr/bin/docker system prune -af 2>&1
-EOF
-
-sudo chmod 755 /usr/local/sbin/errander-docker-assess
-sudo chmod 755 /usr/local/sbin/errander-docker-prune-safe
-sudo chmod 755 /usr/local/sbin/errander-docker-prune-aggressive
-sudo chown root:root /usr/local/sbin/errander-docker-assess \
-  /usr/local/sbin/errander-docker-prune-safe \
-  /usr/local/sbin/errander-docker-prune-aggressive
+```bash
+uv run python -m errander --check-targets <env>
 ```
 
 **Assess wrapper output format** (parsed by `parse_assess_output()` in `docker_prune.py`):
@@ -409,20 +354,7 @@ system_df_begin
 system_df_end
 ```
 
-Then add all three wrappers to sudoers:
-
-```bash
-sudo tee /etc/sudoers.d/errander-docker << 'EOF'
-errander ALL=(root) NOPASSWD: \
-  /usr/local/sbin/errander-docker-assess, \
-  /usr/local/sbin/errander-docker-prune-safe, \
-  /usr/local/sbin/errander-docker-prune-aggressive
-EOF
-sudo chmod 440 /etc/sudoers.d/errander-docker
-sudo visudo -c -f /etc/sudoers.d/errander-docker
-```
-
-> **Lab / pre-prod shortcut only:** Set `docker_command_mode: direct_sudo` in `inventory.yaml`. You may then add `/usr/bin/docker` to the main sudoers file. The agent will log a warning every batch. Do not use `direct_sudo` in production.
+> **Lab / pre-prod shortcut only:** Set `command_mode: direct_sudo` in `inventory.yaml`. You may then add `/usr/bin/docker` to the main sudoers file. The agent will log a warning every batch. Do not use `direct_sudo` in production.
 
 ---
 

@@ -34,8 +34,11 @@
 - [ ] commit 1.3
 
 ### Commit 2.1 — Docker wrapper install script
-- [ ] `scripts/install-docker-wrappers.sh`
-- [ ] SETUP.md Docker section collapse
+- [x] `scripts/install-docker-wrappers.sh` — idempotent root install script (3 wrappers + sudoers)
+- [x] SETUP.md Docker section collapse — ~90-line heredoc → 4-line scp+ssh+verify block
+- [x] `tests/scripts/test_install_docker_wrappers.py` — 18 drift tests (wrapper parse, flags, prune commands)
+- [x] 1790 tests passing, ruff clean, mypy clean
+- [x] commit 2.1
 
 ### Commits S.1–S.4 — `service_restart` module
 - [ ] (pending)

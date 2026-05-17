@@ -4,6 +4,19 @@
 2026-05-17
 
 ## Current Phase
+**SRE audit fix Round 3 — service_restart wrapper probed generically in check_target (2026-05-17).**
+
+The SRE noted that `check_target()` handled docker_prune wrappers specifically but never probed `service_restart`'s `errander-systemctl-restart --check`. Added a generic manifest-driven wrapper probe loop (step 3) before the docker-specific block (step 4): iterates `BUILTIN_ACTIONS`, skips `docker_prune` (handled by command_mode), skips disabled actions, calls `sudo -n {wrapper} --check` for every `required_wrappers` entry. Service_restart wrapper readiness now surfaces in `TargetReadiness.wrappers_ok` and appears in `--check-targets` output alongside docker. 3 new tests added.
+
+**1901 tests passing, 0 skipped, 0 regressions.**
+
+## Files Changed (SRE audit fix Round 3)
+- `errander/execution/target_validation.py` (MODIFIED — generic wrapper probe loop in step 3; docker block renumbered step 4)
+- `tests/execution/test_target_validation.py` (MODIFIED — 3 new service_restart wrapper tests)
+
+---
+
+## Previous Phase
 **SRE audit fix Round 2 — route_plan_vms passes enabled_actions in Send payload, manifest-derived binary checks (2026-05-17).**
 
 Round 1 (commit 525b143) partially fixed the two SRE audit findings. Round 2 closes the remaining gaps:

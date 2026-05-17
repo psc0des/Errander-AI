@@ -89,6 +89,13 @@
 - [x] 1893 tests, ruff clean, mypy clean
 - [x] commit + push
 
+### SRE audit fix Round 3 — service_restart wrapper in check_target (2026-05-17)
+- [x] Generic wrapper probe loop added to `check_target()` (step 3): manifest-driven, skips docker_prune, skips disabled actions, probes `sudo -n {wrapper} --check`
+- [x] Docker block renumbered step 4, unchanged
+- [x] 3 new tests: wrapper probed when enabled, skipped when disabled, fail → blocked
+- [x] 1901 tests, ruff clean, mypy clean
+- [x] commit + push
+
 ### SRE audit fix Round 2 — route_plan_vms Send payload + manifest-derived binaries (2026-05-17)
 - [x] Blocker: `route_plan_vms()` extracted to module level; `enabled_actions` passed in Send payload when present; key omitted (not `[]`) when absent — preserves DEFAULT_PRIORITY fallback
 - [x] Medium: `_binaries_for_enabled_actions()` now derives from `BUILTIN_ACTIONS` manifests (not hand-written table)

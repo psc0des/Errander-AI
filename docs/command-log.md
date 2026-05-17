@@ -1,5 +1,18 @@
 # Errander-AI Command Log
 
+## SRE audit fix Round 3 — service_restart wrapper probed in check_target (2026-05-17)
+
+```bash
+uv run pytest tests/execution/test_target_validation.py -v --tb=short  # 11 passed
+uv run pytest --tb=no -q  # 1901 passed
+uv run ruff check errander/execution/target_validation.py tests/execution/test_target_validation.py
+uv run mypy errander/execution/target_validation.py tests/execution/test_target_validation.py
+git add errander/execution/target_validation.py tests/execution/test_target_validation.py \
+  STATUS.md docs/command-log.md tasks/todo.md tasks/lessons.md README.md
+git commit -m "fix: generic manifest-driven wrapper probe in check_target covers service_restart"
+git push origin main
+```
+
 ## README test count sync (2026-05-17)
 
 ```bash

@@ -137,10 +137,24 @@ async def check_target(
         if not ok:
             readiness.issues.append(f"sudo -n denied for: {binary}")
 
-    # 3. Docker wrapper probes — skip entirely when docker_prune is not enabled
+    # 3. Non-docker wrapper probes — manifest-driven for all other enabled actions
+    from errander.agent.subgraphs import BUILTIN_ACTIONS
+    for _action_name, _manifest in BUILTIN_ACTIONS.items():
+        if _action_name == "docker_prune":
+            continue  # docker_prune handled below (command_mode concept)
+        if enabled_actions is not None and _action_name not in enabled_actions:
+            continue
+        for wrapper in _manifest.required_wrappers:
+            cmd = f"sudo -n {wrapper} --check 2>/dev/null"
+            result = await ssh_manager.execute(vm_id, hostname, username, key_path, cmd)
+            ok = result.success and "ok" in result.stdout.strip()
+            readiness.wrappers_ok[wrapper] = ok
+            if not ok:
+                readiness.issues.append(f"wrapper script not ready: {wrapper}")
+
+    # 4. Docker wrapper probes — command_mode drives which probe runs
     _docker_enabled = enabled_actions is None or "docker_prune" in enabled_actions
     if _docker_enabled and docker_command_mode == "wrapper":
-        from errander.agent.subgraphs import BUILTIN_ACTIONS
         docker_manifest = BUILTIN_ACTIONS.get("docker_prune")
         wrapper_paths = list(docker_manifest.required_wrappers) if docker_manifest else []
         for wrapper in wrapper_paths:

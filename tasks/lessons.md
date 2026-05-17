@@ -52,6 +52,10 @@ In LangGraph's fan-out pattern, `Send("node_name", payload_dict)` delivers exact
 
 `plan_vm_node` reads `state.get("enabled_actions")` and checks `if _enabled_names is not None`. Passing `enabled_actions=[]` via Send means `_enabled_names = []` → `available_for_planning = []` → `prioritize_actions` plans zero actions. Omitting the key means `_enabled_names = None` → `available_for_planning = None` → DEFAULT_PRIORITY fallback. Always omit the key (not send `[]`) when the intent is "operator hasn't configured opt-in — use defaults."
 
+## 2026-05-17 — Wrapper probes must be manifest-driven, not action-specific special cases
+
+`check_target()` initially had a docker_prune-specific wrapper probe block. When service_restart was added (also a wrapper-based action), it had no probe — an easy miss because it wasn't in the docker block. The fix: add a generic loop over `BUILTIN_ACTIONS` that probes `required_wrappers` for all enabled non-docker actions. Docker stays special-cased only because it has a `command_mode` concept (`wrapper` / `direct_sudo` / `disabled`). Any future action with `required_wrappers` is now covered automatically by the generic loop without code changes.
+
 ## 2026-05-17 — Hand-written binary tables rot; derive from manifests instead
 
 `_ACTION_BINARIES` in `target_validation.py` listed wrong binaries for `disk_cleanup` (`truncate`, `cp`) and `backup_verify` (`cp`) because the table was written from memory, not from the actual action manifests. `BUILTIN_ACTIONS` registry is the single source of truth for `required_binaries` — any helper that maps action → binary must import from there, not maintain its own table. Always add a manifest-consistency test when adding a new action.

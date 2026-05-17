@@ -4,6 +4,19 @@
 2026-05-17
 
 ## Current Phase
+**v1-action-opt-in commit S.2 — install-systemctl-restart-wrapper.sh + drift test (2026-05-17).**
+
+`scripts/install-systemctl-restart-wrapper.sh` added: idempotent root install script for the restart wrapper + allowlist from positional args + sudoers entry with visudo validation. `tests/scripts/test_install_systemctl_restart_wrapper.py` added: 23 drift tests verifying wrapper exit codes, section markers, and output parseable by `parse_restart_output()`.
+
+**1859 tests passing, 0 skipped, 0 regressions.**
+
+## Files Changed (commit S.2)
+- `scripts/install-systemctl-restart-wrapper.sh` (NEW)
+- `tests/scripts/test_install_systemctl_restart_wrapper.py` (NEW, 23 tests)
+
+---
+
+## Previous Phase
 **v1-action-opt-in commit S.1 — service_restart sub-graph + manifest + state model + audit events (2026-05-17).**
 
 `service_restart` is the 6th built-in action (HIGH risk tier, always requires Slack approval, operator-triggered only). `errander/agent/subgraphs/service_restart.py` adds the full sub-graph (validate → snapshot → execute → verify), `parse_restart_output()` parser, and MANIFEST. `errander/models/service_restart.py` adds `RestartContext` and `ServiceRestartState`. `BUILTIN_ACTIONS` now has 6 entries. 7 new event types in `events.py`. `ActionType.SERVICE_RESTART` added.

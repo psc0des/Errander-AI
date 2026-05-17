@@ -53,7 +53,13 @@
 - [x] 1836 tests passing, ruff clean, mypy clean
 - [x] commit S.1
 
-### Commits S.2–S.4 — `service_restart` wrapper + CLI + docs
+### Commit S.2 — systemctl-restart wrapper install script + drift test
+- [x] `scripts/install-systemctl-restart-wrapper.sh` — idempotent root install (wrapper + allowlist + sudoers)
+- [x] `tests/scripts/test_install_systemctl_restart_wrapper.py` — 23 drift tests
+- [x] 1859 tests passing, ruff clean
+- [x] commit S.2
+
+### Commits S.3–S.4 — `service_restart` CLI + docs
 - [ ] (pending)
 
 ---

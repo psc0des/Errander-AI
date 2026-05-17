@@ -1,5 +1,19 @@
 # Errander-AI Command Log
 
+## v1-action-opt-in commit S.2 (2026-05-17)
+
+```bash
+# Created install-systemctl-restart-wrapper.sh + 23 drift tests
+uv run pytest tests/scripts/test_install_systemctl_restart_wrapper.py -v  # 23 passed
+uv run ruff check tests/scripts/test_install_systemctl_restart_wrapper.py  # All checks passed
+uv run pytest --tb=no -q  # 1859 passed
+git add scripts/install-systemctl-restart-wrapper.sh \
+  tests/scripts/test_install_systemctl_restart_wrapper.py \
+  STATUS.md docs/command-log.md tasks/todo.md
+git commit -m "feat: install-systemctl-restart-wrapper.sh, allowlist, wrapper drift test"
+git push origin main
+```
+
 ## v1-action-opt-in commit S.1 (2026-05-17)
 
 ```bash

@@ -40,7 +40,20 @@
 - [x] 1790 tests passing, ruff clean, mypy clean
 - [x] commit 2.1
 
-### Commits S.1–S.4 — `service_restart` module
+### Commit S.1 — service_restart sub-graph + manifest + events
+- [x] `errander/models/service_restart.py` — `RestartContext` dataclass + `ServiceRestartState` TypedDict
+- [x] `errander/agent/subgraphs/service_restart.py` — full sub-graph (validate→snapshot→execute→verify) + MANIFEST + `parse_restart_output()`
+- [x] `errander/agent/subgraphs/__init__.py` — added `service_restart` to BUILTIN_ACTIONS (now 6 entries)
+- [x] `errander/models/events.py` — 7 new `SERVICE_RESTART_*` event types
+- [x] `errander/models/actions.py` — `ActionType.SERVICE_RESTART` + `ACTION_RISK_TIERS[SERVICE_RESTART] = HIGH`
+- [x] `tests/agent/subgraphs/test_service_restart.py` — 18 tests (validate/snapshot/execute/verify)
+- [x] `tests/agent/subgraphs/test_service_restart_manifest.py` — 15 tests (manifest fields + registry)
+- [x] `tests/agent/subgraphs/test_service_restart_parser.py` — 13 tests (full output, snapshot, malformed)
+- [x] `tests/agent/subgraphs/test_registry.py` — updated count 5→6
+- [x] 1836 tests passing, ruff clean, mypy clean
+- [x] commit S.1
+
+### Commits S.2–S.4 — `service_restart` wrapper + CLI + docs
 - [ ] (pending)
 
 ---

@@ -12,6 +12,10 @@ When YAML loads a nested structure, Pydantic's `mode="before"` validator receive
 
 `errander/execution/privilege.py` imports from subgraph modules. `errander/agent/subgraphs/__init__.py` imports from those subgraph modules. If `privilege.py` imported BUILTIN_ACTIONS (from `subgraphs/__init__.py`), which imports from `disk_cleanup.py`, which imports from `privilege.py` → circular import. Solution: do manifest-based lookups in `vm_graph.py` (which already imports BUILTIN_ACTIONS lazily in the node function body) rather than in `privilege.py`. Never put cross-layer imports in shared utility modules.
 
+## 2026-05-17 — ruff I001 import sort: `errander.agent` before `errander.models`
+
+When two first-party imports from the same package are in a test file, ruff's isort (I001) enforces alphabetical sort by full module path. `errander.agent.subgraphs...` < `errander.models...` is correct (a < m), but ruff may still flag it if the import block formatting doesn't match its expectations exactly. Use `ruff check --fix` to auto-fix rather than guessing.
+
 ## 2026-05-17 — ruff checks shell scripts as Python if you pass them explicitly
 
 `uv run ruff check scripts/install-docker-wrappers.sh` fails with hundreds of `invalid-syntax` errors because ruff tries to parse `.sh` files as Python. Always pass only Python file paths or directories containing Python files. Run `uv run ruff check tests/scripts/` to check the Python test files for a shell script.

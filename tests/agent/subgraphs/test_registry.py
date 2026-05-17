@@ -6,11 +6,14 @@ from errander.agent.subgraphs import BUILTIN_ACTIONS
 
 
 class TestRegistryContents:
-    def test_has_exactly_five_entries(self) -> None:
-        assert len(BUILTIN_ACTIONS) == 5
+    def test_has_exactly_six_entries(self) -> None:
+        assert len(BUILTIN_ACTIONS) == 6
 
     def test_expected_action_names_present(self) -> None:
-        expected = {"patching", "disk_cleanup", "log_rotation", "docker_prune", "backup_verify"}
+        expected = {
+            "patching", "disk_cleanup", "log_rotation",
+            "docker_prune", "backup_verify", "service_restart",
+        }
         assert set(BUILTIN_ACTIONS.keys()) == expected
 
     def test_docker_prune_default_disabled(self) -> None:

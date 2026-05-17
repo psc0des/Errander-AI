@@ -22,6 +22,7 @@ class ActionType(StrEnum):
     LOG_ROTATION = "log_rotation"
     DISK_CLEANUP = "disk_cleanup"
     BACKUP_VERIFY = "backup_verify"
+    SERVICE_RESTART = "service_restart"
 
 
 class RiskTier(StrEnum):
@@ -62,6 +63,7 @@ ACTION_RISK_TIERS: dict[ActionType, RiskTier] = {
     ActionType.DOCKER_PRUNE: RiskTier.MEDIUM,
     ActionType.PATCHING: RiskTier.MEDIUM,
     ActionType.BACKUP_VERIFY: RiskTier.LOW,
+    ActionType.SERVICE_RESTART: RiskTier.HIGH,
 }
 
 

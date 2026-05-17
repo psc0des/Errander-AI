@@ -16,6 +16,7 @@ from errander.agent.subgraphs.disk_cleanup import MANIFEST as _DISK_CLEANUP
 from errander.agent.subgraphs.docker_prune import MANIFEST as _DOCKER_PRUNE
 from errander.agent.subgraphs.log_rotation import MANIFEST as _LOG_ROTATION
 from errander.agent.subgraphs.patching import MANIFEST as _PATCHING
+from errander.agent.subgraphs.service_restart import MANIFEST as _SERVICE_RESTART
 from errander.models.manifest import ActionManifest
 
 BUILTIN_ACTIONS: dict[str, ActionManifest] = {
@@ -24,4 +25,5 @@ BUILTIN_ACTIONS: dict[str, ActionManifest] = {
     "log_rotation": _LOG_ROTATION,
     "docker_prune": _DOCKER_PRUNE,
     "backup_verify": _BACKUP_VERIFY,
+    "service_restart": _SERVICE_RESTART,
 }

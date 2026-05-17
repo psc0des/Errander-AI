@@ -1,5 +1,23 @@
 # Errander-AI Command Log
 
+## v1-action-opt-in commit S.1 (2026-05-17)
+
+```bash
+# service_restart sub-graph + manifest + state model + 7 audit event types
+uv run pytest tests/agent/subgraphs/test_service_restart.py tests/agent/subgraphs/test_service_restart_manifest.py tests/agent/subgraphs/test_service_restart_parser.py tests/agent/subgraphs/test_registry.py -v  # 59 passed
+uv run pytest --tb=no -q                 # 1836 passed
+uv run ruff check errander/agent/subgraphs/service_restart.py errander/models/service_restart.py tests/agent/subgraphs/test_service_restart*.py  # All checks passed
+uv run ruff check tests/agent/subgraphs/test_service_restart_parser.py --fix  # fixed 1 import sort
+uv run mypy errander/models/service_restart.py errander/agent/subgraphs/service_restart.py  # clean
+git add errander/models/service_restart.py errander/agent/subgraphs/service_restart.py \
+  errander/agent/subgraphs/__init__.py errander/models/events.py errander/models/actions.py \
+  tests/agent/subgraphs/test_service_restart.py tests/agent/subgraphs/test_service_restart_manifest.py \
+  tests/agent/subgraphs/test_service_restart_parser.py tests/agent/subgraphs/test_registry.py \
+  STATUS.md docs/command-log.md tasks/todo.md tasks/lessons.md
+git commit -m "feat: service_restart sub-graph, manifest, RestartContext, 7 audit events"
+git push origin main
+```
+
 ## v1-action-opt-in commit 2.1 (2026-05-17)
 
 ```bash

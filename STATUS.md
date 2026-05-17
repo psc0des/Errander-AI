@@ -4,17 +4,22 @@
 2026-05-17
 
 ## Current Phase
-**v1-action-opt-in commit 2.1 — install-docker-wrappers.sh + SETUP.md collapse + drift test (2026-05-17).**
+**v1-action-opt-in commit S.1 — service_restart sub-graph + manifest + state model + audit events (2026-05-17).**
 
-`scripts/install-docker-wrappers.sh` added: idempotent root install script for 3 wrapper binaries + sudoers entry with visudo validation. SETUP.md Docker wrapper section collapsed from ~90-line heredoc to 4-line scp+ssh+verify pattern. `tests/scripts/test_install_docker_wrappers.py` added: 18 drift tests verifying wrapper output format is parseable by `parse_assess_output()`.
+`service_restart` is the 6th built-in action (HIGH risk tier, always requires Slack approval, operator-triggered only). `errander/agent/subgraphs/service_restart.py` adds the full sub-graph (validate → snapshot → execute → verify), `parse_restart_output()` parser, and MANIFEST. `errander/models/service_restart.py` adds `RestartContext` and `ServiceRestartState`. `BUILTIN_ACTIONS` now has 6 entries. 7 new event types in `events.py`. `ActionType.SERVICE_RESTART` added.
 
-**1790 tests passing, 0 skipped, 0 regressions.**
+**1836 tests passing, 0 skipped, 0 regressions.**
 
-## Files Changed (commit 2.1)
-- `scripts/install-docker-wrappers.sh` (NEW)
-- `SETUP.md` (Docker wrapper section collapsed)
-- `tests/scripts/__init__.py` (NEW)
-- `tests/scripts/test_install_docker_wrappers.py` (NEW, 18 tests)
+## Files Changed (commit S.1)
+- `errander/models/service_restart.py` (NEW)
+- `errander/agent/subgraphs/service_restart.py` (NEW)
+- `errander/agent/subgraphs/__init__.py` (MODIFIED — added service_restart)
+- `errander/models/events.py` (MODIFIED — 7 new SERVICE_RESTART_* event types)
+- `errander/models/actions.py` (MODIFIED — SERVICE_RESTART ActionType + risk tier)
+- `tests/agent/subgraphs/test_service_restart.py` (NEW, 18 tests)
+- `tests/agent/subgraphs/test_service_restart_manifest.py` (NEW, 15 tests)
+- `tests/agent/subgraphs/test_service_restart_parser.py` (NEW, 13 tests)
+- `tests/agent/subgraphs/test_registry.py` (MODIFIED — count 5→6)
 
 ### P0-1 Completed (2026-05-16)
 - **Commit 1**: `enrich_plan_node` in `graph.py` — SSHes each VM at plan time, populates `preview` dict per planned action with exact packages/versions (patching) and disk usage (disk_cleanup); wired between `collect_plans` and `generate_plan_artifact` so preview is in the hash. `_parse_upgradable_with_versions` added to `patching.py`. Load test call count updated. 15 new tests.

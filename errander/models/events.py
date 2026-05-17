@@ -56,6 +56,14 @@ class EventType(StrEnum):
     DISK_GATE_BLOCKED = "disk_gate_blocked"
     # v1 action opt-in plan
     TARGET_PREFLIGHT_FAILED = "target_preflight_failed"
+    # Phase 2 — service_restart module
+    SERVICE_RESTART_REQUESTED = "service_restart_requested"
+    SERVICE_RESTART_UNIT_NOT_ALLOWED = "service_restart_unit_not_allowed"
+    SERVICE_RESTART_APPROVED = "service_restart_approved"
+    SERVICE_RESTART_REJECTED = "service_restart_rejected"
+    SERVICE_RESTART_EXECUTED = "service_restart_executed"
+    SERVICE_RESTART_VERIFY_OK = "service_restart_verify_ok"
+    SERVICE_RESTART_VERIFY_FAILED = "service_restart_verify_failed"
 
 
 @dataclass

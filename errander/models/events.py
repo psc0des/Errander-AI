@@ -54,6 +54,8 @@ class EventType(StrEnum):
     DAILY_PROBE_FAILED = "daily_probe_failed"
     # Phase F — LangGraph integration
     DISK_GATE_BLOCKED = "disk_gate_blocked"
+    # v1 action opt-in plan
+    TARGET_PREFLIGHT_FAILED = "target_preflight_failed"
 
 
 @dataclass

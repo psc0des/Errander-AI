@@ -4,11 +4,11 @@
 2026-05-17
 
 ## Current Phase
-**v1-action-opt-in commit 1.2 — migration helper `--migrate-inventory` (2026-05-17).**
+**v1-action-opt-in commit 1.3 — registry-driven preflight + SETUP.md + v1 scope (2026-05-17).**
 
-`errander/config/migrate.py`: `migrate_inventory(path)` reads legacy flat `docker_command_mode` field, translates to nested `actions:` block (all 5 actions explicit), writes `<file>.migrated`, prints unified diff. `--migrate-inventory <path>` CLI flag added to `main.py`. 28 new tests.
+`TARGET_PREFLIGHT_FAILED` event type + `BatchStatus` enum added. `sudo_preflight_node` emits `TARGET_PREFLIGHT_FAILED` (not `SUDO_PREFLIGHT_FAILED`) for missing wrappers; uses `BUILTIN_ACTIONS` registry for wrapper list. `target_validation.check_target()` uses manifest-derived wrappers. SETUP.md Docker section renamed `Optional: Docker cleanup` with skip callout. CLAUDE.md `## v1 Scope` note added. README capability matrix added.
 
-**1764 tests passing, 0 skipped, 0 regressions.**
+**1772 tests passing, 0 skipped, 0 regressions.**
 
 ### P0-1 Completed (2026-05-16)
 - **Commit 1**: `enrich_plan_node` in `graph.py` — SSHes each VM at plan time, populates `preview` dict per planned action with exact packages/versions (patching) and disk usage (disk_cleanup); wired between `collect_plans` and `generate_plan_artifact` so preview is in the hash. `_parse_upgradable_with_versions` added to `patching.py`. Load test call count updated. 15 new tests.

@@ -21,9 +21,17 @@
 - [x] 1764 tests passing, ruff clean, mypy no new errors
 - [ ] commit 1.2
 
-### Commit 1.3 — registry-driven `--check-targets`
-- [ ] SETUP.md restructure
-- [ ] CLAUDE.md scope note
+### Commit 1.3 — registry-driven `--check-targets` + SETUP.md + CLAUDE.md scope note
+- [x] `TARGET_PREFLIGHT_FAILED` added to `errander/models/events.py`
+- [x] `BatchStatus` StrEnum added to `errander/models/reports.py`
+- [x] `sudo_preflight_node` uses `BUILTIN_ACTIONS` for wrapper list; emits `TARGET_PREFLIGHT_FAILED` for missing wrappers
+- [x] `target_validation.check_target()` uses manifest-derived wrapper list (not hardcoded)
+- [x] `SETUP.md` Docker section → `## Optional: Docker cleanup` + skip callout
+- [x] `CLAUDE.md` `## v1 Scope` subsection added
+- [x] `README.md` capability matrix (5 actions, enabled/disabled/opt-in/risk tier)
+- [x] 3 new tests in `test_sudo_preflight.py`, 3 in `test_vm_graph.py`, 2 in `test_main.py`
+- [x] 1772 tests passing, ruff clean, mypy no new errors
+- [ ] commit 1.3
 
 ### Commit 2.1 — Docker wrapper install script
 - [ ] `scripts/install-docker-wrappers.sh`

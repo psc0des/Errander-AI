@@ -8,6 +8,10 @@ When YAML loads a nested structure, Pydantic's `mode="before"` validator receive
 
 `-> "EnvironmentSchema"` is the same as `-> EnvironmentSchema` when `from __future__ import annotations` is present (ruff UP037 catches this). Remove quotes in model_validator return types to stay ruff-clean.
 
+## 2026-05-17 — Circular import prevents privilege.py from importing BUILTIN_ACTIONS
+
+`errander/execution/privilege.py` imports from subgraph modules. `errander/agent/subgraphs/__init__.py` imports from those subgraph modules. If `privilege.py` imported BUILTIN_ACTIONS (from `subgraphs/__init__.py`), which imports from `disk_cleanup.py`, which imports from `privilege.py` → circular import. Solution: do manifest-based lookups in `vm_graph.py` (which already imports BUILTIN_ACTIONS lazily in the node function body) rather than in `privilege.py`. Never put cross-layer imports in shared utility modules.
+
 ## 2026-05-17 — Lazy import inside validator body avoids circular dependency risk without refactoring
 
 `BUILTIN_ACTIONS` in `errander/agent/subgraphs/__init__.py` imports from subgraph modules, which import from `errander/models/manifest.py`. The config schema doesn't import from subgraphs at module level — importing BUILTIN_ACTIONS inside the `model_validator` body prevents any future accidental import cycle if someone adds a cross-dependency.

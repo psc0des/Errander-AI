@@ -311,11 +311,15 @@ sudo -u errander sudo -n /usr/bin/id  # should FAIL — /usr/bin/id is not in su
 
 ---
 
-## Docker hardening *(Target VM — production)*
+## Optional: Docker cleanup
+
+> **Skip this entire section if you are not enabling docker_prune.**
+> In your `inventory.yaml`, leave `actions.docker_prune.enabled: false` and continue to the next section.
+> Run `uv run python -m errander --check-targets <env>` after setup to verify readiness.
 
 The Docker group is effectively root: a user in it can mount the host filesystem via `docker run`. Do **not** add `errander` to the docker group, and do not grant raw `sudo /usr/bin/docker` in production.
 
-Errander supports three Docker modes per environment (set `docker_command_mode` in `inventory.yaml`):
+Errander supports three Docker modes per environment (`actions.docker_prune.command_mode` in `inventory.yaml`):
 
 | Mode | Description | Use case |
 |---|---|---|

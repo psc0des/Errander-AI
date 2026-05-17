@@ -429,6 +429,67 @@ class TestMigrateInventoryCLI:
         assert result == 1
 
 
+class TestCheckTargetsRegistryDriven:
+    """--check-targets uses manifest to filter by enabled actions (commit 1.3)."""
+
+    @pytest.mark.asyncio
+    async def test_check_targets_passes_disabled_docker_mode_when_docker_disabled(self, tmp_path: Path) -> None:
+        import yaml
+        from errander.main import run_check_targets
+        from errander.execution.target_validation import TargetReadiness
+
+        inv = tmp_path / "inventory.yaml"
+        inv.write_text(yaml.dump({
+            "environments": {
+                "dev": {
+                    "targets": [{"host": "10.0.0.1", "name": "dev-01", "os_family": "ubuntu"}],
+                    "actions": {"docker_prune": {"enabled": False, "command_mode": "disabled"}},
+                },
+            },
+        }))
+
+        ready = TargetReadiness(vm_id="dev-01", hostname="10.0.0.1", verdict="ready")
+
+        with (
+            patch("errander.execution.target_validation.check_target", return_value=ready) as mock_check,
+            patch("errander.execution.ssh.SSHConnectionManager.close_all", new_callable=AsyncMock),
+        ):
+            result = await run_check_targets(env_name="dev", inventory_path=inv)
+
+        assert result == 0
+        call_kwargs = mock_check.call_args.kwargs
+        assert call_kwargs.get("docker_command_mode") == "disabled"
+
+    @pytest.mark.asyncio
+    async def test_check_targets_warns_but_reports_when_binary_missing(self, tmp_path: Path) -> None:
+        import yaml
+        from errander.main import run_check_targets
+        from errander.execution.target_validation import TargetReadiness
+
+        inv = tmp_path / "inventory.yaml"
+        inv.write_text(yaml.dump({
+            "environments": {
+                "dev": {
+                    "targets": [{"host": "10.0.0.1", "name": "dev-01", "os_family": "ubuntu"}],
+                },
+            },
+        }))
+
+        blocked = TargetReadiness(
+            vm_id="dev-01", hostname="10.0.0.1", verdict="blocked",
+            issues=["missing binary: /usr/bin/journalctl"],
+        )
+
+        with (
+            patch("errander.execution.target_validation.check_target", return_value=blocked),
+            patch("errander.execution.ssh.SSHConnectionManager.close_all", new_callable=AsyncMock),
+        ):
+            result = await run_check_targets(env_name="dev", inventory_path=inv)
+
+        # exits 1 — signals not fully ready, but the check completed and reported
+        assert result == 1
+
+
 class TestRunCheckTargets:
     @pytest.mark.asyncio
     async def test_check_targets_exits_0_when_all_ready(self, tmp_path: Path) -> None:

@@ -19,12 +19,6 @@ logger = logging.getLogger(__name__)
 
 Verdict = Literal["ready", "warnings", "blocked"]
 
-_WRAPPER_PATHS = [
-    "/usr/local/sbin/errander-docker-assess",
-    "/usr/local/sbin/errander-docker-prune-safe",
-    "/usr/local/sbin/errander-docker-prune-aggressive",
-]
-
 
 @dataclass
 class TargetReadiness:
@@ -89,7 +83,10 @@ async def check_target(
 
     # 3. Docker wrapper probes
     if docker_command_mode == "wrapper":
-        for wrapper in _WRAPPER_PATHS:
+        from errander.agent.subgraphs import BUILTIN_ACTIONS
+        docker_manifest = BUILTIN_ACTIONS.get("docker_prune")
+        wrapper_paths = list(docker_manifest.required_wrappers) if docker_manifest else []
+        for wrapper in wrapper_paths:
             cmd = f"sudo -n {wrapper} --check 2>/dev/null"
             result = await ssh_manager.execute(vm_id, hostname, username, key_path, cmd)
             ok = result.success and "ok" in result.stdout.strip()

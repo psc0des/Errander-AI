@@ -1,5 +1,20 @@
 # Errander-AI Command Log
 
+## v1-action-opt-in commit 1.3 (2026-05-17)
+
+```bash
+# Added TARGET_PREFLIGHT_FAILED event, BatchStatus enum, registry-driven wrapper check
+# sudo_preflight_node uses BUILTIN_ACTIONS for wrappers, emits TARGET_PREFLIGHT_FAILED
+# SETUP.md Docker section → Optional: Docker cleanup; CLAUDE.md v1 scope; README matrix
+uv run pytest tests/agent/test_sudo_preflight.py tests/agent/test_vm_graph.py::TestTargetPreflightFailed tests/test_main.py::TestCheckTargetsRegistryDriven -v  # 21 passed
+uv run pytest   # 1772 passed
+git add errander/models/events.py errander/models/reports.py errander/execution/target_validation.py \
+  errander/agent/vm_graph.py tests/agent/test_sudo_preflight.py tests/agent/test_vm_graph.py \
+  tests/test_main.py SETUP.md CLAUDE.md README.md STATUS.md docs/command-log.md tasks/todo.md tasks/lessons.md
+git commit -m "feat: registry-driven preflight, TARGET_PREFLIGHT_FAILED, BatchStatus, SETUP.md"
+git push origin main
+```
+
 ## v1-action-opt-in commit 1.2 (2026-05-17)
 
 ```bash

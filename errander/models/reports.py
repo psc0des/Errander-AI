@@ -12,6 +12,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
+from enum import StrEnum
+
+
+class BatchStatus(StrEnum):
+    """Terminal status of a batch run."""
+
+    COMPLETED = "completed"
+    PARTIAL_FAILED = "partial_failed"
+    FAILED = "failed"
 
 
 @dataclass(frozen=True)

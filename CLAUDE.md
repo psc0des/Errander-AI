@@ -191,6 +191,15 @@ Errander-AI uses a two-layer AI architecture. See `docs/AI-ARCHITECTURE.md` for 
 When proposing any AI-related feature or contribution, classify it as Layer A or Layer B first. If unsure, default to Layer A. Layer B changes require explicit safety review.
 
 ## Domain Rules
+
+### v1 Scope
+v1 supports Linux host maintenance only: OS patching (non-kernel), disk cleanup,
+log rotation, Docker prune, backup verification. Kubernetes, app runtimes
+(Tomcat/Nginx/Java GC), database management, network/firewall changes, and
+arbitrary user-supplied commands are explicitly out of scope. Adding new
+actions requires a new sub-graph + manifest + risk-tier classification +
+rollback strategy — not a config flag.
+
 - NEVER automate kernel patching — this is explicitly out of scope
 - NEVER touch files/directories outside the disk cleanup whitelist without human approval
 - Rollback strategy must be defined per action type (see Rollback Tiers above) — not all actions require full rollback

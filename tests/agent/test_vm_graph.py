@@ -790,3 +790,56 @@ class TestSubgraphExceptionSafety:
                 result = await audit_results_node(state, audit_store=store)
 
         assert result == {}
+
+
+# ---------------------------------------------------------------------------
+# TARGET_PREFLIGHT_FAILED tests (commit 1.3)
+# ---------------------------------------------------------------------------
+
+
+class TestTargetPreflightFailed:
+    """When a wrapper is missing for an enabled action, TARGET_PREFLIGHT_FAILED is emitted."""
+
+    @pytest.mark.asyncio
+    async def test_missing_wrapper_emits_target_preflight_failed(self) -> None:
+        from errander.agent.vm_graph import sudo_preflight_node
+        from errander.models.events import EventType
+
+        state = _base_state(
+            dry_run=False,
+            docker_command_mode="wrapper",
+            planned_actions=[{"action_type": "docker_prune"}],
+        )
+
+        executor = MagicMock()
+        mock_result = MagicMock(
+            success=True,
+            stdout="SUDO_FAIL /usr/local/sbin/errander-docker-assess\n",
+            stderr="",
+        )
+        executor.execute = AsyncMock(return_value=mock_result)
+
+        audit_store = MagicMock()
+        audit_store.log_event = AsyncMock()
+
+        result = await sudo_preflight_node(state, executor=executor, audit_store=audit_store)
+
+        assert "error" in result
+        logged_events = [c.args[0] for c in audit_store.log_event.await_args_list]
+        event_types = [e.event_type for e in logged_events]
+        assert EventType.TARGET_PREFLIGHT_FAILED in event_types
+
+    @pytest.mark.asyncio
+    async def test_missing_wrapper_routes_to_audit_results_not_hard_abort(self) -> None:
+        """A VM-level preflight failure routes to audit_results, not a hard abort."""
+        from errander.agent.vm_graph import route_after_sudo_preflight
+
+        error_state = _base_state(error="Required wrapper(s) missing on dev/web-01")
+        assert route_after_sudo_preflight(error_state) == "audit_results"
+
+    def test_batch_status_partial_failed_importable(self) -> None:
+        """BatchStatus.PARTIAL_FAILED is importable and has the right value."""
+        from errander.models.reports import BatchStatus
+        assert BatchStatus.PARTIAL_FAILED == "partial_failed"
+        assert BatchStatus.COMPLETED == "completed"
+        assert BatchStatus.FAILED == "failed"

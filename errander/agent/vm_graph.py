@@ -314,6 +314,8 @@ async def sudo_preflight_node(
     action_types = {a.get("action_type") for a in planned}
     batch_id = state.get("batch_id", "unknown")
 
+    from errander.agent.subgraphs import BUILTIN_ACTIONS
+
     docker_mode = state.get("docker_command_mode", "wrapper")
 
     # Collect binaries required by the planned action types + OS family.
@@ -321,15 +323,18 @@ async def sudo_preflight_node(
     for action_type in action_types:
         if action_type == "patching":
             key = "patching_dnf" if os_family == "rhel" else "patching_apt"
+            required.extend(REQUIRED_BINARIES_BY_ACTION.get(key, []))
         elif action_type == "docker_prune":
             if docker_mode == "disabled":
                 continue  # no preflight needed
-            # Map mode to privilege key: "wrapper" → "docker_prune_wrapper",
-            # "direct_sudo" → "docker_prune_direct"
-            key = "docker_prune_wrapper" if docker_mode == "wrapper" else "docker_prune_direct"
+            if docker_mode == "wrapper":
+                manifest = BUILTIN_ACTIONS.get("docker_prune")
+                wrappers = list(manifest.required_wrappers) if manifest else []
+                required.extend(wrappers)
+            else:
+                required.extend(REQUIRED_BINARIES_BY_ACTION.get("docker_prune_direct", []))
         else:
-            key = str(action_type)
-        required.extend(REQUIRED_BINARIES_BY_ACTION.get(key, []))
+            required.extend(REQUIRED_BINARIES_BY_ACTION.get(str(action_type), []))
 
     if not required:
         return {}
@@ -380,21 +385,45 @@ async def sudo_preflight_node(
     _ok, failed = parse_capability_check(result.stdout)
 
     if failed:
-        detail = (
-            f"sudo -n unavailable on {vm_id} for: {failed}. "
-            "Check sudoers — see SETUP.md Step 3."
-        )
-        logger.error("SUDO PREFLIGHT FAILED on %s: %s", vm_id, detail)
-        if audit_store is not None:
-            await audit_store.log_event(AuditEvent(
-                event_type=EventType.SUDO_PREFLIGHT_FAILED,
-                batch_id=batch_id,
-                vm_id=vm_id,
-                action_type="sudo_preflight",
-                detail=detail,
-                metadata={"failed_binaries": failed},
-            ), dry_run=False)
-        return {"error": detail}
+        # Wrappers under /usr/local/sbin/ are enabled-action prerequisites;
+        # their absence is a TARGET_PREFLIGHT_FAILED (VM-skip, batch continues).
+        # Ordinary binary/sudoers failures are SUDO_PREFLIGHT_FAILED.
+        wrapper_failures = [b for b in failed if b.startswith("/usr/local/sbin/")]
+        binary_failures = [b for b in failed if not b.startswith("/usr/local/sbin/")]
+
+        if wrapper_failures:
+            detail = (
+                f"Required wrapper(s) missing on {vm_id}: {wrapper_failures}. "
+                "Install wrappers — see SETUP.md#optional-docker-cleanup."
+            )
+            logger.error("TARGET PREFLIGHT FAILED on %s: %s", vm_id, detail)
+            if audit_store is not None:
+                await audit_store.log_event(AuditEvent(
+                    event_type=EventType.TARGET_PREFLIGHT_FAILED,
+                    batch_id=batch_id,
+                    vm_id=vm_id,
+                    action_type="sudo_preflight",
+                    detail=detail,
+                    metadata={"missing_wrappers": wrapper_failures},
+                ), dry_run=False)
+            return {"error": detail}
+
+        if binary_failures:
+            detail = (
+                f"sudo -n unavailable on {vm_id} for: {binary_failures}. "
+                "Check sudoers — see SETUP.md Step 3."
+            )
+            logger.error("SUDO PREFLIGHT FAILED on %s: %s", vm_id, detail)
+            if audit_store is not None:
+                await audit_store.log_event(AuditEvent(
+                    event_type=EventType.SUDO_PREFLIGHT_FAILED,
+                    batch_id=batch_id,
+                    vm_id=vm_id,
+                    action_type="sudo_preflight",
+                    detail=detail,
+                    metadata={"failed_binaries": binary_failures},
+                ), dry_run=False)
+            return {"error": detail}
 
     logger.info("Sudo preflight passed on %s for %d binaries", vm_id, len(unique_required))
     return {}

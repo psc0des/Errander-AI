@@ -4,6 +4,16 @@
 
 Errander-AI is a supervised maintenance agent for small-to-medium Linux fleets. It performs non-kernel patching, log rotation, Docker pruning, disk cleanup, and backup verification — with safety gates, rollback, idempotency, and full audit logging. Every live change requires human approval (Slack or Web UI). It runs on a single controller VM and manages any number of target servers over SSH.
 
+| Action | Default | Opt-in required | Risk tier |
+|---|---|---|---|
+| `patching` | ✅ enabled | No | MEDIUM — HITL approval + maintenance window |
+| `disk_cleanup` | ✅ enabled | No | LOW — whitelist-bounded, non-destructive |
+| `log_rotation` | ✅ enabled | No | LOW — compresses, does not delete |
+| `docker_prune` | ❌ disabled | Yes — install wrappers, set `enabled: true` | MEDIUM |
+| `backup_verify` | ❌ disabled | Yes — requires `backup:` config section | LOW |
+
+Each action is independently enabled per environment in `inventory.yaml` (`actions.<name>.enabled`). Actions default as shown — no YAML required to run the enabled defaults.
+
 The AI layer prioritizes, explains, correlates, and summarizes maintenance work for operators. The execution layer is deterministic Python — the LLM is never in the path that actually changes infrastructure.
 
 100% open source. Cloud-agnostic. No SaaS dependencies except Slack (optional).

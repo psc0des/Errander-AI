@@ -197,3 +197,85 @@ async def test_disabled_mode_preflight_skips_docker() -> None:
     if executor.execute.await_count > 0:
         called_cmd = executor.execute.await_args.kwargs.get("command") or ""
         assert "docker" not in called_cmd
+
+
+# --- Registry-driven tests (commit 1.3) ---
+
+@pytest.mark.asyncio
+async def test_wrapper_paths_come_from_builtin_actions_registry() -> None:
+    """Wrapper binary list is driven by BUILTIN_ACTIONS, not a hardcoded constant."""
+    from errander.agent.subgraphs import BUILTIN_ACTIONS
+    state = {
+        "dry_run": False, "vm_id": "v1",
+        "hostname": "h", "ssh_user": "u", "ssh_key_path": "k",
+        "os_family": "ubuntu",
+        "docker_command_mode": "wrapper",
+        "planned_actions": [{"action_type": "docker_prune"}],
+    }
+    executor = MagicMock()
+    mock_result = MagicMock(success=True, stdout="SUDO_OK /usr/local/sbin/errander-docker-assess\n", stderr="")
+    executor.execute = AsyncMock(return_value=mock_result)
+    await sudo_preflight_node(state, executor=executor)
+    called_cmd = executor.execute.await_args.kwargs.get("command") or ""
+    manifest = BUILTIN_ACTIONS["docker_prune"]
+    for wrapper in manifest.required_wrappers:
+        assert wrapper in called_cmd
+
+
+@pytest.mark.asyncio
+async def test_missing_wrapper_emits_target_preflight_failed_event() -> None:
+    """Missing docker wrapper → TARGET_PREFLIGHT_FAILED (not SUDO_PREFLIGHT_FAILED)."""
+    state = {
+        "dry_run": False, "vm_id": "v1",
+        "hostname": "h", "ssh_user": "u", "ssh_key_path": "k",
+        "os_family": "ubuntu",
+        "docker_command_mode": "wrapper",
+        "batch_id": "b1",
+        "planned_actions": [{"action_type": "docker_prune"}],
+    }
+    executor = MagicMock()
+    mock_result = MagicMock(
+        success=True,
+        stdout="SUDO_FAIL /usr/local/sbin/errander-docker-assess\n",
+        stderr="",
+    )
+    executor.execute = AsyncMock(return_value=mock_result)
+    audit_store = MagicMock()
+    audit_store.log_event = AsyncMock()
+
+    result = await sudo_preflight_node(state, executor=executor, audit_store=audit_store)
+
+    assert "error" in result
+    logged_events = [c.args[0] for c in audit_store.log_event.await_args_list]
+    event_types = [e.event_type for e in logged_events]
+    assert EventType.TARGET_PREFLIGHT_FAILED in event_types
+    assert EventType.SUDO_PREFLIGHT_FAILED not in event_types
+
+
+@pytest.mark.asyncio
+async def test_missing_binary_emits_sudo_preflight_failed_not_target_preflight_failed() -> None:
+    """Missing system binary → SUDO_PREFLIGHT_FAILED, not TARGET_PREFLIGHT_FAILED."""
+    state = {
+        "dry_run": False, "vm_id": "v1",
+        "hostname": "h", "ssh_user": "u", "ssh_key_path": "k",
+        "os_family": "ubuntu",
+        "batch_id": "b1",
+        "planned_actions": [{"action_type": "disk_cleanup"}],
+    }
+    executor = MagicMock()
+    mock_result = MagicMock(
+        success=True,
+        stdout="SUDO_FAIL /usr/bin/journalctl\n",
+        stderr="",
+    )
+    executor.execute = AsyncMock(return_value=mock_result)
+    audit_store = MagicMock()
+    audit_store.log_event = AsyncMock()
+
+    result = await sudo_preflight_node(state, executor=executor, audit_store=audit_store)
+
+    assert "error" in result
+    logged_events = [c.args[0] for c in audit_store.log_event.await_args_list]
+    event_types = [e.event_type for e in logged_events]
+    assert EventType.SUDO_PREFLIGHT_FAILED in event_types
+    assert EventType.TARGET_PREFLIGHT_FAILED not in event_types

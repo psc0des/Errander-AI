@@ -596,10 +596,23 @@ async def _run_disk_cleanup(
     error = final_state.get("error")
 
     detail_parts: list[str] = []
-    if final_state.get("space_by_path"):
-        detail_parts.append(f"assessed: {final_state['space_by_path']}")
     if final_state.get("cleanup_output"):
-        detail_parts.append(f"cleaned: {list(final_state['cleanup_output'].keys())}")
+        detail_parts.append(f"cleaned: {', '.join(final_state['cleanup_output'].keys())}")
+    disk_before: dict[str, float] = final_state.get("disk_before") or {}
+    disk_after: dict[str, float] = final_state.get("disk_after") or {}
+    if disk_before and disk_after:
+        for mount in ("/", "/var", "/data"):
+            if mount in disk_before and mount in disk_after:
+                detail_parts.append(
+                    f"{mount}: {disk_before[mount]:.0f}% → {disk_after[mount]:.0f}%"
+                )
+                break
+    elif disk_before and final_state.get("space_by_path"):
+        reclaim = ", ".join(
+            f"{k}: {v}" for k, v in final_state["space_by_path"].items() if v not in ("0", "unknown", "")
+        )
+        if reclaim:
+            detail_parts.append(f"reclaimable: {reclaim}")
 
     return {
         "action_type": ActionType.DISK_CLEANUP.value,
@@ -669,12 +682,17 @@ async def _run_log_rotation(
 
     status = final_state.get("status", ActionStatus.FAILED.value)
     detail_parts: list[str] = []
-    if final_state.get("large_files"):
-        detail_parts.append(f"large files: {len(final_state['large_files'])}")
     if final_state.get("nothing_to_do"):
-        detail_parts.append("nothing to do — already clean")
+        detail_parts.append("nothing to do — no oversized log files")
+    elif final_state.get("large_files"):
+        detail_parts.append(f"found: {len(final_state['large_files'])} oversized file(s)")
     if final_state.get("rotation_output"):
-        detail_parts.append(f"rotated: {list(final_state['rotation_output'].keys())}")
+        rot: dict[str, str] = final_state["rotation_output"]
+        if "logrotate" in rot:
+            count = len(final_state.get("large_files", []))
+            detail_parts.append(f"rotated: {count} file(s) via logrotate")
+        else:
+            detail_parts.append(f"rotated: {len(rot)} file(s) manually")
 
     return {
         "action_type": ActionType.LOG_ROTATION.value,
@@ -809,12 +827,13 @@ async def _run_patching(
 
     status = final_state.get("status", ActionStatus.FAILED.value)
     detail_parts: list[str] = []
-    if final_state.get("pending_updates"):
-        detail_parts.append(f"updates: {len(final_state['pending_updates'])} packages")
     if final_state.get("nothing_to_do"):
         detail_parts.append("nothing to do — already up-to-date")
-    if final_state.get("version_snapshot"):
-        detail_parts.append(f"snapshot: {len(final_state['version_snapshot'])} packages")
+    elif final_state.get("changed_packages") is not None:
+        n = len(final_state["changed_packages"])
+        detail_parts.append(f"installed: {n} package(s)" if n else "no package versions changed")
+    elif final_state.get("pending_updates"):
+        detail_parts.append(f"queued: {len(final_state['pending_updates'])} package(s)")
 
     return {
         "action_type": ActionType.PATCHING.value,

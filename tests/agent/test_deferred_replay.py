@@ -75,8 +75,8 @@ async def test_load_artifact_node_valid() -> None:
     assert result.get("error") is None
     assert result["is_deferred_replay"] is True
     assert result["plan_hash"] == _make_hash("b1", "prod", _VM_PLANS)
-    assert len(result["vm_plans"]) == 1
-    assert result["vm_plans"][0]["vm_id"] == "prod/web-01"
+    assert len(result["enriched_vm_plans"]) == 1
+    assert result["enriched_vm_plans"][0]["vm_id"] == "prod/web-01"
 
 
 @pytest.mark.asyncio

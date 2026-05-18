@@ -122,19 +122,19 @@ class TestApprovalsNavigation:
 
     def test_approvals_link_in_navbar(self, page: Page, approvals_base_url: str) -> None:
         page.goto(f"{approvals_base_url}/ui/approvals")
-        expect(page.get_by_role("link", name="Approvals")).to_be_visible()
+        expect(page.get_by_role("link", name="Approval Queue")).to_be_visible()
 
     def test_dashboard_link_in_navbar(self, page: Page, approvals_base_url: str) -> None:
         page.goto(f"{approvals_base_url}/ui/approvals")
-        expect(page.get_by_role("link", name="Dashboard")).to_be_visible()
+        expect(page.get_by_role("link", name="Fleet Dashboard")).to_be_visible()
 
     def test_batches_link_in_navbar(self, page: Page, approvals_base_url: str) -> None:
         page.goto(f"{approvals_base_url}/ui/approvals")
-        expect(page.get_by_role("link", name="Batches", exact=True).first).to_be_visible()
+        expect(page.get_by_role("link", name="Batch History", exact=True).first).to_be_visible()
 
     def test_dashboard_navigates_back(self, page: Page, approvals_base_url: str) -> None:
         page.goto(f"{approvals_base_url}/ui/approvals")
-        page.get_by_role("link", name="Dashboard").click()
+        page.get_by_role("link", name="Fleet Dashboard").click()
         expect(page).to_have_url(f"{approvals_base_url}/ui")
 
 
@@ -160,7 +160,7 @@ class TestDashboardWithPendingApprovals:
 
     def test_approvals_nav_link_on_dashboard(self, page: Page, approvals_base_url: str) -> None:
         page.goto(f"{approvals_base_url}/ui")
-        expect(page.get_by_role("link", name="Approvals")).to_be_visible()
+        expect(page.get_by_role("link", name="Approval Queue")).to_be_visible()
 
 
 # ---------------------------------------------------------------------------
@@ -230,7 +230,7 @@ class TestApprovalsBadgeAcrossPages:
         self, page: Page, approvals_base_url: str,
     ) -> None:
         page.goto(f"{approvals_base_url}/ui/batches")
-        expect(page.get_by_role("link", name="Approvals")).to_be_visible()
+        expect(page.get_by_role("link", name="Approval Queue")).to_be_visible()
 
     def test_health_endpoint_still_works_with_approval_manager(
         self, page: Page, approvals_base_url: str,

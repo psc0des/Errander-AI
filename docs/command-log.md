@@ -1,5 +1,14 @@
 # Errander-AI Command Log
 
+## Fix — audit detail strings + Playwright test sync (2026-05-18)
+
+```bash
+# Full test suite — 1969 passed
+uv run pytest tests/ -x -q --tb=short
+```
+
+---
+
 ## Bug fix — vm_plans duplicate (2026-05-18)
 
 ```bash

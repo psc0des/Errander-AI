@@ -94,7 +94,8 @@ class PatchingGraphState(TypedDict, total=False):
     patch_output: str
 
     # Verification
-    updated_versions: dict[str, str]  # package → version after patching
+    updated_versions: dict[str, str]   # package → version after patching
+    changed_packages: dict[str, str]   # package → "old → new" for packages that changed
 
     # Idempotency
     nothing_to_do: bool
@@ -352,7 +353,7 @@ async def verify_node(
                 "error": "Patching verification failed: no package versions changed after upgrade",
             }
 
-    return {"updated_versions": current_versions}
+    return {"updated_versions": current_versions, "changed_packages": changed}
 
 
 async def preflight_lock_node(

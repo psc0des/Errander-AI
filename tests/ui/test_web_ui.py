@@ -136,8 +136,8 @@ class TestDashboard:
 
     def test_nav_links_all_present(self, page: Page, ui_base_url: str) -> None:
         page.goto(f"{ui_base_url}/ui")
-        expect(page.get_by_role("link", name="Dashboard")).to_be_visible()
-        expect(page.get_by_role("link", name="Batches", exact=True).first).to_be_visible()
+        expect(page.get_by_role("link", name="Fleet Dashboard")).to_be_visible()
+        expect(page.get_by_role("link", name="Batch History", exact=True).first).to_be_visible()
         expect(page.get_by_role("link", name="Metrics")).to_be_visible()
         expect(page.get_by_role("link", name="Health")).to_be_visible()
 

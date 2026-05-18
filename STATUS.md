@@ -4,16 +4,28 @@
 2026-05-18
 
 ## Current Phase
-**Bug fix — vm_plans duplicate entries from LangGraph append-only reducer (2026-05-18).**
+**Fix — audit log detail strings for patching, log_rotation, and disk_cleanup (2026-05-18).**
 
-`enrich_plan_node` wrote enriched VM plans back to `vm_plans`, which uses an append-only LangGraph reducer. This doubled every VM entry (raw plan + enriched plan), causing "2 VMs planned" for a single-VM inventory and showing the same VM twice in approval cards.
+Audit log `detail` fields were misleading after live execution:
+- Patching showed `"updates: 17 packages; snapshot: 17 packages"` — both counts were PRE-execution (pending + snapshot). The `changed` dict computed in `verify_patch_node` was logged but never stored in state.
+- Log rotation showed `"rotated: ['logrotate']"` — `rotation_output` key is the string `"logrotate"` (the tool name), not a file path.
+- Disk cleanup showed raw dicts — no space freed amounts.
 
-Fix: added `enriched_vm_plans` field to `BatchGraphState` (no reducer = last-write-wins), `enrich_plan_node` now writes to it, and a new `_effective_vm_plans(state)` helper lets all post-enrich consumers prefer it. `load_deferred_plan_node` also updated to set `enriched_vm_plans`.
+Fix: `PatchingGraphState` gains `changed_packages` field; `verify_patch_node` stores it; detail builder uses it to show `"installed: N package(s)"`. Log rotation detail now shows `"rotated: N file(s) via logrotate"` or `"rotated: N file(s) manually"`. Disk cleanup detail shows cleaned paths + before/after disk usage %.
 
-**33 graph tests pass. 1969 total tests, no regressions.**
+Also fixed 5 Playwright test assertions using old nav link names ("Approvals" → "Approval Queue", "Dashboard" → "Fleet Dashboard", "Batches" → "Batch History") left stale from the UI redesign.
 
-## Files Changed (graph fix)
-- `errander/agent/graph.py` (MODIFIED — `enriched_vm_plans` state field; `_effective_vm_plans()` helper; `enrich_plan_node` writes to `enriched_vm_plans`; 5 post-enrich consumers updated; `load_deferred_plan_node` sets `enriched_vm_plans`)
+**1969 tests passing, 0 failures.**
+
+## Files Changed (detail string fix)
+- `errander/agent/subgraphs/patching.py` (MODIFIED — `changed_packages` field added to `PatchingGraphState`; `verify_patch_node` returns `changed_packages`)
+- `errander/agent/vm_graph.py` (MODIFIED — patching, log_rotation, disk_cleanup detail builders rewritten)
+- `tests/agent/test_deferred_replay.py` (FIXED — `vm_plans` → `enriched_vm_plans` assertion)
+- `tests/agent/test_enrich_plan.py` (FIXED — `vm_plans` → `enriched_vm_plans` assertion)
+- `tests/ui/test_approvals_playwright.py` (FIXED — stale nav link name assertions)
+- `tests/ui/test_web_ui.py` (FIXED — stale nav link name assertions)
+- `tests/ui/test_settings_playwright.py` (FIXED — stale nav link name assertion)
+- `tests/ui/test_inventory_playwright.py` (FIXED — stale nav link name assertion)
 
 ---
 

@@ -254,7 +254,7 @@ async def test_enrich_plan_node_fans_out_per_vm() -> None:
         ],
     }
     result = await enrich_plan_node(state, ssh_manager=ssh)
-    enriched = result["vm_plans"]
+    enriched = result["enriched_vm_plans"]
     assert len(enriched) == 2
     # v1 patching → has preview with packages
     v1_actions = enriched[0]["planned_actions"]

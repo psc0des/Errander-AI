@@ -1,5 +1,15 @@
 # Errander-AI — Lessons Learned
 
+## 2026-05-18 — Audit detail strings must use POST-execution state, not pre-execution assessment counts
+
+`vm_graph.py` detail builders were reading `pending_updates` (packages found before patching) and `version_snapshot` (snapshot taken before patching) — both pre-execution counts. They both showed the same number, making the detail look like nothing happened. The real post-execution data (`changed_packages` — the dict of packages that actually changed version) was computed in `verify_patch_node` but only logged, never stored in state.
+
+Rule: every action's detail string must come from the verification/outcome phase of the sub-graph, not the assessment/snapshot phase. Add a state field to capture it if one doesn't exist. The detail string must be able to answer "what happened?" not "what did we find?".
+
+## 2026-05-18 — Test assertions against rendered text must be updated when UI labels change
+
+When the UI nav was redesigned ("Approvals" → "Approval Queue", "Dashboard" → "Fleet Dashboard"), 5 Playwright tests kept the old link names. They passed during the redesign session because Playwright tests weren't run against the new UI HTML. Rule: after any UI text change (nav labels, button text, headings), search `tests/ui/` for the old strings and update them in the same commit.
+
 ## 2026-05-18 — LangGraph append-only reducers silently double entries when replacement nodes write to the same key
 
 `enrich_plan_node` was designed to REPLACE the per-VM plans with enriched versions (exact package names/versions). It returned `{"vm_plans": enriched_plans}`. But `vm_plans` in `BatchGraphState` is annotated with the append-only `_merge_vm_plans` reducer — so the enriched list was appended to the raw list, doubling every entry. With 1 VM: `[raw_plan, enriched_plan]` = "2 VMs planned" for 1 physical VM.

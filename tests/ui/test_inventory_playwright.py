@@ -126,7 +126,7 @@ class TestInventoryPageLoad:
 
     def test_dashboard_nav_link_visible(self, page: Page, inventory_base_url: str) -> None:
         page.goto(f"{inventory_base_url}/ui/inventory")
-        expect(page.get_by_role("link", name="Dashboard")).to_be_visible()
+        expect(page.get_by_role("link", name="Fleet Dashboard")).to_be_visible()
 
     def test_empty_state_message(self, page: Page, inventory_empty_url: str) -> None:
         page.goto(f"{inventory_empty_url}/ui/inventory")

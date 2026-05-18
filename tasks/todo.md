@@ -1,3 +1,14 @@
+## Fix — audit log detail strings for patching / log_rotation / disk_cleanup (2026-05-18, COMPLETED)
+
+- [x] `patching.py` — added `changed_packages: dict[str, str]` to `PatchingGraphState`; `verify_patch_node` now returns `changed_packages` (old→new per package that actually changed)
+- [x] `vm_graph.py` patching detail — uses `changed_packages` to show `"installed: N package(s)"` or `"no package versions changed"` instead of pre-execution counts
+- [x] `vm_graph.py` log_rotation detail — distinguishes `"logrotate"` key (system logrotate ran) from per-file keys; shows `"rotated: N file(s) via logrotate"` or `"rotated: N file(s) manually"`
+- [x] `vm_graph.py` disk_cleanup detail — shows `"cleaned: apt-cache, journal, /tmp"` + `"/ : 45% → 38%"` disk usage change
+- [x] Fixed 5 stale Playwright test assertions left from UI redesign (Approvals→Approval Queue, Dashboard→Fleet Dashboard, Batches→Batch History)
+- [x] 1969 tests passing
+
+---
+
 ## Bug fix — vm_plans duplicate due to append-only reducer + enrich_plan_node (2026-05-18, COMPLETED)
 
 - [x] Diagnosed "2 VMs planned" for 1 physical VM — `enrich_plan_node` returned `{"vm_plans": enriched}` which the append-only LangGraph reducer doubled to `[raw, enriched]`

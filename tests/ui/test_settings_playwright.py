@@ -105,7 +105,7 @@ class TestSettingsPageLoad:
 
     def test_dashboard_nav_link_visible(self, page: Page, settings_base_url: str) -> None:
         page.goto(f"{settings_base_url}/ui/settings")
-        expect(page.get_by_role("link", name="Dashboard")).to_be_visible()
+        expect(page.get_by_role("link", name="Fleet Dashboard")).to_be_visible()
 
 
 # ---------------------------------------------------------------------------

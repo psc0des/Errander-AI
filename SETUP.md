@@ -765,12 +765,49 @@ environments:
 
 > **Skip if you don't use ELK.** Without it the agent reads `journalctl` directly from each VM via SSH. ELK adds aggregated log error counts and error summaries to the probe digest and `--ask` analysis.
 
-If you have an Elasticsearch endpoint (Elastic Cloud, self-hosted, or OpenSearch):
+#### Check if auth is required
+
+```bash
+curl http://<elasticsearch-host>:9200/_cluster/health
+```
+
+- **Returns JSON** — no auth required, skip the API key steps below and leave `ERRANDER_ELK_API_KEY` blank.
+- **Returns 401** — security is enabled, follow the steps below to create an API key.
+
+#### Create a scoped API key (if auth is required)
+
+First, find your `elastic` user password — check your docker-compose file or the container's first-startup logs:
+
+```bash
+docker logs <elasticsearch-container> 2>&1 | grep -i password
+# or
+grep -i elastic_password /path/to/docker-compose.yml
+```
+
+Then create a read-only API key scoped to Errander:
+
+```bash
+curl -u elastic:<password> -X POST http://<elasticsearch-host>:9200/_security/api_key \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "errander-ai",
+    "role_descriptors": {
+      "errander": {
+        "cluster": ["monitor"],
+        "indices": [{"names": ["*"], "privileges": ["read"]}]
+      }
+    }
+  }'
+```
+
+Copy the `encoded` field from the response — that is your API key.
+
+#### Add to `.env`
 
 ```
 ERRANDER_ELK_BASE_URL=http://<elasticsearch-host>:9200
-ERRANDER_ELK_API_KEY=<your-api-key>           # omit if no auth required
-ERRANDER_ELK_INDEX_PATTERN=filebeat-*,logstash-*   # default; change if needed
+ERRANDER_ELK_API_KEY=<encoded value from above>   # omit entirely if no auth required
+ERRANDER_ELK_INDEX_PATTERN=filebeat-*,logstash-*  # default; change if needed
 ```
 
 Add these to your `.env`. Leave `ERRANDER_ELK_BASE_URL` blank or omit it to disable.

@@ -875,7 +875,35 @@ uv run python -m errander --check-targets <your-env-name>
 
 This confirms SSH access, sudo permissions, OS detection, and binary paths for every VM in the environment.
 
-If you installed Docker wrappers or the service restart wrapper in the Optional sections above, complete Part 2 of each section now — add the inventory config block, then re-run `--check-targets` to confirm wrapper readiness.
+**5b. If you installed Docker wrappers** — add this to each environment block in `inventory.yaml`, then re-run `--check-targets`:
+
+```yaml
+actions:
+  docker_prune:
+    enabled: true
+    command_mode: wrapper   # or direct_sudo for lab/pre-prod
+```
+
+```bash
+uv run python -m errander --check-targets <your-env-name>
+```
+
+**5c. If you installed the service restart wrapper** — add this to each environment block in `inventory.yaml`, then re-run `--check-targets`:
+
+```yaml
+actions:
+  service_restart:
+    enabled: true
+    restartable_units:
+      - nginx        # replace with your actual units
+      - gunicorn
+```
+
+```bash
+uv run python -m errander --check-targets <your-env-name>
+```
+
+`--check-targets` verifies wrapper presence, sudoers entry, and (for service restart) that the on-target allowlist matches your `restartable_units`. Any drift is reported as a warning.
 
 ---
 

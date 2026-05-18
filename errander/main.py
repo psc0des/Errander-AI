@@ -639,6 +639,7 @@ async def run_check_targets(env_name: str, inventory_path: Path) -> int:
     Read-only — no mutation of target VMs. Exit code 0 if all ready, 1 if any blocked.
     """
     from errander.config.schema import validate_inventory
+    from errander.config.settings import load_settings
     from errander.execution.ssh import SSHConnectionManager
     from errander.execution.target_validation import check_target, render_readiness_report
 
@@ -653,7 +654,16 @@ async def run_check_targets(env_name: str, inventory_path: Path) -> int:
         print(f"Unknown environment: {env_name}")
         return 1
 
-    ssh_manager = SSHConnectionManager()
+    try:
+        settings = load_settings()
+    except Exception as exc:  # noqa: BLE001
+        print(f"Error loading settings: {exc}")
+        return 1
+
+    ssh_manager = SSHConnectionManager(
+        known_hosts_path=settings.ssh_known_hosts_path,
+        strict_host_keys=settings.ssh_strict_host_keys,
+    )
     results = []
     docker_prune_cfg = env.actions.get("docker_prune")
     docker_mode = (
@@ -769,7 +779,10 @@ async def run_env_probe_main(env_name: str, inventory_path: Path) -> int:
     audit_store = AuditStore(settings.audit_db_url, strict_mode=(settings.audit_mode == "strict"))
     disk_history_store = VMDiskHistoryStore(settings.audit_db_url)
     baseline_store = BaselineStore(settings.audit_db_url)
-    ssh_manager = SSHConnectionManager()
+    ssh_manager = SSHConnectionManager(
+        known_hosts_path=settings.ssh_known_hosts_path,
+        strict_host_keys=settings.ssh_strict_host_keys,
+    )
     executor = SandboxExecutor(ssh_manager=ssh_manager, dry_run=False)
 
     slack: SlackClient | None = None

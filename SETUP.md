@@ -334,17 +334,20 @@ Errander supports three Docker modes per environment (`actions.docker_prune.comm
 
 ### Part 1 — Install wrapper on each target VM *(do this now, after Step 3)*
 
-The script requires root on the target. Run it from your **laptop** using your admin SSH credentials — the same way you normally access the target for admin tasks:
+Two steps — copy from the controller, then run on the target:
+
+**From the controller** — copy using the errander key (no admin key needed on the controller):
 
 ```bash
-# Run from your laptop (where your admin SSH key lives)
-scp errander/scripts/install-docker-wrappers.sh <admin-user>@<target>:/tmp/
-ssh <admin-user>@<target> "sudo bash /tmp/install-docker-wrappers.sh"
+scp -i ~/.ssh/errander_prod scripts/install-docker-wrappers.sh errander@<target>:/tmp/
 ```
 
-> **Already on the target as root?** Run the script directly without scp: copy the contents of `scripts/install-docker-wrappers.sh` from the repo and paste it into a file, or transfer it via whatever method you normally use. Then run `bash install-docker-wrappers.sh`.
+**On the target** — SSH in as your admin user and run as root:
 
-> **Why not use the errander key?** The errander sudoers is intentionally narrow — it only covers specific operational commands, not arbitrary scripts. Adding `sudo bash /tmp/script.sh` to sudoers would be unsafe: `/tmp` is world-writable, so any user could replace the script and escalate to root.
+```bash
+ssh <admin-user>@<target>
+sudo bash /tmp/install-docker-wrappers.sh
+```
 
 > **Lab / pre-prod shortcut only:** Set `command_mode: direct_sudo` in `inventory.yaml`. You may then add `/usr/bin/docker` to the main sudoers file. The agent will log a warning every batch. Do not use `direct_sudo` in production.
 
@@ -388,17 +391,20 @@ Service restart is operator-triggered only — Errander does not auto-restart se
 
 ### Part 1 — Install wrapper on each target VM *(do this now, after Step 3)*
 
-The restart wrapper enforces a per-VM allowlist so Errander can only restart pre-approved units. The script requires root on the target. Run it from your **laptop** using your admin SSH credentials — the same way you normally access the target for admin tasks:
+The restart wrapper enforces a per-VM allowlist so Errander can only restart pre-approved units. Two steps — copy from the controller, then run on the target:
+
+**From the controller** — copy using the errander key (no admin key needed on the controller):
 
 ```bash
-# Run from your laptop (where your admin SSH key lives)
-scp errander/scripts/install-systemctl-restart-wrapper.sh <admin-user>@<target>:/tmp/
-ssh <admin-user>@<target> "sudo bash /tmp/install-systemctl-restart-wrapper.sh nginx gunicorn redis-server"
+scp -i ~/.ssh/errander_prod scripts/install-systemctl-restart-wrapper.sh errander@<target>:/tmp/
 ```
 
-> **Already on the target as root?** Run the script directly: `bash /tmp/install-systemctl-restart-wrapper.sh nginx gunicorn redis-server`
+**On the target** — SSH in as your admin user and run as root:
 
-> **Why not use the errander key?** The errander sudoers is intentionally narrow — it only covers specific operational commands, not arbitrary scripts. Adding `sudo bash /tmp/script.sh` to sudoers would be unsafe: `/tmp` is world-writable, so any user could replace the script and escalate to root.
+```bash
+ssh <admin-user>@<target>
+sudo bash /tmp/install-systemctl-restart-wrapper.sh nginx gunicorn redis-server
+```
 
 Replace `nginx gunicorn redis-server` with the units this VM is allowed to restart. The allowlist is written to `/etc/errander/restart-allowlist` (one unit per line, mode 644).
 

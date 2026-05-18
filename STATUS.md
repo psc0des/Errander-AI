@@ -4,6 +4,20 @@
 2026-05-18
 
 ## Current Phase
+**Bug fix — vm_plans duplicate entries from LangGraph append-only reducer (2026-05-18).**
+
+`enrich_plan_node` wrote enriched VM plans back to `vm_plans`, which uses an append-only LangGraph reducer. This doubled every VM entry (raw plan + enriched plan), causing "2 VMs planned" for a single-VM inventory and showing the same VM twice in approval cards.
+
+Fix: added `enriched_vm_plans` field to `BatchGraphState` (no reducer = last-write-wins), `enrich_plan_node` now writes to it, and a new `_effective_vm_plans(state)` helper lets all post-enrich consumers prefer it. `load_deferred_plan_node` also updated to set `enriched_vm_plans`.
+
+**33 graph tests pass. 1969 total tests, no regressions.**
+
+## Files Changed (graph fix)
+- `errander/agent/graph.py` (MODIFIED — `enriched_vm_plans` state field; `_effective_vm_plans()` helper; `enrich_plan_node` writes to `enriched_vm_plans`; 5 post-enrich consumers updated; `load_deferred_plan_node` sets `enriched_vm_plans`)
+
+---
+
+## Previous Phase
 **UI redesign — "Sovereign Architect" design system from Stitch project 695805871329192760 (2026-05-18).**
 
 Replaced the dark theme UI with the agreed Stitch design: light surfaces, deep indigo sidebar (`#1e1b4b`), Space Grotesk headlines, JetBrains Mono for system data, gradient buttons (primary `#3525cd` → secondary `#712ae2` at 135°), no 1px borders anywhere. Also wired the missing "Test Connection" button on the Settings page (endpoint existed but had no UI trigger).

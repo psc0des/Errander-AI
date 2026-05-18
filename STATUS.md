@@ -4,23 +4,18 @@
 2026-05-18
 
 ## Current Phase
-**OSS readiness review — SETUP.md/RUN.md polish + `--check-targets` sudo false-positive fix (2026-05-18).**
+**UI redesign — "Sovereign Architect" design system from Stitch project 695805871329192760 (2026-05-18).**
 
-Fixed `target_validation.py` incorrectly sudo-checking read-only binaries (e.g. `/usr/bin/find`, `/usr/bin/stat`, `/bin/systemctl`) that never go through `sudo -n` in real execution. The fix uses `PRIVILEGED_PATHS` from `privilege.py` as the authoritative set — only binaries in that registry are sudo-checked. This eliminates the `sudo -n denied for: /usr/bin/find` false block in `--check-targets`.
+Replaced the dark theme UI with the agreed Stitch design: light surfaces, deep indigo sidebar (`#1e1b4b`), Space Grotesk headlines, JetBrains Mono for system data, gradient buttons (primary `#3525cd` → secondary `#712ae2` at 135°), no 1px borders anywhere. Also wired the missing "Test Connection" button on the Settings page (endpoint existed but had no UI trigger).
 
-Also fixed this session (earlier commits):
-- `main.py`: `--bootstrap-known-hosts` now auto-appends `ERRANDER_SSH_KNOWN_HOSTS` to `.env`
-- `main.py`: `run_check_targets` + `run_probe_now` now load settings and pass `known_hosts_path` to `SSHConnectionManager`
-- `SETUP.md`: wrapper install flow, ELK API key creation, Step 6 inline verification steps, sequencing fixes
-- `RUN.md`: 9 missing CLI flags, corrected `--migrate-inventory` description
+Also diagnosed and fixed during live DR dry-run validation:
+- Stale lock at `.errander-locks/` (not `/var/lib/errander/locks/`) was blocking VM execution
+- Metrics server bound to `127.0.0.1` — requires `ERRANDER_UI_BIND=0.0.0.0` + `ERRANDER_UI_USER` + `ERRANDER_UI_PASSWORD` in `.env` for public-IP access
 
-**1969 tests passing, 0 skipped, 0 regressions.**
+**1969 tests passing — UI-only change, no logic touched.**
 
-## Files Changed (OSS readiness review)
-- `errander/execution/target_validation.py` (MODIFIED — import PRIVILEGED_PATHS; `_SUDO_REQUIRED_BINARIES` frozenset; sudo check skips non-privileged binaries)
-- `errander/main.py` (MODIFIED — `--bootstrap-known-hosts` auto-appends to `.env`; `run_check_targets`/`run_probe_now` pass SSH settings to manager)
-- `SETUP.md` (MODIFIED — wrapper install flow, ELK API key creation, Step 6 verification sequence, sequencing fixes)
-- `RUN.md` (MODIFIED — 9 missing CLI flags added, `--migrate-inventory` description corrected)
+## Files Changed (UI redesign)
+- `errander/observability/metrics.py` (MODIFIED — full CSS rewrite to Sovereign Architect design system; font swap to Space Grotesk + Inter + JetBrains Mono; sidebar redesigned to deep indigo; Test LLM button added to Settings page)
 
 ---
 

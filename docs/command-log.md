@@ -1,5 +1,29 @@
 # Errander-AI Command Log
 
+## UI redesign — Sovereign Architect (2026-05-18)
+
+```bash
+# Live dry-run validation on DR env (diagnosed stale lock, then cleared it)
+uv run python -m errander --run-now --env dr --inventory inventory.yaml --dry-run --force --force-reason "initial dry-run validation"
+rm /errander/.errander-locks/dr_vm-dr-01.lock
+
+# Second dry-run after lock cleared — 3 actions simulated OK
+uv run python -m errander --run-now --env dr --inventory inventory.yaml --dry-run --force --force-reason "initial dry-run validation"
+
+# Live run (no --dry-run) — hit approval gate, diagnosed UI bind issue
+uv run python -m errander --run-now --env dr --inventory inventory.yaml --force --force-reason "live validation"
+
+# Syntax-check metrics.py after CSS rewrite
+uv run python -c "import errander.observability.metrics; print('OK')"
+
+# Commit + push
+git add errander/observability/metrics.py STATUS.md tasks/todo.md tasks/lessons.md docs/command-log.md
+git commit -m "feat: Sovereign Architect UI redesign + Test LLM button"
+git push
+```
+
+---
+
 ## OSS readiness review (2026-05-18)
 
 ```bash

@@ -1,3 +1,19 @@
+## UI redesign — Sovereign Architect design system (2026-05-18, COMPLETED)
+
+- [x] Replace dark theme CSS with Stitch "Sovereign Architect" light design system
+- [x] Font swap: IBM Plex → Space Grotesk (headlines) + Inter (UI) + JetBrains Mono (system data)
+- [x] Sidebar redesigned: deep indigo `#1e1b4b`, accent bar on active item, gradient badge
+- [x] Cards: 4px left accent bar instead of top border; ambient shadow; no 1px lines
+- [x] Buttons: gradient (primary→secondary 135°) for primary actions; pill badges
+- [x] Tables: alternating surface tints instead of divider lines
+- [x] Approval cards: gradient left bar, surface-lowest background, shadow
+- [x] Test LLM button wired to `/ui/settings/test-llm` (was endpoint-only, no UI trigger)
+- [x] All 8 POST buttons verified wired to correct routes with CSRF protection
+- [x] Diagnosed `ERRANDER_UI_BIND=0.0.0.0` requirement for public IP access
+- [x] Diagnosed stale lock path: `.errander-locks/` (relative to CWD), not `/var/lib/errander/locks/`
+
+---
+
 ## OSS readiness review — SETUP.md/RUN.md polish + --check-targets fix (2026-05-18, COMPLETED)
 
 - [x] `RUN.md` — added 9 missing CLI flags, corrected `--migrate-inventory` description (writes `.migrated`, not stdout diff)

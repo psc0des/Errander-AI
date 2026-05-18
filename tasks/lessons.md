@@ -1,5 +1,17 @@
 # Errander-AI — Lessons Learned
 
+## 2026-05-18 — Stitch design work never makes it to the repo unless explicitly committed
+
+Designed the "Sovereign Architect" UI in Stitch MCP but never applied it to the codebase — the Stitch project stays in Stitch as a mockup until someone writes the code. Next session found the old UI still running. Rule: after any design session in Stitch (or Figma, or Canva), immediately implement and commit the changes in the same session, or record a clear TODO item that the design work is pending code application.
+
+## 2026-05-18 — Metrics server bind address defaults to 127.0.0.1 — public IP requires explicit config
+
+`start_metrics_server()` defaults `bind_address="127.0.0.1"`. Accessing `http://<public-ip>:9090` fails silently even with firewall open — the socket never listens on the NIC. Requires `ERRANDER_UI_BIND=0.0.0.0` in `.env`. The non-loopback path also requires `ERRANDER_UI_USER` + `ERRANDER_UI_PASSWORD` (enforced by `metrics.py:1593`).
+
+## 2026-05-18 — Lock files are at `.errander-locks/` (CWD-relative), not `/var/lib/errander/locks/`
+
+`main.py:340` initialises `FileLocker(lock_dir=Path(".errander-locks"))` — relative to the working directory the agent process was launched from (`/errander`). The docstring example shows `/var/lib/errander/locks` but that is not what the code uses. To clear a stale lock: `rm /errander/.errander-locks/<env>_<vm>.lock`.
+
 ## 2026-05-18 — sudo-check all required_binaries causes false blocks for read-only commands
 
 `check_target()` tested `sudo -n {binary} --version` for every binary in the action manifests, but many binaries (e.g. `/usr/bin/find`, `/usr/bin/stat`, `/bin/systemctl`) never go through `sudo -n` in real execution — they run as the errander user without privilege escalation. This caused `--check-targets` to report `sudo -n denied for: /usr/bin/find` and block targets that were actually ready.

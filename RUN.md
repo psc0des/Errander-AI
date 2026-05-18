@@ -245,11 +245,11 @@ If you have an existing inventory using the old flat `docker_command_mode: wrapp
 uv run python -m errander --migrate-inventory inventory.yaml
 ```
 
-Prints a unified diff. Review it, then apply:
+This writes `inventory.yaml.migrated` alongside the original. Review it, then apply:
 
 ```bash
-uv run python -m errander --migrate-inventory inventory.yaml > /tmp/inventory-new.yaml
-mv inventory.yaml inventory.yaml.bak && mv /tmp/inventory-new.yaml inventory.yaml
+diff inventory.yaml inventory.yaml.migrated
+mv inventory.yaml inventory.yaml.bak && mv inventory.yaml.migrated inventory.yaml
 ```
 
 ---
@@ -346,17 +346,28 @@ The agent will not interrupt a running SSH command mid-flight — it finishes th
 | `--live` | Execute real commands on VMs |
 | `--force` | Bypass maintenance window check |
 | `--force-reason <text>` | Required with `--force` — logged to audit trail |
-| `--check-llm` | Test vLLM connectivity and print latency |
+| `--log-level <level>` | Log verbosity: DEBUG, INFO, WARNING, ERROR (default: INFO) |
+| `--check-inventory` | Validate inventory.yaml and print a target summary, then exit |
+| `--check-llm` | Test LLM endpoint connectivity and print latency |
 | `--check-targets <env>` | Pre-flight SSH + sudo + OS readiness check for all VMs in an environment |
+| `--bootstrap-known-hosts <env>` | Connect once to every VM in ENV and pin SSH host keys, then exit |
 | `--probe-now <env>` | Run daily probe (disk, drift, failed logins, journal errors, ELK) — read-only |
 | `--ask "<question>"` | LLM fleet analysis (Layer A — read-only, no changes) |
-| `--migrate-inventory <path>` | Convert a legacy flat inventory to the nested `actions:` format; prints a diff |
+| `--migrate-inventory <path>` | Convert a legacy flat inventory to the nested `actions:` format; writes `<path>.migrated` |
 | `--restart-service <env>` | Trigger an operator-initiated service restart (HIGH risk, Slack approval required) |
 | `--unit <name>` | Systemd unit name to restart (required with `--restart-service`) |
 | `--vm <vm-id>` | Single VM target by name (use with `--restart-service`) |
 | `--vms <id1,id2>` | Comma-separated VM names (use with `--restart-service`) |
+| `--generate-secrets-key` | Generate a new `ERRANDER_SECRETS_KEY` and print it, then exit |
+| `--encrypt <value>` | Encrypt a value with `ERRANDER_SECRETS_KEY` and print the `enc:v1:` blob, then exit |
 | `--audit --batches` | Print recent batch history |
 | `--audit --batch-id <id>` | Print all events for a specific batch |
+| `--audit --vm-id <id>` | Filter audit events by VM ID |
+| `--audit --action-type <type>` | Filter audit events by action type (e.g. `disk_cleanup`) |
+| `--audit --event-type <type>` | Filter audit events by event type (e.g. `action_started`) |
+| `--audit --last <n>` | Maximum audit events to return (default: 50) |
+| `--measure-durability` | Print durability snapshot (completion rate, duration/approval percentiles) |
+| `--window-days <n>` | Look-back window for `--measure-durability` in days (default: 14) |
 
 ---
 

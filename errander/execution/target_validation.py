@@ -12,12 +12,19 @@ import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal
 
+from errander.execution.privilege import PRIVILEGED_PATHS
+
 if TYPE_CHECKING:
     from errander.execution.ssh import SSHConnectionManager
 
 logger = logging.getLogger(__name__)
 
 Verdict = Literal["ready", "warnings", "blocked"]
+
+# Binaries that require sudo -n in real execution — derived from the authoritative
+# PRIVILEGED_PATHS registry. Anything absent from this set runs without escalation
+# (e.g. find, stat, /bin/systemctl is-active) and must not be sudo-checked.
+_SUDO_REQUIRED_BINARIES: frozenset[str] = frozenset(PRIVILEGED_PATHS.values())
 
 
 @dataclass
@@ -125,8 +132,13 @@ async def check_target(
         if not present:
             readiness.issues.append(f"missing binary: {binary}")
 
-    # 2. Sudo -n capability per binary
+    # 2. Sudo -n capability for binaries that actually need privilege escalation.
+    # Only binaries in _SUDO_REQUIRED_BINARIES go through sudo -n in real execution;
+    # read-only binaries (find, stat, /bin/systemctl is-active, etc.) do not.
     for binary in binaries:
+        if binary not in _SUDO_REQUIRED_BINARIES:
+            readiness.sudo_ok[binary] = True  # no sudo needed for this binary
+            continue
         if not readiness.binaries_present.get(binary):
             readiness.sudo_ok[binary] = False
             continue

@@ -4,6 +4,27 @@
 2026-05-18
 
 ## Current Phase
+**OSS readiness review — SETUP.md/RUN.md polish + `--check-targets` sudo false-positive fix (2026-05-18).**
+
+Fixed `target_validation.py` incorrectly sudo-checking read-only binaries (e.g. `/usr/bin/find`, `/usr/bin/stat`, `/bin/systemctl`) that never go through `sudo -n` in real execution. The fix uses `PRIVILEGED_PATHS` from `privilege.py` as the authoritative set — only binaries in that registry are sudo-checked. This eliminates the `sudo -n denied for: /usr/bin/find` false block in `--check-targets`.
+
+Also fixed this session (earlier commits):
+- `main.py`: `--bootstrap-known-hosts` now auto-appends `ERRANDER_SSH_KNOWN_HOSTS` to `.env`
+- `main.py`: `run_check_targets` + `run_probe_now` now load settings and pass `known_hosts_path` to `SSHConnectionManager`
+- `SETUP.md`: wrapper install flow, ELK API key creation, Step 6 inline verification steps, sequencing fixes
+- `RUN.md`: 9 missing CLI flags, corrected `--migrate-inventory` description
+
+**1969 tests passing, 0 skipped, 0 regressions.**
+
+## Files Changed (OSS readiness review)
+- `errander/execution/target_validation.py` (MODIFIED — import PRIVILEGED_PATHS; `_SUDO_REQUIRED_BINARIES` frozenset; sudo check skips non-privileged binaries)
+- `errander/main.py` (MODIFIED — `--bootstrap-known-hosts` auto-appends to `.env`; `run_check_targets`/`run_probe_now` pass SSH settings to manager)
+- `SETUP.md` (MODIFIED — wrapper install flow, ELK API key creation, Step 6 verification sequence, sequencing fixes)
+- `RUN.md` (MODIFIED — 9 missing CLI flags added, `--migrate-inventory` description corrected)
+
+---
+
+## Previous Phase
 **Phase D1 — Full prompt + context capture in ai_decisions (2026-05-18).**
 
 Added three nullable columns to `ai_decisions` (`prompt_full`, `context_snapshot`, `model_params`) so every LLM decision call records the full rendered prompt, a JSON snapshot of the VM info + available actions passed to the LLM, and the model parameters used. Enables future replay and AI quality evaluation (Project D).

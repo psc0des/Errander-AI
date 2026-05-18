@@ -1,5 +1,13 @@
 # Errander-AI — Lessons Learned
 
+## 2026-05-18 — sudo-check all required_binaries causes false blocks for read-only commands
+
+`check_target()` tested `sudo -n {binary} --version` for every binary in the action manifests, but many binaries (e.g. `/usr/bin/find`, `/usr/bin/stat`, `/bin/systemctl`) never go through `sudo -n` in real execution — they run as the errander user without privilege escalation. This caused `--check-targets` to report `sudo -n denied for: /usr/bin/find` and block targets that were actually ready.
+
+Fix: use `PRIVILEGED_PATHS.values()` from `privilege.py` as the authoritative set of binaries that need sudo. Skip the sudo check for any binary not in that set. `PRIVILEGED_PATHS` is the single source of truth — if a binary goes through `privileged()` at execution time, it's in that dict.
+
+Rule: when adding a new action that has read-only binaries, ensure they do NOT appear in `PRIVILEGED_PATHS` — that's the signal that skip the sudo check.
+
 ## 2026-05-18 — aiosqlite execute_fetchall returns Iterable[Row], not list[Row]
 
 `execute_fetchall` is typed as returning `Iterable[Row]`, so mypy rejects direct integer indexing (`rows[0][0]`). Fix: wrap with `list()` before indexing: `list(await db.execute_fetchall(...))`. Iterating with `for row in rows:` works without the wrap. When writing mypy-strict async SQLite code, use `for row in rows` when possible; only wrap with `list()` when you must index.

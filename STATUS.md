@@ -1,18 +1,35 @@
 # Errander-AI — Project Status
 
 ## Last Updated
-2026-05-17
+2026-05-18
 
 ## Current Phase
-**SRE audit fix Round 3 — service_restart wrapper probed generically in check_target (2026-05-17).**
+**Phase A1 + B1/B2 — Durability measurement, orphan-batch scan, and VMFactsStore (2026-05-18).**
 
-The SRE noted that `check_target()` handled docker_prune wrappers specifically but never probed `service_restart`'s `errander-systemctl-restart --check`. Added a generic manifest-driven wrapper probe loop (step 3) before the docker-specific block (step 4): iterates `BUILTIN_ACTIONS`, skips `docker_prune` (handled by command_mode), skips disabled actions, calls `sudo -n {wrapper} --check` for every `required_wrappers` entry. Service_restart wrapper readiness now surfaces in `TargetReadiness.wrappers_ok` and appears in `--check-targets` output alongside docker. 3 new tests added.
+Implemented in parallel:
+- **A1.2** Startup orphan-batch scanner (`errander/observability/startup_scan.py`): detects BATCH_STARTED with no terminal event in last 7 days, logs each as WARNING, increments `BATCHES_INTERRUPTED_TOTAL` counter.
+- **A1.3** `--measure-durability` CLI: queries `audit_events` for batch completion rate, batch duration percentiles (p50/p95/max), approval wait stats, per-action duration stats, and interrupted-batch count. No external deps — pure SQL against existing schema.
+- **A1** Prometheus counters: `AGENT_STARTS_TOTAL` and `BATCHES_INTERRUPTED_TOTAL` added to `metrics.py`. Startup instrumentation in `main.py` increments both on agent start.
+- **B1** `VMFactsStore` (`errander/safety/vm_facts.py`): three Pydantic fact models (`ActionOutcomeFact`, `VMRebootPatternFact`, `ActionRejectionFact`) derived on demand from existing `audit_events` rows. No new tables.
+- **B2** `OperatorAssistant` fact integration: `_build_context()` queries `VMFactsStore` when provided; `_format_prompt()` adds "Operational history facts" section; `_fallback_response()` flags low success-rate and frequently-rejected actions.
 
-**1901 tests passing, 0 skipped, 0 regressions.**
+**`--measure-durability` output (current errander.sqlite, 14-day window): zero batches — BATCHES_INTERRUPTED_TOTAL stays 0.**
 
-## Files Changed (SRE audit fix Round 3)
-- `errander/execution/target_validation.py` (MODIFIED — generic wrapper probe loop in step 3; docker block renumbered step 4)
-- `tests/execution/test_target_validation.py` (MODIFIED — 3 new service_restart wrapper tests)
+**1953 tests passing, 0 skipped, 0 regressions.**
+
+## Files Changed (Phase A1 + B1/B2)
+- `errander/observability/metrics.py` (MODIFIED — AGENT_STARTS_TOTAL, BATCHES_INTERRUPTED_TOTAL counters)
+- `errander/observability/startup_scan.py` (NEW — scan_orphan_batches)
+- `errander/observability/durability.py` (NEW — DurabilityReport, compute_durability_report, print_durability_report)
+- `errander/safety/vm_facts.py` (NEW — VMFactsStore, ActionOutcomeFact, VMRebootPatternFact, ActionRejectionFact)
+- `errander/models/analysis.py` (MODIFIED — action_outcomes, reboot_patterns, frequently_rejected_actions fields on FleetContext)
+- `errander/agent/operator_assistant.py` (MODIFIED — vm_facts_store param, fact integration in _build_context/_format_prompt/_fallback_response)
+- `errander/main.py` (MODIFIED — --measure-durability/--window-days CLI, startup instrumentation)
+- `pyproject.toml` (MODIFIED — ruff per-file-ignores for tests/ and scripts/)
+- `tests/observability/test_startup_scan.py` (NEW — 8 tests)
+- `tests/observability/test_measure_durability.py` (NEW — 15 tests)
+- `tests/safety/test_vm_facts.py` (NEW — 21 tests)
+- `tests/agent/test_operator_assistant_facts.py` (NEW — 13 tests)
 
 ---
 

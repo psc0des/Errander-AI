@@ -1,3 +1,25 @@
+## Phase A1 + B1/B2 — Durability measurement + VMFactsStore (2026-05-18, COMPLETED)
+
+### Phase A1 (measurement)
+- [x] `errander/observability/metrics.py` — AGENT_STARTS_TOTAL, BATCHES_INTERRUPTED_TOTAL counters
+- [x] `errander/observability/startup_scan.py` — scan_orphan_batches (7-day window, warns per orphan)
+- [x] `errander/observability/durability.py` — DurabilityReport dataclass + compute + print
+- [x] `errander/main.py` — --measure-durability / --window-days CLI + startup instrumentation
+- [x] 8 tests for startup_scan, 15 for durability, all pass
+- [x] `--measure-durability` output: 0 batches in window (clean DB), BATCHES_INTERRUPTED_TOTAL=0
+
+### Phase B1 (VMFactsStore)
+- [x] `errander/safety/vm_facts.py` — ActionOutcomeFact, VMRebootPatternFact, ActionRejectionFact + VMFactsStore
+- [x] 21 tests covering success rate, sample cap, reboot pattern, rejection window
+
+### Phase B2 (OperatorAssistant fact integration)
+- [x] `errander/models/analysis.py` — 3 new FleetContext fields (TYPE_CHECKING guarded imports)
+- [x] `errander/agent/operator_assistant.py` — vm_facts_store param, _build_context queries, _format_prompt section, _fallback_response flags
+- [x] 13 tests for context building + prompt formatting + fallback
+- [x] 1953 tests passing, ruff clean, mypy clean
+
+---
+
 ## v1-action-opt-in plan (2026-05-17, in progress)
 
 ### Commit 1.1 — manifest model, registry, nested actions schema

@@ -47,6 +47,10 @@ select = ["E", "F", "I", "N", "W", "UP", "B", "SIM", "TCH"]
 # web/ files contain inline HTML/CSS template strings that cannot be split
 # without harming readability. E501 is exempt for these template files only.
 "errander/web/*.py" = ["E501"]
+# Test files: TCH rules cause false positives for pytest fixture injection
+# (pytest resolves annotations at runtime via get_type_hints).
+"tests/**/*.py" = ["TCH"]
+"scripts/**/*.py" = ["E501", "UP017"]
 
 [tool.mypy]
 python_version = "3.12"

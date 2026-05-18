@@ -7,8 +7,16 @@ They are never used to drive execution decisions in Layer B.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
+
+if TYPE_CHECKING:
+    from errander.safety.vm_facts import (
+        ActionOutcomeFact,
+        ActionRejectionFact,
+        VMRebootPatternFact,
+    )
 
 
 class AssistantResponse(BaseModel):
@@ -48,3 +56,6 @@ class FleetContext:
     last_batch_at: str | None
     total_failures_7d: int
     sources_used: list[str] = field(default_factory=list)
+    action_outcomes: list[ActionOutcomeFact] = field(default_factory=list)
+    reboot_patterns: list[VMRebootPatternFact] = field(default_factory=list)
+    frequently_rejected_actions: list[ActionRejectionFact] = field(default_factory=list)

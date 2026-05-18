@@ -1,5 +1,30 @@
 # Errander-AI Command Log
 
+## Phase A1 + B1/B2 — Durability measurement + VMFactsStore (2026-05-18)
+
+```bash
+# Run new tests
+uv run pytest tests/observability/test_startup_scan.py tests/observability/test_measure_durability.py tests/safety/test_vm_facts.py tests/agent/test_operator_assistant_facts.py -x -q
+# 52 passed
+
+# Full suite
+uv run pytest -x -q  # 1953 passed
+
+# Lint + typecheck
+uv run ruff check errander/observability/durability.py errander/observability/startup_scan.py errander/safety/vm_facts.py errander/agent/operator_assistant.py errander/models/analysis.py errander/main.py
+uv run ruff check --fix tests/agent/test_operator_assistant_facts.py tests/observability/test_measure_durability.py tests/observability/test_startup_scan.py tests/safety/test_vm_facts.py errander/safety/vm_facts.py errander/agent/operator_assistant.py
+uv run mypy errander/observability/durability.py errander/observability/startup_scan.py errander/safety/vm_facts.py errander/agent/operator_assistant.py errander/models/analysis.py errander/main.py
+# Success: no issues found in 6 source files
+
+# CLI deliverable
+uv run python -m errander --measure-durability
+# Errander durability snapshot  window: last 14 days
+#   Batches: total=0  completed=0  interrupted=0  completion_rate=0.0%
+#   (no events in DB within 14-day window — BATCHES_INTERRUPTED_TOTAL=0)
+```
+
+---
+
 ## SRE audit fix Round 3 — service_restart wrapper probed in check_target (2026-05-17)
 
 ```bash

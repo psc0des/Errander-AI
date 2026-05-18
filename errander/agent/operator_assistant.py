@@ -29,6 +29,12 @@ if TYPE_CHECKING:
     from errander.safety.audit import AuditStore
     from errander.safety.baselines import BaselineStore
     from errander.safety.disk_history import VMDiskHistoryStore
+    from errander.safety.vm_facts import (
+        ActionOutcomeFact,
+        ActionRejectionFact,
+        VMFactsStore,
+        VMRebootPatternFact,
+    )
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +63,7 @@ class OperatorAssistant:
         llm_client: LLMClient | None = None,
         prometheus_client: PrometheusClient | None = None,
         elk_client: ElkClient | None = None,
+        vm_facts_store: VMFactsStore | None = None,
     ) -> AssistantResponse:
         """Build fleet context, call LLM, return structured findings.
 
@@ -70,6 +77,7 @@ class OperatorAssistant:
             env_name=env_name,
             prometheus_client=prometheus_client,
             elk_client=elk_client,
+            vm_facts_store=vm_facts_store,
         )
 
         if llm_client is not None:
@@ -94,6 +102,7 @@ class OperatorAssistant:
         env_name: str | None,
         prometheus_client: PrometheusClient | None = None,
         elk_client: ElkClient | None = None,
+        vm_facts_store: VMFactsStore | None = None,
     ) -> FleetContext:
         """Query stores and assemble a FleetContext for the LLM prompt."""
         from errander.models.events import EventType
@@ -206,6 +215,22 @@ class OperatorAssistant:
         if any(v.journal_errors or v.failed_services for v in vm_summaries):
             sources.append("live_ssh_probe")
 
+        action_outcomes: list[ActionOutcomeFact] = []
+        reboot_patterns: list[VMRebootPatternFact] = []
+        rejection_facts: list[ActionRejectionFact] = []
+        if vm_facts_store is not None:
+            try:
+                for target in targets:
+                    outcomes = await vm_facts_store.action_outcomes(target.name)
+                    action_outcomes.extend(outcomes)
+                    rp = await vm_facts_store.reboot_pattern(target.name)
+                    if rp is not None:
+                        reboot_patterns.append(rp)
+                rejection_facts = await vm_facts_store.rejection_facts()
+                sources.append("vm_facts")
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("VMFactsStore query failed: %s", exc)
+
         return FleetContext(
             env_name=env_name,
             vm_summaries=vm_summaries,
@@ -213,6 +238,9 @@ class OperatorAssistant:
             last_batch_at=last_batch_at,
             total_failures_7d=total_failures,
             sources_used=sources,
+            action_outcomes=action_outcomes,
+            reboot_patterns=reboot_patterns,
+            frequently_rejected_actions=rejection_facts,
         )
 
 
@@ -251,6 +279,35 @@ def _format_prompt(question: str, context: FleetContext) -> str:
             lines.append(f"  Failed services: {', '.join(vm.failed_services)}")
         if vm.journal_errors and not vm.elk_errors:
             lines.append(f"  Journal errors: {'; '.join(vm.journal_errors[:3])}")
+
+    if context.action_outcomes or context.reboot_patterns or context.frequently_rejected_actions:
+        lines += ["", "## Operational history facts"]
+
+        if context.action_outcomes:
+            lines.append("Action outcomes (last 20 attempts per VM/action):")
+            for fact in context.action_outcomes:
+                pct = f"{fact.success_rate * 100:.0f}%"
+                base = f"  {fact.vm_id} {fact.action_type}: {pct} success ({fact.sample_size} samples)"
+                if fact.last_failure_reason:
+                    base += f" — last failure: {fact.last_failure_reason[:80]}"
+                lines.append(base)
+
+        if context.reboot_patterns:
+            lines.append("Reboot patterns after patching:")
+            for rp in context.reboot_patterns:
+                lines.append(
+                    f"  {rp.vm_id}: {rp.reboots_required_after_patching} reboots required"
+                    f" ({rp.sample_size} patching runs)"
+                )
+
+        if context.frequently_rejected_actions:
+            lines.append("Frequently rejected actions (last 90 days):")
+            for rf in context.frequently_rejected_actions:
+                reasons = "; ".join(rf.rejection_reasons[:3])
+                lines.append(
+                    f"  {rf.action_type}: {rf.rejections_last_90d} rejection(s)"
+                    + (f" — {reasons[:120]}" if reasons else "")
+                )
 
     if context.sources_used:
         lines += ["", "## Data sources consulted", ", ".join(context.sources_used)]
@@ -332,15 +389,40 @@ def _fallback_response(question: str, context: FleetContext) -> AssistantRespons
             "investigate with: systemctl status <unit>"
         )
 
+    low_success_rate_facts = [
+        f for f in context.action_outcomes if f.success_rate < 0.8 and f.sample_size >= 3
+    ]
+    if low_success_rate_facts:
+        for f in low_success_rate_facts:
+            findings.append(
+                f"{f.vm_id} {f.action_type}: {f.success_rate * 100:.0f}% success rate"
+                + (f" — last failure: {f.last_failure_reason}" if f.last_failure_reason else "")
+            )
+        recommendations.append(
+            "Review audit trail for VMs with low action success rates"
+        )
+
+    frequently_rejected = [
+        f for f in context.frequently_rejected_actions if f.rejections_last_90d >= 2
+    ]
+    if frequently_rejected:
+        for rf in frequently_rejected:
+            findings.append(
+                f"{rf.action_type} has been rejected {rf.rejections_last_90d} time(s) in 90 days"
+            )
+        recommendations.append(
+            "Investigate why actions are being repeatedly rejected before scheduling"
+        )
+
     if not findings:
         findings.append("No significant signals detected in available store data")
         recommendations.append(
             "Run --probe-now to collect fresh signal data before re-asking"
         )
 
-    if alarm_vms or drift_vms:
+    if alarm_vms or drift_vms or low_success_rate_facts:
         risk = "high"
-    elif disk_vms or login_vms:
+    elif disk_vms or login_vms or frequently_rejected:
         risk = "medium"
     else:
         risk = "low"

@@ -241,6 +241,25 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Show recent batch summaries instead of individual events (use with --audit)",
     )
+
+    # Durability measurement
+    parser.add_argument(
+        "--measure-durability",
+        action="store_true",
+        dest="measure_durability",
+        help=(
+            "Print a durability snapshot (batch completion rate, duration percentiles, "
+            "approval wait, per-action stats) from the audit trail and exit"
+        ),
+    )
+    parser.add_argument(
+        "--window-days",
+        type=int,
+        default=14,
+        dest="window_days",
+        help="Look-back window in days for --measure-durability (default: 14)",
+    )
+
     return parser.parse_args(argv)
 
 
@@ -1088,6 +1107,33 @@ async def run_audit_query(args: argparse.Namespace, settings: Settings) -> int:
 
 
 # ---------------------------------------------------------------------------
+# Durability measurement CLI  (Phase A1.3)
+# ---------------------------------------------------------------------------
+
+
+async def run_measure_durability(db_path: str, window_days: int = 14) -> int:
+    """Print a durability snapshot from audit_events and exit."""
+    import aiosqlite
+
+    from errander.observability.durability import (
+        compute_durability_report,
+        print_durability_report,
+    )
+    from errander.safety.migrations import run_migrations
+
+    try:
+        async with aiosqlite.connect(db_path) as db:
+            await run_migrations(db)
+            report = await compute_durability_report(db, window_days)
+    except Exception as exc:  # noqa: BLE001
+        print(f"Error reading audit database '{db_path}': {exc}")
+        return 1
+
+    print_durability_report(report)
+    return 0
+
+
+# ---------------------------------------------------------------------------
 # Batch runner
 # ---------------------------------------------------------------------------
 
@@ -1470,6 +1516,10 @@ async def async_main(args: argparse.Namespace) -> int:
     if args.audit:
         return await run_audit_query(args, settings)
 
+    # --- Durability measurement: query and exit ---
+    if args.measure_durability:
+        return await run_measure_durability(settings.audit_db_url, args.window_days)
+
     inventory_path: Path = args.inventory
     if not inventory_path.exists():
         logger.error("Inventory file not found", path=str(inventory_path))
@@ -1524,6 +1574,15 @@ async def async_main(args: argparse.Namespace) -> int:
         strict_mode=(settings.audit_mode == "strict"),
     )
     await audit_store.__aenter__()
+
+    # --- Phase A1: startup instrumentation ---
+    from errander.observability.metrics import AGENT_STARTS_TOTAL, BATCHES_INTERRUPTED_TOTAL
+    AGENT_STARTS_TOTAL.inc()
+
+    from errander.observability.startup_scan import scan_orphan_batches
+    _interrupted = await scan_orphan_batches(audit_store._db)  # type: ignore[arg-type]
+    if _interrupted > 0:
+        BATCHES_INTERRUPTED_TOTAL.inc(_interrupted)
 
     # --- Deferred execution store (same DB file, separate table) ---
     deferred_store = DeferredExecutionStore(settings.audit_db_url)

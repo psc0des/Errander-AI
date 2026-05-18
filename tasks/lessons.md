@@ -1,5 +1,23 @@
 # Errander-AI — Lessons Learned
 
+## 2026-05-18 — aiosqlite execute_fetchall returns Iterable[Row], not list[Row]
+
+`execute_fetchall` is typed as returning `Iterable[Row]`, so mypy rejects direct integer indexing (`rows[0][0]`). Fix: wrap with `list()` before indexing: `list(await db.execute_fetchall(...))`. Iterating with `for row in rows:` works without the wrap. When writing mypy-strict async SQLite code, use `for row in rows` when possible; only wrap with `list()` when you must index.
+
+## 2026-05-18 — async context manager double-await kills aiosqlite thread
+
+`await aiosqlite.connect()` starts the connection thread. Using the result in `async with ... as db:` calls `__aenter__` which tries to start the thread again → `RuntimeError: threads can only be started once`. Fix: either use `aiosqlite.connect()` (no await) as the `async with` target, or use `@asynccontextmanager` to wrap the open connection. Never do `async with await connection`.
+
+## 2026-05-18 — mypy loop narrowing: re-annotate loop variable with str | None
+
+When a variable is first assigned `str` in a loop and then narrowed by `if x is None: continue`, mypy thinks the variable has type `str` in subsequent iterations. Assigning `str | None` on the next loop start then conflicts. Fix: either annotate explicitly `x: str | None = ...` at the top of the loop body, or rename the variable to break the cross-iteration scope tracking.
+
+## 2026-05-18 — ruff TC rules give false positives in test files (pytest fixture injection)
+
+Ruff's TCH (type-checking imports) rules suggest moving imports to `TYPE_CHECKING` blocks when they're only used in annotations. In test files, `pytest` is imported for `LogCaptureFixture` annotations — if moved to `TYPE_CHECKING`, pytest's fixture injection (which calls `get_type_hints()` at runtime) will fail. Fix: add `"tests/**/*.py" = ["TCH"]` to `[tool.ruff.lint.per-file-ignores]` in `pyproject.toml`.
+
+
+
 ## 2026-05-17 — Pydantic model_validator(mode="before") receives raw dict from YAML
 
 When YAML loads a nested structure, Pydantic's `mode="before"` validator receives the raw Python dict before field coercion. Check for key existence with `isinstance(data, dict) and "key" in data` — don't try to access `data.key`. The `mode="after"` validator runs on the already-constructed model instance and can read `self.field_name` normally.

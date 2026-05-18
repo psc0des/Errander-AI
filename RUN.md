@@ -174,6 +174,36 @@ timestamp            event             vm_id         action       detail
 
 ---
 
+## Durability measurement
+
+View completion rates, duration percentiles, and interrupted-batch count for the last N days:
+
+```bash
+uv run python -m errander --measure-durability
+# (default window: 14 days)
+
+uv run python -m errander --measure-durability --window-days 30
+```
+
+Example output:
+```
+Errander durability snapshot  window: last 14 days
+  Batches:        total=47   completed=45   interrupted=2   completion_rate=95.7%
+  Batch duration (BATCH_STARTED -> BATCH_COMPLETED):
+    p50=184.3s   p95=421.0s   max=603.2s   sample=45
+  Approval wait (APPROVAL_REQUESTED -> first of GRANTED/REJECTED/TIMEOUT):
+    p50=42.1s   p95=310.0s   max=1800.0s   sample=47
+    auto-rejected=2   granted=43   rejected=2
+  Longest actions (ACTION_STARTED -> ACTION_COMPLETED/FAILED):
+    patching             p95=340.2s   max=601.4s   sample=38
+    disk_cleanup         p95=62.4s    max=120.1s   sample=47
+  Agent restarts during a live batch: 2
+```
+
+The "Agent restarts during a live batch" count equals interrupted batches — a non-zero value means the agent process died mid-batch. This is also reported via `BATCHES_INTERRUPTED_TOTAL` in Prometheus at startup.
+
+---
+
 ## Health checks
 
 ### Check the agent is running

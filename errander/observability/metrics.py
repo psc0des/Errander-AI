@@ -127,6 +127,18 @@ WAVE_HEALTH_CHECKS = Counter(
     registry=REGISTRY,
 )
 
+AGENT_STARTS_TOTAL = Counter(
+    "errander_agent_starts_total",
+    "Agent process startups (proxy for restart frequency)",
+    registry=REGISTRY,
+)
+
+BATCHES_INTERRUPTED_TOTAL = Counter(
+    "errander_batches_interrupted_total",
+    "Batches detected on startup with BATCH_STARTED but no terminal event",
+    registry=REGISTRY,
+)
+
 
 # ---------------------------------------------------------------------------
 # Design system

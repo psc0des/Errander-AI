@@ -233,7 +233,7 @@ All Slack communication is outbound HTTPS. No webhooks, no inbound traffic.
 | Audit Trail | SQLite (v1) | PostgreSQL planned for v2 |
 | Observability | Prometheus + Web UI | `/metrics`, `/health`, `/ui` on port 9090 |
 | VM Locking | File-based (v1) | Valkey (Redis fork) planned for v2 |
-| Testing | pytest + pytest-asyncio + Playwright | 1901 tests |
+| Testing | pytest + pytest-asyncio + Playwright | 1953 tests |
 | Linting | ruff | |
 | Type Checking | mypy (strict mode) | |
 | Package Manager | uv | |
@@ -281,7 +281,7 @@ errander/
     scheduler.py            # APScheduler setup
     windows.py              # Maintenance window enforcement
   main.py                   # Entry point
-tests/                      # Mirrors src structure (1901 tests)
+tests/                      # Mirrors src structure (1953 tests)
 deploy/
   vllm/
     docker-compose.yml      # vLLM container (GPU passthrough)
@@ -372,7 +372,7 @@ After starting, visit `http://localhost:9090/ui`:
 ## Key Commands
 
 ```bash
-uv run pytest                                          # Run all 1901 tests
+uv run pytest                                          # Run all 1953 tests
 uv run ruff check .                                    # Lint
 uv run mypy .                                          # Type check
 uv run python -m errander --run-now --env dev --dry-run # Dry-run a batch

@@ -47,3 +47,6 @@ playwright/.local-browsers/
 
 # Local SRE audit working docs (not part of project source)
 ai_sre_*.md
+
+# Observability demo (WIP — not ready to commit)
+demo/observability-demo-env/

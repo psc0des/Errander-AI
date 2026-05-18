@@ -10,7 +10,11 @@ Paired with: `tasks/post-review-implementation-plan.md` (the master plan this se
 
 You reviewed `ai_sre_langgraph_agentic_review.md` with Opus. Code claims in the doc were verified accurate. You and your SRE agreed on a **narrow checkpointing contract**: checkpointing protects workflow durability only, never blindly resumes side-effecting actions. The 10 review items were consolidated into **5 projects + 1 declined** in `tasks/post-review-implementation-plan.md`.
 
-**What was implemented (2026-05-18):** Phase A1 + Project B Phases B1–B2 — DONE. Commit `feat: durability measurement (orphan-batch scan, --measure-durability CLI, VMFactsStore)`. 1953 tests. `--measure-durability` against current DB: 0 batches in window, BATCHES_INTERRUPTED_TOTAL=0.
+**What was implemented (2026-05-18):**
+- Phase A1 + Project B Phases B1–B2 — DONE. Commit `feat: durability measurement (orphan-batch scan, --measure-durability CLI, VMFactsStore)`. 1953 tests.
+- Phase D1 — DONE. Commit `feat: D1 full prompt + context capture in ai_decisions`. 1969 tests. Every `prioritize_actions()` LLM call now records `prompt_full`, `context_snapshot`, `model_params` in `ai_decisions`.
+
+`--measure-durability` against current DB: 0 batches in window, BATCHES_INTERRUPTED_TOTAL=0.
 
 **What to do next:** wait 1–2 weeks for production measurement data, then review against the §4 Project A decision gate to decide whether to build A2–A6.
 

@@ -1,5 +1,17 @@
 # Errander-AI Command Log
 
+## OSS readiness review (2026-05-18)
+
+```bash
+# Full suite after target_validation.py fix
+uv run pytest tests/ -x -q --tb=short  # 1969 passed
+
+# Push all session commits
+git push  # RUN.md, SETUP.md, main.py, target_validation.py changes
+```
+
+---
+
 ## Phase D1 — Full prompt + context capture in ai_decisions (2026-05-18)
 
 ```bash

@@ -1,3 +1,13 @@
+## OSS readiness review — SETUP.md/RUN.md polish + --check-targets fix (2026-05-18, COMPLETED)
+
+- [x] `RUN.md` — added 9 missing CLI flags, corrected `--migrate-inventory` description (writes `.migrated`, not stdout diff)
+- [x] `SETUP.md` — wrapper install flow (scp from controller, run as admin on target), ELK API key creation command, Step 6 inline verification sequence, sequencing fixes for Optional sections
+- [x] `errander/main.py` — `--bootstrap-known-hosts` auto-appends `ERRANDER_SSH_KNOWN_HOSTS` to `.env`; `run_check_targets` + `run_probe_now` load settings and pass `known_hosts_path`/`strict_host_keys` to `SSHConnectionManager`
+- [x] `errander/execution/target_validation.py` — import `PRIVILEGED_PATHS`; `_SUDO_REQUIRED_BINARIES` frozenset; sudo check skips non-privileged binaries (find, stat, /bin/systemctl, /bin/journalctl)
+- [x] 1969 tests passing, no regressions
+
+---
+
 ## Phase D1 — Full prompt + context capture in ai_decisions (2026-05-18, COMPLETED)
 
 - [x] `errander/safety/ai_audit.py` — 3 new columns (`prompt_full`, `context_snapshot`, `model_params`) in `_CREATE_TABLE_SQL`, `AIDecision` dataclass, `_INSERT_SQL`, `_SELECT_SQL`, `_row_to_decision()`; `initialize()` adds columns idempotently via ALTER TABLE

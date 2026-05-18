@@ -112,7 +112,7 @@ powershell -ExecutionPolicy Bypass -File errander\scripts\bootstrap.ps1
 
 Once complete, **skip to Step 2** — the script handles everything in Step 1.
 
-> **git not installed yet?** Download it from [git-scm.com/download/win](https://git-scm.com/download/win), install, then run the command above.
+> **git not installed yet?** Download it from [git-scm.com/download/win](https://git-scm.com/download/win), install, reopen PowerShell, then run the commands above.
 
 <details>
 <summary>Manual installation (reference / fallback)</summary>
@@ -144,7 +144,13 @@ git clone https://github.com/psc0des/Errander-AI.git errander
 bash errander/scripts/bootstrap.sh
 ```
 
-Once complete, **skip to Step 2** — the script handles everything in Step 1.
+Once complete, **cd into the repo directory** before continuing:
+
+```bash
+cd errander
+```
+
+**Skip to Step 2** — the script handles everything else in Step 1.
 
 <details>
 <summary>Manual installation (reference / fallback)</summary>
@@ -314,8 +320,7 @@ sudo -u errander sudo -n /usr/bin/id  # should FAIL — /usr/bin/id is not in su
 ## Optional: Docker cleanup
 
 > **Skip this entire section if you are not enabling docker_prune.**
-> In your `inventory.yaml`, leave `actions.docker_prune.enabled: false` and continue to the next section.
-> Run `uv run python -m errander --check-targets <env>` after setup to verify readiness.
+> When you create `inventory.yaml` in Step 5, leave `actions.docker_prune.enabled: false` (the default). Continue to the next section.
 
 The Docker group is effectively root: a user in it can mount the host filesystem via `docker run`. Do **not** add `errander` to the docker group, and do not grant raw `sudo /usr/bin/docker` in production.
 
@@ -327,16 +332,29 @@ Errander supports three Docker modes per environment (`actions.docker_prune.comm
 | `direct_sudo` | `sudo -n /usr/bin/docker ...` directly | Lab / pre-prod only. Logs a warning every batch. |
 | `disabled` | No docker_prune actions planned or executed | Envs without Docker |
 
-### Wrapper scripts *(production mode — required when `command_mode: wrapper`)*
+### Part 1 — Install wrapper on each target VM *(do this now, after Step 3)*
 
 Copy the install script to the target and run it as root:
 
 ```bash
-scp scripts/install-docker-wrappers.sh errander@<target>:/tmp/
-ssh errander@<target> "sudo bash /tmp/install-docker-wrappers.sh"
+scp -i ~/.ssh/errander_prod scripts/install-docker-wrappers.sh errander@<target>:/tmp/
+ssh -i ~/.ssh/errander_prod errander@<target> "sudo bash /tmp/install-docker-wrappers.sh"
 ```
 
-Then verify from the controller:
+> **Lab / pre-prod shortcut only:** Set `command_mode: direct_sudo` in `inventory.yaml`. You may then add `/usr/bin/docker` to the main sudoers file. The agent will log a warning every batch. Do not use `direct_sudo` in production.
+
+### Part 2 — Configure inventory and verify *(complete this during Step 5 and Step 6)*
+
+In your `inventory.yaml`, enable docker_prune and set the command mode:
+
+```yaml
+actions:
+  docker_prune:
+    enabled: true
+    command_mode: wrapper   # or direct_sudo for lab/pre-prod
+```
+
+Then verify from the controller (after Step 5 — requires `inventory.yaml` and `.env`):
 
 ```bash
 uv run python -m errander --check-targets <env>
@@ -354,31 +372,29 @@ system_df_begin
 system_df_end
 ```
 
-> **Lab / pre-prod shortcut only:** Set `command_mode: direct_sudo` in `inventory.yaml`. You may then add `/usr/bin/docker` to the main sudoers file. The agent will log a warning every batch. Do not use `direct_sudo` in production.
-
 ---
 
 ## Optional: Service restart {#optional-service-restart}
 
 > **Skip this entire section if you are not enabling service_restart.**
-> In your `inventory.yaml`, leave `actions.service_restart.enabled: false` and continue to Step 4.
+> When you create `inventory.yaml` in Step 5, leave `actions.service_restart.enabled: false` (the default). Continue to Step 4.
 
 Service restart is operator-triggered only — Errander does not auto-restart services. The operator runs `--restart-service` after seeing a failed unit in the Slack probe digest, and must approve the restart in Slack before it executes. Risk tier: **HIGH** — Slack approval is always required.
 
-### Install the wrapper on each target VM
+### Part 1 — Install wrapper on each target VM *(do this now, after Step 3)*
 
 The restart wrapper enforces a per-VM allowlist so Errander can only restart pre-approved units:
 
 ```bash
-scp scripts/install-systemctl-restart-wrapper.sh errander@<target>:/tmp/
-ssh errander@<target> "sudo bash /tmp/install-systemctl-restart-wrapper.sh nginx gunicorn redis-server"
+scp -i ~/.ssh/errander_prod scripts/install-systemctl-restart-wrapper.sh errander@<target>:/tmp/
+ssh -i ~/.ssh/errander_prod errander@<target> "sudo bash /tmp/install-systemctl-restart-wrapper.sh nginx gunicorn redis-server"
 ```
 
 Replace `nginx gunicorn redis-server` with the units this VM is allowed to restart. The allowlist is written to `/etc/errander/restart-allowlist` (one unit per line, mode 644).
 
-### Configure your inventory
+### Part 2 — Configure inventory and verify *(complete this during Step 5 and Step 6)*
 
-Add a `service_restart` block to each environment that needs it. `restartable_units` is required when `enabled: true`:
+Add a `service_restart` block to each environment in your `inventory.yaml`. `restartable_units` is required when `enabled: true`:
 
 ```yaml
 actions:
@@ -390,7 +406,7 @@ actions:
       - redis-server
 ```
 
-### Verify readiness
+Then verify from the controller (after Step 5 — requires `inventory.yaml` and `.env`):
 
 ```bash
 uv run python -m errander --check-targets <env>
@@ -398,7 +414,7 @@ uv run python -m errander --check-targets <env>
 
 This verifies the wrapper exists on each VM, the sudoers entry is correct, and the on-target allowlist matches your inventory `restartable_units`. Drift in either direction is reported as a warning.
 
-### Trigger a restart
+### Trigger a restart *(once Step 5 and Step 6 are complete)*
 
 ```bash
 uv run python -m errander --restart-service production --unit nginx --vm prod-web-01 --dry-run
@@ -760,19 +776,53 @@ environments:
 
 ## Step 6 — Verify everything
 
+Run these in order:
+
+**1. Validate inventory parses correctly** *(no env vars needed)*
+
 ```bash
-# Verify inventory parses correctly (no env vars needed)
 uv run python -m errander --check-inventory
 ```
 
-If you ran `configure.sh`, the LLM connection was already verified as part of setup. To re-verify manually:
+**2. Load env vars** *(required for all remaining commands)*
 
 ```bash
-# Load env vars first — --check-llm needs ERRANDER_LLM_API_KEY
-[ -f ~/.errander.key ] && source ~/.errander.key   # load secrets key if encryption is enabled
+# Linux / Git Bash
 export $(grep -v '^#' .env | xargs)
-uv run python -m errander --check-llm
 ```
+
+```powershell
+# Windows PowerShell
+Get-Content .env | Where-Object { $_ -notmatch "^#" -and $_ -ne "" } | ForEach-Object {
+    $parts = $_ -split "=", 2
+    [System.Environment]::SetEnvironmentVariable($parts[0], $parts[1], "Process")
+}
+```
+
+**3. Verify LLM connectivity**
+
+If you ran `configure.sh`, this was already done. Re-verify any time with:
+
+```bash
+uv run python -m errander --check-llm
+# Expected: Status: OK, Latency: <Xms>, Response: 'OK'
+```
+
+**4. Pin SSH host keys** *(run once per environment — prevents host key prompts during batches)*
+
+```bash
+uv run python -m errander --bootstrap-known-hosts <your-env-name>
+```
+
+**5. Verify target VM readiness**
+
+```bash
+uv run python -m errander --check-targets <your-env-name>
+```
+
+This confirms SSH access, sudo permissions, OS detection, and binary paths for every VM in the environment.
+
+If you installed Docker wrappers or the service restart wrapper in the Optional sections above, complete Part 2 of each section now — add the inventory config block, then re-run `--check-targets` to confirm wrapper readiness.
 
 ---
 
@@ -811,7 +861,18 @@ What happens:
 
 Once dry-run looks correct (replace `<your-env-name>` as above):
 
+**Linux / Git Bash:**
 ```bash
+export $(grep -v '^#' .env | xargs)
+uv run python -m errander --run-now --env <your-env-name> --inventory inventory.yaml --live
+```
+
+**Windows PowerShell:**
+```powershell
+Get-Content .env | Where-Object { $_ -notmatch "^#" -and $_ -ne "" } | ForEach-Object {
+    $parts = $_ -split "=", 2
+    [System.Environment]::SetEnvironmentVariable($parts[0], $parts[1], "Process")
+}
 uv run python -m errander --run-now --env <your-env-name> --inventory inventory.yaml --live
 ```
 
@@ -891,11 +952,10 @@ Point the Task Scheduler action at this `.bat` file instead.
 - Check `sshd` is running: `sudo systemctl status sshd`
 - On Windows: confirm key file permissions are restricted to your user only
 
-**`--check-llm` says UNREACHABLE** *(only relevant if you set up the optional LLM VM)*
-- Confirm vLLM is running: `docker compose -f deploy/vllm/docker-compose.yml ps`
-- Check logs: `docker compose -f deploy/vllm/docker-compose.yml logs --tail 50`
-- Confirm the controller can reach the LLM VM: `curl http://<llm-vm-ip>:8000/health`
-- Check firewall: port 8000 must be open between controller and LLM VM
+**`--check-llm` says UNREACHABLE**
+- Cloud API (OpenAI / Groq / Azure): confirm your API key is correct and `ERRANDER_LLM_BASE_URL` matches the provider's endpoint exactly
+- Ollama: confirm it's running (`systemctl status ollama` or `curl http://localhost:11434/api/tags`)
+- vLLM: confirm the container is up (`docker compose -f deploy/vllm/docker-compose.yml ps`), check logs (`docker compose -f deploy/vllm/docker-compose.yml logs --tail 50`), and confirm port 8000 is reachable from the controller (`curl http://<llm-vm-ip>:8000/health`)
 
 **`Outside maintenance window` error**
 - Add `--force --force-reason "manual test"` to bypass the window check

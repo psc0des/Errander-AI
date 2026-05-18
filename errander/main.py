@@ -591,7 +591,18 @@ async def run_bootstrap_known_hosts(env_name: str, inventory_path: Path) -> int:
         print(f"\n{errors} host(s) failed — check network/SSH access")
         return 1
 
-    print(f"\nDone. Set ERRANDER_SSH_KNOWN_HOSTS={out_path} in your .env")
+    env_file = Path(".env")
+    env_key = "ERRANDER_SSH_KNOWN_HOSTS"
+    if env_file.exists():
+        existing = env_file.read_text()
+        if env_key not in existing:
+            with env_file.open("a") as f:
+                f.write(f"\n{env_key}={out_path}\n")
+            print(f"\nDone. Added {env_key}={out_path} to .env")
+        else:
+            print(f"\nDone. {env_key} already present in .env")
+    else:
+        print(f"\nDone. Set {env_key}={out_path} in your .env")
     return 0
 
 

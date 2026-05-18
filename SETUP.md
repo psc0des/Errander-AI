@@ -867,12 +867,9 @@ uv run python -m errander --check-llm
 uv run python -m errander --bootstrap-known-hosts <your-env-name>
 ```
 
-The command prints: `Done. Set ERRANDER_SSH_KNOWN_HOSTS=/root/.ssh/errander_known_hosts in your .env`
-
-Add that line to `.env` now, then reload env vars before continuing:
+This pins the host keys and automatically adds `ERRANDER_SSH_KNOWN_HOSTS` to your `.env`. Reload env vars before continuing:
 
 ```bash
-echo "ERRANDER_SSH_KNOWN_HOSTS=/root/.ssh/errander_known_hosts" >> .env
 export $(grep -v '^#' .env | xargs)
 ```
 

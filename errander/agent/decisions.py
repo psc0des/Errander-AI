@@ -12,10 +12,11 @@ Decision points:
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 import time
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
@@ -39,6 +40,14 @@ logger = logging.getLogger(__name__)
 
 # Reject LLM output strings that contain shell-like injection patterns (finding #3.2).
 _INJECTION_RE = re.compile(r"[;&|`$(){}\\\n]|\.\./")
+
+
+def _as_float(val: object) -> float | None:
+    """Return val as float if it's numeric, else None — safe for JSON serialization."""
+    if isinstance(val, (int, float)):
+        return float(val)
+    return None
+
 
 @dataclass
 class StoredSignalContext:
@@ -213,6 +222,14 @@ async def prioritize_actions(
                             response_raw=response_raw,
                             outcome=outcome,
                             latency_ms=latency_ms,
+                            prompt_full=prompt,
+                            context_snapshot=json.dumps({
+                                "vm_info": asdict(vm_info),
+                                "available_actions": [str(a) for a in (available_actions or [])],
+                            }),
+                            model_params=json.dumps({
+                                "temperature": _as_float(getattr(llm_client, "_temperature", None)),
+                            }),
                         ))
                     return [
                         Action(
@@ -236,6 +253,14 @@ async def prioritize_actions(
                 response_raw=response_raw,
                 outcome="fallback",
                 latency_ms=latency_ms,
+                prompt_full=prompt,
+                context_snapshot=json.dumps({
+                    "vm_info": asdict(vm_info),
+                    "available_actions": [str(a) for a in (available_actions or [])],
+                }),
+                model_params=json.dumps({
+                    "temperature": _as_float(getattr(llm_client, "_temperature", None)),
+                }),
             ))
         logger.info(
             "LLM unavailable or returned invalid response (policy=%s) — using hardcoded priority",
@@ -254,6 +279,10 @@ async def prioritize_actions(
             prompt_template_id="prioritize_v1",
             prompt_hash="",
             outcome="no_llm",
+            context_snapshot=json.dumps({
+                "vm_info": asdict(vm_info),
+                "available_actions": [str(a) for a in (available_actions or [])],
+            }),
         ))
 
     return _hardcoded_priority(available_actions, vm_info)

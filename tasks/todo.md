@@ -1,3 +1,12 @@
+## Phase D1 — Full prompt + context capture in ai_decisions (2026-05-18, COMPLETED)
+
+- [x] `errander/safety/ai_audit.py` — 3 new columns (`prompt_full`, `context_snapshot`, `model_params`) in `_CREATE_TABLE_SQL`, `AIDecision` dataclass, `_INSERT_SQL`, `_SELECT_SQL`, `_row_to_decision()`; `initialize()` adds columns idempotently via ALTER TABLE
+- [x] `errander/agent/decisions.py` — `json`, `asdict`, `_as_float()` helper; success + fallback call sites pass new fields; no_llm path passes `context_snapshot`
+- [x] `tests/safety/test_ai_audit.py` — 16 tests: schema migration on old table, idempotent ALTER, round-trip log/get for all 3 fields, filters, hash_prompt
+- [x] 1969 tests passing, ruff clean, mypy clean
+
+---
+
 ## Phase A1 + B1/B2 — Durability measurement + VMFactsStore (2026-05-18, COMPLETED)
 
 ### Phase A1 (measurement)

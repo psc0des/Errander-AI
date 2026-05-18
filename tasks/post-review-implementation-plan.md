@@ -2,7 +2,7 @@
 
 Single master plan covering every actionable item from `ai_sre_langgraph_agentic_review.md`. Five projects (A–E), one declined, status legend below.
 
-Status: Phase A1 DONE (2026-05-18). Project B Phases B1+B2 DONE (2026-05-18). Everything else is DESIGN ONLY until decision gates clear.
+Status: Phase A1 DONE (2026-05-18). Project B Phases B1+B2 DONE (2026-05-18). Phase D1 DONE (2026-05-18). Everything else is DESIGN ONLY until decision gates clear.
 
 Last updated: 2026-05-18
 Source review: `ai_sre_langgraph_agentic_review.md`
@@ -492,9 +492,15 @@ From the review:
 
 `AIDecisionStore` (`errander/safety/ai_audit.py:22`) stores `prompt_hash` (16-char SHA-256) and `response_raw`, but **NOT** the full prompt or rendered context. You can detect prompt drift (hash changed) but you cannot replay. **D1 must add full prompt and context-snapshot capture before any replay logic can be built.**
 
-### Phase D1 — Full Prompt + Context Capture · DESIGN ONLY
+### Phase D1 — Full Prompt + Context Capture · **DONE 2026-05-18** (commit below)
 
-**Migration 0007:** add columns to `ai_decisions`:
+Implemented: `prompt_full`, `context_snapshot`, `model_params` added to `ai_decisions`. Schema change is idempotent (ALTER TABLE with suppress on existing DBs; `_CREATE_TABLE_SQL` includes cols for fresh installs). `decisions.py` `prioritize_actions()` records full prompt + context at success and fallback call sites; no_llm path records context only. 16 new tests. 1969 tests total.
+
+Commit: `feat: D1 full prompt + context capture in ai_decisions`
+
+**Original design (for reference):**
+
+**Migration 0007 (implemented as idempotent ALTER TABLE in `AIDecisionStore.initialize()` — not in shared `_MIGRATIONS`):** add columns to `ai_decisions`:
 
 ```sql
 ALTER TABLE ai_decisions ADD COLUMN prompt_full TEXT;

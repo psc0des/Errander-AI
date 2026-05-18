@@ -1,5 +1,22 @@
 # Errander-AI Command Log
 
+## Phase D1 — Full prompt + context capture in ai_decisions (2026-05-18)
+
+```bash
+# New tests
+uv run pytest tests/safety/test_ai_audit.py -v  # 16 passed
+
+# Full suite
+uv run pytest --tb=short -q  # 1969 passed
+
+# Lint + typecheck
+uv run ruff check errander/safety/ai_audit.py errander/agent/decisions.py tests/safety/test_ai_audit.py
+uv run mypy errander/safety/ai_audit.py errander/safety/migrations.py errander/agent/decisions.py
+# All clean
+```
+
+---
+
 ## Phase A1 + B1/B2 — Durability measurement + VMFactsStore (2026-05-18)
 
 ```bash

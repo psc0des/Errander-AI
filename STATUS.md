@@ -4,6 +4,25 @@
 2026-05-18
 
 ## Current Phase
+**Phase D1 — Full prompt + context capture in ai_decisions (2026-05-18).**
+
+Added three nullable columns to `ai_decisions` (`prompt_full`, `context_snapshot`, `model_params`) so every LLM decision call records the full rendered prompt, a JSON snapshot of the VM info + available actions passed to the LLM, and the model parameters used. Enables future replay and AI quality evaluation (Project D).
+
+- `AIDecisionStore.initialize()` creates the columns idempotently via `ALTER TABLE ... ADD COLUMN` (suppresses OperationalError if they already exist — safe for both fresh installs and existing DBs).
+- `_CREATE_TABLE_SQL` includes all three columns for fresh installs.
+- `decisions.py` `prioritize_actions()` now passes `prompt_full=prompt`, `context_snapshot=json.dumps(...)`, `model_params=json.dumps(...)` at success and fallback call sites. The `no_llm` path passes `context_snapshot` only (no prompt was built).
+- New helper `_as_float()` normalizes LLM temperature to `float | None` before JSON serialization (avoids `MagicMock` serialization failure in tests).
+
+**1969 tests passing, 0 skipped, 0 regressions.**
+
+## Files Changed (Phase D1)
+- `errander/safety/ai_audit.py` (MODIFIED — 3 new columns in schema + dataclass + INSERT/SELECT SQL; `initialize()` calls `run_migrations()` + idempotent ALTER TABLE; `_row_to_decision()` reads cols 13/14/15)
+- `errander/agent/decisions.py` (MODIFIED — `import json`, `from dataclasses import asdict`, `_as_float()` helper; success + fallback call sites pass `prompt_full`, `context_snapshot`, `model_params`; no_llm path passes `context_snapshot`)
+- `tests/safety/test_ai_audit.py` (NEW — 16 tests: lifecycle, schema migration, D1 column round-trip, per-field log/get, hash_prompt)
+
+---
+
+## Previous Phase
 **Phase A1 + B1/B2 — Durability measurement, orphan-batch scan, and VMFactsStore (2026-05-18).**
 
 Implemented in parallel:

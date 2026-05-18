@@ -10,12 +10,15 @@ Schema is designed for PostgreSQL migration (TEXT types, ISO timestamps).
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import hashlib
 import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
 import aiosqlite
+
+from errander.safety.migrations import run_migrations
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +37,10 @@ CREATE TABLE IF NOT EXISTS ai_decisions (
     latency_ms  REAL,
     prompt_tokens  INTEGER,
     completion_tokens INTEGER,
-    timestamp   TEXT NOT NULL
+    timestamp   TEXT NOT NULL,
+    prompt_full TEXT,
+    context_snapshot TEXT,
+    model_params TEXT
 )
 """
 
@@ -48,14 +54,16 @@ _INSERT_SQL = """
 INSERT INTO ai_decisions
     (batch_id, vm_id, decision_type, model, base_url,
      prompt_template_id, prompt_hash, response_raw, outcome,
-     latency_ms, prompt_tokens, completion_tokens, timestamp)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     latency_ms, prompt_tokens, completion_tokens, timestamp,
+     prompt_full, context_snapshot, model_params)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 """
 
 _SELECT_SQL = """
 SELECT batch_id, vm_id, decision_type, model, base_url,
        prompt_template_id, prompt_hash, response_raw, outcome,
-       latency_ms, prompt_tokens, completion_tokens, timestamp
+       latency_ms, prompt_tokens, completion_tokens, timestamp,
+       prompt_full, context_snapshot, model_params
 FROM ai_decisions
 """
 
@@ -93,6 +101,9 @@ class AIDecision:
     prompt_tokens: int | None = None
     completion_tokens: int | None = None
     timestamp: datetime = field(default_factory=lambda: datetime.now(tz=UTC))
+    prompt_full: str | None = None
+    context_snapshot: str | None = None
+    model_params: str | None = None
 
     @staticmethod
     def hash_prompt(prompt: str) -> str:
@@ -115,11 +126,26 @@ class AIDecisionStore:
         self._db_path = db_path
         self._db: aiosqlite.Connection | None = None
 
+    # D1 columns added idempotently — ALTER TABLE raises OperationalError if column
+    # already exists (fresh install via _CREATE_TABLE_SQL).  suppress() is correct here.
+    _D1_COLUMNS = (
+        "prompt_full TEXT",
+        "context_snapshot TEXT",
+        "model_params TEXT",
+    )
+
     async def initialize(self) -> None:
         self._db = await aiosqlite.connect(self._db_path)
         await self._db.execute(_CREATE_TABLE_SQL)
         for idx in _CREATE_INDEX_SQL:
             await self._db.execute(idx)
+        await self._db.commit()
+        await run_migrations(self._db)
+        for col_def in self._D1_COLUMNS:
+            with contextlib.suppress(aiosqlite.OperationalError):
+                await self._db.execute(
+                    f"ALTER TABLE ai_decisions ADD COLUMN {col_def}"
+                )
         await self._db.commit()
 
     async def close(self) -> None:
@@ -156,6 +182,9 @@ class AIDecisionStore:
             decision.prompt_tokens,
             decision.completion_tokens,
             decision.timestamp.isoformat(),
+            decision.prompt_full,
+            decision.context_snapshot,
+            decision.model_params,
         )
         for attempt in (1, 2):
             try:
@@ -217,4 +246,7 @@ def _row_to_decision(row: aiosqlite.Row) -> AIDecision:
         prompt_tokens=int(str(row[10])) if row[10] is not None else None,
         completion_tokens=int(str(row[11])) if row[11] is not None else None,
         timestamp=datetime.fromisoformat(str(row[12])),
+        prompt_full=str(row[13]) if row[13] is not None else None,
+        context_snapshot=str(row[14]) if row[14] is not None else None,
+        model_params=str(row[15]) if row[15] is not None else None,
     )

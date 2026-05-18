@@ -12,6 +12,14 @@
 
 When a variable is first assigned `str` in a loop and then narrowed by `if x is None: continue`, mypy thinks the variable has type `str` in subsequent iterations. Assigning `str | None` on the next loop start then conflicts. Fix: either annotate explicitly `x: str | None = ...` at the top of the loop body, or rename the variable to break the cross-iteration scope tracking.
 
+## 2026-05-18 — ALTER TABLE in shared migrations is unsafe when table may not exist yet
+
+When `ai_decisions` is created by `AIDecisionStore` (not in the shared `_MIGRATIONS` list), adding an `ALTER TABLE ai_decisions` migration to `_MIGRATIONS` means `AuditStore.initialize()` (which calls `run_migrations()`) will try to alter a table that may not exist yet — crash on first startup. Fix: keep `ai_decisions` schema evolution inside `AIDecisionStore.initialize()` using `contextlib.suppress(aiosqlite.OperationalError)` for each `ALTER TABLE ... ADD COLUMN`. This is idempotent: OperationalError is raised if the column already exists (fresh install created it via `_CREATE_TABLE_SQL`), suppressed silently.
+
+## 2026-05-18 — MagicMock breaks json.dumps for attributes fetched via getattr
+
+`getattr(mock_obj, "_temperature", None)` returns a MagicMock, not None — the `default=None` only fires if the attribute doesn't exist at all. `json.dumps({"temperature": MagicMock()})` then raises `TypeError: Object of type MagicMock is not JSON serializable`. Fix: normalize via a type guard before encoding: `_as_float(val)` returns `float(val)` if `isinstance(val, (int, float))` else `None`.
+
 ## 2026-05-18 — ruff TC rules give false positives in test files (pytest fixture injection)
 
 Ruff's TCH (type-checking imports) rules suggest moving imports to `TYPE_CHECKING` blocks when they're only used in annotations. In test files, `pytest` is imported for `LogCaptureFixture` annotations — if moved to `TYPE_CHECKING`, pytest's fixture injection (which calls `get_type_hints()` at runtime) will fail. Fix: add `"tests/**/*.py" = ["TCH"]` to `[tool.ruff.lint.per-file-ignores]` in `pyproject.toml`.

@@ -1,3 +1,14 @@
+## Bug fix — vm_plans duplicate due to append-only reducer + enrich_plan_node (2026-05-18, COMPLETED)
+
+- [x] Diagnosed "2 VMs planned" for 1 physical VM — `enrich_plan_node` returned `{"vm_plans": enriched}` which the append-only LangGraph reducer doubled to `[raw, enriched]`
+- [x] Added `enriched_vm_plans` field to `BatchGraphState` (no reducer = last-write-wins)
+- [x] `enrich_plan_node` now writes to `enriched_vm_plans` instead of `vm_plans`
+- [x] Added `_effective_vm_plans(state)` helper — returns `enriched_vm_plans` if set, else `vm_plans`
+- [x] All post-enrich consumers updated: `generate_plan_artifact_node`, approval gate, `verify_plan_hash_node`, wave dispatch, `load_deferred_plan_node`
+- [x] 33 graph tests pass, no regressions
+
+---
+
 ## UI redesign — Sovereign Architect design system (2026-05-18, COMPLETED)
 
 - [x] Replace dark theme CSS with Stitch "Sovereign Architect" light design system

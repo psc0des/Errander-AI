@@ -1,5 +1,17 @@
 # Errander-AI Command Log
 
+## Bug fix — vm_plans duplicate (2026-05-18)
+
+```bash
+# Import check after graph.py changes
+uv run python -c "import errander.agent.graph; print('OK')"
+
+# Graph tests
+uv run pytest tests/agent/test_graph.py -x -q --tb=short  # 33 passed
+```
+
+---
+
 ## UI redesign — Sovereign Architect (2026-05-18)
 
 ```bash

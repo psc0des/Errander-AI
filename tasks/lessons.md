@@ -1,5 +1,13 @@
 # Errander-AI — Lessons Learned
 
+## 2026-05-18 — LangGraph append-only reducers silently double entries when replacement nodes write to the same key
+
+`enrich_plan_node` was designed to REPLACE the per-VM plans with enriched versions (exact package names/versions). It returned `{"vm_plans": enriched_plans}`. But `vm_plans` in `BatchGraphState` is annotated with the append-only `_merge_vm_plans` reducer — so the enriched list was appended to the raw list, doubling every entry. With 1 VM: `[raw_plan, enriched_plan]` = "2 VMs planned" for 1 physical VM.
+
+Fix: write replacement data to a SEPARATE state key without a reducer (`enriched_vm_plans`). Add a `_effective_vm_plans(state)` helper that post-enrich consumers call — returns `enriched_vm_plans` if set, otherwise falls back to raw `vm_plans`. The append-only reducer stays intact for the fan-out planning phase.
+
+Rule: whenever a LangGraph node is meant to REPLACE accumulated state (not extend it), it must write to a different key. Never return the same key as an append-only reducer field from a node that runs after the fan-out completes.
+
 ## 2026-05-18 — Stitch design work never makes it to the repo unless explicitly committed
 
 Designed the "Sovereign Architect" UI in Stitch MCP but never applied it to the codebase — the Stitch project stays in Stitch as a mockup until someone writes the code. Next session found the old UI still running. Rule: after any design session in Stitch (or Figma, or Canva), immediately implement and commit the changes in the same session, or record a clear TODO item that the design work is pending code application.

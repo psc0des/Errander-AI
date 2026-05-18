@@ -82,6 +82,16 @@ def _merge_sre_list(
     return [*existing, *incoming]
 
 
+def _effective_vm_plans(state: "BatchGraphState") -> list[dict[str, object]]:
+    """Return enriched_vm_plans if set (post-enrich), otherwise raw vm_plans.
+
+    enrich_plan_node writes to enriched_vm_plans (not vm_plans) to avoid
+    double-appending via the append-only reducer on vm_plans.
+    """
+    enriched = state.get("enriched_vm_plans")  # type: ignore[attr-defined]
+    return list(enriched) if enriched else list(state.get("vm_plans", []))  # type: ignore[attr-defined]
+
+
 # --- State ---
 
 class BatchGraphState(TypedDict, total=False):
@@ -102,6 +112,10 @@ class BatchGraphState(TypedDict, total=False):
 
     # Per-VM plans from the planning phase (append-only via reducer)
     vm_plans: Annotated[list[dict[str, object]], _merge_vm_plans]
+
+    # Enriched VM plans after enrich_plan_node runs (replaces vm_plans for all post-enrich
+    # consumers so the append-only reducer on vm_plans doesn't double the entries)
+    enriched_vm_plans: list[dict[str, object]]
 
     # Plan artifact (set by generate_plan_artifact_node)
     plan_id: str
@@ -927,7 +941,7 @@ async def enrich_plan_node(
             for plan in vm_plans
         ])
     )
-    return {"vm_plans": enriched_plans}
+    return {"enriched_vm_plans": enriched_plans}
 
 
 async def _enrich_vm_plan(
@@ -1052,7 +1066,7 @@ async def generate_plan_artifact_node(state: BatchGraphState) -> dict[str, Any]:
     import json
     import uuid
 
-    vm_plans = state.get("vm_plans", [])
+    vm_plans = _effective_vm_plans(state)
     batch_id = state.get("batch_id", "unknown")
     env_name = state.get("env_name", "")
     plan_id = f"plan-{uuid.uuid4().hex[:12]}"
@@ -1220,7 +1234,7 @@ async def approval_gate_node(
     and the window-opener scheduler job picks it up at window start.
     Dry-run batches always execute immediately regardless of window.
     """
-    vm_plans = state.get("vm_plans", [])
+    vm_plans = _effective_vm_plans(state)
     batch_id = state.get("batch_id", "unknown")
     env_name = state.get("env_name", "unknown")
     env_policy = state.get("env_policy", "strict")
@@ -1396,7 +1410,7 @@ async def verify_plan_hash_node(state: BatchGraphState) -> dict[str, Any]:
             "approved": False,
         }
 
-    vm_plans = state.get("vm_plans", [])
+    vm_plans = _effective_vm_plans(state)
     batch_id = state.get("batch_id", "unknown")
     env_name = state.get("env_name", "")
 
@@ -1498,7 +1512,7 @@ async def load_deferred_artifact_node(state: BatchGraphState) -> dict[str, Any]:
         batch_id, stored_hash[:12], len(vm_plans),
     )
     return {
-        "vm_plans": vm_plans,
+        "enriched_vm_plans": vm_plans,
         "plan_id": plan_id,
         "plan_hash": stored_hash,
         "is_deferred_replay": True,
@@ -1647,7 +1661,7 @@ def make_wave_dispatcher(
         # when pre_approved_plan_set=True.
         vm_id_to_approved_actions: dict[str, list[dict[str, object]]] = {
             str(p["vm_id"]): list(p.get("planned_actions") or [])  # type: ignore[call-overload]
-            for p in state.get("vm_plans", [])
+            for p in _effective_vm_plans(state)
         }
 
         sends: list[Send] = []

@@ -157,3 +157,23 @@ The QA/SRE review identified that the original P0-1 implementation was "pre-appr
 4. Why does `_preview_patching` apply `MANDATORY_KERNEL_EXCLUDES`? What would happen if it didn't?
 5. DNF `check-update` output doesn't include the current version. How does P0-1 handle this?
 6. Why does `_format_plan_for_approval` fall back to showing `params` when preview is empty (not when preview has an error)?
+
+## Fix 4 — Second SRE pass: assess bypass, exact verify, approved_at fails-closed (P0/P1)
+
+Three gaps found by the second SRE review pass (all in `patching.py` / `graph.py`):
+
+**assess bypass**: With `approved_packages`, `assess_node` was still calling `list_upgradable()` (which queries the live package repo). Fresh repo state could silently override the approved artifact. Fixed: approved-artifact path now calls `list_installed_versions()` for the approved package names, compares installed vs. approved targets, and sets `nothing_to_do` without touching the repo. The approved artifact is the sole source of truth.
+
+**exact verify**: `verify_node` was checking "did anything change" (snapshot diff), not "did each package land at its approved version". Fixed: with `approved_packages`, verify now asserts `installed == approved_target` for every approved package. Any mismatch or absent package → `FAILED` with the specific discrepancy.
+
+**approved_at fails-closed**: `load_deferred_artifact_node` was silently skipping the age check when `preloaded_approved_at` was empty/None. Fixed: missing, None, or unparseable `preloaded_approved_at` → fail closed immediately. The age check is mandatory and cannot be bypassed by absent data.
+
+## Fix 5 — Third SRE pass: verify_node partial-update query scope (P1)
+
+**The bug**: `verify_node` queried `list_installed_versions(pending_updates)` but compared results against all `approved_packages`. In a partial-update scenario — some approved packages already at their target version (assess finds nothing to do for them), only the rest in `pending_updates` — the already-at-target packages were never in `pending_updates`, so they never appeared in the dpkg query output. `verify_node` saw them as "missing" and failed the verification.
+
+**Example**: approved = `[nginx=1.24, curl=7.88]`. Assess finds nginx already at 1.24 (nothing to do); only curl goes into `pending_updates`. Execute installs curl. Verify queries dpkg for just `["curl"]`. nginx not in output → "expected 1.24 — not found in dpkg output" → **false fail**.
+
+**Fix**: when `approved_packages` is present, query `list_installed_versions(all_approved_names)`. Both packages appear in dpkg output; both verify correctly.
+
+**Rule**: query scope must equal comparison scope. If you compare against N items, query for N items.

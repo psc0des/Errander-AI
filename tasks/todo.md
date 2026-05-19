@@ -1,4 +1,10 @@
-## P0-1 immutable execution artifact — complete closure (2026-05-19, COMPLETED)
+## P0-1 immutable execution artifact — final closure (2026-05-19, COMPLETED)
+
+- [x] verify_node: query all approved package names (not just pending_updates) when approved_packages present
+- [x] Tests: partial-update scenario passes, query-scope assertion test
+- [x] 1991 tests passing, 0 failures
+
+## P0-1 immutable execution artifact — second closure (2026-05-19, COMPLETED)
 
 - [x] assess_node: approved-artifact path uses list_installed_versions, not list_upgradable
 - [x] assess_node: already-at-target versions → nothing_to_do without touching repo

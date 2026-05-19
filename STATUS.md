@@ -4,7 +4,18 @@
 2026-05-19
 
 ## Current Phase
-**P0-1 immutable execution artifact — complete closure (2026-05-19).**
+**P0-1 immutable execution artifact — final closure (2026-05-19).**
+
+Third (final) SRE pass found one remaining P1 bug. Fixed:
+
+**verify_node partial-update query scope** (patching.py): `verify_node` was querying `list_installed_versions(pending_updates)` but comparing results against all `approved_packages`. In a partial-update scenario (some approved packages already at their target version, only others in `pending_updates`), packages not in `pending_updates` never appeared in the dpkg output, causing false verification failures. Fix: when `approved_packages` is present, query `list_installed_versions(all_approved_names)` so every approved package is visible in the dpkg output for comparison.
+
+Two new tests added: partial-update scenario passes correctly; query arg is inspected to confirm all approved names reach the SSH command.
+
+**P0-1 and P0-2 fully closed. 1991 tests passing, 0 failures.**
+
+## Previous Phase
+**P0-1 immutable execution artifact — second closure (2026-05-19).**
 
 Second SRE pass found three remaining gaps. All three closed:
 

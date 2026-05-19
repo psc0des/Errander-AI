@@ -1,5 +1,11 @@
 # Errander-AI — Lessons Learned
 
+## 2026-05-19 — Verification query scope must match comparison scope
+
+When `verify_node` compares installed versions against all `approved_packages`, it must query `list_installed_versions` for ALL approved package names — not just `pending_updates`. Packages already at their target version are correctly skipped by `assess_node` and never added to `pending_updates`, so they won't appear in a `pending_updates`-only dpkg query. The comparison would then find them "missing" and fail.
+
+Rule: query scope == comparison scope. If you compare against N items, you must query for N items. A narrower query is a silent false-negative source.
+
 ## 2026-05-19 — Approved-artifact mode must own all three phases: assess, execute, verify
 
 For a true immutable execution artifact, the approved packages list must drive all three phases:

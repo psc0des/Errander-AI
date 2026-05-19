@@ -1,5 +1,17 @@
 # Errander-AI Command Log
 
+## P0-1 final closure — verify_node query scope fix (2026-05-19)
+
+```bash
+# Run verify node tests only
+uv run pytest tests/agent/subgraphs/test_patching.py::TestVerifyNode -v
+# 7 passed (including 2 new partial-update tests)
+
+# Full suite regression check
+uv run pytest --tb=no -q
+# 1991 passed, 0 failures
+```
+
 ## Glossary overhaul (2026-05-19)
 
 ```bash

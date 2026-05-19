@@ -401,14 +401,22 @@ async def verify_node(
     pkg_mgr = get_package_manager_by_name(os_family)
     pending = state.get("pending_updates", [])
     snapshot = state.get("version_snapshot", {})
+    approved_packages_early: list[dict[str, str]] = list(state.get("approved_packages") or [])
 
-    if not pending:
+    # When an approved artifact is present, query ALL approved package names so packages
+    # already at their target version (not in pending_updates) still appear in dpkg output.
+    if approved_packages_early:
+        query_packages = [p["name"] for p in approved_packages_early if p.get("name")]
+    else:
+        query_packages = pending
+
+    if not query_packages:
         return {}
 
     # dry_run=False: always read real post-patch versions from the VM.
     result = await executor.execute(
         vm_id, target["hostname"], target["username"], target["key_path"],
-        command=pkg_mgr.list_installed_versions(pending),
+        command=pkg_mgr.list_installed_versions(query_packages),
         dry_run=False,
     )
 
@@ -428,7 +436,7 @@ async def verify_node(
         if old_ver != new_ver:
             changed[pkg] = f"{old_ver} -> {new_ver}"
 
-    approved_packages: list[dict[str, str]] = list(state.get("approved_packages") or [])
+    approved_packages = approved_packages_early
     if approved_packages:
         # Exact-version check: every approved package must be at its approved target version.
         expected = {

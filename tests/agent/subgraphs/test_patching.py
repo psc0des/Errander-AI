@@ -429,6 +429,52 @@ class TestVerifyNode:
         assert result["status"] == ActionStatus.FAILED.value
         assert "curl" in result["error"]
 
+    async def test_partial_update_already_at_target_passes(self) -> None:
+        """Partial-update scenario: nginx already at target (not in pending_updates),
+        curl needed install. Both appear at target in dpkg output. Verify must PASS.
+        Previously broke because verify only queried pending_updates packages."""
+        executor = _make_executor(dry_run=False)
+        # dpkg output contains BOTH packages at approved targets
+        installed = "nginx=1.24.0-1ubuntu1\ncurl=7.88.1-10ubuntu1\n"
+        execute_mock = AsyncMock(return_value=_make_result(installed))
+
+        with patch.object(executor, "execute", execute_mock):
+            state = _base_state(
+                status=ActionStatus.SUCCESS.value,
+                # Only curl was pending — nginx was already at target version
+                pending_updates=["curl"],
+                version_snapshot={"nginx": "1.24.0-1ubuntu1", "curl": "7.81.0-1ubuntu1.10"},
+                approved_packages=_APPROVED_PKGS,  # nginx + curl both approved
+            )
+            result = await verify_node(state, executor=executor)
+
+        # Must pass: nginx is already at approved target, curl just got installed
+        assert result.get("status") != ActionStatus.FAILED.value
+        assert "updated_versions" in result
+
+    async def test_partial_update_query_uses_all_approved_names(self) -> None:
+        """Verify that when approved_packages is set, the SSH query uses all approved
+        package names (not just pending_updates), so already-at-target packages
+        are visible in dpkg output."""
+        executor = _make_executor(dry_run=False)
+        installed = "nginx=1.24.0-1ubuntu1\ncurl=7.88.1-10ubuntu1\n"
+        execute_mock = AsyncMock(return_value=_make_result(installed))
+
+        with patch.object(executor, "execute", execute_mock):
+            state = _base_state(
+                status=ActionStatus.SUCCESS.value,
+                pending_updates=["curl"],  # nginx NOT pending
+                version_snapshot={},
+                approved_packages=_APPROVED_PKGS,
+            )
+            await verify_node(state, executor=executor)
+
+        # The SSH command must have been called with both approved names
+        call_args = execute_mock.call_args
+        cmd_arg = call_args.kwargs.get("command") or (call_args.args[4] if len(call_args.args) > 4 else "")
+        assert "nginx" in cmd_arg
+        assert "curl" in cmd_arg
+
 
 # --- Routing tests ---
 

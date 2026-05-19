@@ -1,5 +1,11 @@
 # Errander-AI — Lessons Learned
 
+## 2026-05-19 — Glossary and workflow diagram must stay in sync with the actual codebase
+
+When a new sub-graph or action is added to the agent, three places need updating in the glossary page: (1) the `_GLOSS` list (new term card), (2) the `_WF_JS` node popup text for the affected workflow node (e.g. Action Execution checks/note fields), and (3) the node sublabels in `_nodes` tuple list. Also check for internal ticket/sprint codes (like "P0-1") baked into badge text or sublabels — these are meaningless to operators and should be replaced with descriptive labels ("PRE-APPROVAL").
+
+Also: when the supported LLM configuration changes (e.g. from "self-hosted only" to "any OpenAI-compatible endpoint"), update INFRA glossary terms to match. The glossary is documentation that operators read — stale architecture claims erode trust.
+
 ## 2026-05-19 — Page-level action buttons belong in topnav_extra only, not duplicated in section-hdr
 
 When the layout() function already accepts topnav_extra for page-level actions, writing the same buttons again inside page_X()'s section-hdr creates a visible duplicate. Rule: page functions own content only — the topnav_extra in the handler owns the action buttons. Never put action buttons in both places.

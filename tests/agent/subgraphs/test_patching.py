@@ -190,6 +190,51 @@ class TestAssessNode:
 
         assert result["nothing_to_do"] is True
 
+    async def test_approved_artifact_path_skips_list_upgradable(self) -> None:
+        """With approved_packages, assess uses list_installed_versions — not list_upgradable."""
+        executor = _make_executor(dry_run=False)
+        # Installed versions differ from approved targets → needs installing
+        installed_output = "nginx=1.18.0-0ubuntu1\ncurl=7.81.0-1ubuntu1.10\n"
+        execute_mock = AsyncMock(return_value=_make_result(installed_output))
+
+        with patch.object(executor, "execute", execute_mock):
+            state = _base_state(dry_run=False, approved_packages=_APPROVED_PKGS)
+            result = await assess_node(state, executor=executor)
+
+        assert result["nothing_to_do"] is False
+        assert set(result["pending_updates"]) == {"nginx", "curl"}
+        # Only one SSH call (list_installed_versions), not two (refresh + list_upgradable)
+        assert execute_mock.call_count == 1
+
+    async def test_approved_artifact_already_at_target_nothing_to_do(self) -> None:
+        """assess skips execution when all approved packages are already at target version."""
+        executor = _make_executor(dry_run=False)
+        # Installed == approved targets
+        installed_output = "nginx=1.24.0-1ubuntu1\ncurl=7.88.1-10ubuntu1\n"
+        execute_mock = AsyncMock(return_value=_make_result(installed_output))
+
+        with patch.object(executor, "execute", execute_mock):
+            state = _base_state(dry_run=False, approved_packages=_APPROVED_PKGS)
+            result = await assess_node(state, executor=executor)
+
+        assert result["nothing_to_do"] is True
+        assert result["status"] == ActionStatus.SKIPPED.value
+        assert result["pending_updates"] == []
+
+    async def test_approved_artifact_partial_update_needed(self) -> None:
+        """assess returns only packages whose installed version differs from approved target."""
+        executor = _make_executor(dry_run=False)
+        # nginx already at target; curl still old
+        installed_output = "nginx=1.24.0-1ubuntu1\ncurl=7.81.0-1ubuntu1.10\n"
+        execute_mock = AsyncMock(return_value=_make_result(installed_output))
+
+        with patch.object(executor, "execute", execute_mock):
+            state = _base_state(dry_run=False, approved_packages=_APPROVED_PKGS)
+            result = await assess_node(state, executor=executor)
+
+        assert result["nothing_to_do"] is False
+        assert result["pending_updates"] == ["curl"]
+
 
 # --- Snapshot node tests ---
 
@@ -327,6 +372,62 @@ class TestVerifyNode:
 
         assert "updated_versions" in result
         assert result["updated_versions"]["nginx"] == "1.19.0-0ubuntu1"
+
+    async def test_exact_version_match_passes(self) -> None:
+        """With approved_packages, verify passes when installed == approved target."""
+        executor = _make_executor(dry_run=False)
+        installed = "nginx=1.24.0-1ubuntu1\ncurl=7.88.1-10ubuntu1\n"
+        execute_mock = AsyncMock(return_value=_make_result(installed))
+
+        with patch.object(executor, "execute", execute_mock):
+            state = _base_state(
+                status=ActionStatus.SUCCESS.value,
+                pending_updates=["nginx", "curl"],
+                version_snapshot={"nginx": "1.18.0-0ubuntu1", "curl": "7.81.0-1ubuntu1.10"},
+                approved_packages=_APPROVED_PKGS,
+            )
+            result = await verify_node(state, executor=executor)
+
+        assert result.get("status") != ActionStatus.FAILED.value
+        assert "updated_versions" in result
+
+    async def test_exact_version_mismatch_fails(self) -> None:
+        """With approved_packages, verify fails when installed != approved target."""
+        executor = _make_executor(dry_run=False)
+        # nginx installed at a different version than approved target
+        installed = "nginx=1.22.0-1ubuntu1\ncurl=7.88.1-10ubuntu1\n"
+        execute_mock = AsyncMock(return_value=_make_result(installed))
+
+        with patch.object(executor, "execute", execute_mock):
+            state = _base_state(
+                status=ActionStatus.SUCCESS.value,
+                pending_updates=["nginx", "curl"],
+                version_snapshot={"nginx": "1.18.0-0ubuntu1", "curl": "7.81.0-1ubuntu1.10"},
+                approved_packages=_APPROVED_PKGS,
+            )
+            result = await verify_node(state, executor=executor)
+
+        assert result["status"] == ActionStatus.FAILED.value
+        assert "nginx" in result["error"]
+        assert "1.24.0-1ubuntu1" in result["error"]  # expected version in error message
+
+    async def test_missing_package_in_dpkg_output_fails(self) -> None:
+        """With approved_packages, verify fails if an approved package isn't in dpkg output."""
+        executor = _make_executor(dry_run=False)
+        installed = "nginx=1.24.0-1ubuntu1\n"  # curl missing from output
+        execute_mock = AsyncMock(return_value=_make_result(installed))
+
+        with patch.object(executor, "execute", execute_mock):
+            state = _base_state(
+                status=ActionStatus.SUCCESS.value,
+                pending_updates=["nginx", "curl"],
+                version_snapshot={"nginx": "1.18.0-0ubuntu1", "curl": "7.81.0-1ubuntu1.10"},
+                approved_packages=_APPROVED_PKGS,
+            )
+            result = await verify_node(state, executor=executor)
+
+        assert result["status"] == ActionStatus.FAILED.value
+        assert "curl" in result["error"]
 
 
 # --- Routing tests ---

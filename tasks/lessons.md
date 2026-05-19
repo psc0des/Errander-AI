@@ -1,5 +1,14 @@
 # Errander-AI — Lessons Learned
 
+## 2026-05-19 — Approved-artifact mode must own all three phases: assess, execute, verify
+
+For a true immutable execution artifact, the approved packages list must drive all three phases:
+- **assess**: must NOT call `list_upgradable` — the approved artifact is the source of truth, not the current repo state. Use `list_installed_versions` for the approved package names and compare against targets.
+- **execute**: must call `install_pinned`, not `upgrade_all`. Fail closed if `approved_packages` absent.
+- **verify**: must check `installed == approved_target`, not just `installed != old_version`. A version that changed but landed at the wrong value still fails.
+
+Fixing only execute was good. Fixing all three is what makes the contract honest.
+
 ## 2026-05-19 — "Plan enrichment with hash commitment" ≠ "immutable execution artifact"
 
 Hashing the enriched plan (packages + versions) and verifying it at approval time is necessary but not sufficient. If live execution still calls `apt-get upgrade -y` instead of `apt-get install pkg=version`, the approved artifact is decorative — repos can change between approval and apply.

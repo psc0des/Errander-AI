@@ -150,18 +150,63 @@ async def assess_node(
     *,
     executor: SandboxExecutor,
 ) -> dict[str, Any]:
-    """List upgradable packages and filter out excluded patterns.
+    """Assess which packages need installing.
 
-    Idempotency: if no non-excluded updates are pending, sets nothing_to_do=True.
+    Approved-artifact path (approved_packages present):
+      Queries installed versions for the approved packages and compares against
+      approved targets. If already at target → nothing_to_do. Does NOT call
+      list_upgradable — fresh repo state cannot override the approved artifact.
+
+    Fresh-assessment path (no approved_packages, planning/dry-run phase):
+      Calls apt/dnf list_upgradable and filters kernel packages.
+      Idempotency: nothing_to_do=True when no non-excluded updates are pending.
     """
     vm_id = state["vm_id"]
     os_family = state.get("os_family", "ubuntu")
     target = _get_connection_params(state)
     pkg_mgr = get_package_manager_by_name(os_family)
+    approved_packages: list[dict[str, str]] = list(state.get("approved_packages") or [])
+
+    if approved_packages:
+        # Approved-artifact path: check installed versions against approved targets.
+        # Do NOT call list_upgradable — the approved artifact is the source of truth.
+        pkg_names = [p["name"] for p in approved_packages if p.get("name")]
+        result = await executor.execute(
+            vm_id, target["hostname"], target["username"], target["key_path"],
+            command=pkg_mgr.list_installed_versions(pkg_names),
+            dry_run=False,
+        )
+        if not result.success:
+            return {
+                "status": ActionStatus.FAILED.value,
+                "error": (
+                    f"Failed to query installed versions for approved packages: {result.stderr[:200]}"
+                ),
+            }
+        installed = _parse_versions(result.stdout)
+        to_install = [
+            p["name"] for p in approved_packages
+            if p.get("name") and p.get("target") and installed.get(p["name"]) != p["target"]
+        ]
+        if not to_install:
+            logger.info(
+                "All approved packages already at target versions on %s — nothing to do", vm_id,
+            )
+            return {
+                "pending_updates": [],
+                "nothing_to_do": True,
+                "status": ActionStatus.SKIPPED.value,
+            }
+        logger.info(
+            "%d of %d approved packages need installing on %s",
+            len(to_install), len(approved_packages), vm_id,
+        )
+        return {"pending_updates": to_install, "nothing_to_do": False}
+
+    # Fresh-assessment path (planning / dry-run phase).
     exclude_patterns = state.get("exclude_patterns", list(MANDATORY_KERNEL_EXCLUDES))
 
     # Refresh local package index so upgradable list reflects current upstream state.
-    # Without this, a VM that has never run apt update returns an empty or stale list.
     # dry_run=False: assessment must always inspect real VM state.
     refresh = await executor.execute(
         vm_id, target["hostname"], target["username"], target["key_path"],
@@ -174,28 +219,22 @@ async def assess_node(
             vm_id, refresh.stderr[:200],
         )
 
-    # List upgradable packages — always read real state.
     result = await executor.execute(
         vm_id, target["hostname"], target["username"], target["key_path"],
         command=pkg_mgr.list_upgradable(),
         dry_run=False,
     )
-
     if not result.success:
         return {
             "status": ActionStatus.FAILED.value,
             "error": f"Failed to list upgradable packages: {result.stderr}",
         }
 
-    # Parse package names from output
     all_packages = _parse_upgradable(result.stdout, os_family)
-
-    # Filter out excluded patterns
-    filtered: list[str] = []
-    for pkg in all_packages:
-        excluded = any(fnmatch.fnmatch(pkg, pat) for pat in exclude_patterns)
-        if not excluded:
-            filtered.append(pkg)
+    filtered = [
+        pkg for pkg in all_packages
+        if not any(fnmatch.fnmatch(pkg, pat) for pat in exclude_patterns)
+    ]
 
     if not filtered:
         logger.info("No non-excluded updates pending on %s — nothing to do", vm_id)
@@ -209,10 +248,7 @@ async def assess_node(
         "Found %d upgradable packages on %s (after filtering %d excluded)",
         len(filtered), vm_id, len(all_packages) - len(filtered),
     )
-    return {
-        "pending_updates": filtered,
-        "nothing_to_do": False,
-    }
+    return {"pending_updates": filtered, "nothing_to_do": False}
 
 
 async def snapshot_node(
@@ -385,26 +421,53 @@ async def verify_node(
 
     current_versions = _parse_versions(result.stdout)
 
-    # Compare with snapshot — if no packages changed, the upgrade likely failed silently.
+    # Build snapshot-diff regardless of mode (used for audit / reporting).
     changed: dict[str, str] = {}
     for pkg, new_ver in current_versions.items():
         old_ver = snapshot.get(pkg, "unknown")
         if old_ver != new_ver:
             changed[pkg] = f"{old_ver} -> {new_ver}"
 
-    if changed:
-        logger.info("Updated %d packages on %s: %s", len(changed), vm_id, changed)
-    else:
-        logger.warning(
-            "No version changes detected on %s after patching — upgrade may have silently failed",
-            vm_id,
-        )
-        # Only treat as failure if we expected changes (had a non-empty snapshot)
-        if snapshot:
+    approved_packages: list[dict[str, str]] = list(state.get("approved_packages") or [])
+    if approved_packages:
+        # Exact-version check: every approved package must be at its approved target version.
+        expected = {
+            p["name"]: p["target"]
+            for p in approved_packages
+            if p.get("name") and p.get("target")
+        }
+        failures: dict[str, str] = {}
+        for name, target_ver in expected.items():
+            installed_ver = current_versions.get(name)
+            if installed_ver is None:
+                failures[name] = f"expected {target_ver!r} — not found in dpkg output"
+            elif installed_ver != target_ver:
+                failures[name] = f"expected {target_ver!r}, got {installed_ver!r}"
+        if failures:
+            logger.error(
+                "Pinned version verification failed on %s: %s", vm_id, failures,
+            )
             return {
+                "updated_versions": current_versions,
+                "changed_packages": changed,
                 "status": ActionStatus.FAILED.value,
-                "error": "Patching verification failed: no package versions changed after upgrade",
+                "error": f"Pinned version verification failed: {failures}",
             }
+        logger.info(
+            "Pinned version verification passed for %d packages on %s", len(expected), vm_id,
+        )
+    else:
+        # Fallback: check that at least something changed (broad-upgrade path, dry-run planning).
+        if not changed:
+            logger.warning(
+                "No version changes detected on %s after patching — upgrade may have silently failed",
+                vm_id,
+            )
+            if snapshot:
+                return {
+                    "status": ActionStatus.FAILED.value,
+                    "error": "Patching verification failed: no package versions changed after upgrade",
+                }
 
     return {"updated_versions": current_versions, "changed_packages": changed}
 

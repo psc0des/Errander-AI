@@ -1,3 +1,14 @@
+## P0-1 immutable execution artifact — complete closure (2026-05-19, COMPLETED)
+
+- [x] assess_node: approved-artifact path uses list_installed_versions, not list_upgradable
+- [x] assess_node: already-at-target versions → nothing_to_do without touching repo
+- [x] verify_node: exact version match against approved targets; fail on any mismatch or missing pkg
+- [x] load_deferred_artifact_node: missing/invalid approved_at fails closed
+- [x] Tests: assess approved path (3 new), verify exact match (3 new), deferred timestamp (2 updated)
+- [x] 1989 tests passing, 0 failures
+
+---
+
 ## P0-1 true immutable execution artifact (2026-05-19, COMPLETED)
 
 - [x] Add `install_pinned()` + `simulate_install_pinned()` to `PackageManager`, `AptManager`, `DnfManager`

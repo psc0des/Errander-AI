@@ -1818,4 +1818,10 @@ uv run pytest tests/agent/subgraphs/test_patching.py tests/execution/test_comman
 uv run pytest -x -q   # 1982 passed, 0 failures
 git add errander/execution/commands.py errander/agent/subgraphs/patching.py errander/agent/vm_graph.py errander/agent/graph.py errander/main.py tests/agent/subgraphs/test_patching.py tests/execution/test_commands.py tests/agent/test_deferred_replay.py tests/chaos/test_fault_injection.py STATUS.md docs/learning/37-immutable-plan-artifact.md
 git commit -m "fix: P0-1 true immutable execution artifact — pinned patching + deferred replay age check"
+
+# P0-1 complete closure — second SRE pass (2026-05-19)
+uv run pytest tests/agent/subgraphs/test_patching.py tests/agent/test_deferred_replay.py -x -q   # 96 passed
+uv run pytest -x -q   # 1989 passed, 0 failures
+git add errander/agent/subgraphs/patching.py errander/agent/graph.py tests/agent/subgraphs/test_patching.py tests/agent/test_deferred_replay.py STATUS.md tasks/todo.md tasks/lessons.md docs/command-log.md README.md
+git commit -m "fix: P0-1 complete closure — assess artifact path, verify exact match, approved_at required"
 ```

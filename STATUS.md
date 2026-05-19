@@ -4,17 +4,15 @@
 2026-05-19
 
 ## Current Phase
-**P0-1 true immutable execution artifact — pinned patching + deferred replay age check (2026-05-19).**
+**P0-1 immutable execution artifact — complete closure (2026-05-19).**
 
-QA/SRE review identified that the original P0-1 was "pre-approval plan enrichment with hash commitment" but live patching still ran broad `apt-get upgrade`. Three fixes close the gap:
+Second SRE pass found three remaining gaps. All three closed:
 
-1. `execute_node` (patching.py) now uses `install_pinned()` — generates `apt-get install -y pkg=version ...` from the approved artifact. Live mode fails closed without an approved package list or with any missing version strings.
-2. `_run_patching()` (vm_graph.py) extracts `approved_packages` from the current action's enriched preview and injects them into `PatchingGraphState` — the wiring that was missing.
-3. `load_deferred_artifact_node` (graph.py) checks artifact age using `preloaded_approved_at`; fails if older than 168h; warns at 24h. Package drift at replay time is handled by pinned install failing closed if the approved version is unavailable.
+1. **assess_node approved-artifact path** (patching.py): with `approved_packages`, assess no longer calls `apt list --upgradable`. Instead it queries `list_installed_versions()` for exactly the approved packages and compares against approved targets. Fresh repo state cannot override the approved artifact. Already-at-target → `nothing_to_do=True`. Differs → only those packages in `pending_updates`.
+2. **verify_node exact match** (patching.py): with `approved_packages`, verify now asserts `installed_version == approved_target_version` for every approved package. Any mismatch or missing package → `FAILED` with the specific discrepancy in the error. Falls back to "did anything change" only when no artifact is present.
+3. **Missing `approved_at` fails closed** (graph.py): artifact replay without a valid `preloaded_approved_at` now returns an error rather than skipping the age check. Unparseable timestamps also fail closed. Legacy records without a stored artifact (re-plan/re-approve path) are unaffected since they never enter `load_deferred_artifact_node`.
 
-`commands.py` gained `install_pinned()` + `simulate_install_pinned()` on both `AptManager` and `DnfManager`.
-
-**1982 tests passing, 0 failures.**
+**1989 tests passing, 0 failures.**
 
 ## Previous Phase
 **Glossary overhaul — current with v1 codebase (2026-05-19).**

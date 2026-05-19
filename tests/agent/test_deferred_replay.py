@@ -46,18 +46,21 @@ def _make_artifact_state(
     env_name: str = "prod",
     vm_plans: list | None = None,
     tamper: bool = False,
+    approved_at: datetime | None = None,
 ) -> dict:
     plans = vm_plans or _VM_PLANS
     plan_json = json.dumps({"plan_id": "pid-1", "vm_plans": plans})
     plan_hash = _make_hash(batch_id, env_name, plans)
     if tamper:
         plan_hash = "0" * 64  # wrong hash
+    _approved_at = approved_at or (datetime.now(tz=UTC) - timedelta(hours=1))
     return {
         "batch_id": batch_id,
         "env_name": env_name,
         "preloaded_plan_json": plan_json,
         "preloaded_plan_hash": plan_hash,
         "preloaded_plan_id": "pid-1",
+        "preloaded_approved_at": _approved_at.isoformat(),
         "is_deferred_replay": True,
     }
 
@@ -95,6 +98,7 @@ async def test_load_artifact_node_invalid_json() -> None:
         "env_name": "prod",
         "preloaded_plan_json": "{not valid json",
         "preloaded_plan_hash": "a" * 64,
+        "preloaded_approved_at": (datetime.now(tz=UTC) - timedelta(hours=1)).isoformat(),
         "is_deferred_replay": True,
     }
     result = await load_deferred_artifact_node(state)  # type: ignore[arg-type]
@@ -110,6 +114,7 @@ async def test_load_artifact_node_missing_json() -> None:
         "env_name": "prod",
         "preloaded_plan_json": "",
         "preloaded_plan_hash": "a" * 64,
+        "preloaded_approved_at": (datetime.now(tz=UTC) - timedelta(hours=1)).isoformat(),
         "is_deferred_replay": True,
     }
     result = await load_deferred_artifact_node(state)  # type: ignore[arg-type]
@@ -121,8 +126,7 @@ async def test_load_artifact_node_missing_json() -> None:
 @pytest.mark.asyncio
 async def test_load_artifact_node_within_age_limit() -> None:
     """Artifact approved 1h ago passes the age check."""
-    state = _make_artifact_state()
-    state["preloaded_approved_at"] = (datetime.now(tz=UTC) - timedelta(hours=1)).isoformat()
+    state = _make_artifact_state()  # defaults to 1h ago
     result = await load_deferred_artifact_node(state)  # type: ignore[arg-type]
 
     assert result.get("error") is None
@@ -144,14 +148,25 @@ async def test_load_artifact_node_exceeds_age_limit() -> None:
 
 
 @pytest.mark.asyncio
-async def test_load_artifact_node_no_approved_at_skips_age_check() -> None:
-    """Missing approved_at does not block replay (backward compat for legacy records)."""
+async def test_load_artifact_node_missing_approved_at_fails_closed() -> None:
+    """Artifact replay without a valid approval timestamp must fail closed."""
     state = _make_artifact_state()
     state["preloaded_approved_at"] = None
     result = await load_deferred_artifact_node(state)  # type: ignore[arg-type]
 
-    assert result.get("error") is None
-    assert result["is_deferred_replay"] is True
+    assert "error" in result
+    assert "timestamp" in result["error"] or "approved_at" in result["error"]
+
+
+@pytest.mark.asyncio
+async def test_load_artifact_node_invalid_approved_at_fails_closed() -> None:
+    """Unparseable approval timestamp must fail closed."""
+    state = _make_artifact_state()
+    state["preloaded_approved_at"] = "not-a-timestamp"
+    result = await load_deferred_artifact_node(state)  # type: ignore[arg-type]
+
+    assert "error" in result
+    assert "re-approval required" in result["error"]
 
 
 # ---------------------------------------------------------------------------

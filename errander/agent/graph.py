@@ -1490,30 +1490,40 @@ async def load_deferred_artifact_node(state: BatchGraphState) -> dict[str, Any]:
     if not raw_json or not stored_hash:
         return {"error": "P0-2 replay: missing plan artifact — aborting"}
 
-    # Age check: reject artifacts approved beyond the configured max age.
-    approved_at_str = state.get("preloaded_approved_at") or ""
-    if approved_at_str:
-        try:
-            approved_at = datetime.fromisoformat(approved_at_str)
-            age_hours = (datetime.now(tz=UTC) - approved_at).total_seconds() / 3600
-            if age_hours > _DEFERRED_MAX_ARTIFACT_AGE_HOURS:
-                return {
-                    "error": (
-                        f"P0-2 replay: artifact approved {age_hours:.0f}h ago exceeds "
-                        f"{_DEFERRED_MAX_ARTIFACT_AGE_HOURS}h limit — re-approval required"
-                    ),
-                }
-            if age_hours > 24:
-                logger.warning(
-                    "P0-2 replay: artifact is %.0fh old for batch %s — "
-                    "pinned install will fail closed if approved versions are unavailable",
-                    age_hours, batch_id,
-                )
-        except ValueError:
+    # Age check: artifact replay without a valid approval timestamp is not safe — fail closed.
+    # Legacy records without a stored artifact fall back to re-plan/re-approve (plan_json is None
+    # so this node is never reached for them).
+    approved_at_str = (state.get("preloaded_approved_at") or "").strip()
+    if not approved_at_str:
+        return {
+            "error": (
+                "P0-2 replay: missing approval timestamp — "
+                "cannot verify artifact age; re-approval required"
+            ),
+        }
+    try:
+        approved_at = datetime.fromisoformat(approved_at_str)
+        age_hours = (datetime.now(tz=UTC) - approved_at).total_seconds() / 3600
+        if age_hours > _DEFERRED_MAX_ARTIFACT_AGE_HOURS:
+            return {
+                "error": (
+                    f"P0-2 replay: artifact approved {age_hours:.0f}h ago exceeds "
+                    f"{_DEFERRED_MAX_ARTIFACT_AGE_HOURS}h limit — re-approval required"
+                ),
+            }
+        if age_hours > 24:
             logger.warning(
-                "P0-2 replay: could not parse approved_at=%r — skipping age check",
-                approved_at_str,
+                "P0-2 replay: artifact is %.0fh old for batch %s — "
+                "pinned install will fail closed if approved versions are unavailable",
+                age_hours, batch_id,
             )
+    except ValueError:
+        return {
+            "error": (
+                f"P0-2 replay: unparseable approval timestamp {approved_at_str!r} — "
+                "re-approval required"
+            ),
+        }
 
     try:
         artifact = json.loads(raw_json)

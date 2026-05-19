@@ -1,5 +1,13 @@
 # Errander-AI — Lessons Learned
 
+## 2026-05-19 — UI information gaps create operational risk — show the detail, don't hide it behind links
+
+Every piece of data the agent generates should be visible inline, not tucked behind a "Details →" link that goes nowhere. The audit log had a `detail` field in every event object but the HTML table rendered 8 columns and left that field out entirely — visible only to someone reading the Python source.
+
+Rule: when adding a detail/notes/summary field to a data model, immediately wire it into the table/card that shows that data. A link to "more detail" is only acceptable if there's a real page behind it. A broken link is worse than no link — it trains users not to click anything.
+
+Also: when showing approval requests to operators, include all the context they need to make the decision inline. CPU/memory/load at the time of the request, what triggered it, and what happens if they reject — all in the card, not linked out.
+
 ## 2026-05-18 — Audit detail strings must use POST-execution state, not pre-execution assessment counts
 
 `vm_graph.py` detail builders were reading `pending_updates` (packages found before patching) and `version_snapshot` (snapshot taken before patching) — both pre-execution counts. They both showed the same number, making the detail look like nothing happened. The real post-execution data (`changed_packages` — the dict of packages that actually changed version) was computed in `verify_patch_node` but only logged, never stored in state.

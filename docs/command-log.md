@@ -1,5 +1,17 @@
 # Errander-AI Command Log
 
+## UI overhaul — information density + actionability (2026-05-19)
+
+```bash
+# Import + render check — all 5 key pages
+uv run python -c "from errander.web.server import page_fleet, page_approvals, page_audit, page_vm, page_batches; page_fleet(); page_approvals(); page_audit(); page_vm('prod-api-01'); page_batches(); print('OK')"
+
+# UI test suite — 111 passed
+uv run pytest tests/ui/ -x -q
+```
+
+---
+
 ## Fix — audit detail strings + Playwright test sync (2026-05-18)
 
 ```bash

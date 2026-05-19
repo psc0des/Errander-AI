@@ -1,9 +1,29 @@
 # Errander-AI — Project Status
 
 ## Last Updated
-2026-05-18
+2026-05-19
 
 ## Current Phase
+**UI overhaul — information density, actionability, inline audit detail (2026-05-19).**
+
+Comprehensive UX improvement to the dev UI driven by operator pain points:
+- VM cards now show CPU / MEM / DISK tri-bars, pending patch count, uptime, IP, last action type
+- Fleet dashboard adds a "Needs Attention" callout for warning/failed/pending VMs with specific reasons and direct links
+- Approval cards gain a "VM Health at Request Time" panel (CPU, MEM, DISK, load average) and a trigger line so the operator understands WHY the approval is needed
+- "If Rejected" consequences are now shown below every approval to communicate risk clearly
+- Audit log now shows the full `detail` field inline under every action — previously hidden behind a broken "Details →" link that went nowhere
+- Audit detail text enriched for all events (which packages changed, which logs rotated, disk before→after)
+- Batch history error column now shows a one-line error summary and links to affected VMs
+- VM detail page shows pending patch count as a prominent callout, CPU/memory in the identity card, and richer KPI tiles
+- All 111 UI tests still pass, 0 regressions
+
+## Files Changed (UI overhaul)
+- `errander/web/data.py` (REWRITTEN — added cpu, mem, pending_patches, last_action_type to every VM; vm_cpu/vm_mem/trigger/reject_consequence/rollback_strategy to approvals; enriched all audit event detail strings; added error_summary/failed_vms to batches; enriched VM_ACTIONS for more VMs)
+- `errander/web/server.py` (MODIFIED — new CSS classes for metric bars, attention box, health panel, consequences panel, inline audit detail; page_fleet/page_approvals/page_audit/page_vm/page_batches rewritten)
+
+---
+
+## Previous Phase
 **Fix — audit log detail strings for patching, log_rotation, and disk_cleanup (2026-05-18).**
 
 Audit log `detail` fields were misleading after live execution:

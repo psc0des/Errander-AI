@@ -1,3 +1,16 @@
+## UI overhaul — information density + actionability (2026-05-19, COMPLETED)
+
+- [x] VM cards: CPU / MEM / DISK tri-bars, pending patches chip, uptime, IP, last action type
+- [x] Fleet dashboard: "Needs Attention" callout for warning/failed/pending VMs with reasons and links
+- [x] Approval cards: VM health panel (CPU, MEM, DISK, load), trigger line, reject consequences
+- [x] Audit log: `detail` field shown inline under each action (was hidden behind broken "Details →")
+- [x] Audit event detail strings enriched (packages, logs, disk before→after)
+- [x] Batch history: error summary + failed VM links inline in errors column
+- [x] VM detail: pending patches callout, CPU/memory in identity card, 4-tile KPI row
+- [x] 111 UI tests passing, 0 regressions
+
+---
+
 ## Fix — audit log detail strings for patching / log_rotation / disk_cleanup (2026-05-18, COMPLETED)
 
 - [x] `patching.py` — added `changed_packages: dict[str, str]` to `PatchingGraphState`; `verify_patch_node` now returns `changed_packages` (old→new per package that actually changed)

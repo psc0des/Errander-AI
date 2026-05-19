@@ -514,6 +514,65 @@ body { font-family: 'Inter', system-ui, sans-serif; background: #f0f2ff; color: 
 .danger-actions { display: flex; gap: 10px; flex-wrap: wrap; }
 .btn-danger { color: #fff; font-family: 'Space Grotesk', sans-serif; font-size: 0.8125rem; font-weight: 700; padding: 7px 16px; border: none; border-radius: 6px; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; }
 @media (max-width: 900px) { .admin-top { grid-template-columns: 1fr; } .settings-grid { grid-template-columns: 1fr; } }
+
+/* ── VM Metric tri-bars (CPU / MEM / DISK) ── */
+.vm-metrics { display: flex; flex-direction: column; gap: 5px; margin: 8px 0 10px; }
+.vm-metric-row { display: flex; align-items: center; gap: 7px; }
+.vm-metric-lbl { font-family: 'JetBrains Mono', monospace; font-size: 0.5625rem; font-weight: 700; color: #94a3b8; letter-spacing: 0.08em; width: 28px; flex-shrink: 0; }
+.vm-metric-bar { flex: 1; }
+.vm-metric-num { font-family: 'JetBrains Mono', monospace; font-size: 0.625rem; font-weight: 700; width: 28px; text-align: right; }
+
+/* ── Pending patches chip ── */
+.patches-chip { font-family: 'JetBrains Mono', monospace; font-size: 0.5625rem; font-weight: 700; padding: 2px 6px; border-radius: 3px; background: #fef3c7; color: #92400e; letter-spacing: 0.04em; white-space: nowrap; }
+.patches-chip-crit { background: #fee2e2; color: #991b1b; }
+
+/* ── VM footer two-line ── */
+.vm-footer-col { display: flex; flex-direction: column; gap: 2px; }
+.vm-footer-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+
+/* ── Needs Attention callout ── */
+.attn-box { border-left: 4px solid #d97706; margin-bottom: 20px; padding: 0; }
+.attn-hdr { display: flex; align-items: center; gap: 10px; padding: 11px 16px 9px; border-bottom: 1px solid #fef9ee; }
+.attn-title { font-family: 'Space Grotesk', sans-serif; font-size: 0.8125rem; font-weight: 700; color: #d97706; }
+.attn-row { display: flex; align-items: center; gap: 10px; padding: 8px 16px; border-bottom: 1px solid #fafaf8; flex-wrap: wrap; }
+.attn-row:last-child { border-bottom: none; }
+.attn-host { font-family: 'JetBrains Mono', monospace; font-size: 0.8125rem; font-weight: 700; color: #d97706; width: 155px; flex-shrink: 0; text-decoration: none; }
+.attn-host:hover { text-decoration: underline; }
+.attn-host-failed { color: #dc2626; }
+.attn-host-pending { color: #7c3aed; }
+.attn-reason { font-size: 0.8125rem; color: #475569; flex: 1; min-width: 200px; }
+.attn-link { font-size: 0.8125rem; color: #4f46e5; text-decoration: none; font-weight: 500; flex-shrink: 0; }
+.attn-link:hover { text-decoration: underline; }
+
+/* ── Approval: VM health panel ── */
+.appr-health { background: #f8fafc; border-radius: 8px; padding: 12px 14px; margin-bottom: 14px; border: 1px solid #f1f5f9; }
+.appr-health-title { font-family: 'JetBrains Mono', monospace; font-size: 0.5625rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: #94a3b8; margin-bottom: 10px; }
+.appr-health-metrics { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 12px; margin-bottom: 10px; }
+.appr-hm { display: flex; flex-direction: column; gap: 4px; }
+.appr-hm-lbl { font-family: 'JetBrains Mono', monospace; font-size: 0.5rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #94a3b8; }
+.appr-hm-val { font-family: 'JetBrains Mono', monospace; font-size: 0.875rem; font-weight: 700; }
+.appr-hm-bar { height: 5px; background: #e2e8f0; border-radius: 3px; overflow: hidden; margin-top: 2px; }
+.appr-hm-fill { height: 100%; border-radius: 3px; }
+.appr-trigger-row { display: flex; gap: 10px; padding-top: 8px; border-top: 1px solid #f1f5f9; }
+.appr-trigger-lbl { font-family: 'JetBrains Mono', monospace; font-size: 0.5rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #94a3b8; padding-top: 2px; flex-shrink: 0; width: 50px; }
+.appr-trigger-val { font-size: 0.8125rem; color: #d97706; font-weight: 500; line-height: 1.45; }
+
+/* ── Approval: consequences panel ── */
+.appr-consequences { background: #fafafa; border-top: 1px solid #f1f5f9; padding: 12px 14px; display: flex; flex-direction: column; gap: 7px; margin: 14px -20px -18px; border-radius: 0 0 8px 8px; }
+.appr-cons-row { display: flex; gap: 10px; align-items: flex-start; }
+.appr-cons-lbl { font-family: 'JetBrains Mono', monospace; font-size: 0.5rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #94a3b8; padding-top: 2px; flex-shrink: 0; width: 68px; }
+.appr-cons-val { font-size: 0.8125rem; color: #475569; line-height: 1.5; }
+.appr-cons-val-risk { color: #dc2626; font-weight: 500; }
+
+/* ── Audit detail inline ── */
+.audit-detail { font-family: 'JetBrains Mono', monospace; font-size: 0.6875rem; margin-top: 3px; line-height: 1.45; }
+.audit-detail-ok      { color: #64748b; }
+.audit-detail-failed  { color: #dc2626; font-weight: 500; }
+.audit-detail-warning { color: #d97706; font-weight: 500; }
+.audit-detail-pending { color: #7c3aed; }
+
+/* ── Batch error summary ── */
+.batch-err-summary { font-family: 'JetBrains Mono', monospace; font-size: 0.6875rem; color: #dc2626; margin-top: 3px; }
 """
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -557,6 +616,24 @@ def disk_bar(pct: int) -> str:
       <div class="prog-wrap">
         <div class="prog-fill prog-{color}" style="width:{pct}%"></div>
       </div>"""
+
+
+def _metric_color(pct: int) -> str:
+    if pct >= 90: return "red"
+    if pct >= 75: return "amber"
+    return "indigo"
+
+
+def _metric_text_color(pct: int) -> str:
+    if pct >= 90: return "#dc2626"
+    if pct >= 75: return "#d97706"
+    return "#4f46e5"
+
+
+def _metric_bar_color(pct: int) -> str:
+    if pct >= 90: return "#dc2626"
+    if pct >= 75: return "#d97706"
+    return "#4f46e5"
 
 
 def env_tag(env: str) -> str:
@@ -707,31 +784,33 @@ def layout(title: str, active_url: str, breadcrumb: str, topnav_extra: str, cont
 # ── Pages ─────────────────────────────────────────────────────────────────────
 
 def page_fleet() -> str:
-    # KPI
-    healthy = sum(1 for v in VMS if v["status"] == "ok")
-    warnings = sum(1 for v in VMS if v["status"] == "warning")
+    healthy       = sum(1 for v in VMS if v["status"] == "ok")
+    warnings      = sum(1 for v in VMS if v["status"] == "warning")
+    failed_ct     = sum(1 for v in VMS if v["status"] == "failed")
     needs_approval = sum(1 for v in VMS if v["status"] == "pending")
+    total_pending  = sum(v.get("pending_patches", 0) for v in VMS)
+
     kpis = f"""
     <div class="kpi-grid">
       <div class="card kpi-tile kpi-top-border" style="border-color:#4f46e5">
         <div class="kpi-label">Total VMs</div>
         <div class="kpi-value" style="color:#0f172a">{len(VMS)}</div>
-        <div class="kpi-subtitle">{len(set(v['env'] for v in VMS))} environments</div>
+        <div class="kpi-subtitle">{len(set(v['env'] for v in VMS))} environments &nbsp;·&nbsp; {total_pending} patches pending fleet-wide</div>
       </div>
       <div class="card kpi-tile kpi-top-border" style="border-color:#16a34a">
         <div class="kpi-label">Healthy</div>
         <div class="kpi-value" style="color:#16a34a">{healthy}</div>
-        <div class="kpi-subtitle">{round(healthy/len(VMS)*100)}% of fleet</div>
+        <div class="kpi-subtitle">{round(healthy/len(VMS)*100)}% of fleet &nbsp;·&nbsp; last batch 02:00 UTC</div>
       </div>
       <div class="card kpi-tile kpi-top-border" style="border-color:#d97706">
-        <div class="kpi-label">Warnings</div>
-        <div class="kpi-value" style="color:#d97706">{warnings}</div>
-        <div class="kpi-subtitle">Action recommended</div>
+        <div class="kpi-label">Warnings / Failed</div>
+        <div class="kpi-value" style="color:#d97706">{warnings + failed_ct}</div>
+        <div class="kpi-subtitle">{warnings} degraded &nbsp;·&nbsp; {failed_ct} last-action failed</div>
       </div>
       <div class="card kpi-tile kpi-top-border" style="border-color:#7c3aed">
         <div class="kpi-label">Needs Approval</div>
         <div class="kpi-value" style="color:#7c3aed">{needs_approval}</div>
-        <div class="kpi-subtitle">Expires in &lt; 30 min</div>
+        <div class="kpi-subtitle">Slack approval expires &lt; 30 min — act now</div>
       </div>
     </div>"""
 
@@ -742,6 +821,7 @@ def page_fleet() -> str:
       <div class="batch-header">
         <span class="batch-id">{b['id']}</span>
         {audit_badge(str(b['status']))}
+        <span style="margin-left:auto;font-size:0.75rem;color:#94a3b8;font-family:'JetBrains Mono',monospace">Completed 2026-04-23 02:14 UTC</span>
       </div>
       <div class="batch-bars">
         <div class="bar-row">
@@ -759,19 +839,68 @@ def page_fleet() -> str:
       </div>
       <div class="batch-stats">
         <span class="stat-chip">⏱ {b['duration']}</span>
-        <span class="stat-chip">🔧 {b['patched']} VMs patched</span>
-        <span class="stat-chip">📋 {b['rotations']} log rotations</span>
-        <span class="stat-chip">🐳 {b['prunes']} Docker prunes</span>
-        <span class="stat-chip err">⚠ {b['errors']} errors</span>
+        <span class="stat-chip">{b['patched']} VMs patched</span>
+        <span class="stat-chip">{b['rotations']} log rotations</span>
+        <span class="stat-chip">{b['prunes']} Docker prunes</span>
+        <span class="stat-chip err">⚠ {b['errors']} errors — see Audit Log</span>
+        <a href="/batches" class="stat-chip" style="color:#4f46e5;text-decoration:none">Full History →</a>
       </div>
     </div>"""
 
-    # VM grid
+    # Needs Attention box (only if there are non-ok VMs)
+    attn_vms = [v for v in VMS if v["status"] in ("warning", "failed", "pending")]
+    attn_box = ""
+    if attn_vms:
+        rows = ""
+        for v in attn_vms:
+            host_color = {
+                "warning": "", "failed": " attn-host-failed", "pending": " attn-host-pending",
+            }.get(v["status"], "")
+            reason_map = {
+                "warning": v["note"] or f"Disk at {v['disk']}% — above warning threshold",
+                "failed":  f"Last action failed — {v['note']}" if v["note"] else "Last maintenance action failed (check Audit Log)",
+                "pending": v["note"] or "Awaiting Slack approval",
+            }
+            rows += f"""
+            <div class="attn-row">
+              <a href="/vm/{v['hostname']}" class="attn-host{host_color}">{v['hostname']}</a>
+              {badge(v['status'])}
+              {env_tag(v['env'])}
+              <span class="attn-reason">{reason_map.get(v['status'], '')}</span>
+              <a href="/vm/{v['hostname']}" class="attn-link">View →</a>
+            </div>"""
+        attn_box = f"""
+        <div class="card attn-box">
+          <div class="attn-hdr">
+            <span class="attn-title">NEEDS ATTENTION</span>
+            <span class="badge badge-amber">{len(attn_vms)} VMs</span>
+            <a href="/approvals" class="attn-link" style="margin-left:auto">
+              {f'{needs_approval} pending approval →' if needs_approval else ''}
+            </a>
+          </div>
+          {rows}
+        </div>"""
+
+    # VM grid — enriched cards
     cards = ""
     for vm in VMS:
         color, _, border = STATUS_COLORS.get(vm["status"], ("#94a3b8", "", "#94a3b8"))
-        disk_color = "amber" if vm["disk"] >= 75 else ("red" if vm["disk"] >= 90 else "indigo")
-        note_html = f'<div class="vm-note" style="color:{color}">{vm["note"]}</div>' if vm["note"] else ""
+        cpu  = vm.get("cpu",  0)
+        mem  = vm.get("mem",  0)
+        disk = vm["disk"]
+        pp   = vm.get("pending_patches", 0)
+        lat  = vm.get("last_action_type", "")
+
+        note_html = (
+            f'<div class="vm-note" style="color:{color};margin-bottom:6px">{vm["note"]}</div>'
+            if vm["note"] else ""
+        )
+
+        patches_html = ""
+        if pp > 0:
+            chip_cls = "patches-chip-crit" if pp >= 10 else "patches-chip"
+            patches_html = f'<span class="{chip_cls}">{pp} patches pending</span>'
+
         cards += f"""
         <a href="/vm/{vm['hostname']}" class="card vm-card" style="border-left-color:{border}">
           <div class="vm-card-header">
@@ -779,28 +908,72 @@ def page_fleet() -> str:
             <div class="vm-tags">{os_tag(vm['os'])}{env_tag(vm['env'])}</div>
           </div>
           {note_html}
-          <div class="vm-disk-row">
-            <div class="vm-disk-label"><span>Disk</span><span>{vm['disk']}%</span></div>
-            <div class="prog-wrap">
-              <div class="prog-fill prog-{disk_color}" style="width:{vm['disk']}%"></div>
+          <div class="vm-metrics">
+            <div class="vm-metric-row">
+              <span class="vm-metric-lbl">CPU</span>
+              <div class="vm-metric-bar">
+                <div class="prog-wrap" style="height:4px">
+                  <div class="prog-fill prog-{_metric_color(cpu)}" style="width:{cpu}%"></div>
+                </div>
+              </div>
+              <span class="vm-metric-num" style="color:{_metric_text_color(cpu)}">{cpu}%</span>
+            </div>
+            <div class="vm-metric-row">
+              <span class="vm-metric-lbl">MEM</span>
+              <div class="vm-metric-bar">
+                <div class="prog-wrap" style="height:4px">
+                  <div class="prog-fill prog-{_metric_color(mem)}" style="width:{mem}%"></div>
+                </div>
+              </div>
+              <span class="vm-metric-num" style="color:{_metric_text_color(mem)}">{mem}%</span>
+            </div>
+            <div class="vm-metric-row">
+              <span class="vm-metric-lbl">DISK</span>
+              <div class="vm-metric-bar">
+                <div class="prog-wrap" style="height:4px">
+                  <div class="prog-fill prog-{_metric_color(disk)}" style="width:{disk}%"></div>
+                </div>
+              </div>
+              <span class="vm-metric-num" style="color:{_metric_text_color(disk)}">{disk}%</span>
             </div>
           </div>
           <div class="vm-footer">
-            <span class="vm-ts">{vm['last_action']}</span>
-            {badge(vm['status'])}
+            <div class="vm-footer-col">
+              <span class="vm-ts">{vm['uptime']} uptime &nbsp;·&nbsp; {vm['ip']}</span>
+              <span class="vm-ts">{lat} &nbsp;·&nbsp; {vm['last_action']}</span>
+            </div>
+            <div class="vm-footer-actions">
+              {patches_html}
+              {badge(vm['status'])}
+            </div>
           </div>
         </a>"""
 
     return f"""
     {kpis}
     {batch}
+    {attn_box}
     <div class="section-hdr">
       <div>
         <div class="section-title">VM Fleet</div>
-        <div class="section-sub">{len(VMS)} hosts across {len(set(v['env'] for v in VMS))} environments</div>
+        <div class="section-sub">{len(VMS)} hosts across {len(set(v['env'] for v in VMS))} environments &nbsp;·&nbsp; data as of 2026-04-23 02:14 UTC</div>
       </div>
     </div>
     <div class="vm-grid">{cards}</div>"""
+
+
+def _appr_health_metric(label: str, pct: int, extra_val: str = "") -> str:
+    fill_color = _metric_bar_color(pct)
+    text_color = _metric_text_color(pct)
+    val_display = extra_val if extra_val else f"{pct}%"
+    return f"""
+    <div class="appr-hm">
+      <span class="appr-hm-lbl">{label}</span>
+      <span class="appr-hm-val" style="color:{text_color}">{val_display}</span>
+      <div class="appr-hm-bar">
+        <div class="appr-hm-fill" style="width:{pct}%;background:{fill_color}"></div>
+      </div>
+    </div>"""
 
 
 def page_approvals() -> str:
@@ -817,6 +990,43 @@ def page_approvals() -> str:
             extra = f'<div class="pkg-pills">{pills}</div>'
 
         tier_cls = "badge-danger" if a["tier"] == "HIGH RISK" else "badge-amber"
+
+        cpu  = a.get("vm_cpu",  0)
+        mem  = a.get("vm_mem",  0)
+        disk = a.get("vm_disk", 0)
+        load = a.get("vm_load", "—")
+        uptime = a.get("vm_uptime", "—")
+        trigger = a.get("trigger", "")
+        reject_consequence = a.get("reject_consequence", "")
+        rollback_strategy  = a.get("rollback_strategy", "")
+
+        health_panel = f"""
+        <div class="appr-health">
+          <div class="appr-health-title">VM Health at Request Time</div>
+          <div class="appr-health-metrics">
+            {_appr_health_metric("CPU", cpu)}
+            {_appr_health_metric("MEM", mem)}
+            {_appr_health_metric("DISK", disk)}
+            {_appr_health_metric("LOAD", min(cpu, 100), load)}
+          </div>
+          <div class="appr-trigger-row">
+            <span class="appr-trigger-lbl">TRIGGER</span>
+            <span class="appr-trigger-val">{trigger}</span>
+          </div>
+        </div>"""
+
+        consequences = f"""
+        <div class="appr-consequences">
+          <div class="appr-cons-row">
+            <span class="appr-cons-lbl">ROLLBACK</span>
+            <span class="appr-cons-val">{rollback_strategy}</span>
+          </div>
+          <div class="appr-cons-row">
+            <span class="appr-cons-lbl">IF REJECTED</span>
+            <span class="appr-cons-val appr-cons-val-risk">{reject_consequence}</span>
+          </div>
+        </div>"""
+
         cards += f"""
         <div class="card appr-card">
           <div class="appr-band" style="background: linear-gradient(135deg, {a['header_color']}, {a['header_color']}cc)">
@@ -827,30 +1037,32 @@ def page_approvals() -> str:
           <div class="appr-body">
             <div class="appr-meta-row">
               <span class="appr-hostname">{a['hostname']}</span>
-              <span class="appr-osinfo">{a['os']} &nbsp;·&nbsp; {a['ip']} &nbsp;·&nbsp; {a['env']}</span>
+              <span class="appr-osinfo">{a['os']} &nbsp;·&nbsp; {a['ip']} &nbsp;·&nbsp; {a['env']} &nbsp;·&nbsp; up {uptime}</span>
               <span class="appr-countdown">⏱ {a['countdown']}</span>
             </div>
+            {health_panel}
             <div class="appr-reasoning">{a['reasoning']}</div>
             {extra}
             <div class="appr-footer">
-              <a href="#" class="btn-approve">APPROVE</a>
-              <a href="#" class="btn-reject">REJECT</a>
-              <a href="#" class="appr-details">View Full Details →</a>
+              <a href="#" class="btn-approve">✓ APPROVE</a>
+              <a href="#" class="btn-reject">✕ REJECT</a>
+              <a href="/audit" class="appr-details">View in Audit Log →</a>
             </div>
+            {consequences}
           </div>
         </div>"""
 
     resolved = """
     <div class="card resolved-card" style="margin-top:8px">
-      <span class="resolved-label">RESOLVED TODAY — 14 actions</span>
-      <span style="margin-left:auto; color:#94a3b8; font-size:1rem">›</span>
+      <span class="resolved-label">RESOLVED TODAY — 14 actions approved or rejected</span>
+      <a href="/audit" style="margin-left:auto; color:#4f46e5; font-size:0.875rem; text-decoration:none; font-weight:500">View in Audit Log →</a>
     </div>"""
 
     return f"""
     <div class="section-hdr">
       <div>
         <div class="section-title">Pending Approval</div>
-        <div class="section-sub">2 actions require your decision before the agent can proceed</div>
+        <div class="section-sub">{len(APPROVALS)} actions require your decision before the agent can proceed &nbsp;·&nbsp; auto-reject in &lt; 30 min</div>
       </div>
       <div class="filter-chips">
         <a href="#" class="chip active">All</a>
@@ -876,17 +1088,32 @@ def page_vm(hostname: str) -> str:
         {"ts": "2026-04-23 02:05", "action": "Pre-Validation", "status": "ok",  "duration": "3s",     "op": "agent", "detail": "SSH OK, OS verified"},
     ])
 
+    _detail_cls_vm = {
+        "ok":      ("audit-detail-ok",      "#f8f9ff"),
+        "failed":  ("audit-detail-failed",   "#fff8f8"),
+        "warning": ("audit-detail-warning",  "#fffbeb"),
+        "pending": ("audit-detail-pending",  "#faf8ff"),
+    }
     rows = ""
     for i, a in enumerate(actions):
         alt = ' row-alt' if i % 2 == 1 else ''
-        failed_cls = ' row-failed' if a["status"] == "failed" else ''
+        failed_cls = ' row-failed' if a["status"] == "failed" else (
+            ' row-pending' if a["status"] == "pending" else ''
+        )
+        det_cls, _ = _detail_cls_vm.get(a["status"], ("audit-detail-ok", ""))
+        detail_html = (
+            f'<div class="audit-detail {det_cls}">↳ {a["detail"]}</div>'
+            if a.get("detail") else ""
+        )
         rows += f"""<tr class="{alt}{failed_cls}">
           <td class="td-ts">{a['ts']} UTC</td>
-          <td>{a['action']}</td>
+          <td>
+            <div>{a['action']}</div>
+            {detail_html}
+          </td>
           <td>{audit_badge(a['status'])}</td>
           <td class="td-mono">{a['duration']}</td>
           <td class="td-mono">{a['op']}</td>
-          <td style="color:#475569;font-size:0.8125rem">{a['detail']}</td>
         </tr>"""
 
     disk_data = [
@@ -912,6 +1139,21 @@ def page_vm(hostname: str) -> str:
     if vm["disk"] >= 75:
         callout = '<div class="callout callout-amber">⚠ Root partition above 75% threshold. Disk cleanup recommended: /tmp eligible, apt cache ~1.2 GB available.</div>'
 
+    cpu  = vm.get("cpu",  0)
+    mem  = vm.get("mem",  0)
+    pp   = vm.get("pending_patches", 0)
+
+    pending_section = ""
+    if pp > 0:
+        chip_cls = "patches-chip-crit" if pp >= 10 else "patches-chip"
+        pending_section = f"""
+        <div class="callout callout-amber" style="margin-top:0;margin-bottom:16px">
+          <strong><span class="{chip_cls}" style="font-size:0.75rem;padding:3px 8px">{pp} patches pending</span></strong>
+          &nbsp; This VM has {pp} security package update{'s' if pp != 1 else ''} queued.
+          They will be applied at the next scheduled maintenance window (Tue/Thu 02:00 UTC)
+          or when you trigger a batch manually.
+        </div>"""
+
     return f"""
     <div class="detail-top">
       <div class="card identity-card identity-top-border" style="border-top-color:{border}">
@@ -926,6 +1168,12 @@ def page_vm(hostname: str) -> str:
           <div class="field-row"><span class="field-label">Uptime</span><span class="field-value">{vm['uptime']}</span></div>
           <div class="field-row"><span class="field-label">SSH Key</span><span class="field-value">/keys/{vm['hostname']}.pem</span></div>
           <div class="field-row"><span class="field-label">Last Seen</span><span class="field-value">{vm['last_action']} UTC</span></div>
+          <div class="field-row"><span class="field-label">CPU Usage</span>
+            <span class="field-value" style="color:{_metric_text_color(cpu)}">{cpu}%</span>
+          </div>
+          <div class="field-row"><span class="field-label">Memory Usage</span>
+            <span class="field-value" style="color:{_metric_text_color(mem)}">{mem}%</span>
+          </div>
         </div>
         <div class="divider"></div>
         <div class="maint-label">Maintenance Window</div>
@@ -941,7 +1189,13 @@ def page_vm(hostname: str) -> str:
         {callout}
       </div>
     </div>
-    <div class="kpi-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:16px">
+    {pending_section}
+    <div class="kpi-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:16px">
+      <div class="card kpi-tile kpi-top-border" style="border-color:#d97706">
+        <div class="kpi-label">Patches Pending</div>
+        <div class="kpi-value" style="color:{'#d97706' if pp > 0 else '#94a3b8'}">{pp}</div>
+        <div class="kpi-subtitle">{'security updates queued' if pp > 0 else 'up to date'}</div>
+      </div>
       <div class="card kpi-tile kpi-top-border" style="border-color:#16a34a">
         <div class="kpi-label">Patches Applied (30d)</div>
         <div class="kpi-value" style="color:#16a34a">34</div>
@@ -965,8 +1219,8 @@ def page_vm(hostname: str) -> str:
       </div>
       <table class="data-table">
         <thead><tr>
-          <th>TIMESTAMP</th><th>ACTION</th><th>STATUS</th>
-          <th>DURATION</th><th>OPERATOR</th><th>DETAIL</th>
+          <th>TIMESTAMP</th><th>ACTION &amp; DETAIL</th><th>STATUS</th>
+          <th>DURATION</th><th>OPERATOR</th>
         </tr></thead>
         <tbody>{rows}</tbody>
       </table>
@@ -974,44 +1228,64 @@ def page_vm(hostname: str) -> str:
 
 
 def page_audit() -> str:
+    _detail_cls = {
+        "ok":      "audit-detail-ok",
+        "failed":  "audit-detail-failed",
+        "warning": "audit-detail-warning",
+        "pending": "audit-detail-pending",
+    }
     rows = ""
     for i, e in enumerate(AUDIT_EVENTS):
         alt = ' row-alt' if i % 2 == 1 else ''
         status_cls = " row-failed" if e["status"] == "failed" else (" row-pending" if e["status"] == "pending" else "")
+        det_cls = _detail_cls.get(e["status"], "audit-detail-ok")
+        detail_html = (
+            f'<div class="audit-detail {det_cls}">↳ {e["detail"]}</div>'
+            if e.get("detail") else ""
+        )
         rows += f"""<tr class="{alt}{status_cls}">
           <td class="td-ts">{e['ts']}</td>
           <td class="td-ts">{e['batch']}</td>
           <td><a href="/vm/{e['vm']}" class="td-host">{e['vm']}</a></td>
-          <td>{e['action']}</td>
+          <td>
+            <div>{e['action']}</div>
+            {detail_html}
+          </td>
           <td>{audit_badge(e['status'])}</td>
           <td class="td-right">{e['duration']}</td>
           <td class="td-mono">{e['op']}</td>
-          <td><a href="#" class="td-link">Details →</a></td>
         </tr>"""
 
     return f"""
     <div class="section-hdr">
       <div>
         <div class="section-title">Audit Log</div>
-        <div class="section-sub">Complete record of all agent actions</div>
+        <div class="section-sub">Complete before-and-after record of every agent action &nbsp;·&nbsp; immutable &nbsp;·&nbsp; strict-mode enforced</div>
       </div>
       <a href="#" class="btn-outline btn-outline-indigo">EXPORT CSV</a>
     </div>
     <div class="card" style="padding:16px;margin-bottom:16px">
       <div class="filter-bar">
-        <input class="search-input" type="text" placeholder="Search hostname, batch ID, action..." />
+        <input class="search-input" type="text" placeholder="Search hostname, batch ID, action, detail..." />
         <select class="select-input"><option>All VMs</option>{"".join(f"<option>{v['hostname']}</option>" for v in VMS)}</select>
         <select class="select-input"><option>All Actions</option><option>OS Patching</option><option>Log Rotation</option><option>Docker Prune</option><option>Disk Cleanup</option><option>Pre-Validation</option></select>
         <select class="select-input"><option>All Status</option><option>OK</option><option>Failed</option><option>Pending</option><option>Warning</option></select>
+        <select class="select-input"><option>All Environments</option><option>PROD</option><option>STAGING</option><option>DEV</option></select>
         <a href="#" class="btn-primary">APPLY</a>
       </div>
     </div>
-    <div class="results-bar"><strong>247 events</strong> &nbsp;·&nbsp; filtered: last 7 days &nbsp;·&nbsp; all environments &nbsp;&nbsp;<a href="#" class="td-link" style="font-size:0.8125rem">Clear Filters</a></div>
+    <div class="results-bar">
+      <strong>247 events</strong> &nbsp;·&nbsp; last 7 days &nbsp;·&nbsp; all environments &nbsp;·&nbsp;
+      <span style="color:#dc2626;font-weight:600">2 failures</span> &nbsp;·&nbsp;
+      <span style="color:#7c3aed;font-weight:600">1 pending</span>
+      &nbsp;&nbsp;<a href="#" class="td-link" style="font-size:0.8125rem">Clear Filters</a>
+    </div>
     <div class="card table-card">
       <table class="data-table">
         <thead><tr>
-          <th>TIMESTAMP</th><th>BATCH ID</th><th>VM</th><th>ACTION</th>
-          <th>STATUS</th><th class="r">DURATION</th><th>OPERATOR</th><th></th>
+          <th>TIMESTAMP</th><th>BATCH ID</th><th>VM</th>
+          <th>ACTION &amp; DETAIL</th>
+          <th>STATUS</th><th class="r">DURATION</th><th>OPERATOR</th>
         </tr></thead>
         <tbody>{rows}</tbody>
       </table>
@@ -1093,16 +1367,35 @@ def page_batches() -> str:
         failed_cls = " row-failed" if b["status"] == "failed" else ""
         env_cls = "env-prod" if b["env"] == "PROD" else "env-staging"
         err_style = 'style="color:#dc2626;font-weight:700"' if b["errors"] > 0 else ""
+        err_summary = b.get("error_summary", "")
+        err_summary_html = (
+            f'<div class="batch-err-summary">↳ {err_summary}</div>'
+            if err_summary and b["errors"] > 0 else ""
+        )
+        failed_vms = b.get("failed_vms", [])
+        failed_vms_html = ""
+        if failed_vms:
+            links = " &nbsp;·&nbsp; ".join(
+                f'<a href="/vm/{h}" class="td-link" style="font-size:0.75rem">{h}</a>'
+                for h in failed_vms
+            )
+            failed_vms_html = f'<div style="font-size:0.7rem;color:#94a3b8;margin-top:2px">{links}</div>'
         rows += f"""<tr class="{alt}{failed_cls}">
-          <td><span class="td-host" style="cursor:default">{b['id']}</span></td>
+          <td>
+            <span class="td-host" style="cursor:default;font-family:'JetBrains Mono',monospace">{b['id']}</span>
+          </td>
           <td class="td-ts">{b['started']} UTC</td>
           <td><span class="env-badge {env_cls}">{b['env']}</span></td>
           <td class="td-right">{b['vms']}</td>
           <td class="td-right">{b['actions']}</td>
           <td>{audit_badge(b['status'])}</td>
           <td class="td-right">{b['duration']}</td>
-          <td class="td-right" {err_style}>{b['errors']}</td>
-          <td><a href="#" class="td-link">Details →</a></td>
+          <td class="td-right" {err_style}>
+            <div>{b['errors']}</div>
+            {err_summary_html}
+            {failed_vms_html}
+          </td>
+          <td><a href="/audit" class="td-link">Audit →</a></td>
         </tr>"""
 
     return f"""

@@ -1,7 +1,11 @@
 """errander — Operations Hub development UI server."""
 from __future__ import annotations
 
+import hashlib
+import hmac
 import math
+import os
+import time
 from typing import Any
 
 from aiohttp import web
@@ -13,6 +17,31 @@ from .data import (
 )
 
 PORT = 8099
+
+# ── Auth ──────────────────────────────────────────────────────────────────────
+
+_AUTH_USERNAME: str = os.environ.get("ERRANDER_UI_USERNAME", "admin")
+_AUTH_PASSWORD: str = os.environ.get("ERRANDER_UI_PASSWORD", "errander")
+_AUTH_SECRET: bytes = os.environ.get("ERRANDER_UI_SECRET", "errander-dev-secret-2026").encode()
+_AUTH_COOKIE = "errander_session"
+_AUTH_TTL = 28800  # 8 hours
+
+
+def _make_token() -> str:
+    ts = str(int(time.time()))
+    sig = hmac.new(_AUTH_SECRET, ts.encode(), hashlib.sha256).hexdigest()
+    return f"{ts}.{sig}"
+
+
+def _valid_token(token: str) -> bool:
+    try:
+        ts_str, sig = token.split(".", 1)
+        expected = hmac.new(_AUTH_SECRET, ts_str.encode(), hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(sig, expected):
+            return False
+        return (time.time() - float(ts_str)) < _AUTH_TTL
+    except Exception:
+        return False
 
 # ── CSS ───────────────────────────────────────────────────────────────────────
 
@@ -669,7 +698,210 @@ body { font-family: 'Inter', system-ui, sans-serif; background: #f0f2ff; color: 
 /* ── Side-by-side two column ── */
 .two-col-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:20px; }
 @media (max-width:900px) { .agent-status-grid { grid-template-columns:repeat(2,1fr); } .two-col-grid { grid-template-columns:1fr; } }
+
+/* ── Sign-out link in sidebar footer ── */
+.signout-link {
+  display: block; margin-top: 8px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.65rem; font-weight: 600; letter-spacing: 0.06em;
+  color: rgba(255,255,255,0.25); text-decoration: none;
+  text-align: center; padding: 4px 0;
+  transition: color 0.15s;
+}
+.signout-link:hover { color: rgba(255,255,255,0.6); }
 """
+
+# ── Login page CSS ─────────────────────────────────────────────────────────────
+
+LOGIN_CSS = """
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600;700&family=Space+Grotesk:wght@600;700;800&display=swap');
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+
+body {
+  font-family: 'Inter', system-ui, sans-serif;
+  background: #0f0e2e;
+  display: flex; align-items: center; justify-content: center;
+  min-height: 100vh;
+  position: relative; overflow: hidden;
+}
+
+/* Subtle background grid */
+body::before {
+  content: '';
+  position: fixed; inset: 0;
+  background-image:
+    linear-gradient(rgba(99,102,241,0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(99,102,241,0.06) 1px, transparent 1px);
+  background-size: 40px 40px;
+  pointer-events: none;
+}
+
+/* Glow orbs */
+body::after {
+  content: '';
+  position: fixed;
+  width: 600px; height: 600px;
+  background: radial-gradient(circle, rgba(99,102,241,0.18) 0%, transparent 70%);
+  top: -100px; left: -100px;
+  pointer-events: none;
+}
+
+.login-wrapper {
+  position: relative; z-index: 1;
+  display: flex; flex-direction: column; align-items: center;
+  width: 100%; max-width: 420px;
+  padding: 24px 16px;
+}
+
+/* Logo */
+.login-logo {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 1.75rem; font-weight: 800;
+  color: #fff; letter-spacing: -0.03em;
+  margin-bottom: 4px;
+}
+.login-logo span { color: #a5b4fc; }
+.login-subtitle {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.7rem; font-weight: 600;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  color: rgba(165,180,252,0.6);
+  margin-bottom: 36px;
+}
+
+/* Card */
+.login-card {
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(165,180,252,0.15);
+  border-radius: 16px;
+  padding: 36px 32px 28px;
+  width: 100%;
+  backdrop-filter: blur(12px);
+  box-shadow: 0 24px 64px rgba(0,0,0,0.4);
+}
+
+.login-card h2 {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 1.2rem; font-weight: 700;
+  color: #fff; margin-bottom: 6px;
+}
+.login-card .login-desc {
+  font-size: 0.8125rem; color: rgba(255,255,255,0.45);
+  margin-bottom: 28px; line-height: 1.5;
+}
+
+/* Fields */
+.login-field { margin-bottom: 16px; }
+.login-field label {
+  display: block;
+  font-size: 0.75rem; font-weight: 600;
+  color: rgba(165,180,252,0.8);
+  letter-spacing: 0.04em; text-transform: uppercase;
+  margin-bottom: 6px;
+}
+.login-field input {
+  width: 100%;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(165,180,252,0.2);
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-family: 'Inter', sans-serif;
+  font-size: 0.9375rem; color: #fff;
+  outline: none; transition: border-color 0.15s, box-shadow 0.15s;
+}
+.login-field input::placeholder { color: rgba(255,255,255,0.25); }
+.login-field input:focus {
+  border-color: #818cf8;
+  box-shadow: 0 0 0 3px rgba(99,102,241,0.2);
+}
+
+/* Error */
+.login-error {
+  display: flex; align-items: center; gap: 8px;
+  background: rgba(239,68,68,0.12);
+  border: 1px solid rgba(239,68,68,0.3);
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 0.8125rem; color: #fca5a5;
+  margin-bottom: 18px;
+}
+
+/* Button */
+.login-btn {
+  width: 100%; padding: 12px;
+  background: #4f46e5;
+  border: none; border-radius: 8px;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.9375rem; font-weight: 700;
+  color: #fff; letter-spacing: 0.01em;
+  cursor: pointer; transition: background 0.15s, transform 0.1s;
+  margin-top: 8px;
+}
+.login-btn:hover { background: #4338ca; }
+.login-btn:active { transform: scale(0.98); }
+
+/* Divider hint */
+.login-hint {
+  margin-top: 20px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.68rem; color: rgba(255,255,255,0.2);
+  text-align: center; letter-spacing: 0.04em;
+}
+
+/* Footer */
+.login-footer {
+  margin-top: 28px;
+  font-size: 0.72rem; color: rgba(255,255,255,0.2);
+  text-align: center; letter-spacing: 0.02em;
+}
+"""
+
+
+def page_login(error: bool = False) -> str:
+    error_block = """
+    <div class="login-error">
+      <span>&#9888;</span> Invalid username or password. Try again.
+    </div>""" if error else ""
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sign In — errander-ai</title>
+  <style>{LOGIN_CSS}</style>
+</head>
+<body>
+  <div class="login-wrapper">
+    <div class="login-logo">⚡ errander<span>-ai</span></div>
+    <div class="login-subtitle">Operations Hub · Authorized Access Only</div>
+
+    <div class="login-card">
+      <h2>Welcome back</h2>
+      <p class="login-desc">Sign in to access the SRE Operations Hub.</p>
+      {error_block}
+      <form method="POST" action="/login" autocomplete="on">
+        <div class="login-field">
+          <label for="username">Username</label>
+          <input id="username" name="username" type="text"
+                 placeholder="admin" autocomplete="username" autofocus>
+        </div>
+        <div class="login-field">
+          <label for="password">Password</label>
+          <input id="password" name="password" type="password"
+                 placeholder="••••••••" autocomplete="current-password">
+        </div>
+        <button class="login-btn" type="submit">SIGN IN &rarr;</button>
+      </form>
+      <div class="login-hint">SESSION EXPIRES AFTER 8 HOURS</div>
+    </div>
+
+    <div class="login-footer">errander-ai v1.0.0 &nbsp;·&nbsp; internal tool &nbsp;·&nbsp; do not expose publicly</div>
+  </div>
+</body>
+</html>"""
+
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -863,6 +1095,7 @@ def layout(title: str, active_url: str, breadcrumb: str, topnav_extra: str, cont
       <div class="sys-chip"><span class="sys-dot dot-green"></span>vLLM &nbsp;·&nbsp; ONLINE</div>
       <div class="sys-chip"><span class="sys-dot dot-indigo"></span>APScheduler &nbsp;·&nbsp; RUNNING</div>
       <div class="sys-version">v1.0.0 &nbsp;·&nbsp; SQLite audit</div>
+      <a href="/logout" class="signout-link">&#8594; Sign out</a>
     </div>
   </aside>
   <div class="shell">
@@ -1172,6 +1405,25 @@ def page_approvals() -> str:
     {resolved}"""
 
 
+def _vm_siblings_section(hostname: str, env: str) -> str:
+    siblings = [v for v in VMS if v["env"] == env and v["hostname"] != hostname]
+    if not siblings:
+        return ""
+    chips = ""
+    for s in siblings:
+        sc, _, _ = STATUS_COLORS.get(s["status"], ("#94a3b8", "", "#94a3b8"))
+        dot = f'<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:{sc};margin-right:5px;vertical-align:middle"></span>'
+        chips += f'<a href="/vm/{s["hostname"]}" style="display:inline-flex;align-items:center;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:5px 12px;font-size:0.8125rem;color:#334155;text-decoration:none;gap:2px;transition:border-color 0.15s" onmouseover="this.style.borderColor=\'#a5b4fc\'" onmouseout="this.style.borderColor=\'#e2e8f0\'">{dot}{s["hostname"]}</a>'
+    return f"""
+    <div class="card" style="padding:16px 20px;margin-top:16px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <span class="section-title" style="font-size:0.875rem">{env} Fleet — Other Hosts</span>
+        <a href="/inventory" class="td-link" style="font-size:0.8125rem">Full Inventory →</a>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px">{chips}</div>
+    </div>"""
+
+
 def page_vm(hostname: str) -> str:
     vm = next((v for v in VMS if v["hostname"] == hostname), None)
     if vm is None:
@@ -1321,7 +1573,8 @@ def page_vm(hostname: str) -> str:
         </tr></thead>
         <tbody>{rows}</tbody>
       </table>
-    </div>"""
+    </div>
+    {_vm_siblings_section(vm['hostname'], vm['env'])}"""
 
 
 def page_audit() -> str:
@@ -1614,6 +1867,56 @@ def page_inventory() -> str:
         </tr></thead>
         <tbody>{rows}</tbody>
       </table>
+    </div>
+    {_inventory_env_breakdown()}"""
+
+
+def _inventory_env_breakdown() -> str:
+    env_order = ["PROD", "STAGING", "DEV"]
+    cards_html = ""
+    for env_name in env_order:
+        group = [v for v in VMS if v["env"] == env_name]
+        if not group:
+            continue
+        ok_ct   = sum(1 for v in group if v["status"] == "ok")
+        warn_ct = sum(1 for v in group if v["status"] == "warning")
+        fail_ct = sum(1 for v in group if v["status"] in ("failed", "pending"))
+        total_patches = sum(v.get("pending_patches", 0) for v in group)
+        env_color = {"PROD": "#4f46e5", "STAGING": "#d97706", "DEV": "#16a34a"}.get(env_name, "#94a3b8")
+        vm_links = " ".join(
+            f'<a href="/vm/{v["hostname"]}" style="font-size:0.75rem;color:#4f46e5;text-decoration:none;font-family:\'JetBrains Mono\',monospace">{v["hostname"]}</a>'
+            for v in group
+        )
+        cards_html += f"""
+        <div class="card" style="padding:16px 18px">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+            <span style="font-size:0.65rem;font-weight:700;letter-spacing:0.1em;background:{env_color}22;color:{env_color};padding:3px 8px;border-radius:4px">{env_name}</span>
+            <span style="font-size:0.875rem;font-weight:600;color:#0f172a">{len(group)} hosts</span>
+          </div>
+          <div style="display:flex;gap:16px;margin-bottom:12px">
+            <div style="text-align:center">
+              <div style="font-size:1.25rem;font-weight:700;color:#16a34a">{ok_ct}</div>
+              <div style="font-size:0.7rem;color:#94a3b8;text-transform:uppercase;letter-spacing:0.06em">OK</div>
+            </div>
+            <div style="text-align:center">
+              <div style="font-size:1.25rem;font-weight:700;color:#d97706">{warn_ct}</div>
+              <div style="font-size:0.7rem;color:#94a3b8;text-transform:uppercase;letter-spacing:0.06em">WARN</div>
+            </div>
+            <div style="text-align:center">
+              <div style="font-size:1.25rem;font-weight:700;color:#dc2626">{fail_ct}</div>
+              <div style="font-size:0.7rem;color:#94a3b8;text-transform:uppercase;letter-spacing:0.06em">ISSUE</div>
+            </div>
+            <div style="text-align:center">
+              <div style="font-size:1.25rem;font-weight:700;color:#d97706">{total_patches}</div>
+              <div style="font-size:0.7rem;color:#94a3b8;text-transform:uppercase;letter-spacing:0.06em">PATCHES</div>
+            </div>
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px">{vm_links}</div>
+        </div>"""
+    return f"""
+    <div style="margin-top:20px">
+      <div style="font-family:'Space Grotesk',sans-serif;font-size:0.875rem;font-weight:700;color:#0f172a;margin-bottom:12px">Environment Breakdown</div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px">{cards_html}</div>
     </div>"""
 
 
@@ -1652,6 +1955,57 @@ def page_settings() -> str:
       SSH keys are referenced by file path in the inventory — never stored in the database.
     </div>"""
 
+    env_rows = [
+        ("ERRANDER_LLM_BASE_URL",      "LLM endpoint base URL",                           "set"),
+        ("ERRANDER_LLM_MODEL",         "Model identifier (e.g. Qwen3-8B-AWQ)",            "set"),
+        ("ERRANDER_LLM_API_KEY",       "API key — leave blank for unauthenticated vLLM",  "set"),
+        ("ERRANDER_LLM_TIMEOUT",       "Request timeout in seconds (default 60)",          "default"),
+        ("ERRANDER_LLM_TEMPERATURE",   "Sampling temperature (default 0.1)",               "default"),
+        ("ERRANDER_SLACK_BOT_TOKEN",   "xoxb-… token for posting messages",               "set"),
+        ("ERRANDER_SLACK_CHANNEL_ID",  "Channel for approval messages + reports",         "set"),
+        ("ERRANDER_SLACK_TIMEOUT",     "Approval wait timeout in seconds (default 1800)", "default"),
+        ("ERRANDER_SLACK_POLL_INTERVAL","Reaction poll interval in seconds (default 30)", "default"),
+        ("ERRANDER_AUDIT_DB_URL",      "SQLite path or PostgreSQL DSN",                   "set"),
+        ("ERRANDER_UI_USERNAME",       "Web UI login username (default: admin)",           "default"),
+        ("ERRANDER_UI_PASSWORD",       "Web UI login password (default: errander)",        "default"),
+        ("ERRANDER_UI_SECRET",         "HMAC cookie signing secret — change in prod",     "default"),
+    ]
+    env_table_rows = ""
+    for var, desc, status in env_rows:
+        if status == "set":
+            badge = '<span class="settings-badge" style="background:#dcfce7;color:#16a34a">SET</span>'
+        else:
+            badge = '<span class="settings-badge" style="background:#f1f5f9;color:#94a3b8">DEFAULT</span>'
+        env_table_rows += f"""
+        <tr>
+          <td style="font-family:'JetBrains Mono',monospace;font-size:0.775rem;color:#4f46e5;padding:8px 12px;white-space:nowrap">{var}</td>
+          <td style="font-size:0.8125rem;color:#475569;padding:8px 12px">{desc}</td>
+          <td style="padding:8px 12px">{badge}</td>
+        </tr>"""
+
+    env_section = f"""
+    <div class="card" style="margin-top:20px;padding:0;overflow:hidden">
+      <div style="padding:14px 16px;border-bottom:1px solid #e2e8f0;display:flex;align-items:center;justify-content:space-between">
+        <div>
+          <div class="section-title" style="font-size:0.875rem">Environment Variables Reference</div>
+          <div class="section-sub" style="font-size:0.75rem">All recognised env vars — set these before starting the agent</div>
+        </div>
+        <a href="/glossary" class="btn-outline btn-outline-indigo" style="font-size:0.75rem;padding:5px 12px">GLOSSARY</a>
+      </div>
+      <table style="width:100%;border-collapse:collapse">
+        <thead>
+          <tr style="background:#f8fafc">
+            <th style="text-align:left;font-size:0.7rem;font-weight:600;color:#94a3b8;letter-spacing:0.06em;text-transform:uppercase;padding:8px 12px">Variable</th>
+            <th style="text-align:left;font-size:0.7rem;font-weight:600;color:#94a3b8;letter-spacing:0.06em;text-transform:uppercase;padding:8px 12px">Purpose</th>
+            <th style="text-align:left;font-size:0.7rem;font-weight:600;color:#94a3b8;letter-spacing:0.06em;text-transform:uppercase;padding:8px 12px">Status</th>
+          </tr>
+        </thead>
+        <tbody style="divide-y:#f1f5f9">
+          {env_table_rows}
+        </tbody>
+      </table>
+    </div>"""
+
     return f"""
     <div class="section-hdr">
       <div>
@@ -1661,7 +2015,8 @@ def page_settings() -> str:
       <a href="#" class="btn-outline btn-outline-indigo">VIEW DOCS</a>
     </div>
     <div class="settings-grid">{cards}</div>
-    {note}"""
+    {note}
+    {env_section}"""
 
 
 # ── Admin page ────────────────────────────────────────────────────────────────
@@ -2611,10 +2966,6 @@ def page_agent() -> str:
         <div class="section-title">Agent Status</div>
         <div class="section-sub">LangGraph execution trace · LLM decisions · scheduler · probe · deferred queue</div>
       </div>
-      <div style="display:flex;gap:8px">
-        <a href="/admin" class="btn-outline btn-outline-indigo">Admin Controls</a>
-        <a href="#" class="btn-primary">▶ RUN BATCH NOW</a>
-      </div>
     </div>
     {status_strip}
     <div style="font-family:'Space Grotesk',sans-serif;font-size:0.875rem;font-weight:700;color:#0f172a;margin-bottom:12px">
@@ -2647,7 +2998,7 @@ async def handle_fleet(request: web.Request) -> web.Response:
         breadcrumb="Fleet Dashboard",
         topnav_extra=f'{env_badge_top("PROD")}'
                      f'<span class="last-batch">Last batch: 2026-04-23 02:00 UTC</span>'
-                     f'<a href="#" class="btn-primary">RUN BATCH NOW</a>',
+                     f'<a href="#" class="btn-primary">&#9654; RUN BATCH NOW</a>',
         content=page_fleet(),
     )
     return web.Response(text=html, content_type="text/html")
@@ -2772,10 +3123,53 @@ async def handle_placeholder(request: web.Request) -> web.Response:
     return web.Response(text=html, content_type="text/html")
 
 
+# ── Auth handlers ──────────────────────────────────────────────────────────────
+
+async def handle_login_get(request: web.Request) -> web.Response:
+    # Already authenticated → go straight to dashboard
+    if _valid_token(request.cookies.get(_AUTH_COOKIE, "")):
+        raise web.HTTPFound("/")
+    return web.Response(text=page_login(error=False), content_type="text/html")
+
+
+async def handle_login_post(request: web.Request) -> web.Response:
+    data = await request.post()
+    username = str(data.get("username", "")).strip()
+    password = str(data.get("password", "")).strip()
+    if username == _AUTH_USERNAME and password == _AUTH_PASSWORD:
+        response = web.HTTPFound("/")
+        response.set_cookie(
+            _AUTH_COOKIE, _make_token(),
+            max_age=_AUTH_TTL, httponly=True, samesite="Lax",
+        )
+        raise response
+    return web.Response(text=page_login(error=True), content_type="text/html")
+
+
+async def handle_logout(request: web.Request) -> web.Response:
+    response = web.HTTPFound("/login")
+    response.del_cookie(_AUTH_COOKIE)
+    raise response
+
+
+# ── Auth middleware ────────────────────────────────────────────────────────────
+
+_PUBLIC_PATHS = {"/login", "/logout"}
+
+
+@web.middleware
+async def _auth_middleware(request: web.Request, handler: Any) -> web.StreamResponse:
+    if request.path in _PUBLIC_PATHS:
+        return await handler(request)
+    if not _valid_token(request.cookies.get(_AUTH_COOKIE, "")):
+        raise web.HTTPFound("/login")
+    return await handler(request)
+
+
 # ── App factory ───────────────────────────────────────────────────────────────
 
 def create_app() -> web.Application:
-    app = web.Application()
+    app = web.Application(middlewares=[_auth_middleware])
     app.router.add_get("/",                handle_fleet)
     app.router.add_get("/approvals",       handle_approvals)
     app.router.add_get("/vm/{hostname}",   handle_vm)
@@ -2786,6 +3180,9 @@ def create_app() -> web.Application:
     app.router.add_get("/admin",           handle_admin)
     app.router.add_get("/glossary",        handle_glossary)
     app.router.add_get("/agent",           handle_agent)
+    app.router.add_get("/login",           handle_login_get)
+    app.router.add_post("/login",          handle_login_post)
+    app.router.add_get("/logout",          handle_logout)
     return app
 
 

@@ -1,5 +1,26 @@
 # Errander-AI Command Log
 
+## Login screen + Godmode E2E sweep (2026-05-19)
+
+```bash
+# Verify login page, token logic, and route registration
+uv run python -c "from errander.web.server import page_login, create_app, _valid_token, _make_token; ..."
+
+# Curl test — verify error block returned for wrong credentials
+curl -s -X POST http://localhost:8099/login -d "username=admin&password=badpass" | grep -A3 "login-error"
+
+# Verify all modified pages render after E2E fixes
+uv run python -c "from errander.web.server import page_fleet, page_agent, page_settings, page_inventory, page_vm; ..."
+
+# Kill old server (Windows)
+MSYS_NO_PATHCONV=1 taskkill.exe /PID <pid> /F
+
+# UI test suite — 111 passed, 0 regressions
+uv run pytest tests/ui/ -x -q
+```
+
+---
+
 ## /agent page — route handler + route registration (2026-05-19)
 
 ```bash

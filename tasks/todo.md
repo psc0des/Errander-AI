@@ -1,3 +1,17 @@
+## Login screen + Godmode E2E sweep + 5 fixes (2026-05-19, COMPLETED)
+
+- [x] Login page — dark indigo full-screen card, HMAC-signed 8h session cookie, no new deps
+- [x] Auth middleware — protects all routes, /login and /logout public
+- [x] Sign out link in sidebar footer
+- [x] Agent page — removed duplicate Admin Controls/RUN BATCH NOW buttons (were in both topnav and section-hdr)
+- [x] Fleet topnav — `▶ RUN BATCH NOW` symbol consistency (was missing ▶)
+- [x] Settings page — added Environment Variables Reference table (was sparse)
+- [x] VM detail page — added "Fleet Siblings" section linking to other VMs in same env (was sparse)
+- [x] Inventory page — added Environment Breakdown summary cards (PROD/STAGING/DEV counts)
+- [x] 111 UI tests passing, 0 regressions
+
+---
+
 ## UI overhaul — information density + actionability + /agent page (2026-05-19, COMPLETED)
 
 - [x] VM cards: CPU / MEM / DISK tri-bars, pending patches chip, uptime, IP, last action type

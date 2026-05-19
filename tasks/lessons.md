@@ -1,5 +1,11 @@
 # Errander-AI — Lessons Learned
 
+## 2026-05-19 — Page-level action buttons belong in topnav_extra only, not duplicated in section-hdr
+
+When the layout() function already accepts topnav_extra for page-level actions, writing the same buttons again inside page_X()'s section-hdr creates a visible duplicate. Rule: page functions own content only — the topnav_extra in the handler owns the action buttons. Never put action buttons in both places.
+
+Also: every page with less than ~60% viewport coverage feels abandoned. Sparse pages need a second section even if it's contextual/reference data. For a VM detail page, the fleet siblings are always relevant. For inventory, the environment breakdown is always relevant. For settings, the env vars reference is always relevant. If the primary content doesn't fill the screen, ask "what else would a user want to know here?"
+
 ## 2026-05-19 — Agent internals page needs a dedicated route, not a placeholder
 
 When adding a page that lives under a nav section, the full wiring is: (1) page function, (2) route handler async def, (3) app.router.add_get() in create_app(). Stopping at step 1 leaves the route returning 404. Always write all three before considering a page "done". Verify with `uv run python -c "from errander.web.server import create_app; app = create_app(); ..."` to confirm route registration.

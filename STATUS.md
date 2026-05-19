@@ -4,6 +4,13 @@
 2026-05-19
 
 ## Current Phase
+**Login screen + Godmode E2E sweep + 5 UI fixes (2026-05-19).**
+
+Login screen: dark indigo full-page card, HMAC-signed 8h session cookie (hashlib/hmac stdlib — no new deps), auth middleware protecting all routes, Sign out in sidebar.
+
+Godmode E2E sweep found and fixed: duplicate agent page buttons, missing ▶ on fleet topnav, sparse Settings/VM-detail/Inventory pages. Settings now has a full env vars reference table. VM detail has a fleet siblings section. Inventory has an environment breakdown.
+
+## Previous Phase
 **UI overhaul — information density, actionability, inline audit detail + /agent page (2026-05-19).**
 
 Comprehensive UX improvement to the dev UI driven by operator pain points:

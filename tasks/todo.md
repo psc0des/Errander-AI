@@ -1,3 +1,17 @@
+## Glossary overhaul — current with v1 codebase (2026-05-19, COMPLETED)
+
+- [x] Added Backup Verify action term (Low risk, read-only)
+- [x] Added Service Restart action term (High risk, operator-triggered, allowlist required)
+- [x] Added Layer A term (Operator Assistant, read-only, --ask + UI)
+- [x] Added Layer B term (Safe Execution, deterministic Python, no LLM in live path)
+- [x] Renamed "vLLM" → "LLM Endpoint" — leads with any OpenAI-compatible endpoint
+- [x] Fixed Plan Enrichment workflow badge: P0-1 → PRE-APPROVAL
+- [x] Fixed Plan Enrichment node sublabel: removed cryptic P0-1 label
+- [x] Updated Action Exec. popup + sublabel to cover all 6 v1 sub-graphs
+- [x] Added risk tier labels to all ACTIONS definitions
+
+---
+
 ## Login screen + Godmode E2E sweep + 5 fixes (2026-05-19, COMPLETED)
 
 - [x] Login page — dark indigo full-screen card, HMAC-signed 8h session cookie, no new deps

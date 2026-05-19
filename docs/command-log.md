@@ -1,5 +1,23 @@
 # Errander-AI Command Log
 
+## Glossary overhaul (2026-05-19)
+
+```bash
+# Syntax-check server.py after _GLOSS + _WF_JS edits
+uv run python -c "import errander.web.server; print('OK')"
+
+# Kill old server (stale PID from prior session) and restart
+MSYS_NO_PATHCONV=1 taskkill.exe /PID 15056 /F
+uv run python -m errander.web &>/tmp/web_server.log &
+
+# Browser: verified glossary page at http://localhost:8099/glossary
+#   - New ACTIONS: Backup Verify, Service Restart
+#   - New SAFETY: Layer A, Layer B
+#   - INFRA: vLLM → LLM Endpoint
+#   - Workflow: Plan Enrichment badge P0-1 → PRE-APPROVAL, sublabel fixed
+#   - Workflow: Action Exec. sublabel → "6 sub-graphs · all actions"
+```
+
 ## Login screen + Godmode E2E sweep (2026-05-19)
 
 ```bash

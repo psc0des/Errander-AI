@@ -4,6 +4,18 @@
 2026-05-19
 
 ## Current Phase
+**Glossary overhaul — current with v1 codebase (2026-05-19).**
+
+Updated `_GLOSS` and `_WF_JS` to match the actual codebase state:
+- Added Backup Verify and Service Restart to ACTIONS section (both v1 sub-graphs)
+- Added Layer A / Layer B (AI safety invariant) to SAFETY section
+- Renamed "vLLM" → "LLM Endpoint", leading with "any OpenAI-compatible endpoint"
+- Fixed Plan Enrichment workflow badge: "P0-1" → "PRE-APPROVAL"
+- Fixed Plan Enrichment node sublabel: removed "P0-1"
+- Updated Action Exec. popup and sublabel to reflect all 6 v1 sub-graphs
+- Updated action descriptions with risk tiers (Low/Medium/High)
+
+## Previous Phase
 **Login screen + Godmode E2E sweep + 5 UI fixes (2026-05-19).**
 
 Login screen: dark indigo full-page card, HMAC-signed 8h session cookie (hashlib/hmac stdlib — no new deps), auth middleware protecting all routes, Sign out in sidebar.

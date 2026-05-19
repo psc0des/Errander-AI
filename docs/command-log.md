@@ -1812,4 +1812,10 @@ uv run ruff check errander/ tests/agent/test_disk_gate.py   # All checks passed
 uv run mypy errander/   # 77 source files, no issues
 git add errander/agent/vm_graph.py errander/models/events.py tests/agent/test_disk_gate.py
 git commit -m "feat: Phase F4 post_cleanup_disk_gate_node -- re-check disk after cleanup before patching, block at 95%"
+
+# P0-1 immutable execution artifact fix (2026-05-19)
+uv run pytest tests/agent/subgraphs/test_patching.py tests/execution/test_commands.py tests/agent/test_deferred_replay.py -x -q   # 109 passed
+uv run pytest -x -q   # 1982 passed, 0 failures
+git add errander/execution/commands.py errander/agent/subgraphs/patching.py errander/agent/vm_graph.py errander/agent/graph.py errander/main.py tests/agent/subgraphs/test_patching.py tests/execution/test_commands.py tests/agent/test_deferred_replay.py tests/chaos/test_fault_injection.py STATUS.md docs/learning/37-immutable-plan-artifact.md
+git commit -m "fix: P0-1 true immutable execution artifact — pinned patching + deferred replay age check"
 ```

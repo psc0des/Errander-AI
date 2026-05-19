@@ -1,5 +1,15 @@
 # Errander-AI — Lessons Learned
 
+## 2026-05-19 — "Plan enrichment with hash commitment" ≠ "immutable execution artifact"
+
+Hashing the enriched plan (packages + versions) and verifying it at approval time is necessary but not sufficient. If live execution still calls `apt-get upgrade -y` instead of `apt-get install pkg=version`, the approved artifact is decorative — repos can change between approval and apply.
+
+The fix has two parts that must both be present: (1) generate `install_pinned()` from the approved package list at execution time, and (2) wire the approved packages from the enriched plan preview into `PatchingGraphState`. Without (2), (1) is unreachable.
+
+For deferred replay, hash integrity proves the stored text wasn't tampered with, but package drift between approval and window time is a separate concern handled by pinned execution failing closed at runtime if a version is unavailable.
+
+Rule: when QA says "the feature is not truly closed," treat it as a P0 regression. Check every step in the data flow from approval to execution — not just the approval gate.
+
 ## 2026-05-19 — Glossary and workflow diagram must stay in sync with the actual codebase
 
 When a new sub-graph or action is added to the agent, three places need updating in the glossary page: (1) the `_GLOSS` list (new term card), (2) the `_WF_JS` node popup text for the affected workflow node (e.g. Action Execution checks/note fields), and (3) the node sublabels in `_nodes` tuple list. Also check for internal ticket/sprint codes (like "P0-1") baked into badge text or sublabels — these are meaningless to operators and should be replaced with descriptive labels ("PRE-APPROVAL").

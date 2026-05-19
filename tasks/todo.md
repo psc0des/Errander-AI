@@ -1,3 +1,16 @@
+## P0-1 true immutable execution artifact (2026-05-19, COMPLETED)
+
+- [x] Add `install_pinned()` + `simulate_install_pinned()` to `PackageManager`, `AptManager`, `DnfManager`
+- [x] `execute_node` uses `install_pinned()` in live mode; fails closed without approved_packages or missing versions
+- [x] `_run_patching()` extracts `approved_packages` from enriched plan preview and injects into `PatchingGraphState`
+- [x] `load_deferred_artifact_node` checks artifact age via `preloaded_approved_at`; fails closed > 168h; warns > 24h
+- [x] `run_env_batch` passes `preloaded_approved_at` from `record.approved_at`
+- [x] Tests updated: chaos, patching execute_node, commands install_pinned, deferred replay age check
+- [x] Docs: STATUS.md, 37-immutable-plan-artifact.md, todo.md, lessons.md, command-log.md, README.md
+- [x] 1982 tests passing, 0 failures
+
+---
+
 ## Glossary overhaul — current with v1 codebase (2026-05-19, COMPLETED)
 
 - [x] Added Backup Verify action term (Low risk, read-only)

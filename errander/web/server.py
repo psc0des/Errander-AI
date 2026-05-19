@@ -1,11 +1,16 @@
 """errander — Operations Hub development UI server."""
 from __future__ import annotations
 
+import math
 from typing import Any
 
 from aiohttp import web
 
-from .data import ACTIVE_BATCH, APPROVALS, AUDIT_EVENTS, BATCHES, VM_ACTIONS, VMS
+from .data import (
+    ACTIVE_BATCH, AGENT_STATUS, APPROVALS, AUDIT_EVENTS, BATCHES,
+    DEFERRED_QUEUE, EXECUTION_TRACE, LLM_DECISIONS, PROBE_HISTORY,
+    SCHEDULER_TIMELINE, VM_ACTIONS, VM_TRACE, VMS,
+)
 
 PORT = 8099
 
@@ -573,6 +578,97 @@ body { font-family: 'Inter', system-ui, sans-serif; background: #f0f2ff; color: 
 
 /* ── Batch error summary ── */
 .batch-err-summary { font-family: 'JetBrains Mono', monospace; font-size: 0.6875rem; color: #dc2626; margin-top: 3px; }
+
+/* ── Agent page: status strip ── */
+.agent-status-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 20px; }
+.agent-status-chip { padding: 14px 18px; display: flex; align-items: center; gap: 12px; }
+.agent-status-icon { width: 36px; height: 36px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 1rem; flex-shrink: 0; }
+.agent-status-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.agent-status-label { font-size: 0.6rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: #94a3b8; font-family: 'JetBrains Mono', monospace; }
+.agent-status-val   { font-family: 'JetBrains Mono', monospace; font-size: 0.875rem; font-weight: 700; color: #0f172a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.agent-status-sub   { font-size: 0.6875rem; color: #94a3b8; }
+
+/* ── Execution trace ── */
+.trace-card { padding: 0; overflow: hidden; margin-bottom: 20px; }
+.trace-hdr  { display: flex; align-items: center; gap: 12px; padding: 14px 20px 12px; border-bottom: 1px solid #f1f5f9; }
+.trace-batch-id { font-family: 'JetBrains Mono', monospace; font-size: 0.875rem; font-weight: 700; color: #4f46e5; }
+.trace-table { width: 100%; border-collapse: collapse; }
+.trace-table td { padding: 9px 16px; vertical-align: middle; border-bottom: 1px solid #f8fafc; font-size: 0.8125rem; }
+.trace-table tr:last-child td { border-bottom: none; }
+.trace-table tr:hover td { background: #f8f9ff; }
+.trace-node-name { font-family: 'JetBrains Mono', monospace; font-size: 0.8125rem; font-weight: 700; color: #0f172a; width: 136px; }
+.trace-started   { font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; color: #94a3b8; width: 66px; }
+.trace-bar-cell  { width: 280px; padding-right: 8px !important; }
+.trace-bar-wrap  { background: #f1f5f9; border-radius: 4px; height: 8px; overflow: hidden; }
+.trace-bar-fill  { height: 100%; border-radius: 4px; }
+.trace-duration  { font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; color: #475569; width: 64px; }
+.trace-detail    { font-size: 0.75rem; color: #64748b; }
+
+/* ── VM Outcome grid ── */
+.outcome-table { width: 100%; border-collapse: collapse; }
+.outcome-table th { background: #f8fafc; padding: 8px 10px; text-align: center; font-size: 0.5625rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; color: #64748b; border-bottom: 1px solid #f1f5f9; }
+.outcome-table th.left { text-align: left; padding-left: 16px; }
+.outcome-table td { padding: 8px 10px; border-bottom: 1px solid #f8fafc; text-align: center; vertical-align: middle; }
+.outcome-table td.left { text-align: left; padding-left: 16px; }
+.outcome-table tr:last-child td { border-bottom: none; }
+.outcome-table tr:hover td { background: #f8f9ff; }
+.oc-ok   { color: #16a34a; font-size: 0.875rem; font-weight: 700; }
+.oc-warn { color: #d97706; font-size: 0.875rem; font-weight: 700; }
+.oc-fail { color: #dc2626; font-size: 0.875rem; font-weight: 700; }
+.oc-skip { color: #cbd5e1; font-size: 0.875rem; }
+.oc-appr { font-family: 'JetBrains Mono', monospace; font-size: 0.5rem; font-weight: 700; color: #fff; background: #d97706; padding: 2px 4px; border-radius: 3px; }
+.outcome-vm   { font-family: 'JetBrains Mono', monospace; font-size: 0.8125rem; font-weight: 700; color: #4f46e5; text-decoration: none; }
+.outcome-vm:hover { text-decoration: underline; }
+.outcome-notes { font-size: 0.75rem; color: #64748b; max-width: 260px; }
+
+/* ── LLM decisions ── */
+.llm-meta-strip { display: flex; align-items: center; gap: 20px; padding: 10px 16px 10px; background: #f8fafc; border-bottom: 1px solid #f1f5f9; flex-wrap: wrap; }
+.llm-meta-item  { display: flex; align-items: center; gap: 6px; font-family: 'JetBrains Mono', monospace; font-size: 0.6875rem; color: #475569; }
+.llm-meta-lbl   { color: #94a3b8; font-size: 0.5625rem; text-transform: uppercase; letter-spacing: 0.08em; }
+.llm-table { width: 100%; border-collapse: collapse; }
+.llm-table th { background: #f8fafc; padding: 8px 12px; text-align: left; font-size: 0.5625rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; color: #64748b; border-bottom: 1px solid #f1f5f9; }
+.llm-table td { padding: 10px 12px; border-bottom: 1px solid #f8fafc; font-size: 0.8125rem; vertical-align: top; }
+.llm-table tr:last-child td { border-bottom: none; }
+.llm-table tr:hover td { background: #f8f9ff; }
+.signal-tag { font-family: 'JetBrains Mono', monospace; font-size: 0.5625rem; font-weight: 700; padding: 2px 6px; border-radius: 3px; display: inline-block; margin: 1px 2px; }
+.signal-tag-disk    { background: #fef3c7; color: #92400e; }
+.signal-tag-svc     { background: #fee2e2; color: #991b1b; }
+.signal-tag-err     { background: #fce7f3; color: #9d174d; }
+.signal-tag-drift   { background: #ede9fe; color: #5b21b6; }
+.signal-tag-login   { background: #e0f2fe; color: #0369a1; }
+.signal-tag-ok      { background: #dcfce7; color: #15803d; }
+.plan-step { font-family: 'JetBrains Mono', monospace; font-size: 0.5625rem; font-weight: 700; padding: 2px 6px; border-radius: 3px; display: inline-block; margin: 1px 2px; background: #e0e7ff; color: #3730a3; }
+.plan-step-high { background: #fee2e2; color: #991b1b; }
+.plan-step-med  { background: #fef3c7; color: #92400e; }
+.plan-step-low  { background: #dcfce7; color: #15803d; }
+.llm-reasoning  { font-size: 0.75rem; color: #64748b; line-height: 1.5; }
+.llm-fallback-badge { font-family:'JetBrains Mono',monospace; font-size:0.5rem; font-weight:700; background:#fef3c7; color:#92400e; padding:2px 6px; border-radius:3px; letter-spacing:0.05em; }
+
+/* ── Scheduler ── */
+.sched-run-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid #f8fafc; }
+.sched-run-row:last-child { border-bottom: none; }
+.sched-run-dot  { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.sched-run-ts   { font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; color: #475569; flex: 1; }
+.sched-run-dur  { font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; color: #94a3b8; }
+.sched-run-err  { font-family: 'JetBrains Mono', monospace; font-size: 0.6875rem; font-weight: 700; color: #dc2626; }
+.sched-next-item { font-family:'JetBrains Mono',monospace; font-size:0.8125rem; color:#4f46e5; padding:5px 0; border-bottom:1px solid #f8fafc; }
+.sched-next-item:last-child { border-bottom:none; }
+.cron-badge { font-family:'JetBrains Mono',monospace; font-size:0.8125rem; font-weight:600; background:#e0e7ff; color:#3730a3; padding:4px 10px; border-radius:4px; }
+
+/* ── Probe ── */
+.probe-escalated-banner { background:#fee2e2; border:1px solid #fecaca; border-radius:6px; padding:10px 14px; margin-bottom:12px; display:flex; align-items:center; gap:8px; font-size:0.8125rem; font-weight:600; color:#991b1b; }
+.probe-signal-group { margin-bottom:10px; }
+.probe-signal-group:last-child { margin-bottom:0; }
+.probe-signal-type { font-family:'JetBrains Mono',monospace; font-size:0.5625rem; font-weight:700; text-transform:uppercase; letter-spacing:0.08em; color:#94a3b8; margin-bottom:4px; }
+.probe-signal-item { font-size:0.8125rem; color:#475569; padding:2px 0; }
+.probe-ok-banner { background:#dcfce7; border:1px solid #bbf7d0; border-radius:6px; padding:10px 14px; font-size:0.8125rem; font-weight:600; color:#15803d; display:flex; align-items:center; gap:8px; }
+
+/* ── Deferred queue ── */
+.deferred-empty { padding:28px; text-align:center; color:#94a3b8; font-family:'JetBrains Mono',monospace; font-size:0.8125rem; }
+
+/* ── Side-by-side two column ── */
+.two-col-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:20px; }
+@media (max-width:900px) { .agent-status-grid { grid-template-columns:repeat(2,1fr); } .two-col-grid { grid-template-columns:1fr; } }
 """
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -659,6 +755,7 @@ def env_badge_top(env: str) -> str:
 NAV_ITEMS = [
     ("OVERVIEW",    None),
     ("Fleet Dashboard", "/",          "overview"),
+    ("Agent Status",    "/agent",     "overview"),
     ("OPERATIONS",  None),
     ("Approval Queue",  "/approvals", "operations"),
     ("Batch History",   "/batches",   "operations"),
@@ -2161,6 +2258,378 @@ def page_glossary() -> str:
     return grid_section + workflow_section
 
 
+def _trace_bar_pct(duration_s: float, max_log: float) -> int:
+    if max_log <= 0 or duration_s <= 0:
+        return 3
+    return max(3, round(math.log10(duration_s + 1) / max_log * 96))
+
+
+def _outcome_cell(val: str) -> str:
+    if val == "ok":       return '<span class="oc-ok">✓</span>'
+    if val == "warn":     return '<span class="oc-warn">⚠</span>'
+    if val == "fail":     return '<span class="oc-fail">✗</span>'
+    if val == "approved": return '<span class="oc-appr">APPR</span>'
+    return '<span class="oc-skip">—</span>'
+
+
+def _plan_step_cls(tier: str) -> str:
+    return {"HIGH": "plan-step plan-step-high", "MEDIUM": "plan-step plan-step-med"}.get(tier, "plan-step plan-step-low")
+
+
+def page_agent() -> str:
+    ag = AGENT_STATUS
+
+    # ── 1. Status strip ──────────────────────────────────────────────────────
+    state_color = "#16a34a" if ag["state"] == "IDLE" else "#4f46e5"
+    state_bg    = "#dcfce7" if ag["state"] == "IDLE" else "#e0e7ff"
+    mode_color  = "#d97706" if ag["mode"] == "DRY RUN" else "#dc2626"
+    mode_bg     = "#fef3c7" if ag["mode"] == "DRY RUN" else "#fee2e2"
+    llm_color   = "#16a34a" if ag["llm_status"] == "ok" else "#dc2626"
+    llm_bg      = "#dcfce7" if ag["llm_status"] == "ok" else "#fee2e2"
+
+    status_strip = f"""
+    <div class="agent-status-grid">
+      <div class="card agent-status-chip">
+        <div class="agent-status-icon" style="background:{state_bg}">
+          <span style="color:{state_color};font-size:1.1rem">{'✓' if ag['state']=='IDLE' else '▶'}</span>
+        </div>
+        <div class="agent-status-body">
+          <span class="agent-status-label">Agent State</span>
+          <span class="agent-status-val" style="color:{state_color}">{ag['state']}</span>
+          <span class="agent-status-sub">up {ag['uptime']}</span>
+        </div>
+      </div>
+      <div class="card agent-status-chip">
+        <div class="agent-status-icon" style="background:{mode_bg}">
+          <span style="color:{mode_color};font-size:1rem">{'🔒' if ag['mode']=='DRY RUN' else '⚡'}</span>
+        </div>
+        <div class="agent-status-body">
+          <span class="agent-status-label">Run Mode</span>
+          <span class="agent-status-val" style="color:{mode_color}">{ag['mode']}</span>
+          <span class="agent-status-sub">change in Admin → Override Controls</span>
+        </div>
+      </div>
+      <div class="card agent-status-chip">
+        <div class="agent-status-icon" style="background:#e0e7ff">
+          <span style="color:#4f46e5;font-size:1rem">🕐</span>
+        </div>
+        <div class="agent-status-body">
+          <span class="agent-status-label">APScheduler</span>
+          <span class="agent-status-val" style="color:#16a34a">{ag['scheduler']}</span>
+          <span class="agent-status-sub">Next: {ag['next_run']}</span>
+        </div>
+      </div>
+      <div class="card agent-status-chip">
+        <div class="agent-status-icon" style="background:{llm_bg}">
+          <span style="color:{llm_color};font-size:1rem">🤖</span>
+        </div>
+        <div class="agent-status-body">
+          <span class="agent-status-label">vLLM</span>
+          <span class="agent-status-val" style="color:{llm_color}">{ag['llm_model']}</span>
+          <span class="agent-status-sub">{ag['llm_latency_ms']} ms avg &nbsp;·&nbsp; {ag['llm_endpoint'].split('/')[-2] if '/' in ag['llm_endpoint'] else ag['llm_endpoint']}</span>
+        </div>
+      </div>
+    </div>"""
+
+    # ── 2. Execution trace ────────────────────────────────────────────────────
+    tr = EXECUTION_TRACE
+    nodes = tr["nodes"]
+    max_log = math.log10(max(n["duration_s"] for n in nodes) + 1)
+
+    trace_rows = ""
+    for n in nodes:
+        w = _trace_bar_pct(n["duration_s"], max_log)
+        dur_s = n["duration_s"]
+        dur_str = (f"{dur_s:.1f}s" if dur_s < 60
+                   else f"{int(dur_s//60)}m {int(dur_s%60)}s")
+        bar_color = {"ok": "#16a34a", "warning": "#d97706", "failed": "#dc2626"}.get(n["status"], "#4f46e5")
+        s_badge   = audit_badge(n["status"])
+        trace_rows += f"""<tr>
+          <td class="trace-node-name">{n['name']}</td>
+          <td class="trace-started">{n['started']}</td>
+          <td class="trace-bar-cell">
+            <div class="trace-bar-wrap">
+              <div class="trace-bar-fill" style="width:{w}%;background:{bar_color}"></div>
+            </div>
+          </td>
+          <td class="trace-duration">{dur_str}</td>
+          <td>{s_badge}</td>
+          <td class="trace-detail">{n['detail']}</td>
+        </tr>"""
+
+    trace_section = f"""
+    <div class="card trace-card">
+      <div class="trace-hdr">
+        <span class="trace-batch-id">{tr['batch_id']}</span>
+        {audit_badge(tr['status'])}
+        <span style="font-family:'JetBrains Mono',monospace;font-size:0.75rem;color:#94a3b8">
+          {tr['started']} → {tr['completed']} &nbsp;·&nbsp; {tr['duration']}
+        </span>
+        <a href="/batches" class="td-link" style="margin-left:auto">All Batches →</a>
+      </div>
+      <table class="trace-table">
+        <thead><tr style="background:#f8fafc">
+          <th style="padding:8px 16px;text-align:left;font-size:0.5625rem;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:#64748b;border-bottom:1px solid #f1f5f9">NODE</th>
+          <th style="padding:8px 16px;text-align:left;font-size:0.5625rem;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:#64748b;border-bottom:1px solid #f1f5f9">STARTED</th>
+          <th style="padding:8px 16px;text-align:left;font-size:0.5625rem;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:#64748b;border-bottom:1px solid #f1f5f9;width:280px">DURATION (LOG SCALE)</th>
+          <th style="padding:8px 16px;text-align:left;font-size:0.5625rem;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:#64748b;border-bottom:1px solid #f1f5f9"></th>
+          <th style="padding:8px 16px;text-align:left;font-size:0.5625rem;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:#64748b;border-bottom:1px solid #f1f5f9">STATUS</th>
+          <th style="padding:8px 16px;text-align:left;font-size:0.5625rem;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:#64748b;border-bottom:1px solid #f1f5f9">DETAIL</th>
+        </tr></thead>
+        <tbody>{trace_rows}</tbody>
+      </table>
+    </div>"""
+
+    # ── 3. Per-VM outcome grid ────────────────────────────────────────────────
+    vm_rows = ""
+    for vt in VM_TRACE:
+        vm_rows += f"""<tr>
+          <td class="left"><a href="/vm/{vt['vm']}" class="outcome-vm">{vt['vm']}</a></td>
+          <td class="left">{env_tag(vt['env'])}</td>
+          <td>{_outcome_cell(vt['pre_val'])}</td>
+          <td>{_outcome_cell(vt['plan'])}</td>
+          <td>{_outcome_cell(vt['enrich'])}</td>
+          <td>{_outcome_cell(vt['approval'])}</td>
+          <td>{_outcome_cell(vt['exec'])}</td>
+          <td>{_outcome_cell('ok')}</td>
+          <td class="left"><span class="outcome-notes">{vt['notes']}</span></td>
+        </tr>"""
+
+    outcome_section = f"""
+    <div class="card table-card" style="margin-bottom:20px">
+      <div style="padding:12px 16px 10px;border-bottom:1px solid #f1f5f9;display:flex;align-items:center;gap:10px">
+        <span class="section-title" style="font-size:0.9375rem">Per-VM Execution Outcomes</span>
+        <span style="font-size:0.8125rem;color:#94a3b8">Last batch · {tr['batch_id']}</span>
+        <span style="margin-left:auto;font-size:0.75rem;color:#64748b;font-family:'JetBrains Mono',monospace">
+          ✓ OK &nbsp;·&nbsp; ⚠ WARN &nbsp;·&nbsp; ✗ FAIL &nbsp;·&nbsp; APPR = Slack approval &nbsp;·&nbsp; — skipped
+        </span>
+      </div>
+      <table class="outcome-table">
+        <thead><tr>
+          <th class="left">VM</th><th class="left">ENV</th>
+          <th>PRE-VAL</th><th>PLAN</th><th>ENRICH</th>
+          <th>APPROVAL</th><th>EXEC</th><th>AUDIT</th>
+          <th class="left">NOTES</th>
+        </tr></thead>
+        <tbody>{vm_rows}</tbody>
+      </table>
+    </div>"""
+
+    # ── 4. LLM planning decisions ─────────────────────────────────────────────
+    avg_lat = round(sum(d["latency_ms"] for d in LLM_DECISIONS) / len(LLM_DECISIONS))
+    fallback_any = any(d["fallback"] for d in LLM_DECISIONS)
+
+    llm_rows = ""
+    for d in LLM_DECISIONS:
+        sigs = d["signals"]
+        sig_tags = ""
+        if float(sigs.get("disk_trend","0").replace("+","").split("%")[0] or 0) >= 5:
+            sig_tags += f'<span class="signal-tag signal-tag-disk">disk {sigs["disk_trend"]}</span>'
+        else:
+            sig_tags += f'<span class="signal-tag signal-tag-ok">disk OK</span>'
+        if sigs.get("failed_services", 0) > 0:
+            sig_tags += f'<span class="signal-tag signal-tag-svc">{sigs["failed_services"]} failed svc</span>'
+        if sigs.get("journal_errors", 0) > 0:
+            sig_tags += f'<span class="signal-tag signal-tag-err">{sigs["journal_errors"]} j-errors</span>'
+        if sigs.get("drift_events", 0) > 0:
+            sig_tags += f'<span class="signal-tag signal-tag-drift">{sigs["drift_events"]} drift</span>'
+        if sigs.get("failed_logins", 0) > 0:
+            sig_tags += f'<span class="signal-tag signal-tag-login">{sigs["failed_logins"]} logins</span>'
+
+        plan_tags = ""
+        if d["plan"]:
+            for action in d["plan"]:
+                tier = d["risk_tiers"].get(action, "LOW")
+                plan_tags += f'<span class="{_plan_step_cls(tier)}">{action} · {tier}</span>'
+        else:
+            plan_tags = '<span class="signal-tag signal-tag-ok">NO ACTIONS</span>'
+
+        fb_html = ('<span class="llm-fallback-badge">FALLBACK</span>' if d["fallback"]
+                   else '<span style="font-family:\'JetBrains Mono\',monospace;font-size:0.625rem;color:#16a34a">vLLM</span>')
+        llm_rows += f"""<tr>
+          <td><a href="/vm/{d['vm']}" class="td-host">{d['vm']}</a></td>
+          <td>{env_tag(d['env'])}</td>
+          <td style="font-family:'JetBrains Mono',monospace;font-size:0.75rem;color:#475569">{d['latency_ms']} ms &nbsp;{fb_html}</td>
+          <td>{sig_tags}</td>
+          <td>{plan_tags}</td>
+          <td class="llm-reasoning">{d['reasoning']}</td>
+        </tr>"""
+
+    llm_section = f"""
+    <div class="card table-card" style="margin-bottom:20px">
+      <div style="padding:12px 16px 10px;border-bottom:1px solid #f1f5f9">
+        <span class="section-title" style="font-size:0.9375rem">LLM Planning Decisions</span>
+        <span style="font-size:0.8125rem;color:#94a3b8;margin-left:10px">What the agent decided, and why</span>
+      </div>
+      <div class="llm-meta-strip">
+        <span class="llm-meta-item"><span class="llm-meta-lbl">MODEL</span> {ag['llm_model']}</span>
+        <span class="llm-meta-item"><span class="llm-meta-lbl">AVG LATENCY</span> {avg_lat} ms</span>
+        <span class="llm-meta-item"><span class="llm-meta-lbl">FALLBACK USED</span>
+          {'<span style="color:#dc2626;font-weight:700">YES — LLM unavailable</span>' if fallback_any else '<span style="color:#16a34a;font-weight:700">NEVER</span>'}
+        </span>
+        <span class="llm-meta-item"><span class="llm-meta-lbl">VMs SHOWN</span> {len(LLM_DECISIONS)} of {len(VMS)}</span>
+      </div>
+      <table class="llm-table">
+        <thead><tr>
+          <th>VM</th><th>ENV</th><th>LLM</th>
+          <th>STORED SIGNALS</th><th>PLAN &amp; RISK TIER</th><th>REASONING</th>
+        </tr></thead>
+        <tbody>{llm_rows}</tbody>
+      </table>
+    </div>"""
+
+    # ── 5. Scheduler (left) + Daily Probe (right) ─────────────────────────────
+    sched = SCHEDULER_TIMELINE
+    sched_runs = ""
+    for r in sched["recent_runs"]:
+        dot_color = {"completed": "#16a34a", "partial": "#d97706", "failed": "#dc2626"}.get(r["status"], "#94a3b8")
+        err_html  = f'<span class="sched-run-err">{r["errors"]} err</span>' if r["errors"] > 0 else ""
+        sched_runs += f"""
+        <div class="sched-run-row">
+          <span class="sched-run-dot" style="background:{dot_color}"></span>
+          <span class="sched-run-ts">{r['ts']} &nbsp;<a href="/batches" class="td-link" style="font-size:0.75rem">{r['batch']}</a></span>
+          <span class="sched-run-dur">{r['duration']}</span>
+          {err_html}
+        </div>"""
+
+    next_runs_html = "".join(
+        f'<div class="sched-next-item">→ {r}</div>' for r in sched["next_runs"]
+    )
+
+    scheduler_card = f"""
+    <div class="card" style="padding:0;overflow:hidden">
+      <div style="padding:12px 16px 10px;border-bottom:1px solid #f1f5f9">
+        <span class="section-title" style="font-size:0.9375rem">Scheduler</span>
+      </div>
+      <div style="padding:14px 16px">
+        <div style="margin-bottom:14px">
+          <div class="field-label" style="margin-bottom:6px">MAINTENANCE BATCH</div>
+          <span class="cron-badge">{sched['cron']}</span>
+          <span style="font-size:0.8125rem;color:#475569;margin-left:10px">{sched['human']}</span>
+        </div>
+        <div style="margin-bottom:14px">
+          <div class="field-label" style="margin-bottom:6px">DAILY PROBE</div>
+          <span class="cron-badge">{sched['probe_cron']}</span>
+          <span style="font-size:0.8125rem;color:#475569;margin-left:10px">{sched['probe_human']}</span>
+        </div>
+        <div style="margin-bottom:14px">
+          <div class="field-label" style="margin-bottom:8px">UPCOMING RUNS</div>
+          {next_runs_html}
+        </div>
+        <div>
+          <div class="field-label" style="margin-bottom:8px">RECENT RUNS</div>
+          {sched_runs}
+        </div>
+      </div>
+    </div>"""
+
+    # Probe section
+    probe = PROBE_HISTORY[0]
+    probe2 = PROBE_HISTORY[1] if len(PROBE_HISTORY) > 1 else None
+
+    if probe["escalated"]:
+        probe_banner = f"""
+        <div class="probe-escalated-banner">
+          ⚠ ESCALATED &nbsp;·&nbsp; {probe['escalation_msg']}
+        </div>"""
+    else:
+        probe_banner = '<div class="probe-ok-banner">✓ No escalation — all signals nominal</div>'
+
+    signal_groups = ""
+    for sg in probe.get("signals", []):
+        items_html = "".join(f'<div class="probe-signal-item">{sg["icon"]} {item}</div>' for item in sg["items"])
+        signal_groups += f"""
+        <div class="probe-signal-group">
+          <div class="probe-signal-type">{sg['type'].replace('_',' ')}</div>
+          {items_html}
+        </div>"""
+
+    probe2_html = ""
+    if probe2:
+        probe2_status_color = "#16a34a" if not probe2["escalated"] else "#dc2626"
+        probe2_html = f"""
+        <div style="margin-top:14px;padding-top:14px;border-top:1px solid #f1f5f9">
+          <div class="field-label" style="margin-bottom:4px">PREVIOUS PROBE</div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:0.75rem;color:#94a3b8">
+            {probe2['ts']} &nbsp;·&nbsp; {probe2['duration']} &nbsp;·&nbsp; {probe2['vms_probed']} VMs
+            &nbsp;·&nbsp; <span style="color:{probe2_status_color};font-weight:700">{'ESCALATED' if probe2['escalated'] else 'OK'}</span>
+          </div>
+        </div>"""
+
+    probe_card = f"""
+    <div class="card" style="padding:0;overflow:hidden">
+      <div style="padding:12px 16px 10px;border-bottom:1px solid #f1f5f9;display:flex;align-items:center;gap:10px">
+        <span class="section-title" style="font-size:0.9375rem">Daily Probe</span>
+        {'<span class="badge badge-red">ESCALATED</span>' if probe['escalated'] else '<span class="badge badge-green">CLEAN</span>'}
+      </div>
+      <div style="padding:14px 16px">
+        <div style="font-family:'JetBrains Mono',monospace;font-size:0.75rem;color:#94a3b8;margin-bottom:12px">
+          {probe['ts']} &nbsp;·&nbsp; {probe['duration']} &nbsp;·&nbsp; {probe['vms_probed']} VMs probed
+          &nbsp;·&nbsp; Slack: {'✓ posted' if probe['slack_posted'] else '—'}
+        </div>
+        {probe_banner}
+        {signal_groups if probe['signals'] else ''}
+        {probe2_html}
+      </div>
+    </div>"""
+
+    sched_probe_row = f"""
+    <div class="two-col-grid">
+      {scheduler_card}
+      {probe_card}
+    </div>"""
+
+    # ── 6. Deferred queue ─────────────────────────────────────────────────────
+    if DEFERRED_QUEUE:
+        dq_rows = "".join(
+            f"""<tr><td class="td-mono">{q['vm']}</td><td class="td-ts">{q['approved_ts']}</td>
+                <td>{q['action']}</td><td class="td-ts">{q['window_opens']}</td>
+                <td><a href="#" class="td-link">View Plan →</a></td></tr>"""
+            for q in DEFERRED_QUEUE
+        )
+        dq_body = f"""
+        <table class="data-table">
+          <thead><tr><th>VM</th><th>APPROVED</th><th>ACTION</th><th>WINDOW OPENS</th><th></th></tr></thead>
+          <tbody>{dq_rows}</tbody>
+        </table>"""
+    else:
+        dq_body = '<div class="deferred-empty">✓ &nbsp;No deferred plans — all approved plans have executed</div>'
+
+    deferred_section = f"""
+    <div class="card table-card">
+      <div style="padding:12px 16px 10px;border-bottom:1px solid #f1f5f9;display:flex;align-items:center;gap:10px">
+        <span class="section-title" style="font-size:0.9375rem">Deferred Execution Queue</span>
+        <span style="font-size:0.8125rem;color:#94a3b8">Approved plans waiting for a maintenance window to open</span>
+        {f'<span class="badge badge-amber">{len(DEFERRED_QUEUE)} queued</span>' if DEFERRED_QUEUE else '<span class="badge badge-green">EMPTY</span>'}
+      </div>
+      {dq_body}
+    </div>"""
+
+    return f"""
+    <div class="section-hdr">
+      <div>
+        <div class="section-title">Agent Status</div>
+        <div class="section-sub">LangGraph execution trace · LLM decisions · scheduler · probe · deferred queue</div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <a href="/admin" class="btn-outline btn-outline-indigo">Admin Controls</a>
+        <a href="#" class="btn-primary">▶ RUN BATCH NOW</a>
+      </div>
+    </div>
+    {status_strip}
+    <div style="font-family:'Space Grotesk',sans-serif;font-size:0.875rem;font-weight:700;color:#0f172a;margin-bottom:12px">
+      Last Batch Execution Trace
+    </div>
+    {trace_section}
+    {outcome_section}
+    <div style="font-family:'Space Grotesk',sans-serif;font-size:0.875rem;font-weight:700;color:#0f172a;margin-bottom:12px">
+      LLM Planning Log
+    </div>
+    {llm_section}
+    {sched_probe_row}
+    {deferred_section}"""
+
+
 def page_placeholder(name: str) -> str:
     return f"""
     <div class="card" style="padding:60px;text-align:center">
@@ -2245,6 +2714,21 @@ async def handle_glossary(request: web.Request) -> web.Response:
     return web.Response(text=html, content_type="text/html")
 
 
+async def handle_agent(request: web.Request) -> web.Response:
+    html = layout(
+        title="Agent Status",
+        active_url="/agent",
+        breadcrumb="Agent Status",
+        topnav_extra=(
+            '<span class="badge badge-indigo" style="font-size:0.75rem;padding:5px 12px">DRY RUN</span>'
+            '<a href="/admin" class="btn-outline btn-outline-indigo">Admin Controls</a>'
+            '<a href="#" class="btn-primary">&#9654; RUN BATCH NOW</a>'
+        ),
+        content=page_agent(),
+    )
+    return web.Response(text=html, content_type="text/html")
+
+
 async def handle_inventory(request: web.Request) -> web.Response:
     html = layout(
         title="Inventory",
@@ -2301,6 +2785,7 @@ def create_app() -> web.Application:
     app.router.add_get("/settings",        handle_settings)
     app.router.add_get("/admin",           handle_admin)
     app.router.add_get("/glossary",        handle_glossary)
+    app.router.add_get("/agent",           handle_agent)
     return app
 
 

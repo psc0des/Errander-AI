@@ -1,4 +1,4 @@
-## UI overhaul — information density + actionability (2026-05-19, COMPLETED)
+## UI overhaul — information density + actionability + /agent page (2026-05-19, COMPLETED)
 
 - [x] VM cards: CPU / MEM / DISK tri-bars, pending patches chip, uptime, IP, last action type
 - [x] Fleet dashboard: "Needs Attention" callout for warning/failed/pending VMs with reasons and links
@@ -7,6 +7,8 @@
 - [x] Audit event detail strings enriched (packages, logs, disk before→after)
 - [x] Batch history: error summary + failed VM links inline in errors column
 - [x] VM detail: pending patches callout, CPU/memory in identity card, 4-tile KPI row
+- [x] /agent page: agent status strip, LangGraph execution trace, per-VM stage matrix, LLM decisions, scheduler timeline, daily probe history, deferred queue
+- [x] handle_agent route handler + /agent route registered in create_app()
 - [x] 111 UI tests passing, 0 regressions
 
 ---

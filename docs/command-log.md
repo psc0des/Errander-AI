@@ -1,5 +1,20 @@
 # Errander-AI Command Log
 
+## /agent page — route handler + route registration (2026-05-19)
+
+```bash
+# Verify page_agent renders without errors
+uv run python -c "from errander.web.server import page_agent; page_agent(); print('page_agent OK')"
+
+# Verify /agent route is registered in create_app()
+uv run python -c "from errander.web.server import create_app, handle_agent; app = create_app(); routes = [str(r.resource) for r in app.router.routes()]; print('/agent registered:', any('/agent' in r for r in routes))"
+
+# UI test suite — 111 passed, 0 regressions
+uv run pytest tests/ui/ -x -q
+```
+
+---
+
 ## UI overhaul — information density + actionability (2026-05-19)
 
 ```bash

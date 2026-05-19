@@ -345,6 +345,182 @@ VM_ACTIONS: dict[str, list[dict[str, Any]]] = {
     ],
 }
 
+AGENT_STATUS: dict[str, Any] = {
+    "state":          "IDLE",
+    "mode":           "DRY RUN",
+    "scheduler":      "RUNNING",
+    "llm_endpoint":   "http://10.0.0.100:8000/v1",
+    "llm_model":      "Qwen3-8B-AWQ",
+    "llm_latency_ms": 42,
+    "llm_status":     "ok",
+    "active_batch":   None,
+    "last_batch_id":  "prod-0423-0200",
+    "last_batch_ts":  "2026-04-23 02:14 UTC",
+    "next_run":       "2026-04-24 02:00 UTC",
+    "uptime":         "14d 6h 22m",
+}
+
+EXECUTION_TRACE: dict[str, Any] = {
+    "batch_id":  "prod-0423-0200",
+    "started":   "2026-04-23 02:00:12 UTC",
+    "completed": "2026-04-23 02:14:44 UTC",
+    "duration":  "14m 32s",
+    "status":    "completed",
+    "nodes": [
+        {
+            "name": "APScheduler",    "started": "02:00:00", "duration_s": 0.1,
+            "status": "ok",
+            "detail": "Cron trigger fired (0 2 * * 2,4) · maintenance window verified · no active batch",
+        },
+        {
+            "name": "Parent Graph",   "started": "02:00:01", "duration_s": 0.3,
+            "status": "ok",
+            "detail": "11 VMs loaded from inventory · per-VM file locks acquired · fan-out started",
+        },
+        {
+            "name": "Pre-Validation", "started": "02:00:01", "duration_s": 3.2,
+            "status": "ok",
+            "detail": "11/11 VMs reachable via SSH · OS verified · no conflicts · sudo preflight passed",
+        },
+        {
+            "name": "LLM Planning",   "started": "02:00:04", "duration_s": 8.2,
+            "status": "ok",
+            "detail": "11 plans generated · Qwen3-8B-AWQ · avg 42ms · stored signals loaded · risk tiers assigned",
+        },
+        {
+            "name": "Plan Enrichment","started": "02:00:12", "duration_s": 12.4,
+            "status": "ok",
+            "detail": "SSH pkg enumeration on 9 VMs · exact versions captured · SHA-256 plan hash computed",
+        },
+        {
+            "name": "Approval Gate",  "started": "02:00:24", "duration_s": 373,
+            "status": "ok",
+            "detail": "2 actions required Slack approval · SERVICE RESTART + OS PATCHING · both approved in 6m 13s",
+        },
+        {
+            "name": "Action Exec.",   "started": "02:06:37", "duration_s": 487,
+            "status": "warning",
+            "detail": "87/89 actions OK · 2 failures: glibc conflict on staging-api-01 (rolled back), 2 kernel pkgs held back on prod-api-01",
+        },
+        {
+            "name": "Audit Logging",  "started": "02:14:44", "duration_s": 0.8,
+            "status": "ok",
+            "detail": "89 events written to SQLite · strict mode active · 0 write failures",
+        },
+        {
+            "name": "Report",         "started": "02:14:45", "duration_s": 1.1,
+            "status": "ok",
+            "detail": "LLM batch summary generated (44ms) · posted to #errander-approvals",
+        },
+    ],
+}
+
+VM_TRACE: list[dict[str, Any]] = [
+    {"vm": "prod-web-01",    "env": "PROD",    "pre_val": "ok", "plan": "ok", "enrich": "ok", "approval": "skip",     "exec": "ok",   "notes": "Disk Cleanup · Log Rotation"},
+    {"vm": "prod-web-02",    "env": "PROD",    "pre_val": "ok", "plan": "ok", "enrich": "ok", "approval": "skip",     "exec": "ok",   "notes": "OS Patching · 11 pkgs updated"},
+    {"vm": "prod-api-01",    "env": "PROD",    "pre_val": "ok", "plan": "ok", "enrich": "ok", "approval": "skip",     "exec": "warn", "notes": "Log Rotation · OS Patching · 2 kernel pkgs held back"},
+    {"vm": "prod-api-02",    "env": "PROD",    "pre_val": "ok", "plan": "ok", "enrich": "ok", "approval": "skip",     "exec": "ok",   "notes": "Docker Prune · freed 8.3 GB"},
+    {"vm": "prod-db-01",     "env": "PROD",    "pre_val": "ok", "plan": "ok", "enrich": "ok", "approval": "approved", "exec": "ok",   "notes": "Service Restart · approved 02:18 UTC"},
+    {"vm": "prod-db-02",     "env": "PROD",    "pre_val": "ok", "plan": "ok", "enrich": "ok", "approval": "skip",     "exec": "ok",   "notes": "Log Rotation"},
+    {"vm": "staging-web-01", "env": "STAGING", "pre_val": "ok", "plan": "ok", "enrich": "ok", "approval": "skip",     "exec": "ok",   "notes": "Disk Cleanup · freed 1.1 GB"},
+    {"vm": "staging-api-01", "env": "STAGING", "pre_val": "ok", "plan": "ok", "enrich": "ok", "approval": "approved", "exec": "fail", "notes": "OS Patching FAILED · glibc conflict · rolled back"},
+    {"vm": "staging-db-01",  "env": "STAGING", "pre_val": "ok", "plan": "ok", "enrich": "ok", "approval": "skip",     "exec": "ok",   "notes": "Log Rotation"},
+    {"vm": "dev-web-01",     "env": "DEV",     "pre_val": "ok", "plan": "ok", "enrich": "ok", "approval": "skip",     "exec": "ok",   "notes": "OS Patching · 7 pkgs updated"},
+    {"vm": "dev-api-01",     "env": "DEV",     "pre_val": "ok", "plan": "ok", "enrich": "ok", "approval": "skip",     "exec": "ok",   "notes": "Pre-Validation only · no actions queued"},
+]
+
+LLM_DECISIONS: list[dict[str, Any]] = [
+    {
+        "vm": "prod-api-01", "env": "PROD",
+        "model": "Qwen3-8B-AWQ", "latency_ms": 38, "fallback": False,
+        "signals": {"disk_trend": "+12% / 7d", "failed_services": 0, "drift_events": 1, "journal_errors": 3, "failed_logins": 0},
+        "plan": ["disk_cleanup", "log_rotation", "patching"],
+        "risk_tiers": {"disk_cleanup": "LOW", "log_rotation": "LOW", "patching": "MEDIUM"},
+        "reasoning": "Disk growing +12%/7d — cleanup first, then rotate logs, then patch. 1 drift event noted. No service failures.",
+    },
+    {
+        "vm": "prod-db-01", "env": "PROD",
+        "model": "Qwen3-8B-AWQ", "latency_ms": 44, "fallback": False,
+        "signals": {"disk_trend": "+2% / 7d", "failed_services": 1, "drift_events": 0, "journal_errors": 47, "failed_logins": 0},
+        "plan": ["service_restart"],
+        "risk_tiers": {"service_restart": "HIGH"},
+        "reasoning": "PostgreSQL at 94% memory for 47 min. 47 journal errors. OOM kill imminent. Controlled restart required — HIGH risk, Slack approval sent.",
+    },
+    {
+        "vm": "staging-api-01", "env": "STAGING",
+        "model": "Qwen3-8B-AWQ", "latency_ms": 51, "fallback": False,
+        "signals": {"disk_trend": "+3% / 7d", "failed_services": 0, "drift_events": 2, "journal_errors": 0, "failed_logins": 0},
+        "plan": ["patching"],
+        "risk_tiers": {"patching": "MEDIUM"},
+        "reasoning": "14 security packages pending including 2 critical CVEs. Staging — MEDIUM risk, Slack notification sent.",
+    },
+    {
+        "vm": "prod-web-01", "env": "PROD",
+        "model": "Qwen3-8B-AWQ", "latency_ms": 35, "fallback": False,
+        "signals": {"disk_trend": "+4% / 7d", "failed_services": 0, "drift_events": 0, "journal_errors": 0, "failed_logins": 0},
+        "plan": ["disk_cleanup", "log_rotation"],
+        "risk_tiers": {"disk_cleanup": "LOW", "log_rotation": "LOW"},
+        "reasoning": "Minor disk growth. Clean /tmp and rotate logs. No patches pending. All signals nominal.",
+    },
+    {
+        "vm": "dev-api-01", "env": "DEV",
+        "model": "Qwen3-8B-AWQ", "latency_ms": 29, "fallback": False,
+        "signals": {"disk_trend": "0% / 7d", "failed_services": 0, "drift_events": 0, "journal_errors": 0, "failed_logins": 0},
+        "plan": [],
+        "risk_tiers": {},
+        "reasoning": "All signals nominal. No patches pending. No actions required this cycle — pre-validation only.",
+    },
+]
+
+SCHEDULER_TIMELINE: dict[str, Any] = {
+    "cron":     "0 2 * * 2,4",
+    "human":    "Tue / Thu 02:00 UTC",
+    "probe_cron": "0 1 * * *",
+    "probe_human": "Daily 01:00 UTC",
+    "next_runs": [
+        "Thu 2026-04-24 02:00 UTC",
+        "Tue 2026-04-29 02:00 UTC",
+        "Thu 2026-05-01 02:00 UTC",
+    ],
+    "recent_runs": [
+        {"ts": "2026-04-23 02:00", "status": "completed", "duration": "14m 32s", "batch": "prod-0423-0200", "errors": 2},
+        {"ts": "2026-04-22 02:00", "status": "completed", "duration": "12m 08s", "batch": "prod-0422-0200", "errors": 0},
+        {"ts": "2026-04-21 02:00", "status": "completed", "duration": "13m 44s", "batch": "prod-0421-0200", "errors": 1},
+        {"ts": "2026-04-18 02:00", "status": "partial",   "duration": "19m 05s", "batch": "prod-0418-0200", "errors": 4},
+        {"ts": "2026-04-17 02:00", "status": "completed", "duration": "11m 52s", "batch": "prod-0417-0200", "errors": 0},
+    ],
+}
+
+PROBE_HISTORY: list[dict[str, Any]] = [
+    {
+        "ts": "2026-04-23 01:00:14 UTC",
+        "duration": "28s",
+        "status": "escalated",
+        "vms_probed": 11,
+        "signals": [
+            {"type": "disk_high",       "icon": "💾", "items": ["prod-api-01 · 78% (+12%/7d)", "staging-api-01 · 55% (+3%/7d)"]},
+            {"type": "failed_services", "icon": "⚙",  "items": ["prod-db-01 · postgresql.service"]},
+            {"type": "journal_errors",  "icon": "📋", "items": ["prod-db-01 · 47 errors in 24h"]},
+            {"type": "drift_events",    "icon": "🔄", "items": ["prod-api-01 · 1 config drift", "staging-api-01 · 2 config drifts"]},
+        ],
+        "escalated": True,
+        "escalation_msg": "prod-db-01: 1 failed service + 47 journal errors — emergency batch recommended",
+        "slack_posted": True,
+    },
+    {
+        "ts": "2026-04-22 01:00:09 UTC",
+        "duration": "24s",
+        "status": "ok",
+        "vms_probed": 11,
+        "signals": [],
+        "escalated": False,
+        "escalation_msg": "",
+        "slack_posted": True,
+    },
+]
+
+DEFERRED_QUEUE: list[dict[str, Any]] = []
+
 ACTIVE_BATCH = {
     "id": "prod-2026-04-23-0200",
     "status": "completed",

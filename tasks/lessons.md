@@ -1,5 +1,9 @@
 # Errander-AI — Lessons Learned
 
+## 2026-05-19 — Agent internals page needs a dedicated route, not a placeholder
+
+When adding a page that lives under a nav section, the full wiring is: (1) page function, (2) route handler async def, (3) app.router.add_get() in create_app(). Stopping at step 1 leaves the route returning 404. Always write all three before considering a page "done". Verify with `uv run python -c "from errander.web.server import create_app; app = create_app(); ..."` to confirm route registration.
+
 ## 2026-05-19 — UI information gaps create operational risk — show the detail, don't hide it behind links
 
 Every piece of data the agent generates should be visible inline, not tucked behind a "Details →" link that goes nowhere. The audit log had a `detail` field in every event object but the HTML table rendered 8 columns and left that field out entirely — visible only to someone reading the Python source.

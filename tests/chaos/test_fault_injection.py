@@ -84,6 +84,7 @@ class TestSSHFaultInjection:
                 "status": ActionStatus.PENDING.value,
                 "pending_updates": ["curl"],
                 "version_snapshot": {"curl": "7.81.0"},
+                "approved_packages": [{"name": "curl", "target": "7.88.1-1", "current": "7.81.0"}],
                 "hostname": "10.0.1.10",  # type: ignore[typeddict-item]
                 "username": "errander-ai",  # type: ignore[typeddict-item]
                 "key_path": "/key",  # type: ignore[typeddict-item]

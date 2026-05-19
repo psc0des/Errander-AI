@@ -1184,6 +1184,7 @@ async def run_env_batch(
     preloaded_plan_json: str | None = None,
     preloaded_plan_hash: str | None = None,
     preloaded_plan_id: str | None = None,
+    preloaded_approved_at: str | None = None,
 ) -> None:
     """Run a full maintenance batch for one environment.
 
@@ -1298,6 +1299,7 @@ async def run_env_batch(
         "preloaded_plan_json": preloaded_plan_json,
         "preloaded_plan_hash": preloaded_plan_hash,
         "preloaded_plan_id": preloaded_plan_id,
+        "preloaded_approved_at": preloaded_approved_at,
         "is_deferred_replay": preloaded_plan_json is not None,
     }
 
@@ -1408,6 +1410,7 @@ async def _window_opener(
                     vm_state_store=vm_state_store,
                     preloaded_plan_json=record.plan_json,
                     preloaded_plan_hash=record.plan_hash,
+                    preloaded_approved_at=record.approved_at.isoformat(),
                 )
             else:
                 # Legacy records saved before P0-2 — fall back to re-plan + re-approve

@@ -112,6 +112,11 @@ class PatchingGraphState(TypedDict, total=False):
     service_pre_snapshot: dict[str, str]    # {name: state} before execute
     service_regressions: list[str]          # services that regressed post-execute
 
+    # Approved packages from operator-approved plan artifact (P0-1 fix).
+    # List of {"name": str, "target": str, "current": str} dicts from enrich_plan_node preview.
+    # Live execution installs these exact versions (pinned); absent means no artifact available.
+    approved_packages: list[dict[str, str]]
+
     # Batch context (passed from VMGraphState so audit events carry the right batch_id)
     batch_id: str
 
@@ -262,32 +267,80 @@ async def execute_node(
     *,
     executor: SandboxExecutor,
 ) -> dict[str, Any]:
-    """Execute package upgrade.
+    """Execute package upgrade using pinned versions from the approved artifact.
 
-    Live: apt-get upgrade / dnf upgrade with kernel exclusions.
-    Dry-run: apt-get --simulate upgrade / dnf check-update.
+    Live: apt-get install pkg=version ... (exact versions from operator-approved artifact).
+         Fails closed if no approved_packages or any version is missing.
+    Dry-run: simulate the pinned install (if approved_packages available), or
+             broad simulate_upgrade as fallback when no preview exists yet.
     """
     vm_id = state["vm_id"]
     os_family = state.get("os_family", "ubuntu")
     target = _get_connection_params(state)
     pkg_mgr = get_package_manager_by_name(os_family)
-    exclude_patterns = state.get("exclude_patterns", list(MANDATORY_KERNEL_EXCLUDES))
-
     dry_run = state.get("dry_run", True)
+    approved_packages: list[dict[str, str]] = list(state.get("approved_packages") or [])
+
+    pinned: list[tuple[str, str]] = [
+        (p["name"], p["target"])
+        for p in approved_packages
+        if isinstance(p, dict) and p.get("name") and p.get("target")
+    ]
+
+    if not dry_run:
+        # Live mode: approved artifact with exact versions is required — fail closed without it.
+        if not approved_packages:
+            return {
+                "status": ActionStatus.FAILED.value,
+                "error": (
+                    "live patching requires approved package list — "
+                    "no approved_packages in artifact"
+                ),
+            }
+        missing_ver = [p["name"] for p in approved_packages if not p.get("target")]
+        if missing_ver:
+            return {
+                "status": ActionStatus.FAILED.value,
+                "error": (
+                    f"approved artifact missing exact versions for: {', '.join(missing_ver)} — "
+                    "re-approval required"
+                ),
+            }
+        if not pinned:
+            return {
+                "status": ActionStatus.FAILED.value,
+                "error": "approved artifact produced no installable packages",
+            }
+        result = await executor.execute(
+            vm_id, target["hostname"], target["username"], target["key_path"],
+            command=pkg_mgr.install_pinned(pinned),
+            dry_run=False,
+        )
+        status = ActionStatus.SUCCESS if result.success else ActionStatus.FAILED
+        return {
+            "patch_output": result.stdout.strip(),
+            "status": status.value,
+            "error": result.stderr.strip() if not result.success else None,
+        }
+
+    # Dry-run: simulate pinned install when preview available; fall back to broad simulate.
+    if pinned:
+        live_cmd = pkg_mgr.install_pinned(pinned)
+        sim_cmd = pkg_mgr.simulate_install_pinned(pinned)
+    else:
+        exclude_patterns = state.get("exclude_patterns", list(MANDATORY_KERNEL_EXCLUDES))
+        live_cmd = pkg_mgr.upgrade_all(exclude_patterns=exclude_patterns)
+        sim_cmd = pkg_mgr.simulate_upgrade()
+
     result = await executor.execute(
         vm_id, target["hostname"], target["username"], target["key_path"],
-        command=pkg_mgr.upgrade_all(exclude_patterns=exclude_patterns),
-        simulate_command=pkg_mgr.simulate_upgrade(),
-        dry_run=dry_run,
+        command=live_cmd,
+        simulate_command=sim_cmd,
+        dry_run=True,
     )
-
-    status = ActionStatus.DRY_RUN_OK if dry_run else ActionStatus.SUCCESS
-    if not result.success and not dry_run:
-        status = ActionStatus.FAILED
-
     return {
         "patch_output": result.stdout.strip(),
-        "status": status.value,
+        "status": ActionStatus.DRY_RUN_OK.value,
         "error": result.stderr.strip() if not result.success else None,
     }
 

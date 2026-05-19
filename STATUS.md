@@ -4,6 +4,19 @@
 2026-05-19
 
 ## Current Phase
+**P0-1 true immutable execution artifact — pinned patching + deferred replay age check (2026-05-19).**
+
+QA/SRE review identified that the original P0-1 was "pre-approval plan enrichment with hash commitment" but live patching still ran broad `apt-get upgrade`. Three fixes close the gap:
+
+1. `execute_node` (patching.py) now uses `install_pinned()` — generates `apt-get install -y pkg=version ...` from the approved artifact. Live mode fails closed without an approved package list or with any missing version strings.
+2. `_run_patching()` (vm_graph.py) extracts `approved_packages` from the current action's enriched preview and injects them into `PatchingGraphState` — the wiring that was missing.
+3. `load_deferred_artifact_node` (graph.py) checks artifact age using `preloaded_approved_at`; fails if older than 168h; warns at 24h. Package drift at replay time is handled by pinned install failing closed if the approved version is unavailable.
+
+`commands.py` gained `install_pinned()` + `simulate_install_pinned()` on both `AptManager` and `DnfManager`.
+
+**1982 tests passing, 0 failures.**
+
+## Previous Phase
 **Glossary overhaul — current with v1 codebase (2026-05-19).**
 
 Updated `_GLOSS` and `_WF_JS` to match the actual codebase state:

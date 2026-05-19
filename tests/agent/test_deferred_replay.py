@@ -118,6 +118,42 @@ async def test_load_artifact_node_missing_json() -> None:
     assert "missing" in result["error"]
 
 
+@pytest.mark.asyncio
+async def test_load_artifact_node_within_age_limit() -> None:
+    """Artifact approved 1h ago passes the age check."""
+    state = _make_artifact_state()
+    state["preloaded_approved_at"] = (datetime.now(tz=UTC) - timedelta(hours=1)).isoformat()
+    result = await load_deferred_artifact_node(state)  # type: ignore[arg-type]
+
+    assert result.get("error") is None
+    assert result["is_deferred_replay"] is True
+
+
+@pytest.mark.asyncio
+async def test_load_artifact_node_exceeds_age_limit() -> None:
+    """Artifact approved beyond _DEFERRED_MAX_ARTIFACT_AGE_HOURS fails closed."""
+    from errander.agent.graph import _DEFERRED_MAX_ARTIFACT_AGE_HOURS
+
+    state = _make_artifact_state()
+    too_old = datetime.now(tz=UTC) - timedelta(hours=_DEFERRED_MAX_ARTIFACT_AGE_HOURS + 1)
+    state["preloaded_approved_at"] = too_old.isoformat()
+    result = await load_deferred_artifact_node(state)  # type: ignore[arg-type]
+
+    assert "error" in result
+    assert "re-approval required" in result["error"]
+
+
+@pytest.mark.asyncio
+async def test_load_artifact_node_no_approved_at_skips_age_check() -> None:
+    """Missing approved_at does not block replay (backward compat for legacy records)."""
+    state = _make_artifact_state()
+    state["preloaded_approved_at"] = None
+    result = await load_deferred_artifact_node(state)  # type: ignore[arg-type]
+
+    assert result.get("error") is None
+    assert result["is_deferred_replay"] is True
+
+
 # ---------------------------------------------------------------------------
 # approval_gate_node in replay mode
 # ---------------------------------------------------------------------------
@@ -295,6 +331,8 @@ async def test_window_opener_uses_stored_artifact() -> None:
     call = run_batch_calls[0]
     assert call["preloaded_plan_json"] == plan_json
     assert call["preloaded_plan_hash"] == plan_hash
+    # approved_at must be passed so load_deferred_artifact_node can check artifact age
+    assert call.get("preloaded_approved_at") is not None
     # No re-approval flag set
     assert not call.get("is_deferred_reapproval", False)
 

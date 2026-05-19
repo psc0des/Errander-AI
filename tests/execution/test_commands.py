@@ -68,3 +68,42 @@ class TestDetectLock:
             # Both commands should produce "pid=N cmd=X" style output
             assert "pid=" in cmd
             assert "cmd=" in cmd
+
+
+class TestInstallPinned:
+    """Tests for PackageManager.install_pinned() — immutable execution artifact."""
+
+    def test_apt_install_pinned_contains_packages(self) -> None:
+        cmd = AptManager().install_pinned([("nginx", "1.24.0-1ubuntu1"), ("curl", "7.88.1-1")])
+        assert "nginx=1.24.0-1ubuntu1" in cmd
+        assert "curl=7.88.1-1" in cmd
+
+    def test_apt_install_pinned_uses_apt_get_install(self) -> None:
+        cmd = AptManager().install_pinned([("nginx", "1.24.0")])
+        assert "apt-get install" in cmd
+        assert "sudo" in cmd
+
+    def test_apt_install_pinned_no_upgrade_all(self) -> None:
+        cmd = AptManager().install_pinned([("nginx", "1.24.0")])
+        assert "upgrade" not in cmd
+
+    def test_dnf_install_pinned_contains_packages(self) -> None:
+        cmd = DnfManager().install_pinned([("nginx", "1.24.0-1.el9"), ("curl", "7.76.1-14")])
+        assert "nginx-1.24.0-1.el9" in cmd
+        assert "curl-7.76.1-14" in cmd
+
+    def test_dnf_install_pinned_uses_dnf_install(self) -> None:
+        cmd = DnfManager().install_pinned([("nginx", "1.24.0")])
+        assert "dnf install" in cmd
+        assert "sudo" in cmd
+
+    def test_apt_simulate_install_pinned_no_sudo(self) -> None:
+        cmd = AptManager().simulate_install_pinned([("nginx", "1.24.0")])
+        assert "--simulate" in cmd
+        assert "nginx=1.24.0" in cmd
+        assert "sudo" not in cmd
+
+    def test_dnf_simulate_install_pinned_assumeno(self) -> None:
+        cmd = DnfManager().simulate_install_pinned([("nginx", "1.24.0")])
+        assert "--assumeno" in cmd
+        assert "nginx-1.24.0" in cmd

@@ -169,6 +169,7 @@ class BatchGraphState(TypedDict, total=False):
     preloaded_plan_json: str | None
     preloaded_plan_hash: str | None
     preloaded_plan_id: str | None
+    preloaded_approved_at: str | None   # ISO timestamp when operator approved; used for age check
     is_deferred_replay: bool
 
     # Per-decision AI audit DB path (finding #3.4) — serializable for Send()
@@ -1466,14 +1467,20 @@ def route_after_window(state: BatchGraphState) -> str:
     return "validate_targets"
 
 
+_DEFERRED_MAX_ARTIFACT_AGE_HOURS = 168  # 7 days, matches DeferredExecutionStore._EXPIRY_DAYS
+
+
 async def load_deferred_artifact_node(state: BatchGraphState) -> dict[str, Any]:
     """P0-2 replay mode: deserialize stored artifact, verify hash, skip planning.
 
     Populates vm_plans + plan_id + plan_hash from the stored JSON blob.
-    Hash mismatch → returns error so route_after_approval aborts cleanly.
+    Hash mismatch or exceeded age limit → returns error so route_after_approval aborts cleanly.
+    With pinned execution, packages install exact approved versions; unavailable versions
+    fail closed at execution time.
     """
     import hashlib
     import json
+    from datetime import UTC, datetime
 
     raw_json = state.get("preloaded_plan_json") or ""
     stored_hash = state.get("preloaded_plan_hash") or ""
@@ -1482,6 +1489,31 @@ async def load_deferred_artifact_node(state: BatchGraphState) -> dict[str, Any]:
 
     if not raw_json or not stored_hash:
         return {"error": "P0-2 replay: missing plan artifact — aborting"}
+
+    # Age check: reject artifacts approved beyond the configured max age.
+    approved_at_str = state.get("preloaded_approved_at") or ""
+    if approved_at_str:
+        try:
+            approved_at = datetime.fromisoformat(approved_at_str)
+            age_hours = (datetime.now(tz=UTC) - approved_at).total_seconds() / 3600
+            if age_hours > _DEFERRED_MAX_ARTIFACT_AGE_HOURS:
+                return {
+                    "error": (
+                        f"P0-2 replay: artifact approved {age_hours:.0f}h ago exceeds "
+                        f"{_DEFERRED_MAX_ARTIFACT_AGE_HOURS}h limit — re-approval required"
+                    ),
+                }
+            if age_hours > 24:
+                logger.warning(
+                    "P0-2 replay: artifact is %.0fh old for batch %s — "
+                    "pinned install will fail closed if approved versions are unavailable",
+                    age_hours, batch_id,
+                )
+        except ValueError:
+            logger.warning(
+                "P0-2 replay: could not parse approved_at=%r — skipping age check",
+                approved_at_str,
+            )
 
     try:
         artifact = json.loads(raw_json)
@@ -1508,8 +1540,8 @@ async def load_deferred_artifact_node(state: BatchGraphState) -> dict[str, Any]:
         }
 
     logger.info(
-        "P0-2 replay: artifact verified for batch %s (hash=%s, %d VMs)",
-        batch_id, stored_hash[:12], len(vm_plans),
+        "P0-2 replay: artifact verified for batch %s (hash=%s, %d VMs, approved_at=%s)",
+        batch_id, stored_hash[:12], len(vm_plans), approved_at_str or "unknown",
     )
     return {
         "enriched_vm_plans": vm_plans,

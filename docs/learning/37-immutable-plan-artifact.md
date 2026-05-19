@@ -132,10 +132,19 @@ This is correct: a failure to get the preview is not a reason to abort the entir
 
 ---
 
-## What P0-1 does NOT include
+## What P0-1 now guarantees (post-fix)
 
-- Exact shell commands (e.g. the full `apt-get upgrade -y nginx=1.24.0...` string) — that would require generating the command before approval and re-verifying it at execution, adding significant complexity. Package names + versions is sufficient for operator review.
-- Rollback plan in the artifact — the rollback snapshot is taken at execution time (`snapshot_node`), not at plan time. Including it would require running `dpkg -l` at plan time. Deferred to a potential P0-1 extension.
+The QA/SRE review identified that the original P0-1 implementation was "pre-approval plan enrichment with hash commitment" — not a true immutable execution artifact. Three fixes were applied:
+
+**Fix 1 — Pinned execution (P0)**: `execute_node` in `patching.py` now uses `install_pinned()` instead of `upgrade_all()` when `approved_packages` is present in state. `commands.py` gained `install_pinned(packages: list[tuple[str, str]])` and `simulate_install_pinned()` for both `AptManager` and `DnfManager`. In live mode, execution generates `apt-get install -y pkg=version ...` — the exact versions the operator approved. Missing or empty versions fail closed. Dry-run simulates the pinned install (`apt-get install --simulate pkg=version ...`).
+
+**Fix 2 — Approved packages wired through dispatch (P0)**: `_run_patching()` in `vm_graph.py` now extracts `approved_packages` from `planned_actions[current_action_index]["preview"]["packages"]` and injects them into `PatchingGraphState`. The enriched plan data was always present in the dispatch state — it was just never forwarded into the sub-graph.
+
+**Fix 3 — Deferred replay age check (P0/P1)**: `load_deferred_artifact_node` in `graph.py` now checks the artifact age using `preloaded_approved_at` (passed from `record.approved_at` in `main.py`). Artifacts exceeding `_DEFERRED_MAX_ARTIFACT_AGE_HOURS` (168h = 7 days) fail closed. Artifacts older than 24h log a warning. Package drift at replay time is handled by pinned execution failing closed if the approved version is unavailable.
+
+## What P0-1 still does NOT include
+
+- Rollback plan in the artifact — the rollback snapshot is taken at execution time (`snapshot_node`). Including it would require running `dpkg -l` at plan time.
 - `autonomous_live_apply_enabled = True` — P0-1/P0-2 don't change this flag. Enabling autonomous mode is a separate conscious decision.
 
 ---

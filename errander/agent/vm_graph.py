@@ -789,6 +789,23 @@ async def _run_patching(
     vm_id = state["vm_id"]
     now = datetime.now(tz=UTC)
 
+    # Extract approved packages from the current action's enriched preview so
+    # execute_node can install pinned versions instead of a broad upgrade.
+    index = state.get("current_action_index", 0)
+    planned = state.get("planned_actions", [])
+    approved_packages: list[dict[str, str]] = []
+    if index < len(planned):
+        action = planned[index]
+        if isinstance(action, dict):
+            preview = action.get("preview") or {}
+            if isinstance(preview, dict):
+                raw_pkgs = preview.get("packages")
+                if isinstance(raw_pkgs, list):
+                    approved_packages = [
+                        p for p in raw_pkgs
+                        if isinstance(p, dict) and p.get("name")
+                    ]
+
     sub_state: PatchingGraphState = {
         "vm_id": vm_id,
         "os_family": state.get("os_family", "ubuntu"),
@@ -798,6 +815,7 @@ async def _run_patching(
         "key_path": state.get("ssh_key_path", ""),
         "batch_id": state.get("batch_id", ""),
         "critical_services": list(state.get("critical_services") or []),
+        "approved_packages": approved_packages,
     }
 
     try:

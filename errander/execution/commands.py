@@ -54,6 +54,22 @@ class PackageManager(ABC):
         """
 
     @abstractmethod
+    def install_pinned(self, packages: list[tuple[str, str]]) -> str:
+        """Return command to install exact approved package versions (live execution artifact).
+
+        Args:
+            packages: List of (name, version) tuples from the approved plan artifact.
+        """
+
+    @abstractmethod
+    def simulate_install_pinned(self, packages: list[tuple[str, str]]) -> str:
+        """Return command to simulate installing exact approved package versions (dry-run).
+
+        Args:
+            packages: List of (name, version) tuples from the approved plan artifact.
+        """
+
+    @abstractmethod
     def install_version(self, package: str, version: str) -> str:
         """Return command to install a specific package version (for rollback).
 
@@ -133,6 +149,23 @@ class AptManager(PackageManager):
                 r"|kernel(-core|-modules|-devel|-headers)?)"
             )
         )
+
+    def install_pinned(self, packages: list[tuple[str, str]]) -> str:
+        pkg_specs = " ".join(
+            f"{safe_pkg(name)}={safe_ver(ver)}" for name, ver in packages
+        )
+        return privileged(
+            "/usr/bin/apt-get install -y "
+            "-o Dpkg::Options::=--force-confdef "
+            "-o Dpkg::Options::=--force-confold "
+            f"{pkg_specs}"
+        )
+
+    def simulate_install_pinned(self, packages: list[tuple[str, str]]) -> str:
+        pkg_specs = " ".join(
+            f"{safe_pkg(name)}={safe_ver(ver)}" for name, ver in packages
+        )
+        return f"apt-get install --simulate {pkg_specs}"
 
     def install_version(self, package: str, version: str) -> str:
         return privileged(
@@ -217,6 +250,18 @@ class DnfManager(PackageManager):
             " | grep -E "
             + shlex.quote(r"^(kernel(-core|-modules|-devel|-headers)?)")
         )
+
+    def install_pinned(self, packages: list[tuple[str, str]]) -> str:
+        pkg_specs = " ".join(
+            f"{safe_pkg(name)}-{safe_ver(ver)}" for name, ver in packages
+        )
+        return privileged(f"/usr/bin/dnf install -y {pkg_specs}")
+
+    def simulate_install_pinned(self, packages: list[tuple[str, str]]) -> str:
+        pkg_specs = " ".join(
+            f"{safe_pkg(name)}-{safe_ver(ver)}" for name, ver in packages
+        )
+        return f"dnf install --assumeno {pkg_specs}"
 
     def install_version(self, package: str, version: str) -> str:
         return privileged(f"/usr/bin/dnf downgrade -y {safe_pkg(package)}-{safe_ver(version)}")

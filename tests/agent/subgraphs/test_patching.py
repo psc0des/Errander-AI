@@ -215,8 +215,15 @@ class TestSnapshotNode:
 
 # --- Execute node tests ---
 
+_APPROVED_PKGS = [
+    {"name": "nginx", "target": "1.24.0-1ubuntu1", "current": "1.18.0-0ubuntu1"},
+    {"name": "curl", "target": "7.88.1-10ubuntu1", "current": "7.81.0-1ubuntu1.10"},
+]
+
+
 class TestExecuteNode:
-    async def test_dry_run_returns_dry_run_ok(self) -> None:
+    async def test_dry_run_no_preview_returns_dry_run_ok(self) -> None:
+        """Dry-run without approved_packages falls back to simulate_upgrade."""
         executor = _make_executor(dry_run=True)
         execute_mock = AsyncMock(return_value=_make_result("simulated upgrade"))
 
@@ -226,7 +233,37 @@ class TestExecuteNode:
 
         assert result["status"] == ActionStatus.DRY_RUN_OK.value
 
-    async def test_live_returns_success(self) -> None:
+    async def test_dry_run_with_approved_packages_simulates_pinned(self) -> None:
+        """Dry-run with approved_packages simulates pinned install."""
+        executor = _make_executor(dry_run=True)
+        execute_mock = AsyncMock(return_value=_make_result("Inst nginx [1.18] (1.24)"))
+
+        with patch.object(executor, "execute", execute_mock):
+            state = _base_state(approved_packages=_APPROVED_PKGS)
+            result = await execute_node(state, executor=executor)
+
+        assert result["status"] == ActionStatus.DRY_RUN_OK.value
+        # simulate_install_pinned was used — command must contain --simulate
+        call_kwargs = execute_mock.call_args
+        assert "--simulate" in str(call_kwargs)
+
+    async def test_live_with_approved_packages_returns_success(self) -> None:
+        """Live mode with approved_packages uses install_pinned."""
+        executor = _make_executor(dry_run=False)
+        execute_mock = AsyncMock(return_value=_make_result("upgraded"))
+
+        with patch.object(executor, "execute", execute_mock):
+            state = _base_state(dry_run=False, approved_packages=_APPROVED_PKGS)
+            result = await execute_node(state, executor=executor)
+
+        assert result["status"] == ActionStatus.SUCCESS.value
+        call_kwargs = execute_mock.call_args
+        # install_pinned uses apt-get install, not apt-get upgrade
+        assert "install" in str(call_kwargs)
+        assert "upgrade" not in str(call_kwargs)
+
+    async def test_live_fails_closed_without_approved_packages(self) -> None:
+        """Live mode without approved_packages fails closed — never broad upgrade."""
         executor = _make_executor(dry_run=False)
         execute_mock = AsyncMock(return_value=_make_result("upgraded"))
 
@@ -234,14 +271,33 @@ class TestExecuteNode:
             state = _base_state(dry_run=False)
             result = await execute_node(state, executor=executor)
 
-        assert result["status"] == ActionStatus.SUCCESS.value
+        assert result["status"] == ActionStatus.FAILED.value
+        assert "approved_packages" in result["error"]
+        execute_mock.assert_not_called()
+
+    async def test_live_fails_closed_when_versions_missing(self) -> None:
+        """Live mode fails if any approved package is missing its target version."""
+        executor = _make_executor(dry_run=False)
+        execute_mock = AsyncMock(return_value=_make_result("upgraded"))
+        missing_ver_pkgs = [
+            {"name": "nginx", "target": "", "current": "1.18.0"},  # target empty
+        ]
+
+        with patch.object(executor, "execute", execute_mock):
+            state = _base_state(dry_run=False, approved_packages=missing_ver_pkgs)
+            result = await execute_node(state, executor=executor)
+
+        assert result["status"] == ActionStatus.FAILED.value
+        assert "nginx" in result["error"]
+        execute_mock.assert_not_called()
 
     async def test_live_failure_returns_failed(self) -> None:
+        """SSH failure on pinned install reports FAILED status."""
         executor = _make_executor(dry_run=False)
         execute_mock = AsyncMock(return_value=_make_result("", exit_code=1))
 
         with patch.object(executor, "execute", execute_mock):
-            state = _base_state(dry_run=False)
+            state = _base_state(dry_run=False, approved_packages=_APPROVED_PKGS)
             result = await execute_node(state, executor=executor)
 
         assert result["status"] == ActionStatus.FAILED.value

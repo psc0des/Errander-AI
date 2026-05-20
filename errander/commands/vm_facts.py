@@ -1,0 +1,191 @@
+"""vm-facts CLI sub-commands — Project B, B3.
+
+Provides:
+  errander vm-facts <vm_id> [--action <type>]
+  errander vm-facts --action <type>   # cross-fleet: all VMs, one action type
+
+Prints three tables (where data is available):
+  1. Action outcomes — success rate, sample size, last failure reason.
+  2. Reboot pattern  — reboots required after patching.
+  3. Rejection facts — approval rejections per action type (last 90 days).
+
+Useful for SRE spot-checking whether the facts surfaced to the LLM match
+operational reality before trusting LLM summaries built on them.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import argparse
+
+logger = logging.getLogger(__name__)
+
+_SEP = "-" * 72
+
+
+def _fmt_rate(rate: float) -> str:
+    """Return a colour-free rate string with a visual indicator."""
+    pct = rate * 100
+    if pct >= 90:
+        indicator = "✓"
+    elif pct >= 60:
+        indicator = "~"
+    else:
+        indicator = "✗"
+    return f"{indicator} {pct:.0f}%"
+
+
+def _fmt_ts(ts: object) -> str:
+    from datetime import datetime
+
+    if ts is None:
+        return "—"
+    if isinstance(ts, datetime):
+        return ts.strftime("%Y-%m-%d %H:%M UTC")
+    return str(ts)[:16]
+
+
+async def _print_outcomes(
+    db_path: str,
+    vm_id: str | None,
+    action_type: str | None,
+) -> None:
+    """Print action outcome facts for one VM or all VMs for one action type."""
+    from errander.safety.vm_facts import VMFactsStore
+
+    async with VMFactsStore(db_path) as store:
+        if vm_id is not None:
+            facts = await store.action_outcomes(vm_id, action_type=action_type)
+        else:
+            # Cross-fleet: query every distinct VM that has the action_type
+            import aiosqlite
+
+            async with aiosqlite.connect(db_path) as _db:
+                rows = await _db.execute_fetchall(
+                    """
+                    SELECT DISTINCT vm_id FROM audit_events
+                    WHERE action_type = ? AND vm_id IS NOT NULL
+                      AND event_type IN ('action_completed', 'action_failed')
+                    """,
+                    [action_type],
+                )
+            vms = [str(r[0]) for r in rows]
+            facts = []
+            for vid in vms:
+                facts.extend(await store.action_outcomes(vid, action_type=action_type))
+
+    if not facts:
+        scope = vm_id or f"any VM with action={action_type}"
+        print(f"  No action outcome data for {scope}.")
+        return
+
+    col_vm   = max(len(f.vm_id)          for f in facts)
+    col_at   = max(len(f.action_type)    for f in facts)
+    col_vm   = max(col_vm, 6)
+    col_at   = max(col_at, 6)
+
+    hdr = (
+        f"  {'VM':<{col_vm}}  {'ACTION':<{col_at}}  "
+        f"{'RATE':>6}  {'SAMPLE':>6}  {'LAST SUCCESS':<17}  LAST FAILURE"
+    )
+    print(hdr)
+    print("  " + "-" * (len(hdr) - 2))
+    for f in sorted(facts, key=lambda x: (x.vm_id, x.action_type)):
+        failure = (f.last_failure_reason or "—")[:50]
+        print(
+            f"  {f.vm_id:<{col_vm}}  {f.action_type:<{col_at}}  "
+            f"{_fmt_rate(f.success_rate):>6}  {f.sample_size:>6}  "
+            f"{_fmt_ts(f.last_success_at):<17}  {failure}"
+        )
+
+
+async def _print_reboot(db_path: str, vm_id: str) -> None:
+    """Print reboot pattern fact for one VM."""
+    from errander.safety.vm_facts import VMFactsStore
+
+    async with VMFactsStore(db_path) as store:
+        fact = await store.reboot_pattern(vm_id)
+
+    if fact is None:
+        print(f"  No patching history for {vm_id}.")
+        return
+
+    ratio = (
+        f"{fact.reboots_required_after_patching} / {fact.sample_size} "
+        f"patching runs required a reboot"
+    )
+    print(f"  {vm_id}: {ratio}")
+
+
+async def _print_rejections(db_path: str) -> None:
+    """Print approval rejection counts (all action types, last 90 days)."""
+    from errander.safety.vm_facts import VMFactsStore
+
+    async with VMFactsStore(db_path) as store:
+        facts = await store.rejection_facts()
+
+    if not facts:
+        print("  No approval rejections in the last 90 days.")
+        return
+
+    col_at = max(len(f.action_type) for f in facts)
+    col_at = max(col_at, 6)
+
+    hdr = f"  {'ACTION':<{col_at}}  {'REJECTIONS (90d)':>16}  REASONS"
+    print(hdr)
+    print("  " + "-" * (len(hdr) - 2))
+    for f in sorted(facts, key=lambda x: -x.rejections_last_90d):
+        reasons = "; ".join(f.rejection_reasons[:3]) or "—"
+        print(
+            f"  {f.action_type:<{col_at}}  {f.rejections_last_90d:>16}  {reasons[:60]}"
+        )
+
+
+async def cmd_vm_facts(args: argparse.Namespace, db_path: str) -> int:
+    """Main handler for `errander vm-facts`."""
+    vm_id: str | None = getattr(args, "vm_facts_vm_id", None)
+    action_type: str | None = getattr(args, "vm_facts_action", None)
+
+    if vm_id is None and action_type is None:
+        print("Error: provide <vm_id> and/or --action <type>.")
+        print("  errander vm-facts <vm_id>")
+        print("  errander vm-facts <vm_id> --action patching")
+        print("  errander vm-facts --action patching   # cross-fleet")
+        return 1
+
+    import aiosqlite
+
+    from errander.safety.migrations import run_migrations
+
+    # Ensure schema exists
+    async with aiosqlite.connect(db_path) as db:
+        await run_migrations(db)
+
+    # ── Outcomes table ────────────────────────────────────────────────────────
+    scope = vm_id if vm_id else f"all VMs (action={action_type})"
+    print(f"\nAction outcomes — {scope}")
+    print(_SEP)
+    await _print_outcomes(db_path, vm_id, action_type)
+
+    # ── Reboot pattern (only makes sense per-VM) ──────────────────────────────
+    if vm_id is not None:
+        print(f"\nReboot pattern — {vm_id}")
+        print(_SEP)
+        await _print_reboot(db_path, vm_id)
+
+    # ── Rejection facts (fleet-wide, not per-VM or per-action) ───────────────
+    print("\nApproval rejections — last 90 days (fleet-wide)")
+    print(_SEP)
+    await _print_rejections(db_path)
+
+    print()
+    return 0
+
+
+def dispatch_vm_facts(args: argparse.Namespace, db_path: str) -> int:
+    """Synchronous entry point — runs cmd_vm_facts in an event loop."""
+    return asyncio.run(cmd_vm_facts(args, db_path))

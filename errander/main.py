@@ -290,6 +290,24 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Force resume at an unsafe node (OPERATOR_FORCE_RESUME)",
     )
 
+    # vm-facts sub-command (Project B, B3): operational learning memory CLI
+    parser.add_argument(
+        "--vm-facts",
+        metavar="VM_ID",
+        default=None,
+        dest="vm_facts_vm_id",
+        nargs="?",
+        const="",
+        help="Print outcome/reboot/rejection facts for VM_ID (omit for cross-fleet by --action)",
+    )
+    parser.add_argument(
+        "--vm-facts-action",
+        metavar="ACTION_TYPE",
+        default=None,
+        dest="vm_facts_action",
+        help="Filter vm-facts output to this action type (e.g. patching, disk_cleanup)",
+    )
+
     return parser.parse_args(argv)
 
 
@@ -1222,6 +1240,7 @@ async def run_env_batch(
     and invokes the compiled graph.
     """
     import uuid as _uuid
+
     from errander.agent.graph import build_batch_graph
 
     window = _build_maintenance_window(env_schema)
@@ -1539,6 +1558,18 @@ async def async_main(args: argparse.Namespace) -> int:
             print(f"Error loading settings: {exc}")
             return 1
         return await dispatch_runs(args, _runs_settings.audit_db_url)
+
+    # vm-facts sub-command (Project B, B3)
+    if args.vm_facts_vm_id is not None or args.vm_facts_action is not None:
+        from errander.commands.vm_facts import dispatch_vm_facts
+        try:
+            _vf_settings = load_settings(
+                settings_path=args.config if args.config.exists() else None,
+            )
+        except Exception as exc:  # noqa: BLE001
+            print(f"Error loading settings: {exc}")
+            return 1
+        return dispatch_vm_facts(args, _vf_settings.audit_db_url)
 
     if args.migrate_inventory:
         return _run_migrate_inventory(Path(args.migrate_inventory))

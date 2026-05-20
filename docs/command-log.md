@@ -1,5 +1,23 @@
 # Errander-AI Command Log
 
+## Project B3 — vm-facts CLI (2026-05-20)
+
+```bash
+# Run new B3 tests
+uv run pytest tests/commands/test_vm_facts.py -q --tb=short
+# 16 passed
+
+# Lint + type-check
+uv run ruff check errander/commands/vm_facts.py errander/main.py --fix
+uv run mypy errander/commands/vm_facts.py --ignore-missing-imports
+
+# Full suite
+uv run pytest --tb=short -q
+# 2106 passed
+```
+
+---
+
 ## QA/SRE UI bug fixes (2026-05-20)
 
 ```bash

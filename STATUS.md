@@ -4,6 +4,19 @@
 2026-05-20
 
 ## Current Phase
+**Project B3 — `errander vm-facts` CLI (2026-05-20, COMPLETE).** 2106 tests, all passing.
+
+New `errander/commands/vm_facts.py` — operator-facing CLI for spot-checking the operational learning facts that OperatorAssistant surfaces to the LLM. Three sections: action outcomes table (success rate ✓/~/✗, sample size, last success, last failure reason), reboot pattern (reboots/patching runs for the VM), and fleet-wide rejection facts (per-action-type approval rejections, last 90 days). Wired into `main.py` as `--vm-facts <vm_id>` and `--vm-facts-action <type>`. Cross-fleet mode when `--vm-facts-action` given without `vm_id`.
+
+### Files Changed (B3)
+- `errander/commands/vm_facts.py` (NEW) — `cmd_vm_facts`, `dispatch_vm_facts`, three print helpers
+- `errander/main.py` (MODIFIED) — `--vm-facts` / `--vm-facts-action` args, dispatch block
+- `tests/commands/test_vm_facts.py` (NEW) — 16 tests
+- `RUN.md` (MODIFIED) — `## VM operational facts` section + CLI flags table entries
+
+---
+
+## Previous Phase
 **QA/SRE UI bug fixes — 4 items (2026-05-20, COMPLETE).** 2090 tests, all passing.
 
 External QA/SRE review approved for internal manual testing pending these fixes. All 4 resolved in `errander/web/server.py`:

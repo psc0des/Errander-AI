@@ -1,3 +1,13 @@
+## Project B3 — `errander vm-facts` CLI (2026-05-20, COMPLETED)
+
+- [x] `errander/commands/vm_facts.py` — `cmd_vm_facts` with three output sections: outcomes, reboot pattern, rejection facts. `_fmt_rate()` with ✓/~/✗ visual indicator. Cross-fleet mode when vm_id omitted.
+- [x] `errander/main.py` — `--vm-facts <vm_id>` and `--vm-facts-action <type>` args + dispatch block.
+- [x] `tests/commands/test_vm_facts.py` — 16 tests covering: no-args error, single-VM outcomes, action filter, cross-fleet, no-data messages, reboot pattern, section visibility, rejection facts, old-event exclusion, ✓/✗ indicators.
+- [x] `RUN.md` — `## VM operational facts` section with example output + CLI flags table.
+- [x] 2106 tests passing, ruff clean, mypy clean.
+
+---
+
 ## QA/SRE UI bug fixes (2026-05-20, COMPLETED)
 
 - [x] **Fix 1 — `load_inventory()` startup crash**: `_on_startup` called with no args. Fixed: `ERRANDER_INVENTORY_PATH` env var + `list(load_inventory(_inv_path))`. WAL pragmas added for SQLite disk I/O hardening.

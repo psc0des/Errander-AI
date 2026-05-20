@@ -204,6 +204,43 @@ The "Agent restarts during a live batch" count equals interrupted batches — a 
 
 ---
 
+## VM operational facts (B3)
+
+Spot-check the historical outcome facts that OperatorAssistant surfaces to the LLM.
+
+```bash
+# All action outcomes for one VM
+uv run python -m errander --vm-facts prod/web-01
+
+# Filter to one action type
+uv run python -m errander --vm-facts prod/web-01 --vm-facts-action patching
+
+# Cross-fleet: all VMs for one action type (omit vm_id)
+uv run python -m errander --vm-facts-action patching
+```
+
+Example output:
+```
+Action outcomes — prod/web-01
+------------------------------------------------------------------------
+  VM            ACTION        RATE  SAMPLE  LAST SUCCESS       LAST FAILURE
+  --------------------------------------------------------------------------
+  prod/web-01   disk_cleanup   ✓ 100%      12  2026-05-18 02:14   —
+  prod/web-01   patching       ~ 75%        8  2026-05-16 02:11   dpkg lock
+
+Reboot pattern — prod/web-01
+------------------------------------------------------------------------
+  prod/web-01: 3 / 8 patching runs required a reboot
+
+Approval rejections — last 90 days (fleet-wide)
+------------------------------------------------------------------------
+  ACTION    REJECTIONS (90d)  REASONS
+  ------------------------------------
+  patching                 2  risk too high; maintenance window missed
+```
+
+---
+
 ## Health checks
 
 ### Check the agent is running
@@ -368,6 +405,8 @@ The agent will not interrupt a running SSH command mid-flight — it finishes th
 | `--audit --last <n>` | Maximum audit events to return (default: 50) |
 | `--measure-durability` | Print durability snapshot (completion rate, duration/approval percentiles) |
 | `--window-days <n>` | Look-back window for `--measure-durability` in days (default: 14) |
+| `--vm-facts <vm_id>` | Print action outcome, reboot pattern, and rejection facts for a VM |
+| `--vm-facts-action <type>` | Filter `--vm-facts` to one action type, or use alone for cross-fleet view |
 
 ---
 

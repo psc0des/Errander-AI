@@ -911,6 +911,25 @@ uv run python -m errander --check-targets <your-env-name>
 
 `--check-targets` verifies wrapper presence, sudoers entry, and (for service restart) that the on-target allowlist matches your `restartable_units`. Any drift is reported as a warning.
 
+**5d. Configure Node Exporter for richer VM metrics** *(optional but recommended)*
+
+The Operations Hub VM Detail page can show CPU/MEM/disk trends from either SSH probes or [Prometheus Node Exporter](https://github.com/prometheus/node_exporter) on each target VM. Node Exporter is preferred: it runs as a lightweight systemd service on `:9100` and avoids auth-log noise from per-minute SSH logins.
+
+Run the interactive setup script once after editing `inventory.yaml`:
+
+```bash
+bash configure.sh
+```
+
+For each VM it will:
+1. Check SSH connectivity
+2. Check if Node Exporter is already running on `:9100`
+3. If not found — prompt **"Install Node Exporter? [Y/n]"** (default Y)
+4. Install Node Exporter via SSH (curl from GitHub, systemd unit, enable + start)
+5. Write `node_exporter: true/false` into `inventory.yaml`
+
+Skip this step to use SSH-probe fallback for all VMs (slightly higher SSH auth-log activity). Re-run `configure.sh` at any time after adding new VMs.
+
 ---
 
 ## Step 7 — First run (dry-run)

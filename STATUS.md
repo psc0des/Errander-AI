@@ -36,8 +36,12 @@ External SRE reviewed the running Operations Hub UI and graded enterprise trust/
 - **VM Detail — VM_EVIDENCE wired (2026-05-20)**: lock holder red alert, noop badge, last_patched + ssh_key_fp in identity card, window from evidence. Deep-link strip: Last Batch → Approval → Audit Slice → Patch History.
 - **Batches — BATCH_EVIDENCE click-to-expand (2026-05-20)**: each row expands to show plan_hash, approver, approval_source, outcome counts (ok/failed/partial/rolled_back). URL fragment auto-expands matching row. Deep links: Approval, Audit Slice.
 
-### Deferred (P1, follow-up session)
-Glossary verify, Inventory + Settings polish, mobile responsive sweep.
+- **Glossary verify (2026-05-20)**: Layer A/B, Risk Tier, Rollback, Disk Cleanup whitelist all confirmed present. No changes needed.
+- **Inventory + Settings polish (2026-05-20)**: Inventory SSH Key FP column from VM_EVIDENCE, window per VM from VM_EVIDENCE, restartable units in env breakdown. Settings: Restartable Units Allowlist section per env with ENABLED/DISABLED badge and unit chips.
+- **Mobile responsive sweep (2026-05-20)**: @media ≤768px — sidebar hidden, shell full-width, table overflow-x:auto, filter-bar wraps, section-hdr columns, grids 2-col.
+
+### Deferred
+Project A1 — LangGraph checkpointer (workflow durability/crash recovery). Project C — Runbook retrieval (blocked: needs operator-authored ./runbooks/*.md first).
 
 ### Files Changed This Session
 - `errander/web/evidence.py` — VM_EVIDENCE expanded with time-series history for all 11 VMs

@@ -393,6 +393,27 @@ body { font-family: 'Inter', system-ui, sans-serif; background: #f0f2ff; color: 
 /* ── Responsive tweaks ── */
 @media (max-width: 1100px) { .vm-grid { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 900px)  { .kpi-grid { grid-template-columns: repeat(2, 1fr); } .detail-top { grid-template-columns: 1fr; } }
+/* ── Mobile (≤768px) — hide sidebar, full-width shell, wrap tables ── */
+@media (max-width: 768px) {
+  .sidebar { display: none; }
+  .shell { margin-left: 0; }
+  .topnav { padding: 0 12px; }
+  .topnav-left { gap: 8px; }
+  .topnav-right { gap: 8px; }
+  .page-content { padding: 12px; }
+  .data-table { font-size: 0.75rem; }
+  .data-table th, .data-table td { padding: 8px 8px; }
+  .table-card { overflow-x: auto; }
+  .card { overflow-x: auto; }
+  .kpi-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+  .filter-bar { flex-wrap: wrap; gap: 8px; }
+  .filter-bar .search-input { width: 100%; }
+  .section-hdr { flex-direction: column; align-items: flex-start; gap: 10px; }
+  .detail-top { grid-template-columns: 1fr; }
+  .settings-grid { grid-template-columns: 1fr; }
+  .admin-top { grid-template-columns: 1fr; }
+  .inv-kpi { grid-template-columns: repeat(2, 1fr); }
+}
 
 /* ── Sparkline placeholder ── */
 .sparkline-wrap { position: relative; height: 72px; margin: 16px 0 8px; }
@@ -3241,13 +3262,18 @@ def page_inventory() -> str:
     for i, vm in enumerate(VMS):
         alt  = " row-alt" if i % 2 == 1 else ""
         fcls = " row-failed" if vm["status"] == "failed" else (" row-pending" if vm["status"] == "pending" else "")
+        ve = VM_EVIDENCE.get(vm["hostname"], {})
+        ssh_fp   = ve.get("ssh_key_fp", f'/keys/{vm["hostname"]}.pem')
+        win_str  = ve.get("window", "Tue/Thu 02:00–04:00")
+        # shorten window for table cell
+        win_short = win_str.split(" (")[0] if " (" in win_str else win_str
         rows += f"""<tr class="{alt}{fcls}">
           <td><a href="/vm/{vm['hostname']}" class="td-host">{vm['hostname']}</a></td>
           <td class="td-mono">{vm['ip']}</td>
           <td>{os_tag(vm['os'])}</td>
           <td>{env_tag(vm['env'])}</td>
-          <td class="td-mono" style="color:#94a3b8;font-size:0.75rem">/keys/{vm['hostname']}.pem</td>
-          <td class="td-mono" style="font-size:0.75rem">Tue/Thu 02:00–04:00</td>
+          <td class="td-mono" style="color:#94a3b8;font-size:0.7rem">{ssh_fp}</td>
+          <td class="td-mono" style="font-size:0.75rem">{win_short}</td>
           <td class="td-mono" style="font-size:0.75rem">{vm['uptime']}</td>
           <td>{badge(vm['status'])}</td>
           <td><a href="/vm/{vm['hostname']}" class="td-link">Details →</a></td>
@@ -3266,16 +3292,23 @@ def page_inventory() -> str:
     </div>
     {kpis}
     {filters}
-    <div class="card table-card">
+    <div class="card table-card" style="overflow-x:auto">
       <table class="data-table">
         <thead><tr>
           <th>HOSTNAME</th><th>IP ADDRESS</th><th>OS</th><th>ENV</th>
-          <th>SSH KEY</th><th>MAINT. WINDOW</th><th>UPTIME</th><th>STATUS</th><th></th>
+          <th>SSH KEY FP</th><th>MAINT. WINDOW</th><th>UPTIME</th><th>STATUS</th><th></th>
         </tr></thead>
         <tbody>{rows}</tbody>
       </table>
     </div>
     {_inventory_env_breakdown()}"""
+
+
+_ENV_RESTARTABLE_UNITS: dict[str, list[str]] = {
+    "PROD":    ["nginx", "gunicorn", "redis-server"],
+    "STAGING": ["nginx", "gunicorn"],
+    "DEV":     [],
+}
 
 
 def _inventory_env_breakdown() -> str:
@@ -3294,6 +3327,15 @@ def _inventory_env_breakdown() -> str:
             f'<a href="/vm/{v["hostname"]}" style="font-size:0.75rem;color:#4f46e5;text-decoration:none;font-family:\'JetBrains Mono\',monospace">{v["hostname"]}</a>'
             for v in group
         )
+        units = _ENV_RESTARTABLE_UNITS.get(env_name, [])
+        if units:
+            units_html = " ".join(
+                f'<code style="font-size:0.7rem;background:#f1f5f9;padding:2px 6px;border-radius:4px;color:#4f46e5">{u}</code>'
+                for u in units
+            )
+            restart_row = f'<div style="margin-top:10px;border-top:1px solid #f1f5f9;padding-top:10px"><div style="font-size:0.65rem;font-weight:600;color:#94a3b8;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:5px">Restartable Units</div><div style="display:flex;flex-wrap:wrap;gap:4px">{units_html}</div></div>'
+        else:
+            restart_row = '<div style="margin-top:10px;border-top:1px solid #f1f5f9;padding-top:10px"><div style="font-size:0.65rem;font-weight:600;color:#94a3b8;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:5px">Restartable Units</div><span style="font-size:0.75rem;color:#94a3b8">None configured</span></div>'
         cards_html += f"""
         <div class="card" style="padding:16px 18px">
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
@@ -3319,6 +3361,7 @@ def _inventory_env_breakdown() -> str:
             </div>
           </div>
           <div style="display:flex;flex-wrap:wrap;gap:6px">{vm_links}</div>
+          {restart_row}
         </div>"""
     return f"""
     <div style="margin-top:20px">
@@ -3413,6 +3456,48 @@ def page_settings() -> str:
       </table>
     </div>"""
 
+    restart_rows = ""
+    for env_name, units in _ENV_RESTARTABLE_UNITS.items():
+        env_color = {"PROD": "#4f46e5", "STAGING": "#d97706", "DEV": "#16a34a"}.get(env_name, "#94a3b8")
+        if units:
+            chips = " ".join(
+                f'<code style="font-size:0.7rem;background:#f1f5f9;padding:2px 6px;border-radius:4px;color:#4f46e5">{u}</code>'
+                for u in units
+            )
+            status_badge = f'<span class="settings-badge" style="background:#dcfce7;color:#16a34a">ENABLED</span>'
+        else:
+            chips = '<span style="font-size:0.8rem;color:#94a3b8">None configured — service_restart disabled</span>'
+            status_badge = f'<span class="settings-badge" style="background:#f1f5f9;color:#94a3b8">DISABLED</span>'
+        restart_rows += f"""
+        <tr>
+          <td style="padding:10px 14px">
+            <span style="font-size:0.65rem;font-weight:700;letter-spacing:0.1em;background:{env_color}22;color:{env_color};padding:2px 8px;border-radius:4px">{env_name}</span>
+          </td>
+          <td style="padding:10px 14px">{status_badge}</td>
+          <td style="padding:10px 14px;display:flex;flex-wrap:wrap;gap:4px">{chips}</td>
+        </tr>"""
+
+    restart_section = f"""
+    <div class="card" style="margin-top:20px;padding:0;overflow:hidden">
+      <div style="padding:14px 16px;border-bottom:1px solid #e2e8f0;display:flex;align-items:center;justify-content:space-between">
+        <div>
+          <div class="section-title" style="font-size:0.875rem">Restartable Units Allowlist</div>
+          <div class="section-sub" style="font-size:0.75rem">Systemd units permitted for operator-triggered restart — configured in <code>inventory.yaml → restartable_units</code></div>
+        </div>
+        <a href="/inventory" class="btn-outline btn-outline-indigo" style="font-size:0.75rem;padding:5px 12px">INVENTORY →</a>
+      </div>
+      <table style="width:100%;border-collapse:collapse">
+        <thead>
+          <tr style="background:#f8fafc">
+            <th style="text-align:left;font-size:0.7rem;font-weight:600;color:#94a3b8;letter-spacing:0.06em;text-transform:uppercase;padding:8px 14px;width:100px">ENV</th>
+            <th style="text-align:left;font-size:0.7rem;font-weight:600;color:#94a3b8;letter-spacing:0.06em;text-transform:uppercase;padding:8px 14px;width:120px">STATUS</th>
+            <th style="text-align:left;font-size:0.7rem;font-weight:600;color:#94a3b8;letter-spacing:0.06em;text-transform:uppercase;padding:8px 14px">UNITS</th>
+          </tr>
+        </thead>
+        <tbody>{restart_rows}</tbody>
+      </table>
+    </div>"""
+
     return f"""
     <div class="section-hdr">
       <div>
@@ -3423,7 +3508,8 @@ def page_settings() -> str:
     </div>
     <div class="settings-grid">{cards}</div>
     {note}
-    {env_section}"""
+    {env_section}
+    {restart_section}"""
 
 
 # ── Admin page ────────────────────────────────────────────────────────────────

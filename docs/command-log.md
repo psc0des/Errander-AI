@@ -1,5 +1,17 @@
 # Errander-AI Command Log
 
+## Glossary verify + Inventory/Settings polish + Mobile responsive (2026-05-20)
+
+```bash
+# Render-check all three pages inline
+.venv/Scripts/python.exe -c "from errander.web.server import page_inventory, page_settings, page_glossary; ..."
+# All checks passed
+
+# Full regression suite
+.venv/Scripts/pytest.exe -q --tb=short
+# 2027 passed, 1 warning
+```
+
 ## VM Detail + Batches page enrichment (2026-05-20)
 
 ```bash

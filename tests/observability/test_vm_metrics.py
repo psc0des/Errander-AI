@@ -30,12 +30,17 @@ from errander.safety.migrations import run_migrations
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _fake_target(vm_id: str = "test-vm-01", hostname: str = "10.0.0.1") -> MagicMock:
+def _fake_target(
+    vm_id: str = "test-vm-01",
+    hostname: str = "10.0.0.1",
+    node_exporter: bool = False,
+) -> MagicMock:
     t = MagicMock()
     t.vm_id = vm_id
     t.hostname = hostname
     t.ssh_user = "ubuntu"
     t.ssh_key_path = "/keys/test.pem"
+    t.node_exporter = node_exporter
     return t
 
 
@@ -321,8 +326,13 @@ class TestParseProbeOutput:
 # ---------------------------------------------------------------------------
 
 class TestMetricsCollectorDiscover:
+    """discover() is now flag-driven (target.node_exporter).
+
+    node_exporter=True  → verify :9100, use NE if running, SSH probe if not.
+    node_exporter=False → SSH probe always, no HTTP check.
+    """
+
     def _make_session(self, status: int = 200, side_effect: Exception | None = None) -> MagicMock:
-        """Return a mock aiohttp.ClientSession whose get() works with async with."""
         mock_resp = AsyncMock()
         mock_resp.status = status
         if side_effect:
@@ -330,46 +340,61 @@ class TestMetricsCollectorDiscover:
         else:
             mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
         mock_resp.__aexit__ = AsyncMock(return_value=False)
-
         mock_session = MagicMock()
         mock_session.get = MagicMock(return_value=mock_resp)
         mock_session.closed = False
         mock_session.close = AsyncMock()
         return mock_session
 
-    async def test_uses_node_exporter_when_200(self) -> None:
+    async def test_flag_true_and_ne_running(self) -> None:
         c = MetricsCollector()
-        target = _fake_target("vm1", "10.0.0.1")
+        target = _fake_target("vm1", "10.0.0.1", node_exporter=True)
         c._http_session = self._make_session(status=200)
-        await c.discover([target], timeout=2.0)
+        await c.discover([target])
         assert c.source_map["vm1"] == "node_exporter"
         await c.close()
 
-    async def test_falls_back_to_ssh_on_connection_error(self) -> None:
+    async def test_flag_true_but_ne_not_running_falls_back(self) -> None:
         c = MetricsCollector()
-        target = _fake_target("vm2", "10.0.0.2")
+        target = _fake_target("vm2", "10.0.0.2", node_exporter=True)
         c._http_session = self._make_session(side_effect=OSError("refused"))
-        await c.discover([target], timeout=2.0)
+        await c.discover([target])
+        # Flag is true but :9100 is down → SSH probe fallback
         assert c.source_map["vm2"] == "ssh_probe"
         await c.close()
 
-    async def test_falls_back_to_ssh_on_non_200(self) -> None:
+    async def test_flag_true_but_ne_non_200_falls_back(self) -> None:
         c = MetricsCollector()
-        target = _fake_target("vm3", "10.0.0.3")
-        c._http_session = self._make_session(status=404)
-        await c.discover([target], timeout=2.0)
+        target = _fake_target("vm3", "10.0.0.3", node_exporter=True)
+        c._http_session = self._make_session(status=503)
+        await c.discover([target])
         assert c.source_map["vm3"] == "ssh_probe"
+        await c.close()
+
+    async def test_flag_false_uses_ssh_probe_without_http_check(self) -> None:
+        c = MetricsCollector()
+        target = _fake_target("vm4", "10.0.0.4", node_exporter=False)
+        mock_session = MagicMock()
+        mock_session.closed = False
+        mock_session.close = AsyncMock()
+        c._http_session = mock_session
+
+        await c.discover([target])
+
+        assert c.source_map["vm4"] == "ssh_probe"
+        # No HTTP request made when flag is false
+        mock_session.get.assert_not_called()
         await c.close()
 
     async def test_mixed_fleet(self) -> None:
         c = MetricsCollector()
-        ne_target = _fake_target("ne-vm", "10.0.0.10")
-        ssh_target = _fake_target("ssh-vm", "10.0.0.11")
+        ne_target = _fake_target("ne-vm", "10.0.0.10", node_exporter=True)
+        ssh_target = _fake_target("ssh-vm", "10.0.0.11", node_exporter=False)
 
-        # Regular function — returns a context manager object directly (not a coroutine)
+        # ne-vm will trigger an HTTP check; ssh-vm will not
         def _fake_get(url: str, **kwargs: object) -> AsyncMock:
             resp = AsyncMock()
-            resp.status = 200 if "10.0.0.10" in url else 404
+            resp.status = 200
             resp.__aenter__ = AsyncMock(return_value=resp)
             resp.__aexit__ = AsyncMock(return_value=False)
             return resp
@@ -380,7 +405,7 @@ class TestMetricsCollectorDiscover:
         mock_session.close = AsyncMock()
         c._http_session = mock_session
 
-        await c.discover([ne_target, ssh_target], timeout=2.0)
+        await c.discover([ne_target, ssh_target])
         assert c.source_map["ne-vm"] == "node_exporter"
         assert c.source_map["ssh-vm"] == "ssh_probe"
         await c.close()

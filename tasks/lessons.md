@@ -55,6 +55,12 @@ Also: every page with less than ~60% viewport coverage feels abandoned. Sparse p
 
 When adding a page that lives under a nav section, the full wiring is: (1) page function, (2) route handler async def, (3) app.router.add_get() in create_app(). Stopping at step 1 leaves the route returning 404. Always write all three before considering a page "done". Verify with `uv run python -c "from errander.web.server import create_app; app = create_app(); ..."` to confirm route registration.
 
+## 2026-05-20 — Mock async context managers need __aenter__/__aexit__, not async def returning a value
+
+When a test uses `async with session.get(url) as resp`, the mock for `session.get` must return an object that implements `__aenter__` and `__aexit__` as coroutines. Defining `async def _fake_get()` and setting `mock.get = _fake_get` returns a coroutine, not a context manager — `async with` on a plain coroutine raises `AttributeError: __aenter__`. Fix: use a plain `def` that returns an `AsyncMock` with `__aenter__` and `__aexit__` set. Also: `mock_session.close()` must be set to `AsyncMock()` before any test that awaits `await collector.close()`, otherwise `MagicMock().close()` returns a non-awaitable.
+
+**How to apply:** Any time a mock replaces an aiohttp `ClientSession`, explicitly wire both `close = AsyncMock()` and a factory for `get()` that returns a context-manager mock (not a coroutine).
+
 ## 2026-05-20 — Pin fixture endpoint to live value when rendering time-series + current together
 
 When a sparkline shows historical data AND a separate "current: X%" label, the last point in the history must equal X. Otherwise the sparkline visually diverges from the label — memory sparkline ends at 61% but label reads 78%, which looks like a bug even when both are technically correct from different sources.

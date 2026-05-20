@@ -177,23 +177,30 @@ class MetricsCollector:
     # Public API
     # ------------------------------------------------------------------
 
-    async def discover(
-        self,
-        targets: list[VMTarget],
-        timeout: float = 2.0,
-    ) -> None:
-        """Determine metrics source for each VM (Node Exporter vs SSH probe).
+    async def discover(self, targets: list[VMTarget]) -> None:
+        """Set metrics source per VM from the inventory node_exporter flag.
 
-        Runs concurrently; logs per-VM decision. Called once at startup.
+        If node_exporter=True, verifies :9100 is actually responding.
+        If it is not (NE crashed or was never installed), logs a warning and
+        falls back to SSH probe — never silently drops metrics.
+
+        Run configure.sh to install/fix Node Exporter and update inventory.
         """
-        session = self._session()
-
         async def _check(target: VMTarget) -> None:
+            if not target.node_exporter:
+                self._source[target.vm_id] = "ssh_probe"
+                logger.info(
+                    "metrics: %s → SSH probe (node_exporter=false in inventory)",
+                    target.vm_id,
+                )
+                return
+
+            # node_exporter=true: verify :9100 is actually reachable.
             url = f"http://{target.hostname}:{self._ne_port}/metrics"
             try:
-                async with session.get(
+                async with self._session().get(
                     url,
-                    timeout=aiohttp.ClientTimeout(total=timeout),
+                    timeout=aiohttp.ClientTimeout(total=3.0),
                 ) as resp:
                     if resp.status == 200:
                         self._source[target.vm_id] = "node_exporter"
@@ -202,13 +209,19 @@ class MetricsCollector:
                             target.vm_id, self._ne_port,
                         )
                         return
-            except Exception:
-                pass
+                    logger.warning(
+                        "metrics: %s node_exporter=true but :%d returned HTTP %d "
+                        "— SSH probe fallback. Re-run configure.sh to fix.",
+                        target.vm_id, self._ne_port, resp.status,
+                    )
+            except Exception as exc:
+                logger.warning(
+                    "metrics: %s node_exporter=true but :%d unreachable (%s) "
+                    "— SSH probe fallback. Re-run configure.sh to fix.",
+                    target.vm_id, self._ne_port, exc,
+                )
+
             self._source[target.vm_id] = "ssh_probe"
-            logger.info(
-                "metrics: %s → SSH probe (Node Exporter unreachable on :%d)",
-                target.vm_id, self._ne_port,
-            )
 
         await asyncio.gather(*(_check(t) for t in targets))
 

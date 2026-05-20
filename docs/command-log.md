@@ -1,5 +1,17 @@
 # Errander-AI Command Log
 
+## Node Exporter flag + configure.sh interactive setup (2026-05-20)
+
+```bash
+# Run vm_metrics tests (flag-driven discover)
+.venv/Scripts/pytest.exe tests/observability/test_vm_metrics.py -q --tb=short
+# 35 passed in 0.19s
+
+# Full regression suite
+.venv/Scripts/pytest.exe -q --tb=short
+# 2027 passed, 1 warning in 76.25s
+```
+
 ## Real metrics collection + live API (2026-05-20)
 
 ```bash

@@ -24,6 +24,12 @@
 #             Useful for honeypots, bastion hosts, or jump boxes where high failure
 #             counts are expected and would produce noisy false alerts.
 #             Default: false (probe is enabled for all hosts).
+#           node_exporter: whether Errander uses Node Exporter (:9100) for live metrics.
+#             true  → scrape Node Exporter (richer data, zero SSH cost for metrics).
+#             false → SSH probe fallback (vmstat + /proc/meminfo + df). Default.
+#             Set automatically by configure.sh. Can be overridden per-host.
+#             If true but :9100 is unreachable at startup, Errander warns and falls
+#             back to SSH probe — metrics collection never fails hard.
 #
 #       actions:                         # Per-action opt-in (all optional, defaults shown)
 #         patching:
@@ -96,6 +102,10 @@ environments:
         # To enable: install wrapper first — see SETUP.md#optional-service-restart
         enabled: false
         restartable_units: []   # Example: [nginx, gunicorn, redis-server]
+    # Environment-wide Node Exporter default — applies to all hosts unless overridden.
+    # Run configure.sh to set this automatically after checking each VM.
+    node_exporter: false   # set to true after running configure.sh
+
     # Environment-wide critical services — applies to all hosts unless overridden.
     critical_services:
       - prometheus-node-exporter

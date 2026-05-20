@@ -77,6 +77,10 @@ def _resolve_single_target(
     critical_services = tuple(
         target.critical_services if target.critical_services else env.critical_services
     )
+    # Host-level node_exporter overrides env-level when explicitly set
+    node_exporter = (
+        target.node_exporter if target.node_exporter is not None else env.node_exporter
+    )
 
     return VMTarget(
         vm_id=f"{env_name}/{target.name}",
@@ -87,6 +91,7 @@ def _resolve_single_target(
         policy=policy,
         tags={"env": env_name, **{tag: "" for tag in target.tags}},
         critical_services=critical_services,
+        node_exporter=node_exporter,
     )
 
 

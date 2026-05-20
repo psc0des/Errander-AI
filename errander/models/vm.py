@@ -42,6 +42,10 @@ class VMTarget:
     # Services monitored pre/post maintenance for health regressions (Phase 1.3).
     # tuple because VMTarget is frozen=True.
     critical_services: tuple[str, ...] = ()
+    # Whether Errander manages Node Exporter on this VM.
+    # true  → scrape :9100 for metrics (installed by configure.sh or pre-existing).
+    # false → SSH probe fallback (vmstat + /proc/meminfo + df).
+    node_exporter: bool = False
 
 
 @dataclass

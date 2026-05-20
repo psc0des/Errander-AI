@@ -81,6 +81,12 @@ class TargetSchema(BaseModel):
     # or bastion hosts where high failure counts are expected and not actionable).
     disable_failed_login_check: bool = False
 
+    # Node Exporter management for live metrics (CPU/mem/disk sparklines in the UI).
+    # true  → Errander scrapes :9100 (installed by configure.sh or pre-existing).
+    # false → SSH probe fallback used instead.
+    # None  → inherit from environment-level node_exporter default.
+    node_exporter: bool | None = None
+
     @field_validator("os_family")
     @classmethod
     def validate_os_family(cls, v: str) -> str:
@@ -122,6 +128,11 @@ class EnvironmentSchema(BaseModel):
     # Per-action opt-in config. Missing entries are filled with defaults
     # from BUILTIN_ACTIONS at validation time.
     actions: dict[str, ActionConfig] = {}
+
+    # Node Exporter default for all VMs in this environment.
+    # Each target may override with its own node_exporter: true/false.
+    # Run configure.sh to install Node Exporter and set this automatically.
+    node_exporter: bool = False
 
     # Per-environment Prometheus/ELK URL overrides.
     # When set, these override the global ERRANDER_PROMETHEUS_BASE_URL /

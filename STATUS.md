@@ -4,6 +4,10 @@
 2026-05-20
 
 ## Current Phase
+**Node Exporter flag + configure.sh interactive setup (2026-05-20).**
+
+Operator-controlled metrics source strategy: each VM in `inventory.yaml` now carries a `node_exporter: true/false` flag. When true, `MetricsCollector` scrapes the Node Exporter HTTP endpoint (`:9100`) for zero-auth-log metrics; when false (or when `:9100` is unreachable despite being flagged true), it falls back to SSH probe transparently. Configure.sh runs an interactive setup flow: SSH connectivity check → Node Exporter HTTP check → "Install? [Y/n]" prompt (default Y) → install via SSH → verify → writes `node_exporter: true/false` per VM into `inventory.yaml`.
+
 **Real metrics collection + live UI wired up (2026-05-20).**
 
 VM Detail Resource Trends card now backed by real SSH-collected data (not just fixtures). CPU/MEM/disk probed from target VMs every 60 seconds via asyncssh, stored in `vm_metrics` SQLite table (migration #4), served via `/api/vm/{hostname}/metrics`, and auto-refreshed in the browser every 60 s. Fixture fallback preserved for demo mode.
@@ -33,9 +37,17 @@ VM detail deep-link chain (lock/window/last_patched from VM_EVIDENCE), Batches B
 
 ### Files Changed This Session
 - `errander/web/evidence.py` — VM_EVIDENCE expanded with time-series history for all 11 VMs
-- `errander/web/server.py` — CSS additions (vm-trends), three new helper functions (_sparkline_svg, _mini_sparkline_svg, _vm_resource_trends), disk_rows enhanced with mini-sparklines, _vm_resource_trends call inserted in page_vm; **this session:** page_vm gains metrics_by_window param, handle_vm queries DB for all 4 windows, handle_metrics_api added (/api/vm/{hostname}/metrics), _auth_middleware returns JSON 401 for /api/ paths, _on_startup/_on_cleanup hooks wire DB open/migration/APScheduler collection loop, create_app registers new route + hooks
+- `errander/web/server.py` — CSS additions (vm-trends), three new helper functions (_sparkline_svg, _mini_sparkline_svg, _vm_resource_trends), disk_rows enhanced with mini-sparklines, _vm_resource_trends call inserted in page_vm; page_vm gains metrics_by_window param, handle_vm queries DB for all 4 windows, handle_metrics_api added (/api/vm/{hostname}/metrics), _auth_middleware returns JSON 401 for /api/ paths, _on_startup/_on_cleanup hooks wire DB open/migration/APScheduler collection loop, create_app registers new route + hooks
 - `errander/safety/migrations.py` — migration #4 added: vm_metrics table (hostname, metric, value_pct, ts) with compound PK + index
-- `errander/observability/vm_metrics.py` — NEW: _PROBE_CMD (vmstat+proc/meminfo+df POSIX shell), parse_probe_output, probe_vm (asyncssh, 8s hard timeout), collect_all (asyncio.gather), cleanup_old_metrics (8-day retention), query_metrics (4 time windows: 15m/1h/24h/7d with bucketed AVG)
+- `errander/observability/vm_metrics.py` — complete rewrite: MetricsCollector class with flag-driven discover(), _parse_prom_text(), _extract_ne_metrics() (stateless mem/disk + stateful CPU delta), _probe_node_exporter(), _probe_ssh() with persistent asyncssh connections, collect_all(), source_map property; module-level cleanup_old_metrics() and query_metrics() unchanged
+- `errander/models/vm.py` — `node_exporter: bool = False` added to VMTarget dataclass
+- `errander/config/schema.py` — `node_exporter: bool | None = None` added to TargetSchema; `node_exporter: bool = False` added to EnvironmentSchema
+- `errander/config/inventory.py` — `_resolve_single_target()` resolves host-level flag with env-level inheritance; `node_exporter=` passed to VMTarget constructor
+- `errander/config/configure.py` — NEW: interactive Node Exporter setup flow (check SSH → check :9100 → prompt install → install via SSH → write inventory.yaml)
+- `configure.sh` — NEW: thin bash wrapper invoking `errander.config.configure`
+- `example/inventory.yaml` — env-level `node_exporter: false` default + per-host field docs
+- `tests/observability/test_vm_metrics.py` — 35 tests: flag-driven discover tests (5), Prometheus text parser (8), NE metric extraction (10), SSH probe parser (6), collect_all DB integration (3), query_metrics (3)
+- `tests/safety/test_migrations.py` — migration count assertions updated for migration #4
 
 ## Previous Phase
 **P0-1 immutable execution artifact — final closure (2026-05-19).**

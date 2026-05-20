@@ -120,6 +120,79 @@ _MIGRATIONS: list[tuple[int, str]] = [
             ON vm_metrics (hostname, metric, ts DESC)
         """,
     ),
+    # 0005 — batch lifecycle table for LangGraph workflow durability (Project A, A2)
+    #
+    # One row per batch run. Inserted as RUNNING at batch start; updated to a
+    # terminal status (completed, completed_with_failures, aborted,
+    # needs_operator_review) when the orchestrator graph finishes or aborts.
+    #
+    # dry_run is stored as INTEGER (0/1, SQLite boolean convention).
+    # finished_at is NULL while the batch is still running.
+    # error captures the abort reason for non-success terminal states.
+    (
+        5,
+        """
+        CREATE TABLE IF NOT EXISTS batches (
+            id          TEXT    PRIMARY KEY,
+            env_name    TEXT    NOT NULL,
+            status      TEXT    NOT NULL DEFAULT 'running',
+            started_at  TEXT    NOT NULL,
+            finished_at TEXT,
+            dry_run     INTEGER NOT NULL DEFAULT 1,
+            vm_count    INTEGER NOT NULL DEFAULT 0,
+            error       TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_batches_status
+            ON batches (status);
+        CREATE INDEX IF NOT EXISTS idx_batches_started_at
+            ON batches (started_at DESC)
+        """,
+    ),
+    # 0006 — artifact store for oversized graph state blobs (Project A, A4)
+    #
+    # Subgraph state fields exceeding 4 KB (patch_output, prune_output,
+    # rotation_output, version_snapshot) are stored here instead of inside
+    # LangGraph checkpoint state.  The subgraph stores the artifact_id (a
+    # UUID4 string, ~36 bytes) and looks up the blob for reporting.
+    #
+    # Retention: blobs are purged by ArtifactStore.purge_before() after
+    # batch reporting completes.  No auto-vacuum — caller is responsible.
+    (
+        6,
+        """
+        CREATE TABLE IF NOT EXISTS artifacts (
+            id            TEXT    PRIMARY KEY,
+            batch_id      TEXT    NOT NULL,
+            vm_id         TEXT    NOT NULL,
+            artifact_kind TEXT    NOT NULL,
+            content       TEXT    NOT NULL,
+            created_at    TEXT    NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_artifacts_batch
+            ON artifacts (batch_id, vm_id, artifact_kind);
+        CREATE INDEX IF NOT EXISTS idx_artifacts_created_at
+            ON artifacts (created_at)
+        """,
+    ),
+    # 0007 — agent lease table for single-process enforcement (Project A, A5)
+    #
+    # Exactly one row (id=1) when an agent process is running.
+    # Acquired at startup via AgentLease.acquire(); released at shutdown via
+    # AgentLease.release().  Heartbeat updated every 30 s.  Leases older
+    # than 90 s are considered expired and can be evicted by a new agent.
+    (
+        7,
+        """
+        CREATE TABLE IF NOT EXISTS agent_lease (
+            id             INTEGER PRIMARY KEY DEFAULT 1,
+            pid            INTEGER NOT NULL,
+            hostname       TEXT    NOT NULL,
+            acquired_at    TEXT    NOT NULL,
+            last_heartbeat TEXT    NOT NULL,
+            CHECK (id = 1)
+        )
+        """,
+    ),
 ]
 
 

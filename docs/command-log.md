@@ -1,5 +1,33 @@
 # Errander-AI Command Log
 
+## Project A — LangGraph Workflow Durability A2–A6 (2026-05-20)
+
+```bash
+# Run new A2 BatchStore tests
+.venv/Scripts/pytest.exe tests/safety/test_batches.py -q --tb=short
+# 16 passed
+
+# Run new A3 serialization tests
+.venv/Scripts/pytest.exe tests/agent/test_state_serialization.py -q --tb=short
+# 17 passed
+
+# Run new A4 ArtifactStore tests
+.venv/Scripts/pytest.exe tests/safety/test_artifacts.py -q --tb=short
+# 13 passed
+
+# Run new A5 AgentLease tests
+.venv/Scripts/pytest.exe tests/safety/test_agent_lease.py -q --tb=short
+# 14 passed
+
+# Full regression suite after each phase
+.venv/Scripts/pytest.exe -q --tb=short
+# 2090 passed, 1 warning
+
+# Lint check on all new/modified files
+.venv/Scripts/ruff.exe check errander/ tests/
+# All checks passed.
+```
+
 ## Glossary verify + Inventory/Settings polish + Mobile responsive (2026-05-20)
 
 ```bash

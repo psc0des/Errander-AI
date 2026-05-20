@@ -4,7 +4,17 @@
 2026-05-20
 
 ## Current Phase
-**Node Exporter flag + configure.sh interactive setup (2026-05-20).**
+**Project A — LangGraph Workflow Durability A2–A6 (2026-05-20, COMPLETE).**
+
+All six phases of Project A are implemented, tested, and passing. 2090 tests total.
+
+- **A2 — BatchStore + batches table**: `errander/models/batches.py` + `errander/safety/batches.py` + migration #5. Batch lifecycle (RUNNING → COMPLETED / COMPLETED_WITH_FAILURES / ABORTED / NEEDS_OPERATOR_REVIEW) persisted to SQLite. `init_batch_node` inserts on start; `generate_report_node` updates terminal status. `BatchStore.update_status` guards against double-updates with `WHERE status='running'`.
+- **A3 — State serialization tests**: `tests/agent/test_state_serialization.py` (17 tests). All 6 `GraphState` TypedDicts round-tripped through `JsonPlusSerializer`. Identified `patch_output` as a >4 KB blob candidate for future offload.
+- **A4 — ArtifactStore + artifacts table**: `errander/safety/artifacts.py` + migration #6. External blob store for oversized state fields (>4 KB). UUID4 `artifact_id` replaces blob in graph state. `purge_before()` for retention management. `AuditStore.make_artifact_store()` factory method (shared DB connection).
+- **A5 — AsyncSqliteSaver + AgentLease**: `errander/safety/agent_lease.py` + migration #7. Single-process enforcement via SQLite `agent_lease` table (id=1, TTL=90 s, heartbeat=30 s). `AsyncSqliteSaver` wired into `run_env_batch()` in `main.py`; unique `thread_id` per batch run; graceful fallback when `langgraph.checkpoint.sqlite.aio` unavailable. `AgentLease` acquired in `async_main()`, released in `finally`.
+- **A6 — `errander runs` CLI + SAFE_RESUME_NODES**: `errander/commands/runs.py`. `errander runs list` — table of recent batches. `errander runs inspect <id>` — full details + LangGraph checkpoint probe. `errander runs resume <id>` — safe/forced resume with `SAFE_RESUME_NODES` check. `OPERATOR_FORCE_RESUME` audit event. `SAFE_RESUME_NODES` frozenset constant in `graph.py`.
+
+**Previous Phase: Node Exporter flag + configure.sh interactive setup (2026-05-20).**
 
 Operator-controlled metrics source strategy: each VM in `inventory.yaml` now carries a `node_exporter: true/false` flag. When true, `MetricsCollector` scrapes the Node Exporter HTTP endpoint (`:9100`) for zero-auth-log metrics; when false (or when `:9100` is unreachable despite being flagged true), it falls back to SSH probe transparently. Configure.sh runs an interactive setup flow: SSH connectivity check → Node Exporter HTTP check → "Install? [Y/n]" prompt (default Y) → install via SSH → verify → writes `node_exporter: true/false` per VM into `inventory.yaml`.
 
@@ -41,7 +51,7 @@ External SRE reviewed the running Operations Hub UI and graded enterprise trust/
 - **Mobile responsive sweep (2026-05-20)**: @media ≤768px — sidebar hidden, shell full-width, table overflow-x:auto, filter-bar wraps, section-hdr columns, grids 2-col.
 
 ### Deferred
-Project A1 — LangGraph checkpointer (workflow durability/crash recovery). Project C — Runbook retrieval (blocked: needs operator-authored ./runbooks/*.md first).
+Project C — Runbook retrieval (blocked: needs operator-authored ./runbooks/*.md first).
 
 ### Files Changed This Session
 - `errander/web/evidence.py` — VM_EVIDENCE expanded with time-series history for all 11 VMs
@@ -57,7 +67,28 @@ Project A1 — LangGraph checkpointer (workflow durability/crash recovery). Proj
 - `tests/observability/test_vm_metrics.py` — 35 tests: flag-driven discover tests (5), Prometheus text parser (8), NE metric extraction (10), SSH probe parser (6), collect_all DB integration (3), query_metrics (3)
 - `tests/safety/test_migrations.py` — migration count assertions updated for migration #4
 
-## Previous Phase
+## Previous Phase (Project A — LangGraph Workflow Durability A2–A6, 2026-05-20)
+
+### Files Changed — Project A
+
+- `errander/models/batches.py` (NEW) — `BatchStatus` StrEnum + `BatchRecord` frozen dataclass
+- `errander/safety/batches.py` (NEW) — `BatchStore` (insert/update_status/get/list_recent), idempotent via `INSERT OR IGNORE` + `WHERE status='running'` guard
+- `errander/safety/artifacts.py` (NEW) — `ArtifactStore` (store/retrieve/retrieve_by_kind/purge_before), UUID4 artifact_id
+- `errander/safety/agent_lease.py` (NEW) — `AgentLease` (acquire/heartbeat/release/current_holder/is_expired), `AgentLeaseError`
+- `errander/safety/migrations.py` (MODIFIED) — migrations #5 (batches), #6 (artifacts), #7 (agent_lease)
+- `errander/safety/audit.py` (MODIFIED) — `make_batch_store()` + `make_artifact_store()` factory methods; TYPE_CHECKING imports
+- `errander/agent/graph.py` (MODIFIED) — `SAFE_RESUME_NODES` frozenset; `init_batch_node` + `generate_report_node` accept `batch_store` param; `build_batch_graph` wires `BatchStore` with `isinstance` guard
+- `errander/models/events.py` (MODIFIED) — `OPERATOR_FORCE_RESUME` EventType added
+- `errander/main.py` (MODIFIED) — `AsyncSqliteSaver` wiring per batch run; `AgentLease` in `async_main()`; `--runs {list|inspect|resume}` CLI args + dispatcher
+- `errander/commands/__init__.py` (NEW) — empty package
+- `errander/commands/runs.py` (NEW) — `run_list`, `run_inspect`, `run_resume`, `dispatch_runs`, checkpoint probing helpers
+- `tests/agent/test_state_serialization.py` (NEW) — 17 tests covering all 6 GraphState TypedDicts through JsonPlusSerializer
+- `tests/safety/test_batches.py` (NEW) — 16 tests (CRUD + idempotency)
+- `tests/safety/test_artifacts.py` (NEW) — 13 tests (store/retrieve/purge)
+- `tests/safety/test_agent_lease.py` (NEW) — 14 tests (acquire/heartbeat/release/inspect)
+- `tests/safety/test_migrations.py` (MODIFIED) — version list [0..7], count=8, new table assertions
+
+## Previous Phase (Node Exporter flag + configure.sh, 2026-05-20)
 **P0-1 immutable execution artifact — final closure (2026-05-19).**
 
 ## Previous Phase 2

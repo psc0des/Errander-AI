@@ -64,6 +64,8 @@ class EventType(StrEnum):
     SERVICE_RESTART_EXECUTED = "service_restart_executed"
     SERVICE_RESTART_VERIFY_OK = "service_restart_verify_ok"
     SERVICE_RESTART_VERIFY_FAILED = "service_restart_verify_failed"
+    # Project A — workflow durability
+    OPERATOR_FORCE_RESUME = "operator_force_resume"
 
 
 @dataclass

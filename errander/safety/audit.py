@@ -16,11 +16,16 @@ import asyncio
 import json
 import logging
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 import aiosqlite
 
 from errander.models.events import AuditEvent, EventType
 from errander.safety.migrations import run_migrations
+
+if TYPE_CHECKING:
+    from errander.safety.artifacts import ArtifactStore
+    from errander.safety.batches import BatchStore
 
 logger = logging.getLogger(__name__)
 
@@ -83,6 +88,16 @@ class AuditStore:
             msg = "AuditStore not initialized — call initialize() or use as async context manager"
             raise RuntimeError(msg)
         return self._db
+
+    def make_batch_store(self) -> BatchStore:
+        """Return a BatchStore sharing this store's database connection."""
+        from errander.safety.batches import BatchStore as _BatchStore
+        return _BatchStore(self._ensure_connected())
+
+    def make_artifact_store(self) -> ArtifactStore:
+        """Return an ArtifactStore sharing this store's database connection."""
+        from errander.safety.artifacts import ArtifactStore as _ArtifactStore
+        return _ArtifactStore(self._ensure_connected())
 
     async def log_event(self, event: AuditEvent, dry_run: bool = False) -> None:
         """Write an audit event to the persistent store.

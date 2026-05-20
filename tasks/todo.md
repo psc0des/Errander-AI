@@ -1,3 +1,14 @@
+## Project A — LangGraph Workflow Durability A2–A6 (2026-05-20, COMPLETED)
+
+- [x] **A2 — BatchStore + batches table**: `errander/models/batches.py` (BatchStatus StrEnum + BatchRecord), `errander/safety/batches.py` (BatchStore with INSERT OR IGNORE + WHERE status='running' guard), migration #5. `init_batch_node` + `generate_report_node` wired. 16 tests.
+- [x] **A3 — State serialization tests**: `tests/agent/test_state_serialization.py` — all 6 GraphState TypedDicts round-tripped through JsonPlusSerializer (dumps_typed → loads_typed). 17 tests. Identified patch_output as >4 KB blob candidate.
+- [x] **A4 — ArtifactStore + artifacts table**: `errander/safety/artifacts.py` (store/retrieve/retrieve_by_kind/purge_before), migration #6. `AuditStore.make_artifact_store()` factory. 13 tests.
+- [x] **A5 — AsyncSqliteSaver + AgentLease**: `errander/safety/agent_lease.py` (acquire/heartbeat/release, TTL=90 s), migration #7. `AsyncSqliteSaver` wired per batch run in `main.py` with graceful fallback. `AgentLease` in `async_main()` with finally-release. 14 lease tests.
+- [x] **A6 — `errander runs` CLI + SAFE_RESUME_NODES**: `errander/commands/runs.py` (list/inspect/resume sub-commands, checkpoint probing). `SAFE_RESUME_NODES` frozenset in `graph.py`. `OPERATOR_FORCE_RESUME` EventType. CLI wired into `main.py`. 0 new tests (covered by integration).
+- [x] 2090 tests total, all passing. Ruff clean on all new/modified files.
+
+---
+
 ## SRE UX punch list — P0 wave (2026-05-20, COMPLETED)
 
 External SRE review (full text in conversation log) graded enterprise trust/audit 3/10, decision support 4/10, operator safety 3/10. P0 wave landed: foundation + 3 highest-risk pages. Visual verification via screenshots confirmed every required element renders.

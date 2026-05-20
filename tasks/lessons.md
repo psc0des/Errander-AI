@@ -1,5 +1,29 @@
 # Errander-AI — Lessons Learned
 
+## 2026-05-20 — isinstance guard is required when passing factory-created objects through test mocks
+
+`AuditStore.make_batch_store()` returns a real `BatchStore` in production but a non-awaitable `MagicMock` in tests that mock `AuditStore`. If `build_batch_graph` calls `await batch_store.insert(...)` unconditionally, test runs raise `TypeError: object MagicMock can't be used in 'await' expression`. Fix: guard with `isinstance(_raw, BatchStore)` before assigning; set `_batch_store = None` when the guard fails so the code path is skipped in tests.
+
+**Why:** `MagicMock(spec=AuditStore)` returns a synchronous MagicMock from `.make_batch_store()`, not a real BatchStore. Tests for the graph don't need BatchStore behavior; they need the graph to run without crashing.
+
+**How to apply:** When a graph node optionally calls into a store, always accept `store: StoreType | None = None` and guard every `await store.method()` call with `if store is not None`. Wire in the `isinstance` check at graph-build time when the store comes from a factory method.
+
+## 2026-05-20 — JsonPlusSerializer.loads_typed returns the object directly, not a tuple
+
+`JsonPlusSerializer.dumps_typed(obj)` returns `(type_str, bytes_data)`. `JsonPlusSerializer.loads_typed((type_str, bytes_data))` returns the deserialized object directly — NOT a `(type, value)` tuple. Writing `_type, result = SERDE.loads_typed(...)` raises `ValueError: too many values to unpack`. Also: the serializer uses `"msgpack"` as `type_str` (binary format), not `"json"` — always use the actual string returned by `dumps_typed`.
+
+**Why:** The API is `(type_str, bytes) → object`, not `(type_str, bytes) → (type_str, object)`. The type string is for dispatch only; the result is the reconstructed object.
+
+**How to apply:** In round-trip tests: `type_str, bytes_data = SERDE.dumps_typed(state)` then `result = SERDE.loads_typed((type_str, bytes_data))`.
+
+## 2026-05-20 — generate_report_node is the single terminal status-update point — don't add update_status calls elsewhere
+
+`validate_window_node` and `check_fleet_health_node` both route to `generate_report_node` when aborting. Adding `await batch_store.update_status(...)` in those intermediate nodes causes double-updates (first call sets ABORTED, second call in `generate_report_node` hits the `WHERE status='running'` guard and is silently ignored — but this is fragile). Keep `generate_report_node` as the single terminal point that writes batch status.
+
+**Why:** The `WHERE status='running'` guard prevents double-terminal-writes, but it means intermediate nodes that set status early will prevent `generate_report_node` from updating it at all if the guard is ever loosened.
+
+**How to apply:** Only call `batch_store.update_status()` from `generate_report_node`. Intermediate abort nodes just set state fields (`error`, `approved=False`) and route to `generate_report`.
+
 ## 2026-05-20 — When adding a DB migration, always update the migration count assertions in tests
 
 Adding migration #4 broke two test assertions that hardcoded the expected version list and row count. Both are load-bearing: one asserts `[0, 1, 2, 3]`, the other `COUNT(*) == 4`. Both must be bumped atomically with the migration itself — treat them as the schema contract.

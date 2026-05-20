@@ -260,6 +260,36 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Look-back window in days for --measure-durability (default: 14)",
     )
 
+    # Runs sub-commands (Project A, A6): list / inspect / resume
+    parser.add_argument(
+        "--runs",
+        metavar="CMD",
+        default=None,
+        dest="runs_command",
+        choices=["list", "inspect", "resume"],
+        help="Batch run sub-command: list | inspect <id> | resume <id>",
+    )
+    parser.add_argument(
+        "--run-id",
+        metavar="BATCH_ID",
+        default=None,
+        dest="runs_batch_id",
+        help="Batch ID for runs inspect / runs resume",
+    )
+    parser.add_argument(
+        "--runs-limit",
+        type=int,
+        default=20,
+        dest="runs_limit",
+        help="Number of runs to show for runs list (default: 20)",
+    )
+    parser.add_argument(
+        "--runs-force",
+        action="store_true",
+        dest="runs_force",
+        help="Force resume at an unsafe node (OPERATOR_FORCE_RESUME)",
+    )
+
     return parser.parse_args(argv)
 
 
@@ -1191,6 +1221,7 @@ async def run_env_batch(
     Builds the batch graph, constructs initial state from inventory,
     and invokes the compiled graph.
     """
+    import uuid as _uuid
     from errander.agent.graph import build_batch_graph
 
     window = _build_maintenance_window(env_schema)
@@ -1201,8 +1232,22 @@ async def run_env_batch(
     ai_decision_store = AIDecisionStore(ai_db_path)
     await ai_decision_store.initialize()
 
+    # AsyncSqliteSaver: LangGraph checkpoint persistence (Project A, A5).
+    # Each batch run gets a unique thread_id so checkpoints don't collide.
+    # The same DB file is used for audit + checkpoints (separate tables).
+    _thread_id = f"batch-{_uuid.uuid4().hex[:12]}"
+    try:
+        from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver as _AsyncSqliteSaver
+        _checkpointer = _AsyncSqliteSaver.from_conn_string(settings.audit_db_url)
+        await _checkpointer.__aenter__()
+        _checkpointer_entered = True
+    except Exception as _exc:
+        logger.warning("Could not init AsyncSqliteSaver — running without checkpointing: %s", _exc)
+        _checkpointer = None
+        _checkpointer_entered = False
+
     sre = settings.sre_signals
-    graph = build_batch_graph(
+    _compiled = build_batch_graph(
         executor=executor,
         locker=locker,
         audit_store=audit_store,
@@ -1223,7 +1268,8 @@ async def run_env_batch(
         sre_drift_settings=sre.drift,
         sre_failed_logins_settings=sre.failed_ssh_logins if sre.failed_ssh_logins.enabled else None,
         vm_state_store=vm_state_store,
-    ).compile()
+    ).compile(checkpointer=_checkpointer)
+    graph = _compiled
 
     # Build effective target list: YAML base, apply DB overrides (disable/add)
     yaml_targets = [
@@ -1311,10 +1357,14 @@ async def run_env_batch(
         force=force,
     )
 
+    _invoke_config = {"configurable": {"thread_id": _thread_id}} if _checkpointer is not None else {}
     try:
-        final = await graph.ainvoke(initial_state)  # type: ignore[call-overload]
+        final = await graph.ainvoke(initial_state, config=_invoke_config)  # type: ignore[call-overload]
     finally:
         await ai_decision_store.close()
+        if _checkpointer_entered and _checkpointer is not None:
+            with contextlib.suppress(Exception):
+                await _checkpointer.__aexit__(None, None, None)
 
     logger.info(
         "Batch complete",
@@ -1478,6 +1528,18 @@ async def async_main(args: argparse.Namespace) -> int:
             inventory_path=args.inventory,
         )
 
+    # Runs sub-commands: need settings for DB path, but no agent infra
+    if args.runs_command is not None:
+        from errander.commands.runs import dispatch_runs
+        try:
+            _runs_settings = load_settings(
+                settings_path=args.config if args.config.exists() else None,
+            )
+        except Exception as exc:  # noqa: BLE001
+            print(f"Error loading settings: {exc}")
+            return 1
+        return await dispatch_runs(args, _runs_settings.audit_db_url)
+
     if args.migrate_inventory:
         return _run_migrate_inventory(Path(args.migrate_inventory))
 
@@ -1601,6 +1663,16 @@ async def async_main(args: argparse.Namespace) -> int:
         strict_mode=(settings.audit_mode == "strict"),
     )
     await audit_store.__aenter__()
+
+    # --- Agent lease: single-process enforcement (Project A, A5) ---
+    from errander.safety.agent_lease import AgentLease, AgentLeaseError
+    _agent_lease = AgentLease(audit_store._db)  # type: ignore[arg-type]
+    try:
+        await _agent_lease.acquire()
+    except AgentLeaseError as _lease_exc:
+        logger.error("Cannot start: %s", _lease_exc)
+        await audit_store.__aexit__(None, None, None)
+        return 1
 
     # --- Phase A1: startup instrumentation ---
     from errander.observability.metrics import AGENT_STARTS_TOTAL, BATCHES_INTERRUPTED_TOTAL
@@ -1845,6 +1917,9 @@ async def async_main(args: argparse.Namespace) -> int:
         await disk_history_store.close()
         await overrides_store.close()
         await deferred_store.close()
+        # Release agent lease before closing DB (A5)
+        with contextlib.suppress(Exception):
+            await _agent_lease.release()
         await audit_store.__aexit__(None, None, None)
 
 

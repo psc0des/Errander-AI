@@ -55,6 +55,19 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Nodes that are safe to resume after an agent crash (Project A, A5).
+# These nodes are either idempotent or start a new side-effect boundary.
+# Any other node in a RUNNING checkpoint → NEEDS_OPERATOR_REVIEW.
+SAFE_RESUME_NODES: frozenset[str] = frozenset({
+    "approval_gate",
+    "dispatch_current_wave",
+    "check_wave_health",
+    "generate_plan_artifact",
+    "validate_window",
+    "validate_targets",
+    "generate_report",
+})
+
 
 # --- Result accumulator reducers ---
 
@@ -82,7 +95,7 @@ def _merge_sre_list(
     return [*existing, *incoming]
 
 
-def _effective_vm_plans(state: "BatchGraphState") -> list[dict[str, object]]:
+def _effective_vm_plans(state: BatchGraphState) -> list[dict[str, object]]:
     """Return enriched_vm_plans if set (post-enrich), otherwise raw vm_plans.
 
     enrich_plan_node writes to enriched_vm_plans (not vm_plans) to avoid
@@ -190,13 +203,23 @@ async def init_batch_node(
     state: BatchGraphState,
     *,
     settings: Any = None,
+    batch_store: Any = None,
 ) -> dict[str, Any]:
     """Generate a unique batch ID and inject rolling/canary/drift settings."""
     from errander.config.settings import Settings as _Settings
     _s: _Settings = settings if settings is not None else _Settings()
 
     batch_id = f"batch-{uuid.uuid4().hex[:12]}"
-    logger.info("Starting batch %s (dry_run=%s)", batch_id, state.get("dry_run", True))
+    dry_run: bool = bool(state.get("dry_run", True))
+    logger.info("Starting batch %s (dry_run=%s)", batch_id, dry_run)
+
+    if batch_store is not None:
+        await batch_store.insert(
+            batch_id,
+            env_name=str(state.get("env_name", "")),
+            dry_run=dry_run,
+            vm_count=len(list(state.get("targets") or [])),
+        )
 
     return {
         "batch_id": batch_id,
@@ -658,8 +681,13 @@ async def collect_results_node(state: BatchGraphState) -> dict[str, Any]:
     return {}
 
 
-async def generate_report_node(state: BatchGraphState) -> dict[str, Any]:
+async def generate_report_node(
+    state: BatchGraphState,
+    *,
+    batch_store: Any = None,
+) -> dict[str, Any]:
     """Generate a human-readable report from aggregated SRE signals and action results."""
+    from errander.models.batches import BatchStatus
     from errander.models.reports import BatchReport, DiskGrowth, DriftChange, FailedLoginSummary
     from errander.observability.reporting import render_batch_report
 
@@ -734,6 +762,25 @@ async def generate_report_node(state: BatchGraphState) -> dict[str, Any]:
             BATCH_DURATION.observe(batch_duration)
         except (ValueError, TypeError):
             pass  # Skip metric if timestamp is unparseable
+
+    # Persist terminal batch status — determines COMPLETED vs ABORTED vs WITH_FAILURES.
+    if batch_store is not None and batch_id:
+        _error = state.get("error")
+        _approved = state.get("approved")
+        if _error or _approved is False:
+            _final_status = BatchStatus.ABORTED
+            _abort_reason = str(_error) if _error else "operator rejected"
+        else:
+            _failed_statuses = {"failed", "rollback_failed", "rolled_back", "needs_manual"}
+            _has_failures = any(
+                str(r.get("status", "")) in _failed_statuses
+                for r in raw_results
+            )
+            _final_status = (
+                BatchStatus.COMPLETED_WITH_FAILURES if _has_failures else BatchStatus.COMPLETED
+            )
+            _abort_reason = None
+        await batch_store.update_status(batch_id, _final_status, error=_abort_reason)
 
     return {"report": rendered}
 
@@ -1848,12 +1895,20 @@ def build_batch_graph(
     from errander.config.settings import Settings as _Settings
     _settings: _Settings = settings if settings is not None else _Settings()
 
+    # BatchStore shares the audit DB connection — no second file handle needed.
+    # isinstance guard: test mocks don't return real BatchStore objects; skip gracefully.
+    from errander.safety.batches import BatchStore as _BatchStore
+    _raw_batch_store = audit_store.make_batch_store()
+    _batch_store: _BatchStore | None = (
+        _raw_batch_store if isinstance(_raw_batch_store, _BatchStore) else None
+    )
+
     builder: StateGraph[BatchGraphState] = StateGraph(BatchGraphState)
 
     # --- Closures capturing injected dependencies ---
 
     async def _init_batch(state: BatchGraphState) -> dict[str, Any]:
-        return await init_batch_node(state, settings=_settings)
+        return await init_batch_node(state, settings=_settings, batch_store=_batch_store)
 
     async def _validate_window(state: BatchGraphState) -> dict[str, Any]:
         return await validate_window_node(state, window=window)
@@ -1940,8 +1995,11 @@ def build_batch_graph(
     builder.add_node("dispatch_wave", lambda state: {})   # no-op — routing does the work
     builder.add_node("run_vm", _run_vm)
     builder.add_node("check_wave_health", _check_wave_health)
+    async def _generate_report(state: BatchGraphState) -> dict[str, Any]:
+        return await generate_report_node(state, batch_store=_batch_store)
+
     builder.add_node("collect_results", collect_results_node)
-    builder.add_node("generate_report", generate_report_node)
+    builder.add_node("generate_report", _generate_report)
 
     # --- Edges ---
     builder.set_entry_point("init_batch")

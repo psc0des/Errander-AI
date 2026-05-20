@@ -4701,7 +4701,7 @@ async def _on_startup(app: web.Application) -> None:
 
     from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
-    from errander.observability.vm_metrics import cleanup_old_metrics, collect_all
+    from errander.observability.vm_metrics import MetricsCollector, cleanup_old_metrics
     from errander.safety.migrations import run_migrations
 
     db_url = _os.environ.get("ERRANDER_AUDIT_DB_URL", "errander.sqlite")
@@ -4710,7 +4710,6 @@ async def _on_startup(app: web.Application) -> None:
     app["db"] = db
     logger.info("DB opened: %s (migrations applied)", db_url)
 
-    # Load inventory to get VMTarget list for metrics probing.
     targets: list[Any] = []
     try:
         from errander.config.inventory import load_inventory
@@ -4721,11 +4720,20 @@ async def _on_startup(app: web.Application) -> None:
         logger.warning("Could not load inventory — metrics collection disabled: %s", exc)
 
     if targets:
+        ne_port = int(_os.environ.get("ERRANDER_NODE_EXPORTER_PORT", "9100"))
+        interval = max(30, min(300, int(
+            _os.environ.get("ERRANDER_METRICS_INTERVAL_SECONDS", "60")
+        )))
+
+        collector = MetricsCollector(node_exporter_port=ne_port)
+        await collector.discover(targets)
+        app["metrics_collector"] = collector
+
         scheduler = AsyncIOScheduler()
         scheduler.add_job(
-            collect_all,
+            collector.collect_all,
             "interval",
-            seconds=60,
+            seconds=interval,
             args=[db, targets],
             id="vm_metrics_collect",
             max_instances=1,
@@ -4742,7 +4750,13 @@ async def _on_startup(app: web.Application) -> None:
         )
         scheduler.start()
         app["metrics_scheduler"] = scheduler
-        logger.info("Metrics scheduler started (60s collect, 1h cleanup)")
+
+        src = collector.source_map
+        ne_n = sum(1 for s in src.values() if s == "node_exporter")
+        logger.info(
+            "Metrics: %d Node Exporter + %d SSH probe, %ds interval",
+            ne_n, len(targets) - ne_n, interval,
+        )
 
 
 async def _on_cleanup(app: web.Application) -> None:
@@ -4750,6 +4764,9 @@ async def _on_cleanup(app: web.Application) -> None:
     if scheduler is not None:
         scheduler.shutdown(wait=False)
         logger.info("Metrics scheduler stopped")
+    collector = app.get("metrics_collector")
+    if collector is not None:
+        await collector.close()
     db: aiosqlite.Connection | None = app.get("db")
     if db is not None:
         await db.close()

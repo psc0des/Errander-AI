@@ -32,8 +32,12 @@ External SRE reviewed the running Operations Hub UI and graded enterprise trust/
   - `VM_EVIDENCE` expanded with `cpu_history`, `mem_history`, `cpu_history_7d`, `mem_history_7d`, `disk_history` for all 11 VMs. History endpoint pinned to live `vm["cpu"]`/`vm["mem"]` so sparkline always lands on current value.
   - Verified on prod-api-01 (gradual MEM climb), prod-db-01 (OOM pattern: MEM 70→94% over 7d, /var ↑16% 24h). 7d toggle switches x-axis labels and chart data correctly.
 
+### Shipped (P1 follow-up)
+- **VM Detail — VM_EVIDENCE wired (2026-05-20)**: lock holder red alert, noop badge, last_patched + ssh_key_fp in identity card, window from evidence. Deep-link strip: Last Batch → Approval → Audit Slice → Patch History.
+- **Batches — BATCH_EVIDENCE click-to-expand (2026-05-20)**: each row expands to show plan_hash, approver, approval_source, outcome counts (ok/failed/partial/rolled_back). URL fragment auto-expands matching row. Deep links: Approval, Audit Slice.
+
 ### Deferred (P1, follow-up session)
-VM detail deep-link chain (lock/window/last_patched from VM_EVIDENCE), Batches BATCH_EVIDENCE surfacing, Glossary verify, Inventory + Settings polish, mobile responsive sweep.
+Glossary verify, Inventory + Settings polish, mobile responsive sweep.
 
 ### Files Changed This Session
 - `errander/web/evidence.py` — VM_EVIDENCE expanded with time-series history for all 11 VMs

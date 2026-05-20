@@ -1,5 +1,17 @@
 # Errander-AI Command Log
 
+## VM Detail + Batches page enrichment (2026-05-20)
+
+```bash
+# Render-check both pages inline (no server needed)
+.venv/Scripts/python.exe -c "from errander.web.server import page_vm, page_batches; ..."
+# All assertions passed
+
+# Full regression suite
+.venv/Scripts/pytest.exe -q --tb=short
+# 2027 passed, 1 warning
+```
+
 ## Node Exporter flag + configure.sh interactive setup (2026-05-20)
 
 ```bash

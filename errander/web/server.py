@@ -382,6 +382,7 @@ body { font-family: 'Inter', system-ui, sans-serif; background: #f0f2ff; color: 
   margin-top: 14px;
 }
 .callout-amber { background: #fffbeb; border: 1px solid #fde68a; color: #92400e; }
+.callout-red   { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; }
 
 /* ── Pagination ── */
 .pagination { display: flex; align-items: center; justify-content: center; gap: 6px; padding: 14px; border-top: 1px solid #f1f5f9; font-size: 0.875rem; color: #475569; }
@@ -2577,6 +2578,7 @@ def page_vm(hostname: str, metrics_by_window: dict[str, dict[str, Any]] | None =
         return f'<div class="card" style="padding:40px;text-align:center">VM <code>{hostname}</code> not found.</div>'
 
     color, _, border = STATUS_COLORS.get(vm["status"], ("#94a3b8", "", "#94a3b8"))
+    ev = VM_EVIDENCE.get(hostname, {})
 
     actions = VM_ACTIONS.get(hostname, [
         {"ts": "2026-04-23 02:14", "action": "Log Rotation",   "status": "ok",  "duration": "9s",     "op": "agent", "detail": "Rotated 0.7 GB /var/log"},
@@ -2660,20 +2662,53 @@ def page_vm(hostname: str, metrics_by_window: dict[str, dict[str, Any]] | None =
           or when you trigger a batch manually.
         </div>"""
 
+    # VM_EVIDENCE operational fields
+    ev_lock        = ev.get("lock")
+    ev_window      = ev.get("window", "Tue/Thu 02:00–04:00 UTC")
+    ev_last_patch  = ev.get("last_patched", "—")
+    ev_noop        = ev.get("noop_now", False)
+    ev_ssh_fp      = ev.get("ssh_key_fp", f"/keys/{hostname}.pem")
+
+    # Derive last batch id from actions list for deep links
+    last_batch = next((a.get("batch") for a in actions if a.get("batch")), None)
+    if last_batch is None:
+        # Fall back to hostname-based fixture batch id
+        last_batch = f"prod-0423-0200" if vm["env"] == "PROD" else "staging-0422-1400"
+
+    lock_alert = ""
+    if ev_lock:
+        lock_alert = f'<div class="callout callout-red" style="margin-bottom:16px">🔒 <strong>VM LOCKED</strong> — held by <code>{ev_lock}</code>. No maintenance will run until the lock is released. Use Admin → Lock Manager to clear if stale.</div>'
+
+    noop_badge = ""
+    if ev_noop:
+        noop_badge = '&nbsp;<span class="badge badge-green" style="font-size:0.625rem;vertical-align:middle">NOOP · up to date</span>'
+
+    deeplinks = f"""
+    <div class="card" style="padding:12px 20px;margin-bottom:16px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <span style="font-size:0.75rem;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:0.06em">Deep Links</span>
+      <a href="/batches#{last_batch}" class="deeplink-chip">📋 Last Batch</a>
+      <a href="/approvals#{last_batch}" class="deeplink-chip">✅ Approval</a>
+      <a href="/audit?vm={hostname}" class="deeplink-chip">🔍 Audit Slice</a>
+      <a href="/audit?vm={hostname}&amp;action=OS+Patching" class="deeplink-chip">📦 Patch History</a>
+    </div>"""
+
     return f"""
+    {lock_alert}
+    {deeplinks}
     <div class="detail-top">
       <div class="card identity-card identity-top-border" style="border-top-color:{border}">
         <div class="identity-header">
           <span class="identity-hostname">{vm['hostname']}</span>
-          {badge(vm['status'])}
+          {badge(vm['status'])}{noop_badge}
         </div>
         <div class="fields-grid">
           <div class="field-row"><span class="field-label">OS Version</span><span class="field-value">{vm['os']}</span></div>
           <div class="field-row"><span class="field-label">IP Address</span><span class="field-value">{vm['ip']}</span></div>
           <div class="field-row"><span class="field-label">Environment</span><span class="field-value">{vm['env']}</span></div>
           <div class="field-row"><span class="field-label">Uptime</span><span class="field-value">{vm['uptime']}</span></div>
-          <div class="field-row"><span class="field-label">SSH Key</span><span class="field-value">/keys/{vm['hostname']}.pem</span></div>
+          <div class="field-row"><span class="field-label">SSH Key FP</span><span class="field-value td-mono" style="font-size:0.7rem">{ev_ssh_fp}</span></div>
           <div class="field-row"><span class="field-label">Last Seen</span><span class="field-value">{vm['last_action']} UTC</span></div>
+          <div class="field-row"><span class="field-label">Last Patched</span><span class="field-value">{ev_last_patch}</span></div>
           <div class="field-row"><span class="field-label">CPU Usage</span>
             <span class="field-value" style="color:{_metric_text_color(cpu)}">{cpu}%</span>
           </div>
@@ -2683,7 +2718,7 @@ def page_vm(hostname: str, metrics_by_window: dict[str, dict[str, Any]] | None =
         </div>
         <div class="divider"></div>
         <div class="maint-label">Maintenance Window</div>
-        <div class="maint-val">Tue/Thu 02:00–04:00 UTC</div>
+        <div class="maint-val">{ev_window}</div>
         <div class="maint-next">Next: 2026-04-24 02:00 UTC</div>
       </div>
       <div class="card disk-card">
@@ -3048,9 +3083,27 @@ def page_batches() -> str:
                 for h in failed_vms
             )
             failed_vms_html = f'<div style="font-size:0.7rem;color:#94a3b8;margin-top:2px">{links}</div>'
-        rows += f"""<tr class="{alt}{failed_cls}">
+
+        be = BATCH_EVIDENCE.get(b["id"], {})
+        plan_hash     = be.get("plan_hash", "—")
+        approver      = be.get("approver", "—")
+        approval_src  = be.get("approval_source", "—")
+        succeeded     = be.get("succeeded", "—")
+        failed_c      = be.get("failed", 0)
+        partial_c     = be.get("partial", 0)
+        rolled_back   = be.get("rolled_back", 0)
+
+        outcome_html = (
+            f'<span style="color:#16a34a;font-weight:600">{succeeded} ok</span>'
+            + (f' &nbsp;<span style="color:#dc2626;font-weight:600">{failed_c} failed</span>' if failed_c else "")
+            + (f' &nbsp;<span style="color:#d97706;font-weight:600">{partial_c} partial</span>' if partial_c else "")
+            + (f' &nbsp;<span style="color:#7c3aed;font-weight:600">{rolled_back} rolled back</span>' if rolled_back else "")
+        )
+
+        rows += f"""<tr id="{b['id']}" class="batch-summary-row{alt}{failed_cls}" onclick="_toggleBatchRow(this)" style="cursor:pointer">
           <td>
-            <span class="td-host" style="cursor:default;font-family:'JetBrains Mono',monospace">{b['id']}</span>
+            <span style="display:inline-block;width:14px;color:#94a3b8;font-size:0.75rem">▸</span>
+            <span class="td-host" style="font-family:'JetBrains Mono',monospace">{b['id']}</span>
           </td>
           <td class="td-ts">{b['started']} UTC</td>
           <td><span class="env-badge {env_cls}">{b['env']}</span></td>
@@ -3063,14 +3116,28 @@ def page_batches() -> str:
             {err_summary_html}
             {failed_vms_html}
           </td>
-          <td><a href="/audit" class="td-link">Audit →</a></td>
+        </tr>
+        <tr class="batch-detail-row" style="display:none">
+          <td colspan="8" style="padding:0">
+            <div class="audit-row-expand" style="grid-template-columns:140px 1fr 140px 1fr">
+              <span class="k">Plan Hash</span><span class="v">{plan_hash}</span>
+              <span class="k">Approver</span><span class="v">{approver}</span>
+              <span class="k">Approval Source</span><span class="v">{approval_src}</span>
+              <span class="k">Outcome</span><span class="v">{outcome_html}</span>
+              <span class="k">Deep Links</span>
+              <span class="v" style="display:flex;gap:8px;flex-wrap:wrap">
+                <a href="/approvals#{b['id']}" class="deeplink-chip" onclick="event.stopPropagation()">✅ Approval</a>
+                <a href="/audit?batch={b['id']}" class="deeplink-chip" onclick="event.stopPropagation()">🔍 Audit Slice</a>
+              </span>
+            </div>
+          </td>
         </tr>"""
 
     return f"""
     <div class="section-hdr">
       <div>
         <div class="section-title">Batch History</div>
-        <div class="section-sub">All maintenance runs — click any batch for full per-VM breakdown</div>
+        <div class="section-sub">All maintenance runs — click any row for plan hash, approver, and outcome</div>
       </div>
       <a href="#" class="btn-primary">+ SCHEDULE BATCH</a>
     </div>
@@ -3090,7 +3157,7 @@ def page_batches() -> str:
         <thead><tr>
           <th>BATCH ID</th><th>STARTED</th><th>ENV</th>
           <th class="r">VMs</th><th class="r">ACTIONS</th>
-          <th>STATUS</th><th class="r">DURATION</th><th class="r">ERRORS</th><th></th>
+          <th>STATUS</th><th class="r">DURATION</th><th class="r">ERRORS</th>
         </tr></thead>
         <tbody>{rows}</tbody>
       </table>
@@ -3099,7 +3166,29 @@ def page_batches() -> str:
         <span class="pg-current">Page 1 of 4</span>
         <a href="#" class="pg-btn">Next →</a>
       </div>
-    </div>"""
+    </div>
+    <script>
+    function _toggleBatchRow(tr) {{
+      var next = tr.nextElementSibling;
+      if (!next || !next.classList.contains('batch-detail-row')) return;
+      var arrow = tr.querySelector('span[style*="display:inline-block"]');
+      if (next.style.display === 'none') {{
+        next.style.display = '';
+        if (arrow) arrow.textContent = '▾';
+      }} else {{
+        next.style.display = 'none';
+        if (arrow) arrow.textContent = '▸';
+      }}
+    }}
+    // Auto-expand if URL fragment matches a batch id
+    (function() {{
+      var id = window.location.hash.replace('#','');
+      if (id) {{
+        var el = document.getElementById(id);
+        if (el) {{ _toggleBatchRow(el); el.scrollIntoView({{block:'center'}}); }}
+      }}
+    }})();
+    </script>"""
 
 
 # ── Inventory page ───────────────────────────────────────────────────────────

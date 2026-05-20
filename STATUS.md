@@ -1,9 +1,42 @@
 # Errander-AI — Project Status
 
 ## Last Updated
-2026-05-19
+2026-05-20
 
 ## Current Phase
+**SRE UX punch-list — P0 + P1 wave complete. VM Detail Metricbeat trends shipped (2026-05-20).**
+
+External SRE reviewed the running Operations Hub UI and graded enterprise trust/audit 3/10, decision support 4/10, operator safety 3/10. All P0 + P1 items landed. VM Detail sparkline trends added per user request.
+
+### Shipped (P0)
+- **`errander/web/evidence.py`** (new, 200+ lines) — additive enrichment overlay: UI_MODE, APPROVAL_EVIDENCE, AUDIT_EVIDENCE, VM_EVIDENCE, BATCH_EVIDENCE. Shape mirrors the real audit DB / immutable execution artifact so it becomes the integration seam when wired to real data.
+- **Mode banner** in `layout()` via `_mode_banner_html()` — every page renders DEMO/LIVE · env · DRY-RUN/LIVE-EXEC · freshness · backend · build above breadcrumb. Color escalates for LIVE + PROD.
+- **CSS additions** — ~300 lines of SRE-readiness styles (mode-banner, evidence-grid, layer-section, countdown-big, deeplink-chip, confirm-modal, destructive-hdr, layer-partition, vm-trends).
+- **Approvals page** (`page_approvals`) — full SRE evidence chain, Layer A/B/Policy split, typed-confirm modal.
+- **Admin page** (`page_admin`) — "DESTRUCTIVE — AUDITED" red banner, typed-phrase modal per action, TRUNCATE AUDIT LOG blocked in UI.
+- **Agent page** (`page_agent`) — Layer A vs Layer B visually partitioned with "⚠ SAFETY BOUNDARY" divider.
+
+### Shipped (P1)
+- **Fleet Dashboard** — `_operator_queue()` priority aggregator (CRITICAL → HIGH → MED → INFO). VM cards demoted to "Fleet Inventory" below KPIs.
+- **Audit Log** — click-to-expand evidence rows, client-side filters, Export CSV + JSON.
+- **VM Detail — Metricbeat-style Resource Trends** (user request 2026-05-20):
+  - New `_sparkline_svg()` helper: SVG sparkline with gradient fill, dashed 75% warning + 90% critical threshold lines, endpoint dot.
+  - New `_mini_sparkline_svg()`: 80×18 inline sparklines for disk partition rows with 24h trend delta (↑/↓ N% 24h).
+  - New `_vm_resource_trends()`: full "Resource Trends" card with 24h/7d JS toggle, CPU + Memory panels each showing current value + sparkline + min/avg/max stats + x-axis labels.
+  - `VM_EVIDENCE` expanded with `cpu_history`, `mem_history`, `cpu_history_7d`, `mem_history_7d`, `disk_history` for all 11 VMs. History endpoint pinned to live `vm["cpu"]`/`vm["mem"]` so sparkline always lands on current value.
+  - Verified on prod-api-01 (gradual MEM climb), prod-db-01 (OOM pattern: MEM 70→94% over 7d, /var ↑16% 24h). 7d toggle switches x-axis labels and chart data correctly.
+
+### Deferred (P1, follow-up session)
+VM detail deep-link chain (lock/window/last_patched from VM_EVIDENCE), Batches BATCH_EVIDENCE surfacing, Glossary verify, Inventory + Settings polish, mobile responsive sweep.
+
+### Files Changed This Session
+- `errander/web/evidence.py` — VM_EVIDENCE expanded with time-series history for all 11 VMs
+- `errander/web/server.py` — CSS additions (vm-trends), three new helper functions (_sparkline_svg, _mini_sparkline_svg, _vm_resource_trends), disk_rows enhanced with mini-sparklines, _vm_resource_trends call inserted in page_vm
+
+## Previous Phase
+**P0-1 immutable execution artifact — final closure (2026-05-19).**
+
+## Previous Phase 2
 **P0-1 immutable execution artifact — final closure (2026-05-19).**
 
 Third (final) SRE pass found one remaining P1 bug. Fixed:

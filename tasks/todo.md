@@ -1,3 +1,44 @@
+## SRE UX punch list — P0 wave (2026-05-20, COMPLETED)
+
+External SRE review (full text in conversation log) graded enterprise trust/audit 3/10, decision support 4/10, operator safety 3/10. P0 wave landed: foundation + 3 highest-risk pages. Visual verification via screenshots confirmed every required element renders.
+
+### Foundation (touches all pages)
+- [x] **`errander/web/evidence.py`** — new additive enrichment module (UI_MODE, APPROVAL_EVIDENCE, AUDIT_EVIDENCE, VM_EVIDENCE, BATCH_EVIDENCE) so we don't risk breaking existing data.py dicts. Shape mirrors the real audit DB / immutable execution artifact so this module is the integration seam when wired to real data.
+- [x] **Mode banner** in `layout()` via `_mode_banner_html()` — every page renders `DEMO DATA | PROD | DRY RUN · static fixture · backend · build` above breadcrumb. Color escalates for LIVE / LIVE+PROD.
+- [x] **CSS additions** — mode-banner, evidence-grid, layer-section (b/policy/a), countdown-big, deeplink-chip, confirm-modal, destructive-hdr, layer-partition. ~250 lines appended to CSS string.
+
+### Per-page (P0 — safety-critical)
+- [x] **Approvals** (`page_approvals`, server.py) — 13-cell evidence grid (plan_id, plan_hash, batch_id, action_id, requester, approver_role, artifact age/expiry, drift, rollback_ready, vm_lock, window, idempotency). Per-action table (cur → target package versions w/CVE column, or unit state for service restart). Three-section Layer A/B/Policy split with canonical labels. Large color-coded countdown timer (15min/5min thresholds). Deep-link chips: Slack thread, audit slice, batch, VM. Typed-confirm modal — must retype batch_id exactly + 20-char reason before Confirm enables. Banner clarifies "UI is not a self-approval surface".
+- [x] **Admin** (`page_admin`, server.py) — "DESTRUCTIVE — AUDITED" red banner. Danger Zone reorganized: each destructive action has ROLE, AUDIT EVENT preview, description. Typed-confirm modal requires exact phrase ("FLUSH DEFERRED QUEUE", "CLEAR ALL LOCKS", "FORCE ROLLBACK") + 20-char reason. TRUNCATE AUDIT LOG is BLOCKED in UI (DBA-only path).
+- [x] **Agent** (`page_agent`, server.py) — Layer A (LLM endpoint, model, latency p50/p95, fallback, tool/MCP) vs Layer B (scheduler, batches, SSH pool, audit DB, Slack poll) visually partitioned with vertical "⚠ SAFETY BOUNDARY · NO LLM PAST THIS LINE ⚠" divider. AI Safety Invariant text beneath. Responsive: collapses to horizontal divider on <900px.
+
+### Verification
+- [x] `python -c "import ast; ast.parse(...)"` — both server.py and evidence.py parse cleanly
+- [x] Direct page-render test — all 10 page_* functions execute without exception
+- [x] Bounced live server (PID 31748 → fresh process), curl + Chrome screenshots confirm rendered HTML contains every required marker
+- [x] Live modal interaction tested: clicked FLUSH DEFERRED QUEUE → confirm modal opened, audit event preview visible, exact-phrase + reason fields present, Confirm disabled until both validated
+
+### P1 wave (2026-05-20, COMPLETED)
+- [x] **Fleet Dashboard** — `_operator_queue()` aggregates pending approvals (w/countdown), HIGH RISK actions, failed/partial batches, failed VMs, degraded VMs, locked VMs, next window, active batch. Priority-ordered CRITICAL/HIGH/MED/INFO. VM cards demoted to "Fleet Inventory" below KPIs.
+- [x] **Audit Log** — every row surfaces event_id + action_id + approver. Click-to-expand shows: Event ID, Action ID, Plan Hash, Approver, Approval Source, Before/After (color-coded), Command Executed, Stdout, Stderr (red on failure), Rollback Status, deep-link chips to batch/VM/approvals. Filters by env/batch/VM/action/status (client-side, data-* attributes). Export CSV + JSON honor current filter.
+
+### P1 follow-up (deferred — important, not safety-critical)
+- [x] **VM Detail — Metricbeat-style trends (user request 2026-05-20)** — Resource Trends card with 24h/7d toggle. CPU + MEM sparklines with dashed 75%/90% threshold lines, min/avg/max stats, endpoint dot. Disk partition rows show mini 80×18 sparklines with ↑/↓ N% 24h delta. VM_EVIDENCE expanded with cpu_history/mem_history/disk_history for all 11 VMs. Last history point pinned to live vm["cpu"]/vm["mem"] for coherence. Verified: prod-api-01 MEM climb, prod-db-01 OOM pattern, 7d toggle working.
+- [ ] **VM Detail** — consume `VM_EVIDENCE` (lock holder, window state, last_patched, noop_now), deep-link chain VM → batch → approval → audit-slice → rollback-evidence
+- [ ] **Batches** — consume `BATCH_EVIDENCE` (plan_hash, approver, succeeded/failed/partial/rolled_back), row → batch detail → approval + audit slice, filters
+- [ ] **Glossary** — verify Layer A/B + AI Safety Invariant + Risk/Rollback tiers + Disk Cleanup Whitelist all present (likely already there per 2026-05-19 overhaul)
+- [ ] **Inventory + Settings** — restartable_units allowlist, SSH key fingerprint, maintenance window per VM; Settings typed-confirm on any mutation
+- [ ] Mobile responsive sweep — SRE noted overflow on small viewports (de-prioritized, but worth a follow-up pass)
+
+### Acceptance (P0 wave)
+✅ A senior SRE looking at the Approvals page can now answer: *Plan hash? Batch ID? Action ID? Exact commands? cur→target versions? Drift? Artifact age/expiry? Rollback ready? Approver role? VM lock? Window? Idempotency? Deadline?* — all visible on one card. AI text labeled LAYER A · ADVISORY with explicit disclaimer that the approval authority is the operator's Slack reaction, not the LLM.
+
+✅ Admin destructive actions cannot be triggered by accident — typed-phrase confirm + 20-char reason + audit-event preview gate every one. TRUNCATE AUDIT LOG is blocked in UI entirely.
+
+✅ Agent page makes the Layer A/B safety boundary visible at a glance — operators and reviewers can see that no LLM lives in the execution path.
+
+---
+
 ## P0-1 immutable execution artifact — final closure (2026-05-19, COMPLETED)
 
 - [x] verify_node: query all approved package names (not just pending_updates) when approved_packages present

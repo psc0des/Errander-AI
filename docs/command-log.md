@@ -1,5 +1,84 @@
 # Errander-AI Command Log
 
+## VM Detail — Metricbeat-style sparklines (2026-05-20)
+
+```bash
+# Syntax check after adding _sparkline_svg, _mini_sparkline_svg, _vm_resource_trends helpers
+python -c "import errander.web.server; print('OK')"
+
+# Verify Resource Trends and disk mini-sparklines render in HTML
+curl -s -b /tmp/ui_cookie.txt http://localhost:8099/vm/prod-api-01 | \
+  grep -o "Resource Trends\|vm-trends-card\|trend-btn\|polyline\|_setTrend"
+
+# Verify OOM scenario (prod-db-01): current mem 94%, /var ↑16% 24h
+curl -s -b /tmp/ui_cookie.txt http://localhost:8099/vm/prod-db-01 | \
+  grep -o "94%\|↑16% 24h\|↑10% 24h"
+
+# Bounce server after endpoint-pinning fix (last history point = current CPU/MEM)
+# PowerShell: Stop-Process -Id 18336,20000 -Force
+uv run python -m errander.web   # restart
+
+# Visual verification: Chrome browser screenshots via claude-in-chrome MCP
+# Confirmed: 24h sparklines, 7d toggle, dashed threshold lines, disk mini-sparks
+```
+
+## SRE UX punch-list — P0 wave (2026-05-20)
+
+```bash
+# UI location discovery — the lesson here is grep first, ask Stitch second
+# (see tasks/lessons.md "Always confirm where the UI ACTUALLY lives before editing")
+grep -rn "RUN BATCH NOW\|Admin Controls\|sidebar" errander/
+ls errander/web/                              # found: server.py (3.2k LoC), data.py, __main__.py
+wc -l errander/web/*.py                       # 536 + 3206 lines
+
+# Pre-edit safety: parse-check both edited files before live-test
+python -c "import ast; ast.parse(open('errander/web/server.py', encoding='utf-8').read()); print('OK')"
+python -c "import ast; ast.parse(open('errander/web/evidence.py', encoding='utf-8').read()); print('OK')"
+
+# Render-check every page function (catches f-string substitution errors)
+python -c "from errander.web import server; \
+  funcs=['page_fleet','page_approvals','page_audit','page_batches','page_inventory', \
+         'page_settings','page_admin','page_glossary','page_agent']; \
+  [print(fn, 'OK', len(server.layout(fn,'/',fn,'',getattr(server,fn)()))) for fn in funcs]"
+
+# Live server bounce (PID was holding stale code, needed restart to pick up edits)
+netstat -ano | grep ":8099"                   # found PID 31748
+# PowerShell: Stop-Process -Id 31748 -Force
+python -m errander.web                        # restart on :8099
+
+# Verify rendered HTML contains every SRE-required marker
+curl -s -c /tmp/c.txt -L -d "username=admin&password=errander" http://localhost:8099/login -o /dev/null
+curl -s -b /tmp/c.txt http://localhost:8099/approvals | grep -c "Plan Hash"            # 2 ✓
+curl -s -b /tmp/c.txt http://localhost:8099/approvals | grep -c "LAYER B · DETERMINISTIC" # 2 ✓
+curl -s -b /tmp/c.txt http://localhost:8099/approvals | grep -c "evidence-grid"        # 4 ✓
+curl -s -b /tmp/c.txt http://localhost:8099/admin     | grep -c "DESTRUCTIVE — AUDITED"# 2 ✓
+curl -s -b /tmp/c.txt http://localhost:8099/agent     | grep -c "SAFETY BOUNDARY"       # 1 ✓
+```
+
+Also: Stitch MCP probes (`list_screens`, `get_project`) used early in session before discovering the UI was in-repo. Lesson logged.
+
+## SRE UX punch-list — P1 wave (Fleet + Audit, 2026-05-20)
+
+```bash
+# Fleet: _operator_queue() helper added, page_fleet() now prepends it before KPIs;
+# VM grid section title changed from "VM Fleet" → "Fleet Inventory" with /inventory link.
+# Audit: page_audit() rewritten to expand each event into 2 <tr>s — summary + collapsible
+# evidence panel. Filters wired via data-* attributes + vanilla JS. CSV/JSON export uses
+# a Blob + anchor download, honoring tr.style.display for filter-aware export.
+
+python -c "from errander.web import server; \
+  h = server.page_fleet(); \
+  assert 'Operator Queue' in h and 'Fleet Inventory' in h"
+python -c "from errander.web import server; \
+  h = server.page_audit(); \
+  assert 'audit-row-expand' in h and 'EXPORT JSON' in h and 'Plan Hash' in h"
+
+# Bounced again to pick up edits (PID was 30564 this round)
+# Verified interactively: clicked failed staging-api-01 row → evidence panel revealed
+# event_id, action_id, plan_hash, approver, approval_source, before/after, command,
+# stdout, stderr (red), rollback_status (green), deep-link chips.
+```
+
 ## P0-1 final closure — verify_node query scope fix (2026-05-19)
 
 ```bash

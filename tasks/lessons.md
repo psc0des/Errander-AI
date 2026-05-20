@@ -1,5 +1,13 @@
 # Errander-AI — Lessons Learned
 
+## 2026-05-19 — Always confirm where the UI ACTUALLY lives before editing
+
+The user pointed at a Stitch project (`stitch.withgoogle.com/projects/695805871329192760`) as "the UI" and asked me to fix an SRE punch list. I almost spent an hour generating Stitch screens — but the real product UI is a 3.2k-line aiohttp server at `errander/web/server.py` with 11 page_* render functions. Stitch was visual-only reference; the SRE's review was of the running server.py output (the `.playwright-mcp/` snapshots confirmed this: relative URLs `/approvals`, `/audit`, etc. map directly to server.py routes).
+
+**Why:** A confident user-provided pointer is not a verification. The user themselves said "I am not sure since sonnet did the work" — that was the cue to dig harder before acting.
+
+**How to apply:** Before any UI edit, grep the repo for the route names / labels / page titles that the user is describing. Confirm I'm editing the artifact the reviewer actually saw. If a user names an external tool (Stitch, Canva, Figma, etc.) as "the UI", ask whether the production UI is also in-repo — many products keep design-tool prototypes in parallel with the real codebase.
+
 ## 2026-05-19 — Verification query scope must match comparison scope
 
 When `verify_node` compares installed versions against all `approved_packages`, it must query `list_installed_versions` for ALL approved package names — not just `pending_updates`. Packages already at their target version are correctly skipped by `assess_node` and never added to `pending_updates`, so they won't appear in a `pending_updates`-only dpkg query. The comparison would then find them "missing" and fail.
@@ -40,6 +48,20 @@ Also: every page with less than ~60% viewport coverage feels abandoned. Sparse p
 ## 2026-05-19 — Agent internals page needs a dedicated route, not a placeholder
 
 When adding a page that lives under a nav section, the full wiring is: (1) page function, (2) route handler async def, (3) app.router.add_get() in create_app(). Stopping at step 1 leaves the route returning 404. Always write all three before considering a page "done". Verify with `uv run python -c "from errander.web.server import create_app; app = create_app(); ..."` to confirm route registration.
+
+## 2026-05-20 — Pin fixture endpoint to live value when rendering time-series + current together
+
+When a sparkline shows historical data AND a separate "current: X%" label, the last point in the history must equal X. Otherwise the sparkline visually diverges from the label — memory sparkline ends at 61% but label reads 78%, which looks like a bug even when both are technically correct from different sources.
+
+Fix: pin `history[-1] = current_value` in the renderer. This is a display-layer concern, not a data concern — don't change the fixture; fix it at render time.
+
+Generalizes to any "history + current" combo: wherever you show a time-series chart alongside a live scalar, always ensure the chart's endpoint is the same value as the scalar.
+
+## 2026-05-20 — threshold lines make SRE charts actionable; they belong in every resource sparkline
+
+A sparkline without context shows trends. A sparkline with dashed threshold lines (75% warn, 90% crit) lets an SRE read the chart in two seconds: "line crossed the orange" = "this is approaching incident territory." Both Prometheus and Metricbeat use this pattern. Always add threshold lines for CPU, memory, and disk utilization charts.
+
+The threshold lines should be parameterizable (pass warn_pct/crit_pct to the helper) and scaled relative to the chart's actual data range, not the full 0–100% axis.
 
 ## 2026-05-19 — UI information gaps create operational risk — show the detail, don't hide it behind links
 

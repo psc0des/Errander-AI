@@ -15,6 +15,10 @@ from .data import (
     DEFERRED_QUEUE, EXECUTION_TRACE, LLM_DECISIONS, PROBE_HISTORY,
     SCHEDULER_TIMELINE, VM_ACTIONS, VM_TRACE, VMS,
 )
+from .evidence import (
+    APPROVAL_EVIDENCE, AUDIT_EVIDENCE, BATCH_EVIDENCE,
+    UI_MODE, VM_EVIDENCE, audit_evidence_for,
+)
 
 PORT = 8099
 
@@ -709,6 +713,443 @@ body { font-family: 'Inter', system-ui, sans-serif; background: #f0f2ff; color: 
   transition: color 0.15s;
 }
 .signout-link:hover { color: rgba(255,255,255,0.6); }
+
+/* ─────────────────────────────────────────────────────────────────────────
+   SRE enterprise-readiness additions (2026-05-20)
+   ───────────────────────────────────────────────────────────────────────── */
+
+/* ── Mode banner (every page, above breadcrumb) ── */
+.mode-banner {
+  display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  padding: 8px 24px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.6875rem; font-weight: 600; letter-spacing: 0.04em;
+  background: linear-gradient(90deg, #fde68a 0%, #fef3c7 100%);
+  color: #78350f; border-bottom: 2px solid #f59e0b;
+}
+.mode-banner.live {
+  background: linear-gradient(90deg, #fecaca 0%, #fee2e2 100%);
+  color: #7f1d1d; border-bottom-color: #dc2626;
+}
+.mode-banner.live-prod {
+  background: linear-gradient(90deg, #fda4af 0%, #fecdd3 100%);
+  color: #831843; border-bottom-color: #be185d;
+}
+.mode-banner-pill {
+  background: rgba(255,255,255,0.55); padding: 3px 10px; border-radius: 4px;
+  text-transform: uppercase;
+}
+.mode-banner-pill.demo { background: #1e1b4b; color: #fde68a; }
+.mode-banner-pill.dry  { background: #1e1b4b; color: #c7d2fe; }
+.mode-banner-pill.live { background: #7f1d1d; color: #fee2e2; }
+.mode-banner-sep { color: rgba(120,53,15,0.4); }
+
+/* ── Evidence grid (used on Approvals + VM Detail + Audit) ── */
+.evidence-grid {
+  display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px 24px;
+  padding: 14px 16px; background: #f6f2ff; border-radius: 8px;
+  margin: 10px 0;
+}
+.evidence-cell { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.evidence-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.625rem; font-weight: 700; letter-spacing: 0.07em;
+  color: #6b7280; text-transform: uppercase;
+}
+.evidence-value {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.8125rem; color: #1e1b4b;
+  word-break: break-all; line-height: 1.4;
+}
+.evidence-value.muted { color: #94a3b8; }
+.evidence-value.warn  { color: #b45309; }
+.evidence-value.ok    { color: #16a34a; }
+.evidence-value.danger{ color: #dc2626; }
+@media (max-width: 900px) { .evidence-grid { grid-template-columns: 1fr; } }
+
+/* ── Layer A vs Layer B separation (Approvals page) ── */
+.layer-section { border-radius: 8px; padding: 12px 16px; margin: 8px 0; }
+.layer-b {
+  background: #ecfdf5;
+  border-left: 4px solid #16a34a;
+}
+.layer-policy {
+  background: #eef2ff;
+  border-left: 4px solid #4f46e5;
+}
+.layer-a {
+  background: #fef3c7;
+  border-left: 4px solid #d97706;
+}
+.layer-hdr {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 8px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.6875rem; font-weight: 700; letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+.layer-b .layer-hdr   { color: #047857; }
+.layer-policy .layer-hdr { color: #3730a3; }
+.layer-a .layer-hdr   { color: #92400e; }
+.layer-hdr-tag {
+  font-size: 0.5625rem; padding: 1px 7px; border-radius: 3px;
+  background: rgba(255,255,255,0.7); letter-spacing: 0.06em;
+}
+.layer-body {
+  font-family: 'Inter', sans-serif;
+  font-size: 0.8125rem; color: #1f2937; line-height: 1.55;
+}
+.layer-body ul { list-style: none; padding-left: 0; }
+.layer-body li {
+  padding: 3px 0 3px 16px; position: relative;
+  font-family: 'JetBrains Mono', monospace; font-size: 0.75rem;
+}
+.layer-body li::before {
+  content: '▸'; position: absolute; left: 2px; color: currentColor; opacity: 0.5;
+}
+.layer-a .layer-body { font-family: 'Inter', sans-serif; }
+.layer-a .layer-body p { font-style: italic; }
+.layer-a-disclaimer {
+  margin-top: 8px; font-family: 'JetBrains Mono', monospace;
+  font-size: 0.625rem; color: #92400e; opacity: 0.75;
+  letter-spacing: 0.04em; text-transform: uppercase;
+}
+
+/* ── Approval action evidence table (pkg cur→target, units) ── */
+.appr-action-tbl {
+  width: 100%; border-collapse: collapse; margin-top: 8px;
+  font-family: 'JetBrains Mono', monospace; font-size: 0.75rem;
+}
+.appr-action-tbl th {
+  text-align: left; padding: 6px 10px;
+  font-size: 0.5625rem; font-weight: 700; letter-spacing: 0.07em;
+  color: #6b7280; text-transform: uppercase; background: #f1f5f9;
+}
+.appr-action-tbl td {
+  padding: 5px 10px; color: #1e1b4b;
+  border-top: 1px solid #f1f5f9;
+}
+.appr-action-tbl td.cur { color: #94a3b8; text-decoration: line-through; }
+.appr-action-tbl td.tgt { color: #047857; font-weight: 600; }
+.appr-action-tbl td.cve {
+  font-size: 0.6875rem; color: #b91c1c; font-weight: 700;
+}
+
+/* ── Countdown timer (Approvals) ── */
+.countdown-big {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 1.125rem; font-weight: 700;
+  padding: 5px 14px; border-radius: 6px;
+}
+.countdown-ok   { background: #ecfdf5; color: #047857; }
+.countdown-warn { background: #fef3c7; color: #b45309; }
+.countdown-crit { background: #fee2e2; color: #b91c1c; }
+.countdown-big::before { content: '⏱'; font-size: 0.875rem; }
+
+/* ── Slack + Audit deep-link chips ── */
+.deeplink-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-family: 'JetBrains Mono', monospace; font-size: 0.6875rem; font-weight: 600;
+  padding: 4px 10px; border-radius: 4px; text-decoration: none;
+  transition: opacity 0.15s;
+}
+.deeplink-chip:hover { opacity: 0.85; }
+.dl-slack { background: #4a154b; color: #fff; }
+.dl-audit { background: #eef2ff; color: #3730a3; }
+.dl-batch { background: #ecfdf5; color: #047857; }
+.dl-vm    { background: #f1f5f9; color: #1e293b; }
+
+/* ── Typed-confirm modal (Approvals + Admin destructive) ── */
+.confirm-modal {
+  display: none; position: fixed; inset: 0; z-index: 1000;
+  background: rgba(15,12,46,0.6); backdrop-filter: blur(4px);
+  align-items: center; justify-content: center;
+}
+.confirm-modal.show { display: flex; }
+.confirm-card {
+  background: #ffffff; border-radius: 12px;
+  width: 520px; max-width: calc(100vw - 32px);
+  box-shadow: 0px 24px 48px -12px rgba(24,20,69,0.25);
+  overflow: hidden;
+}
+.confirm-hdr {
+  padding: 16px 20px; color: #fff;
+  display: flex; align-items: center; gap: 10px;
+  font-family: 'Space Grotesk', sans-serif; font-weight: 700;
+}
+.confirm-hdr.approve { background: linear-gradient(135deg, #047857, #16a34a); }
+.confirm-hdr.reject  { background: linear-gradient(135deg, #b91c1c, #dc2626); }
+.confirm-hdr.danger  { background: linear-gradient(135deg, #7f1d1d, #b91c1c); }
+.confirm-body { padding: 20px; }
+.confirm-body p { font-size: 0.8125rem; color: #334155; line-height: 1.55; margin-bottom: 12px; }
+.confirm-evidence {
+  font-family: 'JetBrains Mono', monospace; font-size: 0.75rem;
+  background: #f6f2ff; padding: 10px 12px; border-radius: 6px;
+  color: #1e1b4b; word-break: break-all;
+  margin-bottom: 12px;
+}
+.confirm-field { margin-bottom: 12px; }
+.confirm-field label {
+  display: block; margin-bottom: 4px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.625rem; font-weight: 700; letter-spacing: 0.07em;
+  color: #475569; text-transform: uppercase;
+}
+.confirm-field input,
+.confirm-field textarea {
+  width: 100%; padding: 8px 10px;
+  font-family: 'JetBrains Mono', monospace; font-size: 0.8125rem;
+  background: #f6f2ff; border: 1.5px solid transparent; border-radius: 6px;
+  color: #1e1b4b; outline: none;
+}
+.confirm-field input:focus,
+.confirm-field textarea:focus { border-color: #4f46e5; background: #fff; }
+.confirm-field .mismatch { color: #b91c1c; }
+.confirm-field .match    { color: #047857; }
+.confirm-foot {
+  padding: 14px 20px; background: #f8fafc;
+  display: flex; gap: 10px; justify-content: flex-end;
+}
+.confirm-foot .btn-cancel {
+  background: #e2e8f0; color: #1e293b; border: none; padding: 8px 16px;
+  border-radius: 6px; font-weight: 600; font-size: 0.8125rem; cursor: pointer;
+}
+.confirm-foot .btn-go {
+  border: none; padding: 8px 18px; border-radius: 6px;
+  font-weight: 700; font-size: 0.8125rem; cursor: pointer; color: #fff;
+}
+.confirm-foot .btn-go:disabled { opacity: 0.4; cursor: not-allowed; }
+.confirm-foot .btn-go.approve { background: linear-gradient(135deg, #047857, #16a34a); }
+.confirm-foot .btn-go.reject  { background: linear-gradient(135deg, #b91c1c, #dc2626); }
+.confirm-foot .btn-go.danger  { background: linear-gradient(135deg, #7f1d1d, #b91c1c); }
+
+/* ── Admin page DESTRUCTIVE — AUDITED header ── */
+.destructive-hdr {
+  background: linear-gradient(90deg, #7f1d1d 0%, #b91c1c 100%);
+  color: #fef2f2;
+  padding: 12px 20px; margin-bottom: 16px; border-radius: 8px;
+  display: flex; align-items: center; gap: 12px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.75rem; font-weight: 700; letter-spacing: 0.07em;
+}
+.destructive-hdr .pill {
+  background: rgba(255,255,255,0.2); padding: 3px 10px; border-radius: 4px;
+  font-size: 0.625rem;
+}
+
+/* ── Agent page Layer A/B partition ── */
+.layer-partition {
+  display: grid; grid-template-columns: 1fr 40px 1fr; gap: 0;
+  align-items: stretch; margin: 16px 0;
+}
+.layer-pane {
+  padding: 18px 20px; border-radius: 10px;
+}
+.layer-pane.a { background: #fef3c7; border-left: 4px solid #d97706; }
+.layer-pane.b { background: #ecfdf5; border-left: 4px solid #16a34a; }
+.layer-divider {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  font-family: 'JetBrains Mono', monospace;
+  color: #4f46e5; font-size: 0.5625rem;
+  letter-spacing: 0.1em; text-transform: uppercase; writing-mode: vertical-rl;
+  text-orientation: mixed; padding: 8px 0;
+}
+.layer-divider::before, .layer-divider::after {
+  content: ''; width: 2px; flex: 1;
+  background: linear-gradient(180deg, rgba(79,70,229,0.4), rgba(79,70,229,0.1));
+}
+@media (max-width: 900px) {
+  .layer-partition { grid-template-columns: 1fr; }
+  .layer-divider {
+    writing-mode: horizontal-tb; text-orientation: initial; padding: 8px 0;
+  }
+  .layer-divider::before, .layer-divider::after {
+    width: auto; height: 2px;
+    background: linear-gradient(90deg, rgba(79,70,229,0.4), rgba(79,70,229,0.1));
+  }
+}
+.layer-pane-hdr {
+  font-family: 'Space Grotesk', sans-serif;
+  font-weight: 700; font-size: 0.9375rem; margin-bottom: 4px;
+}
+.layer-pane.a .layer-pane-hdr { color: #92400e; }
+.layer-pane.b .layer-pane-hdr { color: #047857; }
+.layer-pane-sub {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.6875rem; letter-spacing: 0.04em;
+  text-transform: uppercase; margin-bottom: 12px;
+}
+.layer-pane.a .layer-pane-sub { color: rgba(146,64,14,0.7); }
+.layer-pane.b .layer-pane-sub { color: rgba(4,120,87,0.7); }
+.layer-pane-rows { display: flex; flex-direction: column; gap: 8px; }
+.layer-pane-row {
+  display: flex; justify-content: space-between; align-items: center;
+  font-family: 'JetBrains Mono', monospace; font-size: 0.75rem;
+}
+.layer-pane-row .lbl { color: #6b7280; }
+.layer-pane-row .val { color: #1e1b4b; font-weight: 600; }
+
+/* ── Fleet operator queue (P1 — SRE: "dashboard needs an operator queue") ── */
+.op-queue-card {
+  background: #fff; border-radius: 12px;
+  padding: 0; margin-bottom: 16px; overflow: hidden;
+  box-shadow: 0px 8px 24px -8px rgba(24,20,69,0.06);
+}
+.op-queue-hdr {
+  padding: 14px 20px;
+  background: linear-gradient(135deg, #1e1b4b 0%, #4f46e5 100%);
+  color: #fff;
+  display: flex; align-items: center; gap: 12px;
+}
+.op-queue-hdr .ttl {
+  font-family: 'Space Grotesk', sans-serif; font-weight: 700;
+  font-size: 1rem; letter-spacing: -0.01em;
+}
+.op-queue-hdr .sub {
+  font-family: 'JetBrains Mono', monospace; font-size: 0.6875rem;
+  color: rgba(255,255,255,0.6); letter-spacing: 0.04em;
+}
+.op-queue-hdr .count {
+  margin-left: auto;
+  background: rgba(255,255,255,0.18); color: #fff;
+  font-family: 'JetBrains Mono', monospace; font-weight: 700;
+  padding: 4px 12px; border-radius: 999px;
+  font-size: 0.75rem;
+}
+.op-queue-row {
+  display: flex; align-items: center; gap: 16px;
+  padding: 14px 20px;
+  border-top: 1px solid #f1f5f9;
+}
+.op-queue-row:hover { background: #f8fafc; }
+.op-queue-pri {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.6875rem; font-weight: 700;
+  padding: 4px 10px; border-radius: 4px;
+  min-width: 64px; text-align: center;
+}
+.op-pri-crit  { background: #fee2e2; color: #b91c1c; }
+.op-pri-high  { background: #fef3c7; color: #b45309; }
+.op-pri-med   { background: #eef2ff; color: #3730a3; }
+.op-pri-low   { background: #ecfdf5; color: #047857; }
+.op-pri-info  { background: #f1f5f9; color: #475569; }
+.op-queue-icon { font-size: 1.1rem; }
+.op-queue-body { flex: 1; min-width: 0; }
+.op-queue-label {
+  font-family: 'Inter', sans-serif; font-weight: 600;
+  font-size: 0.875rem; color: #1e1b4b;
+}
+.op-queue-detail {
+  font-family: 'JetBrains Mono', monospace; font-size: 0.6875rem;
+  color: #6b7280; margin-top: 3px;
+}
+.op-queue-action {
+  font-family: 'JetBrains Mono', monospace; font-size: 0.6875rem; font-weight: 600;
+  padding: 6px 14px; border-radius: 6px; text-decoration: none;
+  white-space: nowrap;
+}
+.op-queue-action.go {
+  background: #4f46e5; color: #fff;
+}
+.op-queue-action.go:hover { background: #4338ca; }
+.op-queue-action.muted {
+  background: #f1f5f9; color: #475569;
+}
+.op-queue-empty {
+  padding: 24px; text-align: center;
+  font-family: 'JetBrains Mono', monospace; font-size: 0.8125rem;
+  color: #94a3b8;
+}
+
+/* ── Audit page filters + export ── */
+.audit-toolbar {
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+  padding: 12px 16px; background: #f6f2ff; border-radius: 8px;
+  margin-bottom: 12px;
+}
+.audit-filter {
+  display: flex; flex-direction: column; gap: 3px; min-width: 120px;
+}
+.audit-filter label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.5625rem; font-weight: 700; letter-spacing: 0.07em;
+  color: #6b7280; text-transform: uppercase;
+}
+.audit-filter select,
+.audit-filter input {
+  font-family: 'Inter', sans-serif; font-size: 0.75rem;
+  padding: 5px 8px; background: #fff;
+  border: 1.5px solid transparent; border-radius: 5px;
+  color: #1e1b4b; outline: none; min-width: 100px;
+}
+.audit-filter select:focus,
+.audit-filter input:focus { border-color: #4f46e5; }
+.audit-export {
+  margin-left: auto; display: flex; gap: 6px;
+}
+.audit-export a {
+  font-family: 'JetBrains Mono', monospace; font-size: 0.6875rem; font-weight: 700;
+  padding: 6px 12px; border-radius: 5px; text-decoration: none;
+}
+.audit-export .csv { background: #047857; color: #fff; }
+.audit-export .json { background: #3730a3; color: #fff; }
+.audit-row-expand {
+  background: #f8fafc; padding: 14px 20px;
+  font-family: 'JetBrains Mono', monospace; font-size: 0.75rem;
+  display: grid; grid-template-columns: 200px 1fr; gap: 6px 16px;
+  color: #1e1b4b;
+}
+.audit-row-expand .k {
+  font-size: 0.625rem; color: #6b7280; letter-spacing: 0.07em;
+  text-transform: uppercase; font-weight: 700;
+}
+.audit-row-expand .v { word-break: break-all; }
+.audit-row-expand .v.before { color: #94a3b8; }
+.audit-row-expand .v.after  { color: #047857; font-weight: 600; }
+.audit-row-expand .v.failed { color: #b91c1c; }
+
+/* ── VM Resource Trends (Metricbeat-style sparklines) ── */
+.vm-trends-card { padding: 18px 20px; margin-bottom: 16px; }
+.vm-trends-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+.vm-trends-toggle { display: flex; gap: 4px; }
+.trend-btn {
+  font-size: 0.75rem; padding: 3px 12px; border: 1px solid #e2e8f0;
+  border-radius: 4px; background: #fff; color: #64748b;
+  cursor: pointer; font-family: 'JetBrains Mono', monospace; font-weight: 600;
+  transition: background 0.12s, color 0.12s;
+}
+.trend-btn.active { background: #1e293b; color: #fff; border-color: #1e293b; }
+.vm-trends-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+.vm-trend-panel { }
+.vm-trend-label {
+  font-size: 0.625rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.1em; color: #94a3b8; margin-bottom: 4px;
+}
+.vm-trend-current-row { display: flex; align-items: baseline; gap: 8px; margin-bottom: 10px; }
+.vm-trend-current {
+  font-size: 1.625rem; font-weight: 700;
+  font-family: 'JetBrains Mono', monospace; line-height: 1;
+}
+.vm-trend-delta { font-size: 0.75rem; color: #94a3b8; }
+.vm-trend-svg-wrap { position: relative; margin-bottom: 4px; }
+.vm-trend-threshold {
+  position: absolute; right: 0; font-size: 0.55rem; font-family: 'JetBrains Mono', monospace;
+  font-weight: 700; color: #d97706; padding: 0 3px;
+}
+.spark-stats {
+  display: flex; gap: 16px; margin-top: 3px;
+  font-size: 0.65rem; color: #94a3b8; font-family: 'JetBrains Mono', monospace;
+}
+.spark-stats span { white-space: nowrap; }
+.spark-stats .stat-v { color: #475569; font-weight: 600; }
+.spark-x-axis {
+  display: flex; justify-content: space-between;
+  font-family: 'JetBrains Mono', monospace; font-size: 0.55rem; color: #cbd5e1;
+  margin-top: 2px; padding: 0 1px;
+}
+.disk-mini-spark { display: flex; align-items: center; gap: 8px; margin-top: 3px; }
+.disk-mini-spark svg { flex-shrink: 0; }
+.disk-mini-stat { font-size: 0.6rem; font-family: 'JetBrains Mono', monospace; color: #94a3b8; white-space: nowrap; }
 """
 
 # ── Login page CSS ─────────────────────────────────────────────────────────────
@@ -1062,6 +1503,36 @@ _OVERRIDES = [
 ]
 
 
+def _mode_banner_html() -> str:
+    """Render the global mode banner. Loud on purpose."""
+    src  = UI_MODE.get("data_source", "DEMO")
+    env  = UI_MODE.get("env", "PROD")
+    exe  = UI_MODE.get("execution", "DRY RUN")
+    fr   = UI_MODE.get("freshness", "")
+    be   = UI_MODE.get("backend", "")
+    build= UI_MODE.get("build", "")
+    if exe == "LIVE EXECUTION" and env == "PROD":
+        banner_cls = "mode-banner live-prod"
+    elif exe == "LIVE EXECUTION":
+        banner_cls = "mode-banner live"
+    else:
+        banner_cls = "mode-banner"
+    src_cls = "demo" if src == "DEMO" else "live"
+    exe_cls = "live" if exe == "LIVE EXECUTION" else "dry"
+    return f"""
+    <div class="{banner_cls}" role="status" aria-live="polite">
+      <span class="mode-banner-pill {src_cls}">{src} DATA</span>
+      <span class="mode-banner-pill">{env}</span>
+      <span class="mode-banner-pill {exe_cls}">{exe}</span>
+      <span class="mode-banner-sep">·</span>
+      <span>{fr}</span>
+      <span class="mode-banner-sep">·</span>
+      <span>backend: {be}</span>
+      <span class="mode-banner-sep">·</span>
+      <span>build {build}</span>
+    </div>"""
+
+
 def layout(title: str, active_url: str, breadcrumb: str, topnav_extra: str, content: str) -> str:
     nav_parts: list[str] = []
     section_open = False
@@ -1099,6 +1570,7 @@ def layout(title: str, active_url: str, breadcrumb: str, topnav_extra: str, cont
     </div>
   </aside>
   <div class="shell">
+    {_mode_banner_html()}
     <header class="topnav">
       <div class="breadcrumb">{breadcrumb}</div>
       {topnav_extra}
@@ -1112,6 +1584,149 @@ def layout(title: str, active_url: str, breadcrumb: str, topnav_extra: str, cont
 
 
 # ── Pages ─────────────────────────────────────────────────────────────────────
+
+def _operator_queue() -> str:
+    """The SRE's "what needs me now" queue. Aggregates everything human-actionable
+    in priority order: critical → high → medium → info."""
+    rows: list[tuple[str, str, str, str, str, str]] = []
+    # tuple: (priority, icon, label, detail, action_label, href)
+
+    # 1. Pending approvals (with countdown)
+    pending = APPROVALS
+    if pending:
+        soonest_min = min(int(a.get("countdown", "30:00").split(":")[0]) for a in pending)
+        pri = "CRITICAL" if soonest_min < 5 else "HIGH" if soonest_min < 15 else "MED"
+        rows.append((
+            pri, "🔔",
+            f"{len(pending)} approval(s) awaiting your decision in Slack",
+            f"soonest expiry in {soonest_min} min · "
+            + " · ".join(f"{a['action'].lower()} on {a['hostname']} ({a['tier']})" for a in pending),
+            "Review",
+            "/approvals",
+        ))
+
+    # 2. High-risk pending actions (subset of approvals, called out explicitly)
+    high_risk = [a for a in APPROVALS if a["tier"] == "HIGH RISK"]
+    if high_risk:
+        rows.append((
+            "CRITICAL", "⚠",
+            f"{len(high_risk)} HIGH RISK action(s) pending — operator-triggered only",
+            " · ".join(f"{a['action'].lower()} on {a['hostname']}" for a in high_risk),
+            "Inspect",
+            "/approvals",
+        ))
+
+    # 3. Failed/partial batches recently
+    bad_batches = [b for b in BATCHES if b.get("status") in ("failed", "partial")]
+    if bad_batches:
+        latest = bad_batches[0]
+        rows.append((
+            "HIGH", "✕",
+            f"{len(bad_batches)} recent batch(es) ended failed/partial",
+            f"latest: {latest['id']} ({latest['status']}) — {latest.get('error_summary', '')}",
+            "View batches",
+            "/batches",
+        ))
+
+    # 4. Failed VMs (last action failed)
+    failed_vms_now = [v for v in VMS if v["status"] == "failed"]
+    if failed_vms_now:
+        rows.append((
+            "HIGH", "🔴",
+            f"{len(failed_vms_now)} VM(s) with last action FAILED",
+            " · ".join(v["hostname"] for v in failed_vms_now),
+            f"View {failed_vms_now[0]['hostname']}",
+            f"/vm/{failed_vms_now[0]['hostname']}",
+        ))
+
+    # 5. Warning VMs (degraded — disk high, etc.)
+    warning_vms = [v for v in VMS if v["status"] == "warning"]
+    if warning_vms:
+        rows.append((
+            "MED", "⚠",
+            f"{len(warning_vms)} VM(s) degraded — preflight may block",
+            " · ".join(f"{v['hostname']} ({v['note'] or v['status']})" for v in warning_vms),
+            "Inspect",
+            f"/vm/{warning_vms[0]['hostname']}",
+        ))
+
+    # 6. Blocked VMs (lock held — from VM_EVIDENCE)
+    locked = [(h, e["lock"]) for h, e in VM_EVIDENCE.items() if e.get("lock")]
+    if locked:
+        rows.append((
+            "MED", "🔒",
+            f"{len(locked)} VM(s) currently locked by the agent",
+            " · ".join(f"{h}: {lock}" for h, lock in locked),
+            f"View {locked[0][0]}",
+            f"/vm/{locked[0][0]}",
+        ))
+
+    # 7. Next maintenance window
+    sch = SCHEDULER_TIMELINE
+    nextrun = sch.get("next_runs", ["—"])[0]
+    rows.append((
+        "INFO", "🕐",
+        f"Next scheduled maintenance window: {nextrun}",
+        f"cron: {sch.get('cron', '—')} ({sch.get('human', '—')})",
+        "Schedule",
+        "/agent",
+    ))
+
+    # 8. Active batch (if running, otherwise show last completed)
+    ab = ACTIVE_BATCH
+    if ab.get("status") not in ("completed",):
+        rows.append((
+            "INFO", "▶",
+            f"Active batch: {ab['id']} — {ab['vms_done']}/{ab['vms_total']} VMs",
+            f"{ab.get('duration', '—')} · {ab.get('errors', 0)} error(s)",
+            "Live trace",
+            "/agent",
+        ))
+
+    if not rows:
+        return """
+        <div class="op-queue-card">
+          <div class="op-queue-hdr">
+            <span style="font-size:1.1rem">✓</span>
+            <span class="ttl">Operator Queue</span>
+            <span class="count">0</span>
+          </div>
+          <div class="op-queue-empty">All clear — no items need your action right now.</div>
+        </div>"""
+
+    pri_cls = {"CRITICAL": "op-pri-crit", "HIGH": "op-pri-high", "MED": "op-pri-med",
+               "LOW": "op-pri-low", "INFO": "op-pri-info"}
+    # sort by priority
+    order = {"CRITICAL": 0, "HIGH": 1, "MED": 2, "LOW": 3, "INFO": 4}
+    rows.sort(key=lambda r: order[r[0]])
+
+    body = ""
+    for pri, icon, label, detail, action, href in rows:
+        body += f"""
+        <div class="op-queue-row">
+          <span class="op-queue-pri {pri_cls[pri]}">{pri}</span>
+          <span class="op-queue-icon">{icon}</span>
+          <div class="op-queue-body">
+            <div class="op-queue-label">{label}</div>
+            <div class="op-queue-detail">{detail}</div>
+          </div>
+          <a href="{href}" class="op-queue-action {'go' if pri in ('CRITICAL','HIGH') else 'muted'}">{action} →</a>
+        </div>"""
+
+    actionable = sum(1 for r in rows if r[0] in ("CRITICAL", "HIGH", "MED"))
+    return f"""
+    <div class="op-queue-card">
+      <div class="op-queue-hdr">
+        <span style="font-size:1.1rem">✋</span>
+        <div>
+          <div class="ttl">Operator Queue</div>
+          <div class="sub">what needs your action right now · priority-ordered</div>
+        </div>
+        <span class="count">{actionable} actionable · {len(rows) - actionable} info</span>
+      </div>
+      {body}
+    </div>"""
+
 
 def page_fleet() -> str:
     healthy       = sum(1 for v in VMS if v["status"] == "ok")
@@ -1280,13 +1895,14 @@ def page_fleet() -> str:
         </a>"""
 
     return f"""
+    {_operator_queue()}
     {kpis}
     {batch}
     {attn_box}
     <div class="section-hdr">
       <div>
-        <div class="section-title">VM Fleet</div>
-        <div class="section-sub">{len(VMS)} hosts across {len(set(v['env'] for v in VMS))} environments &nbsp;·&nbsp; data as of 2026-04-23 02:14 UTC</div>
+        <div class="section-title">Fleet Inventory</div>
+        <div class="section-sub">{len(VMS)} hosts across {len(set(v['env'] for v in VMS))} environments &nbsp;·&nbsp; data as of 2026-04-23 02:14 UTC &nbsp;·&nbsp; full list in <a href="/inventory" style="color:#4f46e5;text-decoration:none">/inventory</a></div>
       </div>
     </div>
     <div class="vm-grid">{cards}</div>"""
@@ -1306,19 +1922,216 @@ def _appr_health_metric(label: str, pct: int, extra_val: str = "") -> str:
     </div>"""
 
 
+def _countdown_cls(countdown: str) -> str:
+    """Color the countdown by remaining minutes (mm:ss)."""
+    try:
+        mins = int(countdown.split(":")[0])
+    except Exception:
+        return "countdown-warn"
+    if mins >= 15:
+        return "countdown-ok"
+    if mins >= 5:
+        return "countdown-warn"
+    return "countdown-crit"
+
+
+def _appr_evidence_grid(a: dict[str, Any], ev: dict[str, Any]) -> str:
+    """Top evidence grid — the SRE's mandatory enterprise card surface."""
+    return f"""
+    <div class="evidence-grid">
+      <div class="evidence-cell">
+        <span class="evidence-label">Plan ID</span>
+        <span class="evidence-value">{ev.get('plan_id', '—')}</span>
+      </div>
+      <div class="evidence-cell">
+        <span class="evidence-label">Plan Hash</span>
+        <span class="evidence-value">{ev.get('plan_hash', '—')}</span>
+      </div>
+      <div class="evidence-cell">
+        <span class="evidence-label">Batch ID</span>
+        <span class="evidence-value">{ev.get('batch_id', '—')}</span>
+      </div>
+      <div class="evidence-cell">
+        <span class="evidence-label">Action ID</span>
+        <span class="evidence-value">{ev.get('action_id', '—')}</span>
+      </div>
+      <div class="evidence-cell">
+        <span class="evidence-label">Requester</span>
+        <span class="evidence-value">{ev.get('requester', '—')}</span>
+      </div>
+      <div class="evidence-cell">
+        <span class="evidence-label">Approver Role Required</span>
+        <span class="evidence-value">{ev.get('approver_role', '—')}</span>
+      </div>
+      <div class="evidence-cell">
+        <span class="evidence-label">Artifact Age</span>
+        <span class="evidence-value">{ev.get('artifact_age_h', '—')}</span>
+      </div>
+      <div class="evidence-cell">
+        <span class="evidence-label">Artifact Expiry</span>
+        <span class="evidence-value">{ev.get('artifact_expiry_h', '—')}</span>
+      </div>
+      <div class="evidence-cell">
+        <span class="evidence-label">Drift Check</span>
+        <span class="evidence-value ok">{ev.get('drift_check', '—')}</span>
+      </div>
+      <div class="evidence-cell">
+        <span class="evidence-label">Rollback Ready</span>
+        <span class="evidence-value ok">{ev.get('rollback_ready', '—')}</span>
+      </div>
+      <div class="evidence-cell">
+        <span class="evidence-label">VM Lock</span>
+        <span class="evidence-value">{ev.get('vm_lock', '(none held)')}</span>
+      </div>
+      <div class="evidence-cell">
+        <span class="evidence-label">Window</span>
+        <span class="evidence-value {'warn' if 'override' in ev.get('window_state','').lower() else ''}">{ev.get('window_state', '—')}</span>
+      </div>
+      <div class="evidence-cell" style="grid-column: span 2">
+        <span class="evidence-label">Idempotency</span>
+        <span class="evidence-value">{ev.get('idempotency', '—')}</span>
+      </div>
+    </div>"""
+
+
+def _appr_action_table(ev: dict[str, Any]) -> str:
+    """Per-action evidence: cur → target package versions OR units."""
+    if "packages" in ev and ev["packages"]:
+        rows = ""
+        for p in ev["packages"]:
+            cve_cell = f'<td class="cve">{p["cve"]}</td>' if p.get("cve") else '<td></td>'
+            rows += f"""<tr>
+              <td>{p['name']}</td>
+              <td class="cur">{p['current']}</td>
+              <td>→</td>
+              <td class="tgt">{p['target']}</td>
+              {cve_cell}
+            </tr>"""
+        return f"""
+        <table class="appr-action-tbl">
+          <thead><tr><th>Package</th><th>Current</th><th></th><th>Approved Target</th><th>CVE</th></tr></thead>
+          <tbody>{rows}</tbody>
+        </table>"""
+    if "units" in ev and ev["units"]:
+        rows = ""
+        for u in ev["units"]:
+            rows += f"""<tr>
+              <td>{u['unit']}</td>
+              <td class="cur">{u['current']}</td>
+              <td>→</td>
+              <td class="tgt">{u['target']}</td>
+            </tr>"""
+        return f"""
+        <table class="appr-action-tbl">
+          <thead><tr><th>Unit</th><th>Current</th><th></th><th>Target State</th></tr></thead>
+          <tbody>{rows}</tbody>
+        </table>"""
+    return ""
+
+
+def _appr_layer_split(ev: dict[str, Any], reject_consequence: str) -> str:
+    """Three stacked sections enforcing the AI Safety Invariant in the UI."""
+    facts = "".join(f"<li>{f}</li>" for f in ev.get("probe_facts", []))
+    policy = "".join(f"<li>{p}</li>" for p in ev.get("policy_decision", []))
+    ai = ev.get("ai_explanation", "")
+    return f"""
+    <div class="layer-section layer-b">
+      <div class="layer-hdr">
+        <span>① Probe Facts</span>
+        <span class="layer-hdr-tag">LAYER B · DETERMINISTIC</span>
+      </div>
+      <div class="layer-body"><ul>{facts}</ul></div>
+    </div>
+    <div class="layer-section layer-policy">
+      <div class="layer-hdr">
+        <span>② Policy Decision</span>
+        <span class="layer-hdr-tag">LAYER B · RULE-BASED</span>
+      </div>
+      <div class="layer-body"><ul>{policy}</ul></div>
+    </div>
+    <div class="layer-section layer-a">
+      <div class="layer-hdr">
+        <span>③ AI Explanation</span>
+        <span class="layer-hdr-tag">LAYER A · ADVISORY</span>
+      </div>
+      <div class="layer-body"><p>{ai}</p></div>
+      <div class="layer-a-disclaimer">
+        Layer A is advisory only. The approval authority is the operator's Slack reaction, not the LLM.
+      </div>
+    </div>
+    <div class="layer-section" style="background:#fef2f2;border-left:4px solid #dc2626">
+      <div class="layer-hdr" style="color:#7f1d1d">
+        <span>If Rejected</span>
+        <span class="layer-hdr-tag" style="background:rgba(255,255,255,0.7)">CONSEQUENCE</span>
+      </div>
+      <div class="layer-body" style="color:#7f1d1d">{reject_consequence}</div>
+    </div>"""
+
+
+def _appr_deeplinks(ev: dict[str, Any], hostname: str) -> str:
+    slack = ev.get("slack_thread_url", "")
+    audit = ev.get("audit_url", "/audit")
+    batch = ev.get("batch_id", "")
+    return f"""
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+      <a href="{slack}" class="deeplink-chip dl-slack" target="_blank" rel="noopener">▶ View Slack thread</a>
+      <a href="{audit}" class="deeplink-chip dl-audit">▶ Audit slice</a>
+      <a href="/batches#{batch}" class="deeplink-chip dl-batch">▶ Batch {batch}</a>
+      <a href="/vm/{hostname}" class="deeplink-chip dl-vm">▶ VM {hostname}</a>
+    </div>"""
+
+
+def _appr_confirm_modal_js() -> str:
+    """Vanilla JS for the typed-confirm modal. Enables Confirm only on exact match."""
+    return """
+    <script>
+      function _showConfirm(kind, apprId, batchId, action, hostname) {
+        const m = document.getElementById('confirm-modal');
+        m.dataset.kind = kind;
+        m.dataset.apprId = apprId;
+        m.dataset.batchId = batchId;
+        document.getElementById('cf-kind').textContent = kind === 'approve' ? 'APPROVE' : 'REJECT';
+        document.getElementById('cf-action').textContent = action;
+        document.getElementById('cf-host').textContent = hostname;
+        document.getElementById('cf-batch-expected').textContent = batchId;
+        document.getElementById('cf-batch-input').value = '';
+        document.getElementById('cf-reason').value = '';
+        document.getElementById('cf-match').textContent = '';
+        document.getElementById('cf-go').disabled = true;
+        document.getElementById('cf-hdr').className = 'confirm-hdr ' + kind;
+        document.getElementById('cf-go').className = 'btn-go ' + kind;
+        m.classList.add('show');
+      }
+      function _hideConfirm() {
+        document.getElementById('confirm-modal').classList.remove('show');
+      }
+      function _confirmCheck() {
+        const expected = document.getElementById('cf-batch-expected').textContent.trim();
+        const got = document.getElementById('cf-batch-input').value.trim();
+        const reason = document.getElementById('cf-reason').value.trim();
+        const match = document.getElementById('cf-match');
+        const go = document.getElementById('cf-go');
+        const batchOk = (got === expected);
+        const reasonOk = (reason.length >= 20);
+        if (got.length === 0) { match.textContent = ''; match.className = ''; }
+        else if (!batchOk)    { match.textContent = '✕ batch ID does not match'; match.className = 'mismatch'; }
+        else                  { match.textContent = '✓ batch ID matches'; match.className = 'match'; }
+        go.disabled = !(batchOk && reasonOk);
+      }
+      function _confirmGo() {
+        const m = document.getElementById('confirm-modal');
+        alert('(demo) Would submit ' + m.dataset.kind.toUpperCase() + ' for ' + m.dataset.apprId +
+              ' with reason logged to audit.\\n\\nIn live mode this routes through the Slack approval ' +
+              'gate — UI Approve/Reject is a forward to that same audited gate.');
+        _hideConfirm();
+      }
+    </script>"""
+
+
 def page_approvals() -> str:
     cards = ""
     for a in APPROVALS:
-        if a["action"] == "SERVICE RESTART":
-            commands_html = "".join(
-                f'<div class="comment">{c}</div>' if c.startswith("#") else f"<div>{c}</div>"
-                for c in a["commands"]
-            )
-            extra = f'<div class="terminal">{commands_html}</div>'
-        else:
-            pills = "".join(f'<span class="pkg-pill">{p}</span>' for p in a.get("packages", []))
-            extra = f'<div class="pkg-pills">{pills}</div>'
-
+        ev = APPROVAL_EVIDENCE.get(a["id"], {})
         tier_cls = "badge-danger" if a["tier"] == "HIGH RISK" else "badge-amber"
 
         cpu  = a.get("vm_cpu",  0)
@@ -1326,9 +2139,7 @@ def page_approvals() -> str:
         disk = a.get("vm_disk", 0)
         load = a.get("vm_load", "—")
         uptime = a.get("vm_uptime", "—")
-        trigger = a.get("trigger", "")
         reject_consequence = a.get("reject_consequence", "")
-        rollback_strategy  = a.get("rollback_strategy", "")
 
         health_panel = f"""
         <div class="appr-health">
@@ -1339,48 +2150,80 @@ def page_approvals() -> str:
             {_appr_health_metric("DISK", disk)}
             {_appr_health_metric("LOAD", min(cpu, 100), load)}
           </div>
-          <div class="appr-trigger-row">
-            <span class="appr-trigger-lbl">TRIGGER</span>
-            <span class="appr-trigger-val">{trigger}</span>
-          </div>
         </div>"""
 
-        consequences = f"""
-        <div class="appr-consequences">
-          <div class="appr-cons-row">
-            <span class="appr-cons-lbl">ROLLBACK</span>
-            <span class="appr-cons-val">{rollback_strategy}</span>
-          </div>
-          <div class="appr-cons-row">
-            <span class="appr-cons-lbl">IF REJECTED</span>
-            <span class="appr-cons-val appr-cons-val-risk">{reject_consequence}</span>
-          </div>
-        </div>"""
+        countdown_cls = _countdown_cls(a.get("countdown", "30:00"))
+
+        # JS-safe identifiers for the modal
+        js_id = a["id"]; js_batch = ev.get("batch_id", ""); js_action = a["action"]; js_host = a["hostname"]
 
         cards += f"""
-        <div class="card appr-card">
+        <div class="card appr-card" id="appr-{a['id']}">
           <div class="appr-band" style="background: linear-gradient(135deg, {a['header_color']}, {a['header_color']}cc)">
             <span class="appr-band-title">{a['action']}</span>
             <span class="appr-band-host">{a['hostname']}</span>
             <span class="badge {tier_cls}" style="margin-left:8px">{a['tier']}</span>
+            <span class="countdown-big {countdown_cls}" style="margin-left:auto" title="Auto-REJECT at this countdown (30-min default)">{a['countdown']}</span>
           </div>
           <div class="appr-body">
             <div class="appr-meta-row">
               <span class="appr-hostname">{a['hostname']}</span>
               <span class="appr-osinfo">{a['os']} &nbsp;·&nbsp; {a['ip']} &nbsp;·&nbsp; {a['env']} &nbsp;·&nbsp; up {uptime}</span>
-              <span class="appr-countdown">⏱ {a['countdown']}</span>
             </div>
-            {health_panel}
-            <div class="appr-reasoning">{a['reasoning']}</div>
-            {extra}
-            <div class="appr-footer">
-              <a href="#" class="btn-approve">✓ APPROVE</a>
-              <a href="#" class="btn-reject">✕ REJECT</a>
-              <a href="/audit" class="appr-details">View in Audit Log →</a>
+
+            {_appr_evidence_grid(a, ev)}
+
+            <div style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:0.875rem;color:#1e1b4b;margin:14px 0 4px">Exact actions to be executed</div>
+            {_appr_action_table(ev)}
+
+            <div style="margin-top:16px">
+              {_appr_layer_split(ev, reject_consequence)}
             </div>
-            {consequences}
+
+            {_appr_deeplinks(ev, a['hostname'])}
+
+            <div class="appr-footer" style="margin-top:14px">
+              <a href="#" class="btn-approve"
+                 onclick="event.preventDefault();_showConfirm('approve','{js_id}','{js_batch}','{js_action}','{js_host}')">✓ APPROVE</a>
+              <a href="#" class="btn-reject"
+                 onclick="event.preventDefault();_showConfirm('reject','{js_id}','{js_batch}','{js_action}','{js_host}')">✕ REJECT</a>
+              <span style="margin-left:auto;font-family:'JetBrains Mono',monospace;font-size:0.6875rem;color:#94a3b8">
+                Approve/Reject re-routes through the Slack approval gate — UI is not a self-approval surface
+              </span>
+            </div>
           </div>
         </div>"""
+
+    # Typed-confirm modal (single instance reused by all cards)
+    modal = """
+    <div class="confirm-modal" id="confirm-modal" onclick="if(event.target===this)_hideConfirm()">
+      <div class="confirm-card">
+        <div class="confirm-hdr approve" id="cf-hdr">
+          <span style="font-size:1.1rem">⚠</span>
+          <span><span id="cf-kind">APPROVE</span> · <span id="cf-action">ACTION</span> on <span id="cf-host">vm</span></span>
+        </div>
+        <div class="confirm-body">
+          <p>This decision will be written to the immutable audit log and forwarded to the Slack approval gate.
+             To proceed, retype the batch ID exactly and provide a reason of at least 20 characters.</p>
+          <div class="confirm-evidence">
+            Batch: <span id="cf-batch-expected">batch-id</span>
+          </div>
+          <div class="confirm-field">
+            <label>Retype batch ID</label>
+            <input id="cf-batch-input" type="text" autocomplete="off" oninput="_confirmCheck()">
+            <div id="cf-match" style="font-family:'JetBrains Mono',monospace;font-size:0.6875rem;margin-top:4px"></div>
+          </div>
+          <div class="confirm-field">
+            <label>Reason (≥ 20 chars, written to audit)</label>
+            <textarea id="cf-reason" rows="3" oninput="_confirmCheck()"></textarea>
+          </div>
+        </div>
+        <div class="confirm-foot">
+          <button class="btn-cancel" onclick="_hideConfirm()">Cancel</button>
+          <button class="btn-go approve" id="cf-go" disabled onclick="_confirmGo()">Confirm decision</button>
+        </div>
+      </div>
+    </div>"""
 
     resolved = """
     <div class="card resolved-card" style="margin-top:8px">
@@ -1392,7 +2235,7 @@ def page_approvals() -> str:
     <div class="section-hdr">
       <div>
         <div class="section-title">Pending Approval</div>
-        <div class="section-sub">{len(APPROVALS)} actions require your decision before the agent can proceed &nbsp;·&nbsp; auto-reject in &lt; 30 min</div>
+        <div class="section-sub">{len(APPROVALS)} actions require your decision before the agent can proceed &nbsp;·&nbsp; auto-reject at the countdown</div>
       </div>
       <div class="filter-chips">
         <a href="#" class="chip active">All</a>
@@ -1402,7 +2245,9 @@ def page_approvals() -> str:
       </div>
     </div>
     {cards}
-    {resolved}"""
+    {resolved}
+    {modal}
+    {_appr_confirm_modal_js()}"""
 
 
 def _vm_siblings_section(hostname: str, env: str) -> str:
@@ -1422,6 +2267,182 @@ def _vm_siblings_section(hostname: str, env: str) -> str:
       </div>
       <div style="display:flex;flex-wrap:wrap;gap:8px">{chips}</div>
     </div>"""
+
+
+def _sparkline_svg(
+    values: list[float],
+    color: str,
+    grad_id: str,
+    w: int = 500,
+    h: int = 52,
+    warn_pct: float | None = 75.0,
+    crit_pct: float | None = 90.0,
+) -> str:
+    """Render an SVG sparkline for a metric history list (oldest → newest)."""
+    if len(values) < 2:
+        return f'<svg viewBox="0 0 {w} {h}" style="width:100%;height:{h}px"><text x="50%" y="50%" fill="#94a3b8" font-size="10" text-anchor="middle">no data</text></svg>'
+    mn, mx = min(values), max(values)
+    scale_min = min(mn, 0.0)
+    scale_max = max(mx, 100.0) if mx <= 100 else mx * 1.05
+    rng = scale_max - scale_min if scale_max != scale_min else 1.0
+    pad_top, pad_bot = 6, 4
+
+    def _y(v: float) -> float:
+        return round(h - pad_bot - (v - scale_min) / rng * (h - pad_top - pad_bot), 1)
+
+    pts = [f"{round(i / (len(values) - 1) * w, 1)},{_y(v)}" for i, v in enumerate(values)]
+    poly = " ".join(pts)
+    last_x, last_y = round(w, 1), _y(values[-1])
+
+    threshold_lines = ""
+    if warn_pct is not None and scale_max >= warn_pct and warn_pct > scale_min:
+        wy = _y(warn_pct)
+        threshold_lines += (
+            f'<line x1="0" y1="{wy}" x2="{w}" y2="{wy}" '
+            f'stroke="#d97706" stroke-width="0.8" stroke-dasharray="4 3" opacity="0.7"/>'
+        )
+    if crit_pct is not None and scale_max >= crit_pct and crit_pct > scale_min:
+        cy = _y(crit_pct)
+        threshold_lines += (
+            f'<line x1="0" y1="{cy}" x2="{w}" y2="{cy}" '
+            f'stroke="#dc2626" stroke-width="0.8" stroke-dasharray="4 3" opacity="0.7"/>'
+        )
+
+    return (
+        f'<svg viewBox="0 0 {w} {h}" preserveAspectRatio="none" '
+        f'style="width:100%;height:{h}px;display:block">'
+        f'<defs><linearGradient id="{grad_id}" x1="0" y1="0" x2="0" y2="1">'
+        f'<stop offset="0%" stop-color="{color}" stop-opacity="0.22"/>'
+        f'<stop offset="100%" stop-color="{color}" stop-opacity="0"/>'
+        f'</linearGradient></defs>'
+        f'{threshold_lines}'
+        f'<polyline points="{poly} {w},{h - pad_bot} 0,{h - pad_bot}" fill="url(#{grad_id})" stroke="none"/>'
+        f'<polyline points="{poly}" fill="none" stroke="{color}" stroke-width="1.75" '
+        f'stroke-linejoin="round" stroke-linecap="round"/>'
+        f'<circle cx="{last_x}" cy="{last_y}" r="2.5" fill="{color}"/>'
+        f'</svg>'
+    )
+
+
+def _mini_sparkline_svg(values: list[float], color: str, grad_id: str) -> str:
+    """Tiny 80×18 inline sparkline for the disk partition rows."""
+    if len(values) < 2:
+        return ""
+    mn, mx = min(values), max(values)
+    rng = max(mx - mn, 1.0)
+    w, h = 80, 18
+    pts = [f"{round(i / (len(values) - 1) * w, 1)},{round(h - (v - mn) / rng * (h - 4) - 2, 1)}" for i, v in enumerate(values)]
+    poly = " ".join(pts)
+    return (
+        f'<svg viewBox="0 0 {w} {h}" preserveAspectRatio="none" width="{w}" height="{h}">'
+        f'<defs><linearGradient id="{grad_id}" x1="0" y1="0" x2="0" y2="1">'
+        f'<stop offset="0%" stop-color="{color}" stop-opacity="0.3"/>'
+        f'<stop offset="100%" stop-color="{color}" stop-opacity="0"/>'
+        f'</linearGradient></defs>'
+        f'<polyline points="{poly} {w},{h} 0,{h}" fill="url(#{grad_id})" stroke="none"/>'
+        f'<polyline points="{poly}" fill="none" stroke="{color}" stroke-width="1.2" '
+        f'stroke-linejoin="round" stroke-linecap="round"/>'
+        f'</svg>'
+    )
+
+
+def _vm_resource_trends(hostname: str, cpu: int, mem: int) -> str:
+    """Render a Metricbeat-style Resource Trends card for a VM detail page."""
+    ev = VM_EVIDENCE.get(hostname, {})
+    cpu_24h   = list(ev.get("cpu_history",    [float(cpu)] * 24))
+    mem_24h   = list(ev.get("mem_history",    [float(mem)] * 24))
+    cpu_7d    = list(ev.get("cpu_history_7d", [float(cpu)] * 42))
+    mem_7d    = list(ev.get("mem_history_7d", [float(mem)] * 42))
+    # Pin endpoint to live current so sparkline always lands at the displayed value
+    if cpu_24h: cpu_24h[-1] = float(cpu)
+    if mem_24h: mem_24h[-1] = float(mem)
+    if cpu_7d:  cpu_7d[-1]  = float(cpu)
+    if mem_7d:  mem_7d[-1]  = float(mem)
+
+    def _stats(vals: list[float]) -> tuple[float, float, float]:
+        return min(vals), sum(vals) / len(vals), max(vals)
+
+    cpu_24_min, cpu_24_avg, cpu_24_max = _stats(cpu_24h)
+    mem_24_min, mem_24_avg, mem_24_max = _stats(mem_24h)
+    cpu_7d_min, cpu_7d_avg, cpu_7d_max = _stats(cpu_7d)
+    mem_7d_min, mem_7d_avg, mem_7d_max = _stats(mem_7d)
+
+    cpu_color = "#dc2626" if cpu >= 90 else "#d97706" if cpu >= 75 else "#0891b2"
+    mem_color = "#dc2626" if mem >= 90 else "#d97706" if mem >= 75 else "#7c3aed"
+
+    # 24h x-axis: 6-hour marks (0, 6, 12, 18, now)
+    x_axis_24h = '<div class="spark-x-axis"><span>-24h</span><span>-18h</span><span>-12h</span><span>-6h</span><span>now</span></div>'
+    x_axis_7d  = '<div class="spark-x-axis"><span>-7d</span><span>-5d</span><span>-3d</span><span>-1d</span><span>now</span></div>'
+
+    def _panel(label: str, current: int, color: str, gid24: str, gid7d: str,
+               h24: list[float], h7d: list[float],
+               mn24: float, av24: float, mx24: float,
+               mn7d: float, av7d: float, mx7d: float) -> str:
+        curr_style = f"color:{color}"
+        svg24 = _sparkline_svg(h24, color, gid24)
+        svg7d = _sparkline_svg(h7d, color, gid7d)
+        return f"""
+        <div class="vm-trend-panel">
+          <div class="vm-trend-label">{label}</div>
+          <div class="vm-trend-current-row">
+            <span class="vm-trend-current" style="{curr_style}">{current}%</span>
+            <span class="vm-trend-delta">current</span>
+          </div>
+          <div class="trend-view trend-24h">
+            <div class="vm-trend-svg-wrap">{svg24}</div>
+            {x_axis_24h}
+            <div class="spark-stats">
+              <span>min <span class="stat-v">{mn24:.0f}%</span></span>
+              <span>avg <span class="stat-v">{av24:.0f}%</span></span>
+              <span>max <span class="stat-v">{mx24:.0f}%</span></span>
+            </div>
+          </div>
+          <div class="trend-view trend-7d" style="display:none">
+            <div class="vm-trend-svg-wrap">{svg7d}</div>
+            {x_axis_7d}
+            <div class="spark-stats">
+              <span>min <span class="stat-v">{mn7d:.0f}%</span></span>
+              <span>avg <span class="stat-v">{av7d:.0f}%</span></span>
+              <span>max <span class="stat-v">{mx7d:.0f}%</span></span>
+            </div>
+          </div>
+        </div>"""
+
+    cpu_panel = _panel(
+        "CPU", cpu, cpu_color, "cpu24g", "cpu7dg",
+        cpu_24h, cpu_7d, cpu_24_min, cpu_24_avg, cpu_24_max,
+        cpu_7d_min, cpu_7d_avg, cpu_7d_max,
+    )
+    mem_panel = _panel(
+        "Memory", mem, mem_color, "mem24g", "mem7dg",
+        mem_24h, mem_7d, mem_24_min, mem_24_avg, mem_24_max,
+        mem_7d_min, mem_7d_avg, mem_7d_max,
+    )
+
+    toggle_js = """<script>
+function _setTrend(btn,view){
+  document.querySelectorAll('.trend-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  document.querySelectorAll('.trend-view').forEach(v=>v.style.display='none');
+  document.querySelectorAll('.trend-'+view).forEach(v=>v.style.display='');
+}
+</script>"""
+
+    return f"""
+    <div class="card vm-trends-card">
+      <div class="vm-trends-header">
+        <span class="section-title" style="font-size:1rem">Resource Trends</span>
+        <div class="vm-trends-toggle">
+          <button class="trend-btn active" onclick="_setTrend(this,'24h')">24h</button>
+          <button class="trend-btn" onclick="_setTrend(this,'7d')">7d</button>
+        </div>
+      </div>
+      <div class="vm-trends-grid">
+        {cpu_panel}
+        {mem_panel}
+      </div>
+    </div>
+    {toggle_js}"""
 
 
 def page_vm(hostname: str) -> str:
@@ -1465,6 +2486,7 @@ def page_vm(hostname: str) -> str:
           <td class="td-mono">{a['op']}</td>
         </tr>"""
 
+    _disk_hist = VM_EVIDENCE.get(hostname, {}).get("disk_history", {})
     disk_data = [
         ("/",     vm["disk"], f"{round(vm['disk']*50/100,1)} GB / 50 GB"),
         ("/var",  52,         "26.0 GB / 50 GB"),
@@ -1472,8 +2494,16 @@ def page_vm(hostname: str) -> str:
         ("/home", 23,         "11.5 GB / 50 GB"),
     ]
     disk_rows = ""
-    for path, pct, size in disk_data:
+    for di, (path, pct, size) in enumerate(disk_data):
         pct_color = "#d97706" if pct >= 75 else "#4f46e5" if pct >= 30 else "#16a34a"
+        hist = _disk_hist.get(path, [])
+        mini_svg = _mini_sparkline_svg(hist, pct_color, f"dk{di}g") if hist else ""
+        trend_delta = ""
+        if len(hist) >= 2:
+            delta = hist[-1] - hist[0]
+            if abs(delta) >= 1:
+                arrow = "↑" if delta > 0 else "↓"
+                trend_delta = f'<span class="disk-mini-stat">{arrow}{abs(delta):.0f}% 24h</span>'
         disk_rows += f"""
         <div class="disk-partition">
           <div class="disk-row">
@@ -1482,6 +2512,7 @@ def page_vm(hostname: str) -> str:
             <span class="disk-pct" style="color:{pct_color}">{pct}%</span>
             <span class="disk-size">{size}</span>
           </div>
+          {f'<div class="disk-mini-spark">{mini_svg}{trend_delta}</div>' if mini_svg else ''}
         </div>"""
 
     callout = ""
@@ -1538,6 +2569,7 @@ def page_vm(hostname: str) -> str:
         {callout}
       </div>
     </div>
+    {_vm_resource_trends(hostname, cpu, mem)}
     {pending_section}
     <div class="kpi-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:16px">
       <div class="card kpi-tile kpi-top-border" style="border-color:#d97706">
@@ -1584,8 +2616,16 @@ def page_audit() -> str:
         "warning": "audit-detail-warning",
         "pending": "audit-detail-pending",
     }
+    # Build rows: each event is two <tr>s — the visible summary + a hidden evidence row
     rows = ""
+    actions_seen: set[str] = set()
+    approvers_seen: set[str] = set()
     for i, e in enumerate(AUDIT_EVENTS):
+        ev = audit_evidence_for(i)
+        actions_seen.add(e["action"])
+        if "(none" not in ev["approver"] and "(n/a" not in ev["approver"]:
+            approvers_seen.add(ev["approver"].split(" (")[0])
+        vm_env = next((v["env"] for v in VMS if v["hostname"] == e["vm"]), "")
         alt = ' row-alt' if i % 2 == 1 else ''
         status_cls = " row-failed" if e["status"] == "failed" else (" row-pending" if e["status"] == "pending" else "")
         det_cls = _detail_cls.get(e["status"], "audit-detail-ok")
@@ -1593,58 +2633,210 @@ def page_audit() -> str:
             f'<div class="audit-detail {det_cls}">↳ {e["detail"]}</div>'
             if e.get("detail") else ""
         )
-        rows += f"""<tr class="{alt}{status_cls}">
-          <td class="td-ts">{e['ts']}</td>
-          <td class="td-ts">{e['batch']}</td>
-          <td><a href="/vm/{e['vm']}" class="td-host">{e['vm']}</a></td>
+        # data-* attributes drive client-side filtering
+        rows += f"""<tr class="audit-row{alt}{status_cls}"
+                       data-env="{vm_env}" data-batch="{e['batch']}"
+                       data-vm="{e['vm']}" data-action="{e['action']}"
+                       data-status="{e['status']}"
+                       onclick="_toggleAuditRow(this)">
+          <td class="td-ts">
+            <span style="display:inline-block;width:12px;color:#94a3b8">▸</span>
+            {e['ts']}
+          </td>
+          <td class="td-mono"><a href="/batches#{e['batch']}" class="td-link" onclick="event.stopPropagation()">{e['batch']}</a></td>
+          <td><a href="/vm/{e['vm']}" class="td-host" onclick="event.stopPropagation()">{e['vm']}</a></td>
           <td>
             <div>{e['action']}</div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:0.625rem;color:#94a3b8;margin-top:2px">
+              event {ev['event_id']} · action {ev['action_id']}
+            </div>
             {detail_html}
           </td>
           <td>{audit_badge(e['status'])}</td>
           <td class="td-right">{e['duration']}</td>
-          <td class="td-mono">{e['op']}</td>
+          <td class="td-mono" style="font-size:0.6875rem;color:#3730a3">{ev['approver'].split(' (')[0]}</td>
+        </tr>
+        <tr class="audit-row-detail" style="display:none">
+          <td colspan="7" style="padding:0">
+            <div class="audit-row-expand">
+              <span class="k">Event ID</span><span class="v">{ev['event_id']}</span>
+              <span class="k">Action ID</span><span class="v">{ev['action_id']}</span>
+              <span class="k">Plan Hash</span><span class="v">{ev['plan_hash']}</span>
+              <span class="k">Approver</span><span class="v">{ev['approver']}</span>
+              <span class="k">Approval Source</span><span class="v">{ev['approval_source']}</span>
+              <span class="k">Before State</span><span class="v before">{ev['before'] or '—'}</span>
+              <span class="k">After State</span><span class="v {'after' if e['status']=='ok' else 'failed' if e['status']=='failed' else ''}">{ev['after'] or '—'}</span>
+              <span class="k">Command Executed</span><span class="v">{ev['command'] or '—'}</span>
+              <span class="k">Stdout (summary)</span><span class="v">{ev['stdout_summary'] or '—'}</span>
+              <span class="k">Stderr (summary)</span><span class="v {'failed' if ev['stderr_summary'] else ''}">{ev['stderr_summary'] or '—'}</span>
+              <span class="k">Rollback Status</span><span class="v {'failed' if 'fail' in ev['rollback_status'].lower() else 'after' if 'completed' in ev['rollback_status'].lower() else ''}">{ev['rollback_status'] or '—'}</span>
+              <span class="k">&nbsp;</span>
+              <span class="v">
+                <a href="/batches#{e['batch']}" class="deeplink-chip dl-batch" onclick="event.stopPropagation()">▶ Batch {e['batch']}</a>
+                <a href="/vm/{e['vm']}" class="deeplink-chip dl-vm" onclick="event.stopPropagation()">▶ VM {e['vm']}</a>
+                <a href="/approvals" class="deeplink-chip dl-audit" onclick="event.stopPropagation()">▶ Open approvals queue</a>
+              </span>
+            </div>
+          </td>
         </tr>"""
+
+    # Filter dropdown values (real, derived from data)
+    env_opts = "".join(f'<option value="{en}">{en}</option>' for en in sorted({v["env"] for v in VMS}))
+    batch_opts = "".join(f'<option value="{b["id"]}">{b["id"]}</option>' for b in BATCHES)
+    vm_opts = "".join(f'<option value="{v["hostname"]}">{v["hostname"]}</option>' for v in VMS)
+    action_opts = "".join(f'<option value="{a}">{a}</option>' for a in sorted(actions_seen))
+    approver_opts = "".join(f'<option value="{a}">{a}</option>' for a in sorted(approvers_seen))
+
+    failures = sum(1 for e in AUDIT_EVENTS if e["status"] == "failed")
+    pendings = sum(1 for e in AUDIT_EVENTS if e["status"] == "pending")
+
+    js = """
+    <script>
+      function _toggleAuditRow(tr) {
+        const det = tr.nextElementSibling;
+        if (!det || !det.classList.contains('audit-row-detail')) return;
+        const arrow = tr.querySelector('td span');
+        if (det.style.display === 'none') {
+          det.style.display = '';
+          if (arrow) arrow.textContent = '▾';
+        } else {
+          det.style.display = 'none';
+          if (arrow) arrow.textContent = '▸';
+        }
+      }
+      function _applyAuditFilters() {
+        const env    = document.getElementById('flt-env').value;
+        const batch  = document.getElementById('flt-batch').value;
+        const vm     = document.getElementById('flt-vm').value;
+        const action = document.getElementById('flt-action').value;
+        const status = document.getElementById('flt-status').value;
+        let shown = 0, total = 0;
+        document.querySelectorAll('tr.audit-row').forEach(tr => {
+          total++;
+          const okEnv    = !env    || tr.dataset.env    === env;
+          const okBatch  = !batch  || tr.dataset.batch  === batch;
+          const okVm     = !vm     || tr.dataset.vm     === vm;
+          const okAction = !action || tr.dataset.action === action;
+          const okStatus = !status || tr.dataset.status === status;
+          const show = okEnv && okBatch && okVm && okAction && okStatus;
+          tr.style.display = show ? '' : 'none';
+          if (tr.nextElementSibling && tr.nextElementSibling.classList.contains('audit-row-detail') && !show) {
+            tr.nextElementSibling.style.display = 'none';
+          }
+          if (show) shown++;
+        });
+        document.getElementById('flt-shown').textContent = shown + ' / ' + total;
+      }
+      function _clearAuditFilters() {
+        ['flt-env','flt-batch','flt-vm','flt-action','flt-status'].forEach(id => {
+          document.getElementById(id).value = '';
+        });
+        _applyAuditFilters();
+      }
+      function _exportAudit(fmt) {
+        const visible = [];
+        document.querySelectorAll('tr.audit-row').forEach(tr => {
+          if (tr.style.display === 'none') return;
+          const cells = tr.querySelectorAll('td');
+          visible.push({
+            ts: cells[0].innerText.replace(/^[▸▾]\\s*/, '').trim(),
+            batch: cells[1].innerText.trim(),
+            vm: cells[2].innerText.trim(),
+            action: cells[3].innerText.trim().split('\\n')[0],
+            status: cells[4].innerText.trim(),
+            duration: cells[5].innerText.trim(),
+            approver: cells[6].innerText.trim(),
+            env: tr.dataset.env,
+          });
+        });
+        let blob, name;
+        if (fmt === 'json') {
+          blob = new Blob([JSON.stringify(visible, null, 2)], {type: 'application/json'});
+          name = 'errander-audit.json';
+        } else {
+          const header = 'timestamp,batch_id,vm,action,status,duration,approver,env\\n';
+          const csv = header + visible.map(r =>
+            [r.ts, r.batch, r.vm, r.action, r.status, r.duration, r.approver, r.env]
+              .map(s => '"' + (s||'').replace(/"/g,'""') + '"').join(',')
+          ).join('\\n');
+          blob = new Blob([csv], {type: 'text/csv'});
+          name = 'errander-audit.csv';
+        }
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = name; a.click();
+        URL.revokeObjectURL(url);
+      }
+    </script>"""
 
     return f"""
     <div class="section-hdr">
       <div>
         <div class="section-title">Audit Log</div>
-        <div class="section-sub">Complete before-and-after record of every agent action &nbsp;·&nbsp; immutable &nbsp;·&nbsp; strict-mode enforced</div>
+        <div class="section-sub">Complete before-and-after record of every agent action &nbsp;·&nbsp; immutable &nbsp;·&nbsp; strict-mode enforced &nbsp;·&nbsp; click any row to expand evidence</div>
       </div>
-      <a href="#" class="btn-outline btn-outline-indigo">EXPORT CSV</a>
     </div>
-    <div class="card" style="padding:16px;margin-bottom:16px">
-      <div class="filter-bar">
-        <input class="search-input" type="text" placeholder="Search hostname, batch ID, action, detail..." />
-        <select class="select-input"><option>All VMs</option>{"".join(f"<option>{v['hostname']}</option>" for v in VMS)}</select>
-        <select class="select-input"><option>All Actions</option><option>OS Patching</option><option>Log Rotation</option><option>Docker Prune</option><option>Disk Cleanup</option><option>Pre-Validation</option></select>
-        <select class="select-input"><option>All Status</option><option>OK</option><option>Failed</option><option>Pending</option><option>Warning</option></select>
-        <select class="select-input"><option>All Environments</option><option>PROD</option><option>STAGING</option><option>DEV</option></select>
-        <a href="#" class="btn-primary">APPLY</a>
+    <div class="audit-toolbar">
+      <div class="audit-filter">
+        <label>Env</label>
+        <select id="flt-env" onchange="_applyAuditFilters()">
+          <option value="">All</option>{env_opts}
+        </select>
+      </div>
+      <div class="audit-filter">
+        <label>Batch</label>
+        <select id="flt-batch" onchange="_applyAuditFilters()">
+          <option value="">All</option>{batch_opts}
+        </select>
+      </div>
+      <div class="audit-filter">
+        <label>VM</label>
+        <select id="flt-vm" onchange="_applyAuditFilters()">
+          <option value="">All</option>{vm_opts}
+        </select>
+      </div>
+      <div class="audit-filter">
+        <label>Action</label>
+        <select id="flt-action" onchange="_applyAuditFilters()">
+          <option value="">All</option>{action_opts}
+        </select>
+      </div>
+      <div class="audit-filter">
+        <label>Status</label>
+        <select id="flt-status" onchange="_applyAuditFilters()">
+          <option value="">All</option>
+          <option value="ok">OK</option>
+          <option value="warning">Warning</option>
+          <option value="failed">Failed</option>
+          <option value="pending">Pending</option>
+        </select>
+      </div>
+      <div class="audit-filter">
+        <label>&nbsp;</label>
+        <a href="#" onclick="event.preventDefault();_clearAuditFilters()" class="audit-export"><span class="csv" style="background:#475569">CLEAR</span></a>
+      </div>
+      <div class="audit-export">
+        <a href="#" class="csv"  onclick="event.preventDefault();_exportAudit('csv')">⤓ EXPORT CSV</a>
+        <a href="#" class="json" onclick="event.preventDefault();_exportAudit('json')">⤓ EXPORT JSON</a>
       </div>
     </div>
     <div class="results-bar">
-      <strong>247 events</strong> &nbsp;·&nbsp; last 7 days &nbsp;·&nbsp; all environments &nbsp;·&nbsp;
-      <span style="color:#dc2626;font-weight:600">2 failures</span> &nbsp;·&nbsp;
-      <span style="color:#7c3aed;font-weight:600">1 pending</span>
-      &nbsp;&nbsp;<a href="#" class="td-link" style="font-size:0.8125rem">Clear Filters</a>
+      <strong><span id="flt-shown">{len(AUDIT_EVENTS)} / {len(AUDIT_EVENTS)}</span> events</strong> &nbsp;·&nbsp;
+      <span style="color:#dc2626;font-weight:600">{failures} failures</span> &nbsp;·&nbsp;
+      <span style="color:#7c3aed;font-weight:600">{pendings} pending</span> &nbsp;·&nbsp;
+      <span style="color:#64748b">Filters above narrow client-side · Export respects current filter</span>
     </div>
     <div class="card table-card">
       <table class="data-table">
         <thead><tr>
           <th>TIMESTAMP</th><th>BATCH ID</th><th>VM</th>
-          <th>ACTION &amp; DETAIL</th>
-          <th>STATUS</th><th class="r">DURATION</th><th>OPERATOR</th>
+          <th>ACTION &amp; IDS &amp; DETAIL</th>
+          <th>STATUS</th><th class="r">DURATION</th><th>APPROVER</th>
         </tr></thead>
         <tbody>{rows}</tbody>
       </table>
-      <div class="pagination">
-        <a href="#" class="pg-btn">← Prev</a>
-        <span class="pg-current">Page 1 of 21</span>
-        <a href="#" class="pg-btn">Next →</a>
-      </div>
-    </div>"""
+    </div>
+    {js}"""
 
 
 def page_batches() -> str:
@@ -2145,24 +3337,152 @@ def page_admin() -> str:
       <div class="override-rows">{override_rows}</div>
     </div>"""
 
-    # Danger zone
-    danger_card = """
+    # Danger zone with per-action typed-confirm friction
+    danger_actions = [
+        {
+            "key":   "flush-deferred",
+            "label": "FLUSH DEFERRED QUEUE",
+            "color": "#d97706",
+            "role":  "sre-lead",
+            "type":  "phrase",
+            "phrase":"FLUSH DEFERRED QUEUE",
+            "audit_event": "admin.deferred_queue.flush",
+            "desc":  "Drops all stored deferred plan artifacts. Operators must re-run plan + re-approve for any VM whose window has not yet opened.",
+        },
+        {
+            "key":   "clear-locks",
+            "label": "CLEAR ALL LOCKS",
+            "color": "#dc2626",
+            "role":  "sre-lead",
+            "type":  "phrase",
+            "phrase":"CLEAR ALL LOCKS",
+            "audit_event": "admin.locks.force_clear_all",
+            "desc":  "Removes every per-VM file lock. Use only when a previous agent process died without releasing its locks. Concurrent execution is unsafe.",
+        },
+        {
+            "key":   "force-rollback",
+            "label": "FORCE ROLLBACK ALL VMs",
+            "color": "#7c3aed",
+            "role":  "sre-lead + change-mgmt",
+            "type":  "phrase",
+            "phrase":"FORCE ROLLBACK",
+            "audit_event": "admin.rollback.force_all",
+            "desc":  "Triggers per-action rollback strategy on every VM in the latest batch. Destructive: re-pulls images, downgrades pinned packages.",
+        },
+        {
+            "key":   "truncate-audit",
+            "label": "TRUNCATE AUDIT LOG",
+            "color": "#0f172a",
+            "role":  "DBA only (requires offline DBA token)",
+            "type":  "blocked",
+            "phrase":"",
+            "audit_event": "(blocked in UI — DBA-only path)",
+            "desc":  "Permanently deletes the audit history. The UI does not expose this action — it is blocked. The DBA token path lives outside the agent and writes a tamper-evidence event before truncation.",
+        },
+    ]
+
+    rows = ""
+    for i, d in enumerate(danger_actions):
+        if d["type"] == "blocked":
+            cta = f'<button class="btn-danger" style="background:{d["color"]};opacity:0.4;cursor:not-allowed" disabled title="Blocked in UI — DBA-only path">{d["label"]} · BLOCKED</button>'
+        else:
+            cta = f'<button class="btn-danger" style="background:{d["color"]}" onclick="_showDanger({i})">{d["label"]}</button>'
+        rows += f"""
+        <div class="danger-row" style="display:flex;gap:14px;align-items:flex-start;padding:12px 0;border-top:1px solid #f1f5f9">
+          <div style="flex:1;min-width:0">
+            <div style="font-family:'Space Grotesk',sans-serif;font-weight:700;color:#1e1b4b;font-size:0.875rem">{d['label']}</div>
+            <div style="font-family:'Inter',sans-serif;color:#475569;font-size:0.8125rem;margin-top:4px;line-height:1.4">{d['desc']}</div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:0.6875rem;color:#94a3b8;margin-top:6px">
+              ROLE: {d['role']} &nbsp;·&nbsp; AUDIT EVENT: <span style="color:#3730a3">{d['audit_event']}</span>
+            </div>
+          </div>
+          <div style="flex-shrink:0">{cta}</div>
+        </div>"""
+
+    # Serialize danger actions for JS
+    import json as _json
+    danger_js = _json.dumps(danger_actions)
+
+    danger_card = f"""
     <div class="card danger-zone-card">
       <div class="danger-zone-hdr">
         <span style="font-size:1.1rem">⚠</span>
         <span class="danger-zone-title">Danger Zone</span>
       </div>
       <div class="danger-zone-sub">
-        These actions are destructive and may be irreversible.
-        Confirm before executing in a production environment.
+        Every action below is destructive, audited, and gated by typed confirmation + reason.
+        The UI is a forward — the destructive call runs via the same audit-writing path as the CLI.
       </div>
-      <div class="danger-actions">
-        <a href="#" class="btn-danger" style="background:#d97706">FLUSH DEFERRED QUEUE</a>
-        <a href="#" class="btn-danger" style="background:#dc2626">CLEAR ALL LOCKS</a>
-        <a href="#" class="btn-danger" style="background:#7c3aed">FORCE ROLLBACK ALL VMs</a>
-        <a href="#" class="btn-danger" style="background:#0f172a">TRUNCATE AUDIT LOG</a>
-      </div>
+      {rows}
     </div>"""
+
+    danger_modal = """
+    <div class="confirm-modal" id="danger-modal" onclick="if(event.target===this)_hideDanger()">
+      <div class="confirm-card">
+        <div class="confirm-hdr danger" id="dg-hdr">
+          <span style="font-size:1.1rem">⚠</span>
+          <span><span id="dg-label">DESTRUCTIVE ACTION</span></span>
+        </div>
+        <div class="confirm-body">
+          <p id="dg-desc"></p>
+          <div class="confirm-evidence">
+            Audit event preview: <span id="dg-event" style="color:#3730a3"></span><br>
+            Required role: <span id="dg-role"></span>
+          </div>
+          <div class="confirm-field">
+            <label>Type the exact phrase: <span id="dg-phrase-expected"
+              style="color:#3730a3;font-weight:700;letter-spacing:0.05em"></span></label>
+            <input id="dg-phrase-input" type="text" autocomplete="off" oninput="_dgCheck()">
+            <div id="dg-match" style="font-family:'JetBrains Mono',monospace;font-size:0.6875rem;margin-top:4px"></div>
+          </div>
+          <div class="confirm-field">
+            <label>Reason (≥ 20 chars, written to audit)</label>
+            <textarea id="dg-reason" rows="3" oninput="_dgCheck()"></textarea>
+          </div>
+        </div>
+        <div class="confirm-foot">
+          <button class="btn-cancel" onclick="_hideDanger()">Cancel</button>
+          <button class="btn-go danger" id="dg-go" disabled onclick="_dgGo()">Execute destructive action</button>
+        </div>
+      </div>
+    </div>
+    <script>
+      const DANGER_ACTIONS = """ + danger_js + """;
+      function _showDanger(i) {
+        const d = DANGER_ACTIONS[i];
+        document.getElementById('dg-label').textContent = d.label;
+        document.getElementById('dg-desc').textContent = d.desc;
+        document.getElementById('dg-event').textContent = d.audit_event;
+        document.getElementById('dg-role').textContent = d.role;
+        document.getElementById('dg-phrase-expected').textContent = d.phrase;
+        document.getElementById('dg-phrase-input').value = '';
+        document.getElementById('dg-reason').value = '';
+        document.getElementById('dg-match').textContent = '';
+        document.getElementById('dg-go').disabled = true;
+        document.getElementById('danger-modal').classList.add('show');
+      }
+      function _hideDanger() { document.getElementById('danger-modal').classList.remove('show'); }
+      function _dgCheck() {
+        const expected = document.getElementById('dg-phrase-expected').textContent.trim();
+        const got = document.getElementById('dg-phrase-input').value.trim();
+        const reason = document.getElementById('dg-reason').value.trim();
+        const match = document.getElementById('dg-match');
+        const go = document.getElementById('dg-go');
+        const phraseOk = (got === expected);
+        const reasonOk = (reason.length >= 20);
+        if (got.length === 0) { match.textContent = ''; match.className = ''; }
+        else if (!phraseOk)   { match.textContent = '✕ phrase does not match'; match.className = 'mismatch'; }
+        else                  { match.textContent = '✓ phrase matches'; match.className = 'match'; }
+        go.disabled = !(phraseOk && reasonOk);
+      }
+      function _dgGo() {
+        const label = document.getElementById('dg-label').textContent;
+        const evt   = document.getElementById('dg-event').textContent;
+        alert('(demo) Would write audit event ' + evt + ' and execute: ' + label +
+              '.\\nIn live mode this calls the same CLI path with the typed reason attached.');
+        _hideDanger();
+      }
+    </script>"""
 
     return f"""
     <div class="section-hdr">
@@ -2172,13 +3492,20 @@ def page_admin() -> str:
       </div>
       <span class="badge badge-amber" style="font-size:0.75rem;padding:5px 12px">⚠ DRY RUN MODE ACTIVE</span>
     </div>
+    <div class="destructive-hdr">
+      <span style="font-size:1rem">⚠</span>
+      <span>DESTRUCTIVE — AUDITED</span>
+      <span class="pill">Every action below writes to the audit log before execution</span>
+      <span class="pill">Typed confirm + reason required</span>
+    </div>
     <div class="admin-top">
       {agent_card}
       {health_card}
     </div>
     {lock_card}
     {override_card}
-    {danger_card}"""
+    {danger_card}
+    {danger_modal}"""
 
 
 # ── Glossary data ────────────────────────────────────────────────────────────
@@ -2639,8 +3966,50 @@ def _plan_step_cls(tier: str) -> str:
     return {"HIGH": "plan-step plan-step-high", "MEDIUM": "plan-step plan-step-med"}.get(tier, "plan-step plan-step-low")
 
 
+def _layer_partition_html(ag: dict[str, Any]) -> str:
+    """Visual partition of Layer A (Operator Assistant, LLM-driven, advisory)
+    and Layer B (Safe Execution, deterministic, audited) per AI Safety
+    Invariant in CLAUDE.md / docs/AI-ARCHITECTURE.md.
+    """
+    fallback = "active (template path)" if ag.get("llm_status") != "ok" else "armed (not triggered)"
+    return f"""
+    <div class="layer-partition">
+      <div class="layer-pane a">
+        <div class="layer-pane-hdr">Layer A — Operator Assistant</div>
+        <div class="layer-pane-sub">LLM-driven · advisory only · never executes infra changes</div>
+        <div class="layer-pane-rows">
+          <div class="layer-pane-row"><span class="lbl">Endpoint</span><span class="val">{ag.get('llm_endpoint', '—')}</span></div>
+          <div class="layer-pane-row"><span class="lbl">Model</span><span class="val">{ag.get('llm_model', '—')}</span></div>
+          <div class="layer-pane-row"><span class="lbl">Latency p50</span><span class="val">{ag.get('llm_latency_ms', '—')} ms</span></div>
+          <div class="layer-pane-row"><span class="lbl">Latency p95</span><span class="val">~{int(ag.get('llm_latency_ms', 50) * 2.4)} ms</span></div>
+          <div class="layer-pane-row"><span class="lbl">Fallback (template)</span><span class="val">{fallback}</span></div>
+          <div class="layer-pane-row"><span class="lbl">Tool/MCP calls</span><span class="val">none in execution path</span></div>
+        </div>
+      </div>
+      <div class="layer-divider">⚠ SAFETY BOUNDARY · NO LLM PAST THIS LINE ⚠</div>
+      <div class="layer-pane b">
+        <div class="layer-pane-hdr">Layer B — Safe Execution</div>
+        <div class="layer-pane-sub">Deterministic Python · audited · approval-gated · rollback-aware</div>
+        <div class="layer-pane-rows">
+          <div class="layer-pane-row"><span class="lbl">APScheduler</span><span class="val">{ag.get('scheduler', '—')}</span></div>
+          <div class="layer-pane-row"><span class="lbl">Last batch</span><span class="val">{ag.get('last_batch_id', '—')}</span></div>
+          <div class="layer-pane-row"><span class="lbl">Next batch</span><span class="val">{ag.get('next_run', '—')}</span></div>
+          <div class="layer-pane-row"><span class="lbl">SSH pool</span><span class="val">11 hosts · key-auth · no passwords</span></div>
+          <div class="layer-pane-row"><span class="lbl">Audit DB</span><span class="val">SQLite · strict mode · 0 write failures</span></div>
+          <div class="layer-pane-row"><span class="lbl">Slack poll</span><span class="val">outbound only · 30s cadence</span></div>
+        </div>
+      </div>
+    </div>
+    <div style="font-family:'JetBrains Mono',monospace;font-size:0.6875rem;color:#94a3b8;margin:-4px 0 14px;padding:0 4px">
+      AI Safety Invariant: Layer A may investigate and recommend. Layer B alone may execute,
+      and only through deterministic, approved, audited workflows.
+    </div>"""
+
+
 def page_agent() -> str:
     ag = AGENT_STATUS
+
+    layer_partition = _layer_partition_html(ag)
 
     # ── 1. Status strip ──────────────────────────────────────────────────────
     state_color = "#16a34a" if ag["state"] == "IDLE" else "#4f46e5"
@@ -2975,6 +4344,10 @@ def page_agent() -> str:
         <div class="section-sub">LangGraph execution trace · LLM decisions · scheduler · probe · deferred queue</div>
       </div>
     </div>
+    <div style="font-family:'Space Grotesk',sans-serif;font-size:0.875rem;font-weight:700;color:#0f172a;margin-bottom:8px">
+      AI Safety Architecture — Layer A vs Layer B
+    </div>
+    {layer_partition}
     {status_strip}
     <div style="font-family:'Space Grotesk',sans-serif;font-size:0.875rem;font-weight:700;color:#0f172a;margin-bottom:12px">
       Last Batch Execution Trace

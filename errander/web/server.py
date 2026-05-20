@@ -394,25 +394,43 @@ body { font-family: 'Inter', system-ui, sans-serif; background: #f0f2ff; color: 
 @media (max-width: 1100px) { .vm-grid { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 900px)  { .kpi-grid { grid-template-columns: repeat(2, 1fr); } .detail-top { grid-template-columns: 1fr; } }
 /* ── Mobile (≤768px) — hide sidebar, full-width shell, wrap tables ── */
+html, body { max-width: 100vw; overflow-x: hidden; }
 @media (max-width: 768px) {
   .sidebar { display: none; }
-  .shell { margin-left: 0; }
-  .topnav { padding: 0 12px; }
+  .shell { margin-left: 0; max-width: 100vw; overflow-x: hidden; }
+  .topnav { padding: 0 12px; flex-wrap: wrap; height: auto; min-height: 52px; }
   .topnav-left { gap: 8px; }
-  .topnav-right { gap: 8px; }
-  .page-content { padding: 12px; }
-  .data-table { font-size: 0.75rem; }
-  .data-table th, .data-table td { padding: 8px 8px; }
-  .table-card { overflow-x: auto; }
-  .card { overflow-x: auto; }
+  .topnav-right { gap: 6px; flex-wrap: wrap; }
+  .topnav-right .btn, .topnav-right a { font-size: 0.7rem; padding: 4px 8px; }
+  .mode-banner { font-size: 0.65rem; flex-wrap: wrap; gap: 4px; padding: 4px 12px; }
+  .page-content { padding: 10px; max-width: 100%; box-sizing: border-box; }
+  .card { overflow-x: auto; max-width: 100%; box-sizing: border-box; }
+  .data-table { font-size: 0.7rem; min-width: 480px; }
+  .data-table th, .data-table td { padding: 6px 8px; }
+  .table-card { overflow-x: auto; max-width: 100%; }
   .kpi-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+  .vm-grid { grid-template-columns: 1fr !important; }
   .filter-bar { flex-wrap: wrap; gap: 8px; }
-  .filter-bar .search-input { width: 100%; }
+  .filter-bar .search-input, .filter-bar select { width: 100%; box-sizing: border-box; }
   .section-hdr { flex-direction: column; align-items: flex-start; gap: 10px; }
+  .section-hdr .btn { width: 100%; text-align: center; box-sizing: border-box; }
   .detail-top { grid-template-columns: 1fr; }
   .settings-grid { grid-template-columns: 1fr; }
   .admin-top { grid-template-columns: 1fr; }
   .inv-kpi { grid-template-columns: repeat(2, 1fr); }
+  .evidence-grid { grid-template-columns: 1fr !important; }
+  .layer-partition { flex-direction: column; }
+  .layer-a, .layer-b { min-width: 0; width: 100%; }
+  .layer-divider { width: 100%; height: 2px; margin: 8px 0; }
+  .deeplink-chip { font-size: 0.65rem; padding: 2px 6px; }
+  .countdown-big { font-size: 2rem; }
+  .confirm-modal-box { width: 95vw; max-width: 95vw; box-sizing: border-box; padding: 16px; }
+  .confirm-modal-box input { width: 100%; box-sizing: border-box; }
+  .approval-card { padding: 12px; }
+  .agent-status-grid { grid-template-columns: 1fr !important; }
+  .two-col-grid { grid-template-columns: 1fr !important; }
+  .gloss-grid { grid-template-columns: 1fr !important; }
+  pre, code { font-size: 0.65rem; overflow-x: auto; max-width: 100%; }
 }
 
 /* ── Sparkline placeholder ── */
@@ -2184,8 +2202,10 @@ def page_approvals() -> str:
         # JS-safe identifiers for the modal
         js_id = a["id"]; js_batch = ev.get("batch_id", ""); js_action = a["action"]; js_host = a["hostname"]
 
+        _action_slug = a["action"].lower().replace(" ", "_")
+        _risk_slug = "high" if a["tier"] == "HIGH RISK" else "medium"
         cards += f"""
-        <div class="card appr-card" id="appr-{a['id']}">
+        <div class="card appr-card approval-card" id="appr-{a['id']}" data-action-type="{_action_slug}" data-risk="{_risk_slug}">
           <div class="appr-band" style="background: linear-gradient(135deg, {a['header_color']}, {a['header_color']}cc)">
             <span class="appr-band-title">{a['action']}</span>
             <span class="appr-band-host">{a['hostname']}</span>
@@ -2264,17 +2284,30 @@ def page_approvals() -> str:
         <div class="section-title">Pending Approval</div>
         <div class="section-sub">{len(APPROVALS)} actions require your decision before the agent can proceed &nbsp;·&nbsp; auto-reject at the countdown</div>
       </div>
-      <div class="filter-chips">
-        <a href="#" class="chip active">All</a>
-        <a href="#" class="chip">High Risk</a>
-        <a href="#" class="chip">Service Restart</a>
-        <a href="#" class="chip">OS Patching</a>
+      <div class="filter-chips" id="appr-chips">
+        <a href="#" class="chip active" onclick="event.preventDefault();_apprFilter(this,'all')">All</a>
+        <a href="#" class="chip" onclick="event.preventDefault();_apprFilter(this,'high_risk')">High Risk</a>
+        <a href="#" class="chip" onclick="event.preventDefault();_apprFilter(this,'service_restart')">Service Restart</a>
+        <a href="#" class="chip" onclick="event.preventDefault();_apprFilter(this,'os_patching')">OS Patching</a>
       </div>
     </div>
     {cards}
     {resolved}
     {modal}
-    {_appr_confirm_modal_js()}"""
+    {_appr_confirm_modal_js()}
+    <script>
+    function _apprFilter(el, kind) {{
+      document.querySelectorAll('#appr-chips .chip').forEach(c => c.classList.remove('active'));
+      el.classList.add('active');
+      document.querySelectorAll('.approval-card').forEach(card => {{
+        var show = kind === 'all'
+          || (kind === 'high_risk' && card.dataset.risk === 'high')
+          || (kind === 'service_restart' && card.dataset.actionType === 'service_restart')
+          || (kind === 'os_patching' && card.dataset.actionType === 'os_patching');
+        card.style.display = show ? '' : 'none';
+      }});
+    }}
+    </script>"""
 
 
 def _vm_siblings_section(hostname: str, env: str) -> str:
@@ -3121,7 +3154,7 @@ def page_batches() -> str:
             + (f' &nbsp;<span style="color:#7c3aed;font-weight:600">{rolled_back} rolled back</span>' if rolled_back else "")
         )
 
-        rows += f"""<tr id="{b['id']}" class="batch-summary-row{alt}{failed_cls}" onclick="_toggleBatchRow(this)" style="cursor:pointer">
+        rows += f"""<tr id="{b['id']}" class="batch-row batch-summary-row{alt}{failed_cls}" onclick="_toggleBatchRow(this)" style="cursor:pointer" data-status="{b['status']}">
           <td>
             <span style="display:inline-block;width:14px;color:#94a3b8;font-size:0.75rem">▸</span>
             <span class="td-host" style="font-family:'JetBrains Mono',monospace">{b['id']}</span>
@@ -3160,18 +3193,18 @@ def page_batches() -> str:
         <div class="section-title">Batch History</div>
         <div class="section-sub">All maintenance runs — click any row for plan hash, approver, and outcome</div>
       </div>
-      <a href="#" class="btn-primary">+ SCHEDULE BATCH</a>
+      <button class="btn-primary" disabled title="Custom scheduling UI — v2 roadmap" style="opacity:0.45;cursor:not-allowed">+ SCHEDULE BATCH <span style="font-size:0.65rem;opacity:0.8">v2</span></button>
     </div>
     {kpis}
     {chart}
     <div class="card table-card">
       <div style="padding:14px 20px;display:flex;align-items:center;gap:10px;border-bottom:1px solid #f1f5f9">
         <span class="section-title" style="font-size:0.875rem">Batch Runs</span>
-        <div class="filter-chips" style="margin-left:8px">
-          <a href="#" class="chip active">All</a>
-          <a href="#" class="chip">Completed</a>
-          <a href="#" class="chip">Partial</a>
-          <a href="#" class="chip">Failed</a>
+        <div class="filter-chips" id="batch-chips" style="margin-left:8px">
+          <a href="#" class="chip active" onclick="event.preventDefault();_batchFilter(this,'all')">All</a>
+          <a href="#" class="chip" onclick="event.preventDefault();_batchFilter(this,'completed')">Completed</a>
+          <a href="#" class="chip" onclick="event.preventDefault();_batchFilter(this,'partial')">Partial</a>
+          <a href="#" class="chip" onclick="event.preventDefault();_batchFilter(this,'failed')">Failed</a>
         </div>
       </div>
       <table class="data-table">
@@ -3182,11 +3215,20 @@ def page_batches() -> str:
         </tr></thead>
         <tbody>{rows}</tbody>
       </table>
-      <div class="pagination">
-        <a href="#" class="pg-btn">← Prev</a>
-        <span class="pg-current">Page 1 of 4</span>
-        <a href="#" class="pg-btn">Next →</a>
-      </div>
+      <script>
+      function _batchFilter(el, status) {
+        document.querySelectorAll('#batch-chips .chip').forEach(c => c.classList.remove('active'));
+        el.classList.add('active');
+        document.querySelectorAll('.batch-row').forEach(row => {
+          var s = (row.dataset.status || '').toLowerCase();
+          var show = status === 'all'
+            || (status === 'completed' && s === 'completed')
+            || (status === 'partial' && (s === 'partial' || s.includes('partial')))
+            || (status === 'failed' && (s === 'failed' || s.includes('fail') || s === 'aborted'));
+          row.style.display = show ? '' : 'none';
+        });
+      }
+      </script>
     </div>
     <script>
     function _toggleBatchRow(tr) {{
@@ -3241,20 +3283,20 @@ def page_inventory() -> str:
     filters = """
     <div class="card" style="padding:14px 16px;margin-bottom:16px">
       <div class="filter-bar">
-        <input class="search-input" type="text" placeholder="Search hostname, IP, OS..."/>
-        <select class="select-input">
+        <input id="inv-search" class="search-input" type="text" placeholder="Search hostname, IP, OS..." oninput="_invFilter()"/>
+        <select id="inv-env" class="select-input" onchange="_invFilter()">
           <option>All Environments</option>
           <option>PROD</option><option>STAGING</option><option>DEV</option>
         </select>
-        <select class="select-input">
+        <select id="inv-os" class="select-input" onchange="_invFilter()">
           <option>All OS</option>
           <option>Ubuntu 22.04</option><option>RHEL 8.7</option><option>Debian 11</option>
         </select>
-        <select class="select-input">
+        <select id="inv-status" class="select-input" onchange="_invFilter()">
           <option>All Status</option>
           <option>OK</option><option>Warning</option><option>Failed</option><option>Pending</option>
         </select>
-        <a href="#" class="btn-primary">FILTER</a>
+        <button onclick="_invFilter()" class="btn-primary">FILTER</button>
       </div>
     </div>"""
 
@@ -3267,7 +3309,7 @@ def page_inventory() -> str:
         win_str  = ve.get("window", "Tue/Thu 02:00–04:00")
         # shorten window for table cell
         win_short = win_str.split(" (")[0] if " (" in win_str else win_str
-        rows += f"""<tr class="{alt}{fcls}">
+        rows += f"""<tr class="inv-row{alt}{fcls}" data-host="{vm['hostname']}" data-ip="{vm['ip']}" data-os="{vm['os']}" data-env="{vm['env']}" data-status="{vm['status']}">
           <td><a href="/vm/{vm['hostname']}" class="td-host">{vm['hostname']}</a></td>
           <td class="td-mono">{vm['ip']}</td>
           <td>{os_tag(vm['os'])}</td>
@@ -3286,8 +3328,8 @@ def page_inventory() -> str:
         <div class="section-sub">{len(VMS)} hosts registered across {envs} environments</div>
       </div>
       <div style="display:flex;gap:8px">
-        <a href="#" class="btn-outline btn-outline-indigo">EXPORT</a>
-        <a href="#" class="btn-primary">+ ADD VM</a>
+        <button class="btn-outline btn-outline-indigo" disabled title="Inventory CSV export — v2 roadmap" style="opacity:0.45;cursor:not-allowed">EXPORT <span style="font-size:0.65rem">v2</span></button>
+        <button class="btn-primary" disabled title="Ad-hoc VM management — v2 roadmap" style="opacity:0.45;cursor:not-allowed">+ ADD VM <span style="font-size:0.65rem">v2</span></button>
       </div>
     </div>
     {kpis}
@@ -3301,7 +3343,24 @@ def page_inventory() -> str:
         <tbody>{rows}</tbody>
       </table>
     </div>
-    {_inventory_env_breakdown()}"""
+    {_inventory_env_breakdown()}
+    <script>
+    function _invFilter() {{
+      var q = (document.getElementById('inv-search').value || '').toLowerCase();
+      var env = document.getElementById('inv-env').value;
+      var os  = document.getElementById('inv-os').value;
+      var st  = document.getElementById('inv-status').value;
+      document.querySelectorAll('.inv-row').forEach(function(row) {{
+        var matchText = !q || (row.dataset.host||'').toLowerCase().includes(q)
+          || (row.dataset.ip||'').toLowerCase().includes(q)
+          || (row.dataset.os||'').toLowerCase().includes(q);
+        var matchEnv  = !env || env.startsWith('All') || (row.dataset.env||'') === env.toUpperCase();
+        var matchOs   = !os  || os.startsWith('All')  || (row.dataset.os||'').toLowerCase().includes(os.toLowerCase());
+        var matchSt   = !st  || st.startsWith('All')  || (row.dataset.status||'').toLowerCase() === st.toLowerCase();
+        row.style.display = (matchText && matchEnv && matchOs && matchSt) ? '' : 'none';
+      }});
+    }}
+    </script>"""
 
 
 _ENV_RESTARTABLE_UNITS: dict[str, list[str]] = {
@@ -3504,7 +3563,7 @@ def page_settings() -> str:
         <div class="section-title">Settings</div>
         <div class="section-sub">Current agent configuration — read-only (set via environment variables)</div>
       </div>
-      <a href="#" class="btn-outline btn-outline-indigo">VIEW DOCS</a>
+      <a href="/glossary" class="btn-outline btn-outline-indigo">VIEW DOCS</a>
     </div>
     <div class="settings-grid">{cards}</div>
     {note}
@@ -3542,8 +3601,11 @@ def page_admin() -> str:
         <span class="agent-row-val" style="color:#94a3b8">None</span>
       </div>
       <div class="admin-btns">
-        <a href="#" class="btn-run">▶ RUN BATCH NOW</a>
-        <a href="#" class="btn-warn-ol">⏸ PAUSE SCHEDULER</a>
+        <button class="btn-run" disabled title="Use CLI: errander --run-now --env &lt;env&gt;" style="opacity:0.45;cursor:not-allowed">▶ RUN BATCH NOW</button>
+        <button class="btn-warn-ol" disabled title="Use CLI: errander --pause-scheduler" style="opacity:0.45;cursor:not-allowed">⏸ PAUSE SCHEDULER</button>
+      </div>
+      <div style="font-family:'JetBrains Mono',monospace;font-size:0.65rem;color:#94a3b8;margin-top:6px">
+        Agent controls require the running agent process — use the CLI.
       </div>
     </div>"""
 
@@ -3567,7 +3629,7 @@ def page_admin() -> str:
     <div class="card admin-card">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
         <span class="admin-section-title" style="margin-bottom:0">System Health</span>
-        <a href="#" class="btn-outline btn-outline-indigo" style="font-size:0.75rem;padding:5px 12px">RUN CHECK</a>
+        <button class="btn-outline btn-outline-indigo" disabled title="Use CLI: errander --check-targets --env &lt;env&gt;" style="font-size:0.75rem;padding:5px 12px;opacity:0.45;cursor:not-allowed">RUN CHECK</button>
       </div>
       <div class="health-rows">{health_rows}</div>
       <div style="margin-top:14px;font-family:'JetBrains Mono',monospace;font-size:0.6875rem;color:#94a3b8">
@@ -3582,7 +3644,7 @@ def page_admin() -> str:
               <td class="td-mono">{lk['vm']}</td>
               <td class="td-ts">{lk['since']}</td>
               <td class="td-mono" style="color:#94a3b8;font-size:0.75rem">{lk['path']}</td>
-              <td><a href="#" class="btn-danger-ol" style="font-size:0.75rem;padding:4px 10px">FORCE CLEAR</a></td>
+              <td><button class="btn-danger-ol" style="font-size:0.75rem;padding:4px 10px" onclick="_showDanger(1)">FORCE CLEAR</button></td>
             </tr>"""
             for lk in _ACTIVE_LOCKS
         )
@@ -3603,7 +3665,7 @@ def page_admin() -> str:
       <div style="padding:14px 20px;display:flex;align-items:center;
                   justify-content:space-between;border-bottom:1px solid #f1f5f9">
         <span class="section-title" style="font-size:0.9375rem">Lock Manager</span>
-        <a href="#" class="btn-danger-ol" style="font-size:0.75rem;padding:5px 12px">CLEAR ALL LOCKS</a>
+        <button class="btn-danger-ol" style="font-size:0.75rem;padding:5px 12px" onclick="_showDanger(1)">CLEAR ALL LOCKS</button>
       </div>
       {lock_body}
     </div>"""
@@ -4617,7 +4679,7 @@ def page_agent() -> str:
         dq_rows = "".join(
             f"""<tr><td class="td-mono">{q['vm']}</td><td class="td-ts">{q['approved_ts']}</td>
                 <td>{q['action']}</td><td class="td-ts">{q['window_opens']}</td>
-                <td><a href="#" class="td-link">View Plan →</a></td></tr>"""
+                <td><span class="td-link" style="opacity:0.4;cursor:default" title="Plan detail view — v2 roadmap">View Plan →</span></td></tr>"""
             for q in DEFERRED_QUEUE
         )
         dq_body = f"""
@@ -4680,7 +4742,7 @@ async def handle_fleet(request: web.Request) -> web.Response:
         breadcrumb="Fleet Dashboard",
         topnav_extra=f'{env_badge_top("PROD")}'
                      f'<span class="last-batch">Last batch: 2026-04-23 02:00 UTC</span>'
-                     f'<a href="#" class="btn-primary">&#9654; RUN BATCH NOW</a>',
+                     f'<button class="btn-primary" disabled title="Use CLI: errander --run-now --env &lt;env&gt;" style="opacity:0.45;cursor:not-allowed">&#9654; RUN BATCH NOW</button>',
         content=page_fleet(),
     )
     return web.Response(text=html, content_type="text/html")
@@ -4719,8 +4781,8 @@ async def handle_vm(request: web.Request) -> web.Response:
         breadcrumb=f'<a href="/" style="color:#475569;text-decoration:none">Fleet Dashboard</a>'
                    f'<span class="sep">/</span><span class="sub">{hostname}</span>',
         topnav_extra=f'{env_badge_top(env)}'
-                     f'<a href="#" class="btn-outline btn-outline-amber">FORCE MAINTENANCE</a>'
-                     f'<a href="#" class="btn-outline btn-outline-indigo">SSH TERMINAL</a>',
+                     f'<button class="btn-outline btn-outline-amber" disabled title="Operator-triggered maintenance — v2 roadmap" style="opacity:0.45;cursor:not-allowed">FORCE MAINTENANCE <span style=\'font-size:0.65rem\'>v2</span></button>'
+                     f'<button class="btn-outline btn-outline-indigo" disabled title="SSH terminal — v2 roadmap" style="opacity:0.45;cursor:not-allowed">SSH TERMINAL <span style=\'font-size:0.65rem\'>v2</span></button>',
         content=page_vm(hostname, metrics_by_window),
     )
     return web.Response(text=html, content_type="text/html")
@@ -4731,7 +4793,7 @@ async def handle_audit(request: web.Request) -> web.Response:
         title="Audit Log",
         active_url="/audit",
         breadcrumb="Audit Log",
-        topnav_extra=f'{env_badge_top("PROD")}<a href="#" class="btn-outline btn-outline-indigo">EXPORT CSV</a>',
+        topnav_extra=f'{env_badge_top("PROD")}<a href="#" class="btn-outline btn-outline-indigo" onclick="event.preventDefault();_exportAudit(\'csv\')">EXPORT CSV</a>',
         content=page_audit(),
     )
     return web.Response(text=html, content_type="text/html")
@@ -4742,7 +4804,7 @@ async def handle_batches(request: web.Request) -> web.Response:
         title="Batch History",
         active_url="/batches",
         breadcrumb="Batch History",
-        topnav_extra=f'{env_badge_top("PROD")}<a href="#" class="btn-primary">+ SCHEDULE BATCH</a>',
+        topnav_extra=f'{env_badge_top("PROD")}<button class="btn-primary" disabled title="Custom scheduling UI — v2 roadmap" style="opacity:0.45;cursor:not-allowed">+ SCHEDULE BATCH <span style=\'font-size:0.65rem\'>v2</span></button>',
         content=page_batches(),
     )
     return web.Response(text=html, content_type="text/html")
@@ -4753,7 +4815,7 @@ async def handle_glossary(request: web.Request) -> web.Response:
         title="Glossary & Workflow",
         active_url="/glossary",
         breadcrumb="Glossary &amp; Workflow",
-        topnav_extra='<a href="#" class="btn-outline btn-outline-indigo">DOCS ↗</a>',
+        topnav_extra='<a href="/glossary" class="btn-outline btn-outline-indigo">DOCS ↗</a>',
         content=page_glossary(),
     )
     return web.Response(text=html, content_type="text/html")
@@ -4767,7 +4829,7 @@ async def handle_agent(request: web.Request) -> web.Response:
         topnav_extra=(
             '<span class="badge badge-indigo" style="font-size:0.75rem;padding:5px 12px">DRY RUN</span>'
             '<a href="/admin" class="btn-outline btn-outline-indigo">Admin Controls</a>'
-            '<a href="#" class="btn-primary">&#9654; RUN BATCH NOW</a>'
+            '<button class="btn-primary" disabled title="Use CLI: uv run python -m errander --run-now --env &lt;env&gt;" style="opacity:0.45;cursor:not-allowed">&#9654; RUN BATCH NOW</button>'
         ),
         content=page_agent(),
     )
@@ -4779,7 +4841,7 @@ async def handle_inventory(request: web.Request) -> web.Response:
         title="Inventory",
         active_url="/inventory",
         breadcrumb="Inventory",
-        topnav_extra='<a href="#" class="btn-outline btn-outline-indigo">EXPORT CSV</a>',
+        topnav_extra='<button class="btn-outline btn-outline-indigo" disabled title="Inventory CSV export — v2 roadmap" style="opacity:0.45;cursor:not-allowed">EXPORT CSV <span style="font-size:0.65rem">v2</span></button>',
         content=page_inventory(),
     )
     return web.Response(text=html, content_type="text/html")
@@ -4880,17 +4942,23 @@ async def _on_startup(app: web.Application) -> None:
     from errander.safety.migrations import run_migrations
 
     db_url = _os.environ.get("ERRANDER_AUDIT_DB_URL", "errander.sqlite")
-    db = await aiosqlite.connect(db_url)
+    db = await aiosqlite.connect(db_url, timeout=30)
+    await db.execute("PRAGMA journal_mode=WAL")
+    await db.execute("PRAGMA busy_timeout=10000")
     await run_migrations(db)
     app["db"] = db
     logger.info("DB opened: %s (migrations applied)", db_url)
 
     targets: list[Any] = []
     try:
+        from pathlib import Path as _Path
         from errander.config.inventory import load_inventory
-        inventory = load_inventory()
-        targets = list(inventory.vms)
-        logger.info("Loaded %d VM targets for metrics collection", len(targets))
+        _inv_path = _Path(_os.environ.get("ERRANDER_INVENTORY_PATH", "inventory.yaml"))
+        if _inv_path.exists():
+            targets = list(load_inventory(_inv_path))
+            logger.info("Loaded %d VM targets for metrics collection", len(targets))
+        else:
+            logger.info("Inventory file not found at %s — metrics collection disabled", _inv_path)
     except Exception as exc:
         logger.warning("Could not load inventory — metrics collection disabled: %s", exc)
 

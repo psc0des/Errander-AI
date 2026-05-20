@@ -4,6 +4,21 @@
 2026-05-20
 
 ## Current Phase
+**QA/SRE UI bug fixes — 4 items (2026-05-20, COMPLETE).** 2090 tests, all passing.
+
+External QA/SRE review approved for internal manual testing pending these fixes. All 4 resolved in `errander/web/server.py`:
+
+1. **`load_inventory()` startup crash** — `_on_startup` called `load_inventory()` with no args. Fixed: reads `ERRANDER_INVENTORY_PATH` env var, checks existence, uses `list(load_inventory(_inv_path))`.
+2. **SQLite disk I/O error** — `aiosqlite.connect(timeout=30)` + `PRAGMA journal_mode=WAL` + `PRAGMA busy_timeout=10000`.
+3. **Mobile 390px overflow** — `html, body { max-width: 100vw; overflow-x: hidden }` root fix + ~40 new `@media (max-width:768px)` rules.
+4. **Placeholder controls** — Inventory FILTER wired to `_invFilter()` JS (data-* attrs on rows, IDs on inputs); batch rows get `batch-row` class + `data-status` for `_batchFilter()`; audit EXPORT CSV topnav wired to `_exportAudit('csv')`; Agent RUN BATCH NOW, Inventory EXPORT, deferred queue View Plan disabled with CLI/v2 tooltips.
+
+### Files Changed (QA bug fixes)
+- `errander/web/server.py` — startup inventory fix + WAL pragmas; root overflow-x rule; mobile CSS sweep; `_invFilter()` JS + input IDs + `inv-row` data-* on VM rows; `batch-row` + `data-status` on batch rows; Audit EXPORT CSV topnav wired; Agent RUN BATCH NOW disabled; Inventory EXPORT/EXPORT CSV disabled as v2; deferred queue View Plan disabled.
+
+---
+
+## Previous Phase
 **Project A — LangGraph Workflow Durability A2–A6 (2026-05-20, COMPLETE).**
 
 All six phases of Project A are implemented, tested, and passing. 2090 tests total.

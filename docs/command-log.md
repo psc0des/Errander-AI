@@ -1,5 +1,15 @@
 # Errander-AI Command Log
 
+## QA/SRE UI bug fixes (2026-05-20)
+
+```bash
+# Run full test suite after all 4 QA bug fixes
+uv run pytest --tb=short -q
+# 2090 passed in 75.72s
+```
+
+---
+
 ## Project A — LangGraph Workflow Durability A2–A6 (2026-05-20)
 
 ```bash

@@ -1,3 +1,13 @@
+## QA/SRE UI bug fixes (2026-05-20, COMPLETED)
+
+- [x] **Fix 1 — `load_inventory()` startup crash**: `_on_startup` called with no args. Fixed: `ERRANDER_INVENTORY_PATH` env var + `list(load_inventory(_inv_path))`. WAL pragmas added for SQLite disk I/O hardening.
+- [x] **Fix 2 — SQLite disk I/O error**: `aiosqlite.connect(timeout=30)` + `PRAGMA journal_mode=WAL` + `PRAGMA busy_timeout=10000`.
+- [x] **Fix 3 — Mobile 390px overflow**: `html, body { max-width: 100vw; overflow-x: hidden }` root rule + ~40 new `@media (max-width:768px)` rules.
+- [x] **Fix 4 — Placeholder controls**: Inventory FILTER → `_invFilter()` JS; batch rows → `batch-row`+`data-status`; approval cards → `approval-card`+data attrs; Audit EXPORT CSV → `_exportAudit('csv')`; Agent RUN BATCH NOW, Inventory EXPORT, deferred queue View Plan → disabled with CLI/v2 tooltips.
+- [x] 2090 tests passing, 0 regressions.
+
+---
+
 ## Project A — LangGraph Workflow Durability A2–A6 (2026-05-20, COMPLETED)
 
 - [x] **A2 — BatchStore + batches table**: `errander/models/batches.py` (BatchStatus StrEnum + BatchRecord), `errander/safety/batches.py` (BatchStore with INSERT OR IGNORE + WHERE status='running' guard), migration #5. `init_batch_node` + `generate_report_node` wired. 16 tests.

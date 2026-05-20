@@ -1,3 +1,11 @@
+## P0 regression fix — f-string JS brace escape (2026-05-21, COMPLETED)
+
+- [x] `errander/web/server.py` — `_batchFilter` JS braces escaped (`{{`/`}}`). Module now compiles and imports cleanly.
+- [x] `tests/ui/test_web_server_smoke.py` (NEW) — 14 smoke tests: `ast.parse` compile check, import check, every `page_*` renders without exception, brace-escaping regression guards for `_batchFilter` and `_invFilter`.
+- [x] 2120 tests passing.
+
+---
+
 ## Deferred — revisit when ready
 
 These are intentionally parked. Each has a clear trigger condition for when to pick it back up.

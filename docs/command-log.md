@@ -1,5 +1,27 @@
 # Errander-AI Command Log
 
+## P0 regression fix — f-string JS brace escape (2026-05-21)
+
+```bash
+# Reproduce the SyntaxError
+uv run python -m py_compile errander/web/server.py
+# SyntaxError: f-string: expecting '=', or '!', or ':', or '}'
+
+# Verify fix
+uv run python -m py_compile errander/web/server.py && echo OK
+uv run python -c "import errander.web.server; print('import OK')"
+
+# Run new smoke tests
+uv run pytest tests/ui/test_web_server_smoke.py -v --tb=short
+# 14 passed
+
+# Full suite
+uv run pytest --tb=short -q
+# 2120 passed
+```
+
+---
+
 ## Project B3 — vm-facts CLI (2026-05-20)
 
 ```bash

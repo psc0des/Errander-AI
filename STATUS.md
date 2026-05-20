@@ -4,6 +4,17 @@
 2026-05-20
 
 ## Current Phase
+**P0 regression fix — f-string JS brace escape + web server smoke tests (2026-05-21, COMPLETE).** 2120 tests, all passing.
+
+`_batchFilter` JS block was inside a Python f-string with unescaped `{`/`}`, making `errander/web/server.py` unimportable (`SyntaxError` at startup). Fixed by doubling all JS braces to `{{`/`}}`. Added `tests/ui/test_web_server_smoke.py` (14 tests) — compile check via `ast.parse`, import check, render check for every `page_*` function, regression guards for `_batchFilter` and `_invFilter` brace escaping.
+
+### Files Changed
+- `errander/web/server.py` — `_batchFilter` JS braces escaped (`{{`/`}}`)
+- `tests/ui/test_web_server_smoke.py` (NEW) — 14 smoke tests
+
+---
+
+## Previous Phase
 **Project B3 — `errander vm-facts` CLI (2026-05-20, COMPLETE).** 2106 tests, all passing.
 
 New `errander/commands/vm_facts.py` — operator-facing CLI for spot-checking the operational learning facts that OperatorAssistant surfaces to the LLM. Three sections: action outcomes table (success rate ✓/~/✗, sample size, last success, last failure reason), reboot pattern (reboots/patching runs for the VM), and fleet-wide rejection facts (per-action-type approval rejections, last 90 days). Wired into `main.py` as `--vm-facts <vm_id>` and `--vm-facts-action <type>`. Cross-fleet mode when `--vm-facts-action` given without `vm_id`.

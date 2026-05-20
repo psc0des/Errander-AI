@@ -3216,18 +3216,18 @@ def page_batches() -> str:
         <tbody>{rows}</tbody>
       </table>
       <script>
-      function _batchFilter(el, status) {
+      function _batchFilter(el, status) {{
         document.querySelectorAll('#batch-chips .chip').forEach(c => c.classList.remove('active'));
         el.classList.add('active');
-        document.querySelectorAll('.batch-row').forEach(row => {
+        document.querySelectorAll('.batch-row').forEach(row => {{
           var s = (row.dataset.status || '').toLowerCase();
           var show = status === 'all'
             || (status === 'completed' && s === 'completed')
             || (status === 'partial' && (s === 'partial' || s.includes('partial')))
             || (status === 'failed' && (s === 'failed' || s.includes('fail') || s === 'aborted'));
           row.style.display = show ? '' : 'none';
-        });
-      }
+        }});
+      }}
       </script>
     </div>
     <script>

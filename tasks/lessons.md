@@ -16,6 +16,17 @@
 
 **How to apply:** Apply these three PRAGMAs in every `_on_startup` that opens a file-backed SQLite DB. In-memory DBs (tests) don't need them.
 
+## 2026-05-21 — JS braces inside Python f-strings must be doubled as {{ / }}
+
+Any `{` or `}` character inside a Python f-string that is NOT an interpolation expression must be escaped as `{{` or `}}`. This includes JavaScript function bodies, arrow functions with block bodies, and object literals. The Python parser raises a `SyntaxError` (not at the `{` itself but at whatever follows it, making the error message confusing).
+
+**Why:** The `_batchFilter` JS block was added inside a `return f"""..."""` without escaping its braces. The module compiled silently in tests (pytest imports from `.pyc` cache) but failed at runtime on a fresh process, making the server unimportable.
+
+**How to apply:**
+1. After adding any JS block to an f-string, immediately run `uv run python -m py_compile errander/web/server.py` to catch it.
+2. Use the pattern from `_invFilter` and `_apprFilter` as the reference — they correctly use `{{` / `}}`.
+3. The smoke test in `tests/ui/test_web_server_smoke.py` will catch this class of error automatically going forward.
+
 ## 2026-05-20 — Dead `href="#"` links are a trust signal — disable them, don't leave them
 
 Placeholder `<a href="#">` controls that do nothing (no onclick, no server route) destroy operator trust on a safety-critical UI. The correct patterns:

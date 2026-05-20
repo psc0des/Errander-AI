@@ -1,3 +1,23 @@
+## Deferred — revisit when ready
+
+These are intentionally parked. Each has a clear trigger condition for when to pick it back up.
+
+### Project C — Runbook & Postmortem Memory
+**Trigger:** user authors at least 3–5 `./runbooks/*.md` files.
+**What's needed:** markdown files in `./runbooks/` with YAML frontmatter (title, tags, applies_to, severity) and body text. Even rough operational notes count — "what to check before restarting nginx", "common patching failure patterns on RHEL".
+**What gets built:** `RunbookStore` loader, keyword+tag retrieval in `OperatorAssistant`, `errander runbooks list/show/reload` CLI, example runbooks in `example/runbooks/`. Design is fully specced in `tasks/post-review-implementation-plan.md §6`.
+
+### Project D2–D4 — AI Eval / Replay Harness
+**Trigger:** `ai_decisions` table has real rows (i.e., the agent has run live batches against a real LLM endpoint).
+**What's needed:** run `SELECT COUNT(*) FROM ai_decisions` — if > 0 and `prompt_full` is populated, D2 is useful. The D1 capture infrastructure is already wired; rows accumulate automatically when the agent runs.
+**What gets built:** `errander ai-replay` CLI, assertion functions (policy compliance, risk-tier stability, fallback parity, citation presence, never-automate check), daily scheduled replay job, regression report. Design in `tasks/post-review-implementation-plan.md §7`.
+
+### Project E — HITL Interrupt/Resume
+**Trigger:** any of — operators report crash-lost approvals; approval wait p95 routinely > 30 min (check with `errander --measure-durability`); need to run agent in a stateless/restart-tolerant env.
+**What's needed:** Project A (checkpointing) is already in place. Also needs a durable `ApprovalManager` (currently in-memory). Design sketch in `tasks/post-review-implementation-plan.md §8`.
+
+---
+
 ## Project B3 — `errander vm-facts` CLI (2026-05-20, COMPLETED)
 
 - [x] `errander/commands/vm_facts.py` — `cmd_vm_facts` with three output sections: outcomes, reboot pattern, rejection facts. `_fmt_rate()` with ✓/~/✗ visual indicator. Cross-fleet mode when vm_id omitted.

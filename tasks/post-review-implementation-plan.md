@@ -2,9 +2,16 @@
 
 Single master plan covering every actionable item from `ai_sre_langgraph_agentic_review.md`. Five projects (A–E), one declined, status legend below.
 
-Status: Phase A1 DONE (2026-05-18). Project B Phases B1+B2 DONE (2026-05-18). Phase D1 DONE (2026-05-18). Everything else is DESIGN ONLY until decision gates clear.
+Status (2026-05-20): All buildable work is complete.
+- Project A (A1–A6): DONE
+- Project B (B1–B3): DONE
+- Project D1: DONE
+- Project C: DEFERRED — blocked on operator-authored runbooks (./runbooks/*.md)
+- Project D2–D4: DEFERRED — blocked on real ai_decisions data (agent must run live batches first)
+- Project E: DEFERRED — blocked on crash/approval-loss evidence from A1 measurement
+- See tasks/todo.md "Deferred — revisit when ready" for trigger conditions.
 
-Last updated: 2026-05-18
+Last updated: 2026-05-20
 Source review: `ai_sre_langgraph_agentic_review.md`
 SRE-conversation decisions: see `tasks/` history and review summary
 Plan owner (execution): Dev Sonnet agent

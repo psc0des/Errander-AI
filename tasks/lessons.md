@@ -1,6 +1,12 @@
 # Errander-AI — Lessons Learned
 
-## 2026-05-19 — Always confirm where the UI ACTUALLY lives before editing
+## 2026-05-20 — When adding a DB migration, always update the migration count assertions in tests
+
+Adding migration #4 broke two test assertions that hardcoded the expected version list and row count. Both are load-bearing: one asserts `[0, 1, 2, 3]`, the other `COUNT(*) == 4`. Both must be bumped atomically with the migration itself — treat them as the schema contract.
+
+**How to apply:** grep for the current migration count in tests before adding any new migration and update them in the same change.
+
+## 2026-05-20 — Always confirm where the UI ACTUALLY lives before editing
 
 The user pointed at a Stitch project (`stitch.withgoogle.com/projects/695805871329192760`) as "the UI" and asked me to fix an SRE punch list. I almost spent an hour generating Stitch screens — but the real product UI is a 3.2k-line aiohttp server at `errander/web/server.py` with 11 page_* render functions. Stitch was visual-only reference; the SRE's review was of the running server.py output (the `.playwright-mcp/` snapshots confirmed this: relative URLs `/approvals`, `/audit`, etc. map directly to server.py routes).
 

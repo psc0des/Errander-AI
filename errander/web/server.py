@@ -3,12 +3,17 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import json as _json
+import logging
 import math
 import os
 import time
 from typing import Any
 
+import aiosqlite
 from aiohttp import web
+
+logger = logging.getLogger(__name__)
 
 from .data import (
     ACTIVE_BATCH, AGENT_STATUS, APPROVALS, AUDIT_EVENTS, BATCHES,
@@ -2277,10 +2282,19 @@ def _sparkline_svg(
     h: int = 52,
     warn_pct: float | None = 75.0,
     crit_pct: float | None = 90.0,
+    poly_id: str = "",
 ) -> str:
-    """Render an SVG sparkline for a metric history list (oldest → newest)."""
+    """Render an SVG sparkline for a metric history list (oldest → newest).
+
+    poly_id: optional prefix for element IDs used by the live-update JS.
+    When set, elements get id="{poly_id}-fill", "{poly_id}-line", "{poly_id}-dot".
+    """
     if len(values) < 2:
-        return f'<svg viewBox="0 0 {w} {h}" style="width:100%;height:{h}px"><text x="50%" y="50%" fill="#94a3b8" font-size="10" text-anchor="middle">no data</text></svg>'
+        return (
+            f'<svg viewBox="0 0 {w} {h}" style="width:100%;height:{h}px">'
+            f'<text x="50%" y="50%" fill="#94a3b8" font-size="10" text-anchor="middle">'
+            f'collecting…</text></svg>'
+        )
     mn, mx = min(values), max(values)
     scale_min = min(mn, 0.0)
     scale_max = max(mx, 100.0) if mx <= 100 else mx * 1.05
@@ -2292,7 +2306,8 @@ def _sparkline_svg(
 
     pts = [f"{round(i / (len(values) - 1) * w, 1)},{_y(v)}" for i, v in enumerate(values)]
     poly = " ".join(pts)
-    last_x, last_y = round(w, 1), _y(values[-1])
+    last_x = round((len(values) - 1) / (len(values) - 1) * w, 1)
+    last_y = _y(values[-1])
 
     threshold_lines = ""
     if warn_pct is not None and scale_max >= warn_pct and warn_pct > scale_min:
@@ -2308,6 +2323,10 @@ def _sparkline_svg(
             f'stroke="#dc2626" stroke-width="0.8" stroke-dasharray="4 3" opacity="0.7"/>'
         )
 
+    id_fill = f' id="{poly_id}-fill"' if poly_id else ""
+    id_line = f' id="{poly_id}-line"' if poly_id else ""
+    id_dot  = f' id="{poly_id}-dot"'  if poly_id else ""
+
     return (
         f'<svg viewBox="0 0 {w} {h}" preserveAspectRatio="none" '
         f'style="width:100%;height:{h}px;display:block">'
@@ -2316,10 +2335,10 @@ def _sparkline_svg(
         f'<stop offset="100%" stop-color="{color}" stop-opacity="0"/>'
         f'</linearGradient></defs>'
         f'{threshold_lines}'
-        f'<polyline points="{poly} {w},{h - pad_bot} 0,{h - pad_bot}" fill="url(#{grad_id})" stroke="none"/>'
-        f'<polyline points="{poly}" fill="none" stroke="{color}" stroke-width="1.75" '
+        f'<polyline{id_fill} points="{poly} {w},{h - pad_bot} 0,{h - pad_bot}" fill="url(#{grad_id})" stroke="none"/>'
+        f'<polyline{id_line} points="{poly}" fill="none" stroke="{color}" stroke-width="1.75" '
         f'stroke-linejoin="round" stroke-linecap="round"/>'
-        f'<circle cx="{last_x}" cy="{last_y}" r="2.5" fill="{color}"/>'
+        f'<circle{id_dot} cx="{last_x}" cy="{last_y}" r="2.5" fill="{color}"/>'
         f'</svg>'
     )
 
@@ -2346,86 +2365,191 @@ def _mini_sparkline_svg(values: list[float], color: str, grad_id: str) -> str:
     )
 
 
-def _vm_resource_trends(hostname: str, cpu: int, mem: int) -> str:
-    """Render a Metricbeat-style Resource Trends card for a VM detail page."""
+def _vm_resource_trends(
+    hostname: str,
+    cpu: int,
+    mem: int,
+    metrics_by_window: dict[str, dict[str, Any]] | None = None,
+) -> str:
+    """Render a Metricbeat-style Resource Trends card for a VM detail page.
+
+    metrics_by_window: real DB data keyed by window string ('15m','1h','24h','7d').
+    Falls back to VM_EVIDENCE fixture for any window with no DB rows.
+    JS polls /api/vm/{hostname}/metrics every 60 s and updates SVG in-place.
+    """
     ev = VM_EVIDENCE.get(hostname, {})
-    cpu_24h   = list(ev.get("cpu_history",    [float(cpu)] * 24))
-    mem_24h   = list(ev.get("mem_history",    [float(mem)] * 24))
-    cpu_7d    = list(ev.get("cpu_history_7d", [float(cpu)] * 42))
-    mem_7d    = list(ev.get("mem_history_7d", [float(mem)] * 42))
-    # Pin endpoint to live current so sparkline always lands at the displayed value
-    if cpu_24h: cpu_24h[-1] = float(cpu)
-    if mem_24h: mem_24h[-1] = float(mem)
-    if cpu_7d:  cpu_7d[-1]  = float(cpu)
-    if mem_7d:  mem_7d[-1]  = float(mem)
+    db_data = metrics_by_window or {}
 
-    def _stats(vals: list[float]) -> tuple[float, float, float]:
-        return min(vals), sum(vals) / len(vals), max(vals)
+    # ── Per-window data resolution ─────────────────────────────────────────
+    # For each window, prefer real DB [ts, val] pairs; fall back to fixture lists.
+    # Fixture lists are converted to synthetic [i, val] pairs (ts=0 means "fixture").
 
-    cpu_24_min, cpu_24_avg, cpu_24_max = _stats(cpu_24h)
-    mem_24_min, mem_24_avg, mem_24_max = _stats(mem_24h)
-    cpu_7d_min, cpu_7d_avg, cpu_7d_max = _stats(cpu_7d)
-    mem_7d_min, mem_7d_avg, mem_7d_max = _stats(mem_7d)
+    def _resolve(metric: str, window: str, fallback_key: str) -> list[float]:
+        """Return a list of float values for the given metric + window."""
+        window_data = db_data.get(window, {})
+        pairs: list[list[int | float]] = window_data.get(metric, [])
+        if pairs:
+            return [float(v) for _, v in pairs]
+        # Fixture fallback
+        raw: list[float] = ev.get(fallback_key, [])
+        if not raw:
+            return [float(cpu if metric == "cpu" else mem)] * 24
+        return list(raw)
+
+    # Window  → (cpu values, mem values, fallback key for cpu, fallback key for mem, x-axis labels)
+    _W: dict[str, tuple[str, str, list[str]]] = {
+        "15m": ("cpu_history",    "mem_history",    ["-15m", "-10m", "-5m",  "now"]),
+        "1h":  ("cpu_history",    "mem_history",    ["-1h",  "-45m", "-30m", "-15m", "now"]),
+        "24h": ("cpu_history",    "mem_history",    ["-24h", "-18h", "-12h", "-6h",  "now"]),
+        "7d":  ("cpu_history_7d", "mem_history_7d", ["-7d",  "-5d",  "-3d",  "-1d",  "now"]),
+    }
 
     cpu_color = "#dc2626" if cpu >= 90 else "#d97706" if cpu >= 75 else "#0891b2"
     mem_color = "#dc2626" if mem >= 90 else "#d97706" if mem >= 75 else "#7c3aed"
 
-    # 24h x-axis: 6-hour marks (0, 6, 12, 18, now)
-    x_axis_24h = '<div class="spark-x-axis"><span>-24h</span><span>-18h</span><span>-12h</span><span>-6h</span><span>now</span></div>'
-    x_axis_7d  = '<div class="spark-x-axis"><span>-7d</span><span>-5d</span><span>-3d</span><span>-1d</span><span>now</span></div>'
+    def _stats_html(vals: list[float], stat_id: str) -> str:
+        if not vals:
+            return f'<div class="spark-stats" id="{stat_id}"><span>no data</span></div>'
+        mn = min(vals)
+        av = sum(vals) / len(vals)
+        mx = max(vals)
+        return (
+            f'<div class="spark-stats" id="{stat_id}">'
+            f'<span>min <span class="stat-v">{mn:.0f}%</span></span>'
+            f'<span>avg <span class="stat-v">{av:.0f}%</span></span>'
+            f'<span>max <span class="stat-v">{mx:.0f}%</span></span>'
+            f'</div>'
+        )
 
-    def _panel(label: str, current: int, color: str, gid24: str, gid7d: str,
-               h24: list[float], h7d: list[float],
-               mn24: float, av24: float, mx24: float,
-               mn7d: float, av7d: float, mx7d: float) -> str:
+    def _x_axis(labels: list[str]) -> str:
+        return (
+            '<div class="spark-x-axis">'
+            + "".join(f"<span>{l}</span>" for l in labels)
+            + "</div>"
+        )
+
+    def _panel(metric: str, label: str, current: int, color: str) -> str:
         curr_style = f"color:{color}"
-        svg24 = _sparkline_svg(h24, color, gid24)
-        svg7d = _sparkline_svg(h7d, color, gid7d)
-        return f"""
-        <div class="vm-trend-panel">
-          <div class="vm-trend-label">{label}</div>
-          <div class="vm-trend-current-row">
-            <span class="vm-trend-current" style="{curr_style}">{current}%</span>
-            <span class="vm-trend-delta">current</span>
-          </div>
-          <div class="trend-view trend-24h">
-            <div class="vm-trend-svg-wrap">{svg24}</div>
-            {x_axis_24h}
-            <div class="spark-stats">
-              <span>min <span class="stat-v">{mn24:.0f}%</span></span>
-              <span>avg <span class="stat-v">{av24:.0f}%</span></span>
-              <span>max <span class="stat-v">{mx24:.0f}%</span></span>
-            </div>
-          </div>
-          <div class="trend-view trend-7d" style="display:none">
-            <div class="vm-trend-svg-wrap">{svg7d}</div>
-            {x_axis_7d}
-            <div class="spark-stats">
-              <span>min <span class="stat-v">{mn7d:.0f}%</span></span>
-              <span>avg <span class="stat-v">{av7d:.0f}%</span></span>
-              <span>max <span class="stat-v">{mx7d:.0f}%</span></span>
-            </div>
-          </div>
-        </div>"""
+        views_html = ""
+        for wi, (window, (cpu_fk, mem_fk, x_labels)) in enumerate(_W.items()):
+            fk = cpu_fk if metric == "cpu" else mem_fk
+            vals = _resolve(metric, window, fk)
+            # Pin last point to current live value for coherence
+            if vals:
+                vals[-1] = float(current)
+            grad_id   = f"{metric}-{window}-g"
+            poly_pfx  = f"{metric}-{window}"
+            svg_id    = f"svg-{metric}-{window}"
+            stat_id   = f"stats-{metric}-{window}"
+            svg = _sparkline_svg(vals, color, grad_id, poly_id=poly_pfx)
+            hidden = "" if window == "24h" else ' style="display:none"'
+            views_html += (
+                f'<div class="trend-view trend-{window}"{hidden}>'
+                f'<div class="vm-trend-svg-wrap" id="{svg_id}">{svg}</div>'
+                f'{_x_axis(x_labels)}'
+                f'{_stats_html(vals, stat_id)}'
+                f'</div>'
+            )
+        return (
+            f'<div class="vm-trend-panel">'
+            f'<div class="vm-trend-label">{label}</div>'
+            f'<div class="vm-trend-current-row">'
+            f'<span class="vm-trend-current" id="val-{metric}" style="{curr_style}">{current}%</span>'
+            f'<span class="vm-trend-delta">current</span>'
+            f'</div>'
+            f'{views_html}'
+            f'</div>'
+        )
 
-    cpu_panel = _panel(
-        "CPU", cpu, cpu_color, "cpu24g", "cpu7dg",
-        cpu_24h, cpu_7d, cpu_24_min, cpu_24_avg, cpu_24_max,
-        cpu_7d_min, cpu_7d_avg, cpu_7d_max,
-    )
-    mem_panel = _panel(
-        "Memory", mem, mem_color, "mem24g", "mem7dg",
-        mem_24h, mem_7d, mem_24_min, mem_24_avg, mem_24_max,
-        mem_7d_min, mem_7d_avg, mem_7d_max,
-    )
+    cpu_panel = _panel("cpu", "CPU",    cpu, cpu_color)
+    mem_panel = _panel("mem", "Memory", mem, mem_color)
 
-    toggle_js = """<script>
-function _setTrend(btn,view){
-  document.querySelectorAll('.trend-btn').forEach(b=>b.classList.remove('active'));
-  btn.classList.add('active');
-  document.querySelectorAll('.trend-view').forEach(v=>v.style.display='none');
-  document.querySelectorAll('.trend-'+view).forEach(v=>v.style.display='');
-}
+    # ── Live-update JS ─────────────────────────────────────────────────────
+    # Mirrors _sparkline_svg() logic in JavaScript.
+    # Updates polyline points + circle + stats in-place without page reload.
+    # Polls /api/vm/{hostname}/metrics?window=<w> every 60 s.
+    live_js = f"""<script>
+(function(){{
+  var _host = {_json.dumps(hostname)};
+  var _w = '24h';
+  var _W = {_json.dumps({k: v[2] for k, v in _W.items()})};
+  var _SVG_W = 500, _SVG_H = 52, _PAD_T = 6, _PAD_B = 4;
+  var _colors = {{cpu:'#0891b2', mem:'#7c3aed'}};
+  var _warnPct = 75, _critPct = 90;
+
+  function _normY(v, mn, mx){{
+    var sMin = Math.min(mn, 0);
+    var sMax = Math.max(mx, 100);
+    var rng = sMax - sMin || 1;
+    return (_SVG_H - _PAD_B - (v - sMin) / rng * (_SVG_H - _PAD_T - _PAD_B)).toFixed(1);
+  }}
+
+  function _pts(vals){{
+    var mn = Math.min.apply(null, vals);
+    var mx = Math.max.apply(null, vals);
+    return vals.map(function(v, i){{
+      var x = (i / (vals.length - 1) * _SVG_W).toFixed(1);
+      var y = _normY(v, mn, mx);
+      return x + ',' + y;
+    }});
+  }}
+
+  function _updatePanel(metric, vals, window){{
+    if (!vals || vals.length < 2) return;
+    var mn = Math.min.apply(null, vals);
+    var mx = Math.max.apply(null, vals);
+    var pts = _pts(vals);
+    var poly = pts.join(' ');
+    var lx = pts[pts.length-1].split(',')[0];
+    var ly = pts[pts.length-1].split(',')[1];
+
+    var fill = document.getElementById(metric+'-'+window+'-fill');
+    var line = document.getElementById(metric+'-'+window+'-line');
+    var dot  = document.getElementById(metric+'-'+window+'-dot');
+    var stat = document.getElementById('stats-'+metric+'-'+window);
+    var valEl = document.getElementById('val-'+metric);
+
+    if(fill) fill.setAttribute('points', poly+' '+_SVG_W+','+(+_SVG_H - _PAD_B)+' 0,'+(+_SVG_H - _PAD_B));
+    if(line) line.setAttribute('points', poly);
+    if(dot)  {{ dot.setAttribute('cx', lx); dot.setAttribute('cy', ly); }}
+    if(stat) {{
+      var avg = (vals.reduce(function(a,b){{return a+b}},0)/vals.length).toFixed(0);
+      stat.innerHTML = '<span>min <span class="stat-v">'+mn.toFixed(0)+'%</span></span>'
+        +'<span>avg <span class="stat-v">'+avg+'%</span></span>'
+        +'<span>max <span class="stat-v">'+mx.toFixed(0)+'%</span></span>';
+    }}
+    if(valEl && window===_w) {{
+      var cur = vals[vals.length-1];
+      valEl.textContent = cur.toFixed(0)+'%';
+      valEl.style.color = cur>=90 ? '#dc2626' : cur>=75 ? '#d97706'
+        : (metric==='mem' ? '#7c3aed' : '#0891b2');
+    }}
+  }}
+
+  function _fetchAndUpdate(window){{
+    fetch('/api/vm/'+_host+'/metrics?window='+window)
+      .then(function(r){{ return r.ok ? r.json() : null; }})
+      .then(function(d){{
+        if(!d) return;
+        if(d.cpu && d.cpu.length) _updatePanel('cpu', d.cpu.map(function(p){{return p[1]}}), window);
+        if(d.mem && d.mem.length) _updatePanel('mem', d.mem.map(function(p){{return p[1]}}), window);
+      }})
+      .catch(function(){{}});
+  }}
+
+  window._setTrend = function(btn, view){{
+    document.querySelectorAll('.trend-btn').forEach(function(b){{b.classList.remove('active')}});
+    btn.classList.add('active');
+    document.querySelectorAll('.trend-view').forEach(function(v){{v.style.display='none'}});
+    document.querySelectorAll('.trend-'+view).forEach(function(v){{v.style.display=''}});
+    _w = view;
+    _fetchAndUpdate(view);
+  }};
+
+  // Initial fetch for default window (24h), then auto-refresh every 60 s
+  _fetchAndUpdate('24h');
+  setInterval(function(){{ _fetchAndUpdate(_w); }}, 60000);
+}})();
 </script>"""
 
     return f"""
@@ -2433,6 +2557,8 @@ function _setTrend(btn,view){
       <div class="vm-trends-header">
         <span class="section-title" style="font-size:1rem">Resource Trends</span>
         <div class="vm-trends-toggle">
+          <button class="trend-btn" onclick="_setTrend(this,'15m')">15m</button>
+          <button class="trend-btn" onclick="_setTrend(this,'1h')">1h</button>
           <button class="trend-btn active" onclick="_setTrend(this,'24h')">24h</button>
           <button class="trend-btn" onclick="_setTrend(this,'7d')">7d</button>
         </div>
@@ -2442,10 +2568,10 @@ function _setTrend(btn,view){
         {mem_panel}
       </div>
     </div>
-    {toggle_js}"""
+    {live_js}"""
 
 
-def page_vm(hostname: str) -> str:
+def page_vm(hostname: str, metrics_by_window: dict[str, dict[str, Any]] | None = None) -> str:
     vm = next((v for v in VMS if v["hostname"] == hostname), None)
     if vm is None:
         return f'<div class="card" style="padding:40px;text-align:center">VM <code>{hostname}</code> not found.</div>'
@@ -2569,7 +2695,7 @@ def page_vm(hostname: str) -> str:
         {callout}
       </div>
     </div>
-    {_vm_resource_trends(hostname, cpu, mem)}
+    {_vm_resource_trends(hostname, cpu, mem, metrics_by_window)}
     {pending_section}
     <div class="kpi-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:16px">
       <div class="card kpi-tile kpi-top-border" style="border-color:#d97706">
@@ -4397,9 +4523,21 @@ async def handle_approvals(request: web.Request) -> web.Response:
 
 
 async def handle_vm(request: web.Request) -> web.Response:
+    from errander.observability.vm_metrics import query_metrics
     hostname = request.match_info["hostname"]
     vm = next((v for v in VMS if v["hostname"] == hostname), None)
     env = vm["env"] if vm else "PROD"
+
+    metrics_by_window: dict[str, Any] | None = None
+    db: aiosqlite.Connection | None = request.app.get("db")
+    if db is not None:
+        try:
+            metrics_by_window = {}
+            for w in ("15m", "1h", "24h", "7d"):
+                metrics_by_window[w] = await query_metrics(db, hostname, w)
+        except Exception:
+            metrics_by_window = None
+
     html = layout(
         title=f"VM: {hostname}",
         active_url="/",
@@ -4408,7 +4546,7 @@ async def handle_vm(request: web.Request) -> web.Response:
         topnav_extra=f'{env_badge_top(env)}'
                      f'<a href="#" class="btn-outline btn-outline-amber">FORCE MAINTENANCE</a>'
                      f'<a href="#" class="btn-outline btn-outline-indigo">SSH TERMINAL</a>',
-        content=page_vm(hostname),
+        content=page_vm(hostname, metrics_by_window),
     )
     return web.Response(text=html, content_type="text/html")
 
@@ -4533,6 +4671,91 @@ async def handle_logout(request: web.Request) -> web.Response:
     raise response
 
 
+# ── Metrics API ───────────────────────────────────────────────────────────────
+
+async def handle_metrics_api(request: web.Request) -> web.Response:
+    from errander.observability.vm_metrics import query_metrics
+    hostname = request.match_info["hostname"]
+    window = request.rel_url.query.get("window", "24h")
+    db: aiosqlite.Connection | None = request.app.get("db")
+    if db is None:
+        return web.Response(
+            text='{"cpu":[],"mem":[],"disk":{}}',
+            content_type="application/json",
+        )
+    try:
+        data = await query_metrics(db, hostname, window)
+    except Exception as exc:
+        logger.warning("metrics_api %s %s: %s", hostname, window, exc)
+        data = {"cpu": [], "mem": [], "disk": {}}
+    return web.Response(
+        text=_json.dumps(data),
+        content_type="application/json",
+    )
+
+
+# ── Startup / cleanup hooks ────────────────────────────────────────────────────
+
+async def _on_startup(app: web.Application) -> None:
+    import os as _os
+
+    from apscheduler.schedulers.asyncio import AsyncIOScheduler
+
+    from errander.observability.vm_metrics import cleanup_old_metrics, collect_all
+    from errander.safety.migrations import run_migrations
+
+    db_url = _os.environ.get("ERRANDER_AUDIT_DB_URL", "errander.sqlite")
+    db = await aiosqlite.connect(db_url)
+    await run_migrations(db)
+    app["db"] = db
+    logger.info("DB opened: %s (migrations applied)", db_url)
+
+    # Load inventory to get VMTarget list for metrics probing.
+    targets: list[Any] = []
+    try:
+        from errander.config.inventory import load_inventory
+        inventory = load_inventory()
+        targets = list(inventory.vms)
+        logger.info("Loaded %d VM targets for metrics collection", len(targets))
+    except Exception as exc:
+        logger.warning("Could not load inventory — metrics collection disabled: %s", exc)
+
+    if targets:
+        scheduler = AsyncIOScheduler()
+        scheduler.add_job(
+            collect_all,
+            "interval",
+            seconds=60,
+            args=[db, targets],
+            id="vm_metrics_collect",
+            max_instances=1,
+            coalesce=True,
+        )
+        scheduler.add_job(
+            cleanup_old_metrics,
+            "interval",
+            hours=1,
+            args=[db],
+            id="vm_metrics_cleanup",
+            max_instances=1,
+            coalesce=True,
+        )
+        scheduler.start()
+        app["metrics_scheduler"] = scheduler
+        logger.info("Metrics scheduler started (60s collect, 1h cleanup)")
+
+
+async def _on_cleanup(app: web.Application) -> None:
+    scheduler = app.get("metrics_scheduler")
+    if scheduler is not None:
+        scheduler.shutdown(wait=False)
+        logger.info("Metrics scheduler stopped")
+    db: aiosqlite.Connection | None = app.get("db")
+    if db is not None:
+        await db.close()
+        logger.info("DB closed")
+
+
 # ── Auth middleware ────────────────────────────────────────────────────────────
 
 _PUBLIC_PATHS = {"/login", "/logout"}
@@ -4543,6 +4766,12 @@ async def _auth_middleware(request: web.Request, handler: Any) -> web.StreamResp
     if request.path in _PUBLIC_PATHS:
         return await handler(request)
     if not _valid_token(request.cookies.get(_AUTH_COOKIE, "")):
+        if request.path.startswith("/api/"):
+            return web.Response(
+                text='{"error":"unauthenticated"}',
+                content_type="application/json",
+                status=401,
+            )
         raise web.HTTPFound("/login")
     return await handler(request)
 
@@ -4551,19 +4780,22 @@ async def _auth_middleware(request: web.Request, handler: Any) -> web.StreamResp
 
 def create_app() -> web.Application:
     app = web.Application(middlewares=[_auth_middleware])
-    app.router.add_get("/",                handle_fleet)
-    app.router.add_get("/approvals",       handle_approvals)
-    app.router.add_get("/vm/{hostname}",   handle_vm)
-    app.router.add_get("/audit",           handle_audit)
-    app.router.add_get("/batches",         handle_batches)
-    app.router.add_get("/inventory",       handle_inventory)
-    app.router.add_get("/settings",        handle_settings)
-    app.router.add_get("/admin",           handle_admin)
-    app.router.add_get("/glossary",        handle_glossary)
-    app.router.add_get("/agent",           handle_agent)
-    app.router.add_get("/login",           handle_login_get)
-    app.router.add_post("/login",          handle_login_post)
-    app.router.add_get("/logout",          handle_logout)
+    app.router.add_get("/",                              handle_fleet)
+    app.router.add_get("/approvals",                     handle_approvals)
+    app.router.add_get("/vm/{hostname}",                 handle_vm)
+    app.router.add_get("/audit",                         handle_audit)
+    app.router.add_get("/batches",                       handle_batches)
+    app.router.add_get("/inventory",                     handle_inventory)
+    app.router.add_get("/settings",                      handle_settings)
+    app.router.add_get("/admin",                         handle_admin)
+    app.router.add_get("/glossary",                      handle_glossary)
+    app.router.add_get("/agent",                         handle_agent)
+    app.router.add_get("/login",                         handle_login_get)
+    app.router.add_post("/login",                        handle_login_post)
+    app.router.add_get("/logout",                        handle_logout)
+    app.router.add_get("/api/vm/{hostname}/metrics",     handle_metrics_api)
+    app.on_startup.append(_on_startup)
+    app.on_cleanup.append(_on_cleanup)
     return app
 
 

@@ -37,6 +37,7 @@ class TestRunMigrations:
             "vm_state",
             "vm_baselines",
             "vm_disk_history",
+            "vm_metrics",
         }
         assert expected <= tables
         await db.close()
@@ -46,7 +47,7 @@ class TestRunMigrations:
         await run_migrations(db)
         cursor = await db.execute("SELECT version FROM schema_migrations ORDER BY version")
         versions = [int(str(row[0])) for row in await cursor.fetchall()]
-        assert versions == [0, 1, 2, 3]
+        assert versions == [0, 1, 2, 3, 4]
         await db.close()
 
     async def test_idempotent_on_second_run(self) -> None:
@@ -56,7 +57,7 @@ class TestRunMigrations:
         await run_migrations(db)
         cursor = await db.execute("SELECT COUNT(*) FROM schema_migrations")
         row = await cursor.fetchone()
-        assert int(str(row[0])) == 4  # exactly 4 migrations (0–3)
+        assert int(str(row[0])) == 5  # exactly 5 migrations (0–4)
         await db.close()
 
     async def test_audit_events_schema_correct(self) -> None:
@@ -121,6 +122,24 @@ class TestRunMigrations:
         assert row is not None
         assert str(row[0]) == "/"
         assert int(str(row[1])) == 5_000_000_000
+        await db.close()
+
+    async def test_vm_metrics_schema_correct(self) -> None:
+        import time
+        db = await _open_memory_db()
+        await run_migrations(db)
+        now = int(time.time())
+        await db.execute(
+            "INSERT INTO vm_metrics (hostname, metric, value_pct, ts) VALUES (?, ?, ?, ?)",
+            ("prod-api-01", "cpu", 42.5, now),
+        )
+        await db.commit()
+        cursor = await db.execute("SELECT hostname, metric, value_pct FROM vm_metrics")
+        row = await cursor.fetchone()
+        assert row is not None
+        assert str(row[0]) == "prod-api-01"
+        assert str(row[1]) == "cpu"
+        assert abs(float(str(row[2])) - 42.5) < 0.01
         await db.close()
 
 

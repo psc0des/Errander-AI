@@ -4,7 +4,9 @@
 2026-05-20
 
 ## Current Phase
-**SRE UX punch-list — P0 + P1 wave complete. VM Detail Metricbeat trends shipped (2026-05-20).**
+**Real metrics collection + live UI wired up (2026-05-20).**
+
+VM Detail Resource Trends card now backed by real SSH-collected data (not just fixtures). CPU/MEM/disk probed from target VMs every 60 seconds via asyncssh, stored in `vm_metrics` SQLite table (migration #4), served via `/api/vm/{hostname}/metrics`, and auto-refreshed in the browser every 60 s. Fixture fallback preserved for demo mode.
 
 External SRE reviewed the running Operations Hub UI and graded enterprise trust/audit 3/10, decision support 4/10, operator safety 3/10. All P0 + P1 items landed. VM Detail sparkline trends added per user request.
 
@@ -31,7 +33,9 @@ VM detail deep-link chain (lock/window/last_patched from VM_EVIDENCE), Batches B
 
 ### Files Changed This Session
 - `errander/web/evidence.py` — VM_EVIDENCE expanded with time-series history for all 11 VMs
-- `errander/web/server.py` — CSS additions (vm-trends), three new helper functions (_sparkline_svg, _mini_sparkline_svg, _vm_resource_trends), disk_rows enhanced with mini-sparklines, _vm_resource_trends call inserted in page_vm
+- `errander/web/server.py` — CSS additions (vm-trends), three new helper functions (_sparkline_svg, _mini_sparkline_svg, _vm_resource_trends), disk_rows enhanced with mini-sparklines, _vm_resource_trends call inserted in page_vm; **this session:** page_vm gains metrics_by_window param, handle_vm queries DB for all 4 windows, handle_metrics_api added (/api/vm/{hostname}/metrics), _auth_middleware returns JSON 401 for /api/ paths, _on_startup/_on_cleanup hooks wire DB open/migration/APScheduler collection loop, create_app registers new route + hooks
+- `errander/safety/migrations.py` — migration #4 added: vm_metrics table (hostname, metric, value_pct, ts) with compound PK + index
+- `errander/observability/vm_metrics.py` — NEW: _PROBE_CMD (vmstat+proc/meminfo+df POSIX shell), parse_probe_output, probe_vm (asyncssh, 8s hard timeout), collect_all (asyncio.gather), cleanup_old_metrics (8-day retention), query_metrics (4 time windows: 15m/1h/24h/7d with bucketed AVG)
 
 ## Previous Phase
 **P0-1 immutable execution artifact — final closure (2026-05-19).**

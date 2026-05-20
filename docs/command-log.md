@@ -1,5 +1,32 @@
 # Errander-AI Command Log
 
+## Real metrics collection + live API (2026-05-20)
+
+```bash
+# Verify vm_metrics module imports cleanly
+uv run python -c "from errander.observability.vm_metrics import parse_probe_output, query_metrics, collect_all, cleanup_old_metrics; print('OK')"
+
+# End-to-end test: migration, insert, query_metrics in memory
+uv run python -c "
+import asyncio, aiosqlite
+from errander.safety.migrations import run_migrations
+from errander.observability.vm_metrics import query_metrics
+# ... full test script — 3 cpu rows, 3 mem rows, 1 disk row inserted; 24h query returns all
+"
+
+# Smoke-test startup hook (no real inventory = scheduler skipped, db always attached)
+uv run python -c "import asyncio, os; os.environ['ERRANDER_AUDIT_DB_URL']=':memory:'; ..."
+
+# Lint auto-fix vm_metrics.py (UP037 quoted annotations, I001 import sort)
+uv run ruff check --fix errander/observability/vm_metrics.py
+
+# Run migration tests alone
+.venv/Scripts/pytest.exe tests/safety/test_migrations.py -q --tb=short
+
+# Full test suite (1992 tests, 0 failures)
+.venv/Scripts/pytest.exe -q --tb=short
+```
+
 ## VM Detail — Metricbeat-style sparklines (2026-05-20)
 
 ```bash

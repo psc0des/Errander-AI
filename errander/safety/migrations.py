@@ -97,6 +97,29 @@ _MIGRATIONS: list[tuple[int, str]] = [
             ON vm_disk_history (vm_id, mountpoint, captured_at DESC)
         """,
     ),
+    # 0004 — live resource metrics time-series (CPU, MEM, DISK% per mountpoint)
+    #
+    # Collected every 60 s by errander.observability.vm_metrics.collect_all().
+    # Retention: 8 days (cleaned up hourly by cleanup_old_metrics()).
+    # At 60 s cadence, ~6 metrics/VM, 11 VMs → ~790 k rows/week → trivial for SQLite.
+    #
+    # metric examples: 'cpu', 'mem', 'disk_/', 'disk_/var', 'disk_/tmp'
+    # value_pct is 0-100 float (percentage utilisation)
+    # ts is Unix epoch integer seconds (consistent with strftime('%s','now') in SQLite)
+    (
+        4,
+        """
+        CREATE TABLE IF NOT EXISTS vm_metrics (
+            hostname   TEXT    NOT NULL,
+            metric     TEXT    NOT NULL,
+            value_pct  REAL    NOT NULL,
+            ts         INTEGER NOT NULL,
+            PRIMARY KEY (hostname, metric, ts)
+        );
+        CREATE INDEX IF NOT EXISTS idx_vm_metrics_lookup
+            ON vm_metrics (hostname, metric, ts DESC)
+        """,
+    ),
 ]
 
 

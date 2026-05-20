@@ -1,5 +1,32 @@
 # Errander-AI — Lessons Learned
 
+## 2026-05-20 — Always read the full function signature before wiring into a startup hook
+
+`load_inventory(config_path: Path)` requires a positional argument. `_on_startup` was calling it with no args, crashing metrics collection silently at server start. The crash was invisible unless you read server logs — no 500 to the browser.
+
+**Why:** Startup hooks run once at process start with no request context. Errors there are swallowed unless explicitly logged; the server continues without the feature.
+
+**How to apply:** Before wiring any function into `_on_startup` / `_on_cleanup`, grep its signature. Wrap in try/except and log the exception — never let a startup feature failure be silent.
+
+## 2026-05-20 — SQLite WAL mode is mandatory for file-backed DBs with concurrent readers
+
+`sqlite3.OperationalError: disk I/O error` on aiosqlite is almost always a journal locking issue (default DELETE journal mode creates a `.sqlite-journal` file that blocks readers). Fix: `PRAGMA journal_mode=WAL` (write-ahead log, multiple readers + one writer allowed) + `PRAGMA busy_timeout=10000` (10 s wait before raising instead of immediate failure) + `aiosqlite.connect(timeout=30)`.
+
+**Why:** The web server and agent process both open the same SQLite file. DELETE journal mode serializes all access; a slow write blocks the server's reads.
+
+**How to apply:** Apply these three PRAGMAs in every `_on_startup` that opens a file-backed SQLite DB. In-memory DBs (tests) don't need them.
+
+## 2026-05-20 — Dead `href="#"` links are a trust signal — disable them, don't leave them
+
+Placeholder `<a href="#">` controls that do nothing (no onclick, no server route) destroy operator trust on a safety-critical UI. The correct patterns:
+- If the action requires a CLI command: `<button disabled title="Use CLI: errander --run-now">` with `opacity:0.45;cursor:not-allowed`
+- If it's a v2 feature: `<button disabled title="v2 roadmap">LABEL <span>v2</span></button>`
+- If there's a JS function to call: `<a href="#" onclick="event.preventDefault();_fn()">` — `event.preventDefault()` is mandatory
+
+**Why:** An operator clicking a button that silently does nothing learns to distrust the whole UI. A disabled button with a tooltip tells them exactly what to do instead.
+
+**How to apply:** Before any UI review, grep for `href="#"` without `onclick` — those are dead links. Every one needs either a JS handler, a disabled state, or removal.
+
 ## 2026-05-20 — isinstance guard is required when passing factory-created objects through test mocks
 
 `AuditStore.make_batch_store()` returns a real `BatchStore` in production but a non-awaitable `MagicMock` in tests that mock `AuditStore`. If `build_batch_graph` calls `await batch_store.insert(...)` unconditionally, test runs raise `TypeError: object MagicMock can't be used in 'await' expression`. Fix: guard with `isinstance(_raw, BatchStore)` before assigning; set `_batch_store = None` when the guard fails so the code path is skipped in tests.

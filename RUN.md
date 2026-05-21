@@ -94,6 +94,25 @@ The agent serves a web UI on port 9090 while running.
 | `http://localhost:9090/metrics` | Raw Prometheus metrics |
 | `http://localhost:9090/health` | Liveness check — `{"status":"ok"}` |
 
+### Data mode: fixture vs live
+
+The Operations Hub can run in two modes, controlled by `ERRANDER_UI_DATA_MODE`:
+
+| Value | Behaviour |
+|---|---|
+| `fixture` (default) | Static demo data from `errander/web/data.py`. Safe for demos and CI. |
+| `live` | Reads from real backend stores (AuditStore, ApprovalManager, inventory). Missing stores show "unavailable" — never silently fall back to fake data. |
+
+```bash
+# Demo / CI (default — no env var needed)
+uv run python -m errander
+
+# Live data mode
+ERRANDER_UI_DATA_MODE=live uv run python -m errander
+```
+
+The mode banner at the top of every page shows the current mode and data freshness.
+
 ### Local dev / exploration (no real VMs needed)
 
 To browse the UI with realistic seeded data and a headed browser:

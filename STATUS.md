@@ -4,6 +4,27 @@
 2026-05-21
 
 ## Current Phase
+**Docker hygiene v1.1 — Session 2b-i shipped (2026-05-22, SESSION 2b-i COMPLETE).** 2289 tests passing (+52 new), ruff clean on changed files, no new mypy errors.
+
+Session 2b-i delivers the Slack approval surface end-to-end (formatter + reply parser + manager) and the signed URL primitive that Session 2b-ii will use for the web approval page. The pieces are decoupled: both Slack and web surfaces resolve through the same `HygieneApprovalManager`, so wiring is independent of surface implementation.
+
+Decision to split Session 2b into 2b-i / 2b-ii surfaced before coding: batch orchestration wiring (how approval flows back into `planned_actions`) is architecturally complex and would risk a half-wired commit if attempted alongside the surface plumbing. Better to ship the Slack surface green, then handle wiring + web routes as a focused next session.
+
+### Files added/changed in Session 2b-i
+- `errander/integrations/signed_url.py` (NEW) — HMAC-SHA256 + time-limited tokens. `make_signed_token`, `verify_signed_token`, `SigningSecretMissingError` (loud failure when `ERRANDER_SIGNING_SECRET` is unset — never silently disable signing), `InvalidSignedTokenError`. Constant-time signature compare resists timing attacks.
+- `errander/safety/hygiene_approval.py` (NEW) — `format_hygiene_approval_message` (Slack body grouped by class with 1-based indices + reply syntax + optional web URL), `parse_hygiene_reply` (`approve dangling 1,3 containers 1`, `approve all cleanup_candidate`, `reject all`, etc.), `HygieneApprovalManager` (in-memory rendezvous mirroring `ApprovalManager` pattern, keyed by `(batch_id, vm_id)` since a batch can have multiple VMs each needing their own approval), `HygieneReplyError`.
+- `tests/integrations/test_signed_url.py` (NEW, 17 tests) — roundtrip, tamper, expiry boundaries, missing-secret loud failure, secret precedence.
+- `tests/safety/test_hygiene_approval.py` (NEW, 35 tests) — formatter (7), parser (18 — incl. all error paths and edge cases like out-of-range indices, reversed ranges, report-only class refusal, dedup), manager (10 — incl. timeout returns None not auto-reject, idempotent resolve, multiple VMs per batch).
+- `README.md`, `STATUS.md`, `tasks/todo.md`, `tasks/lessons.md`, `docs/command-log.md` — doc sync.
+
+### Session 2b-ii (next) — web page + batch orchestration wiring
+- FastHTML routes: GET `/ui/docker-hygiene/approve?token=...` (render assessment + checkboxes), POST handler (verify signed token, build artifact, call manager.resolve).
+- Slack reply polling integration: extend the existing approval poller (or add a new one) that watches the message thread for parse-able replies.
+- Batch orchestration wiring: where in `errander/agent/graph.py` or `errander/main.py` does the assessment → message-post → wait-for-approval → re-invoke-subgraph flow live? Likely a new node sequence (`docker_hygiene_assess` → `docker_hygiene_request_approval` → `docker_hygiene_wait` → `docker_hygiene_execute`) gated by per-VM approval.
+- `ERRANDER_SIGNING_SECRET` documented in `docs/SECRETS.md` and `SETUP.md` (or `.env.example`).
+- End-to-end integration tests for both surfaces.
+
+### Original phase from start of session
 **Defense-in-depth for vibe-coding LLM continuity (2026-05-22, COMPLETE).** No behavior change; mechanism for surviving LLM session boundaries.
 
 Problem surfaced by user: LLMs (Opus, me, future sessions) have no persistent memory. Lessons captured in `tasks/lessons.md` won't auto-surface to a future session asked to add a second object-level destructive action — that session won't grep `lessons.md` unless something nudges it. The two implementation contracts established in Session 2a (layered drift gates, per-object parsers never silently drop) are at risk of being silently re-invented worse.

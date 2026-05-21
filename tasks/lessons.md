@@ -1,5 +1,13 @@
 # Errander-AI — Lessons Learned
 
+## 2026-05-22 — Signing-secret-missing must fail loud, not silently disable signing
+
+The `signed_url.py` module raises `SigningSecretMissingError` when `ERRANDER_SIGNING_SECRET` is unset. A common alternate design — auto-generate an ephemeral secret in memory, or warn-and-continue — would create a critical vulnerability: an attacker who could cause the env var to be unset (CI misconfiguration, container restart with a missing secret) would be handed a system where unsigned URLs flow because the signature check has been silently bypassed.
+
+**Why:** Defense-in-depth for HMAC-signed URLs means failing closed on every layer. The verifier checks signature, then expiry. The signer refuses to issue without a secret. Both refusals are loud. Tests cover the env-var-missing path explicitly so future refactors can't introduce a silent-degrade.
+
+**How to apply:** Any future security primitive that depends on an env var or config (signing key, encryption key, secret token) MUST fail loud when absent. Never default to "if missing, generate one" or "if missing, skip the check." Make the test for the failure case as prominent as the test for the success case.
+
 ## 2026-05-22 — Vibe-coding with LLMs requires defense-in-depth for invariants because no LLM session has persistent memory
 
 Captured a substantive implementation contract in `lessons.md` after Session 2a (layered drift gates, per-object parsers never silently drop). User correctly pointed out: a *future* LLM session asked to add a second object-level destructive action won't grep `lessons.md` unless something nudges it. The lesson is at risk of being silently re-invented worse.

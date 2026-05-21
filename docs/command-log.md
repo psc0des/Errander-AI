@@ -2136,3 +2136,9 @@ uv run mypy errander/   # 9 pre-existing errors in unrelated files; no new error
 # Defense-in-depth for LLM continuity (2026-05-22)
 # No behavior change — pytest sanity only
 uv run pytest -x -q   # 2237 passed (no regressions; INVARIANT comments are pure additions)
+
+# Docker hygiene v1.1 Session 2b-i (2026-05-22)
+uv run pytest tests/integrations/test_signed_url.py tests/safety/test_hygiene_approval.py -x -q   # 52 passed (17 signed-URL + 35 hygiene approval)
+uv run pytest -x -q   # 2289 passed (+52 net new)
+uv run ruff check errander/integrations/signed_url.py errander/safety/hygiene_approval.py tests/integrations/test_signed_url.py tests/safety/test_hygiene_approval.py   # All checks passed!
+uv run mypy errander/integrations/signed_url.py errander/safety/hygiene_approval.py   # Success: no issues found in 2 source files

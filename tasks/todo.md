@@ -31,8 +31,15 @@
 - [x] CLAUDE.md doc-sync rule extended: "Pre-flight check before destructive-action work" requires re-reading Implementation Contracts + grepping `INVARIANT` + mirroring reference implementation
 - [x] New lesson capturing the meta-pattern (vibe-coding with LLMs requires defense-in-depth for invariants)
 
-### Session 2b (next) — approval surfaces
-**Status:** Not started. Execution path is wired and tested end-to-end with mocked approvals injected via `planned_actions[i].params["approval"]`. Session 2b lands the real surfaces that produce those approvals.
+### Session 2b-i shipped (2026-05-22)
+- [x] `errander/integrations/signed_url.py` (NEW) — `make_signed_token`/`verify_signed_token` (HMAC-SHA256, time-limited, constant-time compare), `SigningSecretMissingError` (loud failure)
+- [x] `errander/safety/hygiene_approval.py` (NEW) — `format_hygiene_approval_message`, `parse_hygiene_reply`, `HygieneApprovalManager`
+- [x] 52 new tests: 17 signed-URL (roundtrip / tamper / expiry / secret resolution) + 35 hygiene approval (formatter / parser / manager)
+- [x] Green tree: **2289 pytest, ruff clean on new files, no new mypy errors**
+- [x] Doc sync: README test count, STATUS, todo, lessons, command-log
+
+### Session 2b-ii (next) — approval surfaces
+**Status:** Not started. Slack formatter/parser/manager are wired and tested in isolation. 2b-ii adds the web page + Slack polling + batch orchestration wiring so approvals actually flow back into the execution path.
 
 - Slack message format (rich object list grouped by resource class with size/age + signed web URL)
 - Slack reply parser (structured commands: `approve images 1,3 containers 1` and `reject all`)

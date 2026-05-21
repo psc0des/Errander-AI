@@ -410,6 +410,7 @@ def test_mode_banner_shows_live_freshness(live_provider, server_module) -> None:
 # active (no stores connected), it is a data-leak bug.
 _FIXTURE_ONLY_STRINGS = [
     "2026-04",             # April 2026 fixture dates
+    "2026-05-13",          # admin health-check fixture timestamp
     "prod-0423",           # fixture batch IDs
     "staging-0422",        # fixture staging batch IDs
     "prod-web-01",         # fixture VM hostnames
@@ -420,6 +421,10 @@ _FIXTURE_ONLY_STRINGS = [
     "28 batches",          # fixture batch KPI
     "96.4%",               # fixture completion rate
     "2,418 actions",       # fixture action total
+    "last verified 02:14", # inventory KPI fixture timestamp
+    "Ubuntu · RHEL",       # inventory hardcoded OS subtitle
+    "nginx",               # fixture restartable units
+    "gunicorn",            # fixture restartable units
 ]
 
 

@@ -3315,26 +3315,31 @@ def page_batches() -> str:
 # ── Inventory page ───────────────────────────────────────────────────────────
 
 def page_inventory() -> str:
-    envs  = len(set(v["env"] for v in get_provider().get_vms()))
-    os_ct = len(set(v["os"].split()[0] for v in get_provider().get_vms()))
-    reachable = sum(1 for v in get_provider().get_vms() if v["status"] != "offline")
+    _is_fixture = get_provider().data_mode() == "FIXTURE"
+    _vms = get_provider().get_vms()
+    envs  = len(set(v["env"] for v in _vms))
+    os_families = sorted(set(v["os"].split()[0] for v in _vms))
+    os_ct = len(os_families)
+    os_subtitle = " · ".join(os_families) if os_families else "—"
+    reachable = sum(1 for v in _vms if v["status"] != "offline")
+    freshness_sub = "last verified 02:14 UTC" if _is_fixture else get_provider().data_freshness()
 
     kpis = f"""
     <div class="inv-kpi">
       <div class="card kpi-tile kpi-top-border" style="border-color:#4f46e5">
         <div class="kpi-label">Total VMs</div>
-        <div class="kpi-value" style="color:#0f172a">{len(get_provider().get_vms())}</div>
+        <div class="kpi-value" style="color:#0f172a">{len(_vms)}</div>
         <div class="kpi-subtitle">{envs} environments</div>
       </div>
       <div class="card kpi-tile kpi-top-border" style="border-color:#0891b2">
         <div class="kpi-label">OS Types</div>
         <div class="kpi-value" style="color:#0891b2">{os_ct}</div>
-        <div class="kpi-subtitle">Ubuntu · RHEL · Debian</div>
+        <div class="kpi-subtitle">{os_subtitle}</div>
       </div>
       <div class="card kpi-tile kpi-top-border" style="border-color:#16a34a">
         <div class="kpi-label">Reachable</div>
         <div class="kpi-value" style="color:#16a34a">{reachable}</div>
-        <div class="kpi-subtitle">last verified 02:14 UTC</div>
+        <div class="kpi-subtitle">{freshness_sub}</div>
       </div>
     </div>"""
 
@@ -3429,6 +3434,7 @@ _ENV_RESTARTABLE_UNITS: dict[str, list[str]] = {
 
 
 def _inventory_env_breakdown() -> str:
+    _is_fixture = get_provider().data_mode() == "FIXTURE"
     env_order = ["PROD", "STAGING", "DEV"]
     cards_html = ""
     for env_name in env_order:
@@ -3444,7 +3450,7 @@ def _inventory_env_breakdown() -> str:
             f'<a href="/vm/{v["hostname"]}" style="font-size:0.75rem;color:#4f46e5;text-decoration:none;font-family:\'JetBrains Mono\',monospace">{v["hostname"]}</a>'
             for v in group
         )
-        units = _ENV_RESTARTABLE_UNITS.get(env_name, [])
+        units = _ENV_RESTARTABLE_UNITS.get(env_name, []) if _is_fixture else []
         if units:
             units_html = " ".join(
                 f'<code style="font-size:0.7rem;background:#f1f5f9;padding:2px 6px;border-radius:4px;color:#4f46e5">{u}</code>'
@@ -3618,8 +3624,14 @@ def page_settings() -> str:
       </table>
     </div>"""
 
+    _s_is_fixture = get_provider().data_mode() == "FIXTURE"
+    _unit_iter: list[tuple[str, list[str]]] = (
+        list(_ENV_RESTARTABLE_UNITS.items())
+        if _s_is_fixture
+        else [(e, []) for e in sorted(set(v["env"] for v in get_provider().get_vms()))]
+    )
     restart_rows = ""
-    for env_name, units in _ENV_RESTARTABLE_UNITS.items():
+    for env_name, units in _unit_iter:
         env_color = {"PROD": "#4f46e5", "STAGING": "#d97706", "DEV": "#16a34a"}.get(env_name, "#94a3b8")
         if units:
             chips = " ".join(
@@ -3677,6 +3689,7 @@ def page_settings() -> str:
 # ── Admin page ────────────────────────────────────────────────────────────────
 
 def page_admin() -> str:
+    _is_fixture = get_provider().data_mode() == "FIXTURE"
     _ag = get_provider().get_agent_status()
     _ab = get_provider().get_active_batch()
     _last = _ag.get("last_batch_id", "—")
@@ -3763,7 +3776,7 @@ def page_admin() -> str:
       </div>
       <div class="health-rows">{health_rows}</div>
       <div style="margin-top:14px;font-family:'JetBrains Mono',monospace;font-size:0.6875rem;color:#94a3b8">
-        Last checked: 2026-05-13 03:00:12 UTC
+        {'Last checked: 2026-05-13 03:00:12 UTC' if _is_fixture else 'Not yet checked — use CLI: errander --check-targets &lt;env&gt;'}
       </div>
     </div>"""
 

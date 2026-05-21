@@ -12,6 +12,12 @@ When rendering a live-mode page with an empty data store, any `dict["key"]` acce
 
 **How to apply:** After any change that introduces a new live-mode code path, run `test_page_*_live_renders` tests. They catch these crashes immediately since they use an unrefreshed LiveProvider.
 
+## 2026-05-21 — Helper functions that build sub-sections can also contain hardcoded fixture data
+
+`page_settings()` had two sources of fixture leaks: the `_SETTINGS_SECTIONS` dict (gated in the previous pass) and a separate `restart_rows` loop that iterated `_ENV_RESTARTABLE_UNITS` directly. Even when the main section is gated, sub-section helpers and inline loops need their own gates.
+
+**How to apply:** After gating a page function, run the regression tests against every sub-section helper called by that page (`_inventory_env_breakdown`, `_live_settings_sections`, `restart_rows`, etc.). Grep the page function body for any dict or constant that isn't from the provider.
+
 ## 2026-05-21 — Live-mode regression tests must assert specific fixture strings, not just "no crash"
 
 After gating evidence overlays, there can still be fixture strings in page renders from:

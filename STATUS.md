@@ -4,7 +4,25 @@
 2026-05-21
 
 ## Current Phase
-**SRE QA round 2 — remaining fixture leaks fixed (2026-05-21, COMPLETE).** 2177 tests, all passing.
+**SRE QA round 3 — P2 inventory/admin static facts fixed (2026-05-21, COMPLETE).** 2172 tests, all passing.
+
+Four remaining P2 static-data issues fixed in `errander/web/server.py`:
+
+1. **Inventory OS subtitle**: `"Ubuntu · RHEL · Debian"` (hardcoded) → computed from actual VM OS fields: `" · ".join(sorted(set(v["os"].split()[0] for v in _vms)))`.
+2. **Inventory "Reachable" timestamp**: `"last verified 02:14 UTC"` → `get_provider().data_freshness()` in live mode.
+3. **Inventory + Settings restartable units**: `_ENV_RESTARTABLE_UNITS` (hardcoded `nginx`/`gunicorn`/`redis-server`) now only used in fixture mode; live mode derives env list from provider VMs with empty units, showing "None configured".
+4. **Admin health "Last checked"**: `"2026-05-13 03:00:12 UTC"` → `"Not yet checked — use CLI: errander --check-targets <env>"` in live mode.
+
+`_FIXTURE_ONLY_STRINGS` in regression tests extended with 4 new markers: `"2026-05-13"`, `"last verified 02:14"`, `"Ubuntu · RHEL"`, `"nginx"`, `"gunicorn"`.
+
+### Files Changed
+- `errander/web/server.py` — 4 static-fact gates
+- `tests/ui/test_web_providers.py` — 5 new fixture markers in `_FIXTURE_ONLY_STRINGS`
+
+---
+
+## Previous Phase
+**SRE QA round 2 — remaining fixture leaks fixed (2026-05-21, COMPLETE).** 2172 tests, all passing.
 
 Second SRE QA pass found 9 more fixture strings leaking in live mode across 4 pages. All fixed in `errander/web/server.py`:
 

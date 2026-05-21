@@ -1,5 +1,16 @@
 # Errander-AI Command Log
 
+## SRE QA round 3 — P2 inventory/admin static facts (2026-05-21)
+
+```bash
+# Verify 4 P2 fixes pass regression tests
+uv run pytest tests/ui/ -x --tb=short -q
+# 1 failed — nginx/gunicorn in page_settings restart_rows; gated _unit_iter
+# 177 passed in 48.90s after fix
+```
+
+---
+
 ## SRE QA round 2 — remaining fixture leaks (2026-05-21)
 
 ```bash

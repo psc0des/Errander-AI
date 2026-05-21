@@ -33,6 +33,16 @@ SRE QA verdict: live mode still served fixture operational data (`VM_EVIDENCE` l
 - [x] 9 new regression tests in `tests/ui/test_web_providers.py` — 8 parametrized page renders + VM not-found check — assert no fixture string appears in live mode.
 - [x] 177/177 UI tests passing.
 
+### SRE QA round 3: P2 inventory/admin static facts (2026-05-21, COMPLETED)
+
+- [x] Inventory OS subtitle: `"Ubuntu · RHEL · Debian"` → computed from actual VMs.
+- [x] Inventory "Reachable" timestamp: `"last verified 02:14 UTC"` → `get_provider().data_freshness()` in live mode.
+- [x] `_inventory_env_breakdown()` restartable units: `_ENV_RESTARTABLE_UNITS` gated — live mode shows "None configured" per actual env.
+- [x] `page_settings()` restartable units table: same gate — live mode iterates actual envs with empty units.
+- [x] Admin "Last checked" timestamp: `"2026-05-13 03:00:12 UTC"` → "Not yet checked" in live mode.
+- [x] `_FIXTURE_ONLY_STRINGS` extended with `"2026-05-13"`, `"last verified 02:14"`, `"Ubuntu · RHEL"`, `"nginx"`, `"gunicorn"`.
+- [x] 177/177 UI tests passing.
+
 ---
 
 ## P0 regression fix — f-string JS brace escape (2026-05-21, COMPLETED)

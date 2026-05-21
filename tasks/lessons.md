@@ -1,5 +1,28 @@
 # Errander-AI — Lessons Learned
 
+## 2026-05-21 — Page functions that render live data must guard every dict access when the provider returns empty sentinels
+
+When rendering a live-mode page with an empty data store, any `dict["key"]` access on a sentinel dict (e.g., `probe = {}`, `nodes = []`) raises `KeyError` or `ValueError`. Three patterns to always apply:
+
+1. **Empty list with `[0]` access**: `(sch.get("next_runs") or ["—"])[0]` — `or` replaces the empty list before indexing.
+2. **`max()` over an empty generator**: `max((n["x"] for n in nodes), default=0)` — the `default=` kwarg avoids `ValueError`.
+3. **Dict access when the dict may be `{}`**: guard the entire rendering block with `if not probe:` and render a "no data" placeholder card instead of scattered `.get()` calls.
+
+**Why:** Live mode with no stores returns empty collections. Fixture mode always had data so crashes were invisible during development. The fix is to guard at the top of each rendering block, not in every individual access.
+
+**How to apply:** After any change that introduces a new live-mode code path, run `test_page_*_live_renders` tests. They catch these crashes immediately since they use an unrefreshed LiveProvider.
+
+## 2026-05-21 — anyio 4.13 + pytest on Windows makes asyncio event loop creation take ~250 s per test
+
+With `asyncio_mode=AUTO` and `anyio-4.13.0` installed, any event loop creation inside a pytest run — even `asyncio.new_event_loop()` in a sync test — takes ~250 seconds. The root cause is anyio intercepting the loop factory.
+
+**Fix:** Replace async test bodies that call `asyncio.new_event_loop().run_until_complete()` with sync alternatives:
+- Contract tests: `inspect.iscoroutinefunction(obj.method)` proves the method is awaitable without running it.
+- Behaviour tests: inject directly into the provider's private cache attributes (`provider._approvals = [...]`) and verify the getter returns them.
+- Don't test the async refresh integration path in the same test file — it belongs in a separate integration test that can tolerate long runtimes.
+
+**Why:** anyio's event loop plugin runs even for non-asyncio tests in AUTO mode. The workaround is to never create event loops in the fast unit test suite.
+
 ## 2026-05-20 — Always read the full function signature before wiring into a startup hook
 
 `load_inventory(config_path: Path)` requires a positional argument. `_on_startup` was calling it with no args, crashing metrics collection silently at server start. The crash was invisible unless you read server logs — no 500 to the browser.

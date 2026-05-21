@@ -15,11 +15,7 @@ from aiohttp import web
 
 logger = logging.getLogger(__name__)
 
-from .data import (
-    ACTIVE_BATCH, AGENT_STATUS, APPROVALS, AUDIT_EVENTS, BATCHES,
-    DEFERRED_QUEUE, EXECUTION_TRACE, LLM_DECISIONS, PROBE_HISTORY,
-    SCHEDULER_TIMELINE, VM_ACTIONS, VM_TRACE, VMS,
-)
+from .providers import get_provider
 from .evidence import (
     APPROVAL_EVIDENCE, AUDIT_EVIDENCE, BATCH_EVIDENCE,
     UI_MODE, VM_EVIDENCE, audit_evidence_for,
@@ -1486,7 +1482,6 @@ NAV_ITEMS = [
     ("Admin Panel",     "/admin",     "admin"),
 ]
 
-APPROVAL_COUNT = len(APPROVALS)
 
 # ── Static config / admin data ────────────────────────────────────────────────
 
@@ -1550,11 +1545,12 @@ _OVERRIDES = [
 
 def _mode_banner_html() -> str:
     """Render the global mode banner. Loud on purpose."""
-    src  = UI_MODE.get("data_source", "DEMO")
+    _p   = get_provider()
+    src  = "LIVE (DB)" if _p.data_mode() == "LIVE" else UI_MODE.get("data_source", "DEMO")
     env  = UI_MODE.get("env", "PROD")
     exe  = UI_MODE.get("execution", "DRY RUN")
-    fr   = UI_MODE.get("freshness", "")
-    be   = UI_MODE.get("backend", "")
+    fr   = _p.data_freshness() if _p.data_mode() == "LIVE" else UI_MODE.get("freshness", "")
+    be   = "errander.web.providers (live)" if _p.data_mode() == "LIVE" else UI_MODE.get("backend", "")
     build= UI_MODE.get("build", "")
     if exe == "LIVE EXECUTION" and env == "PROD":
         banner_cls = "mode-banner live-prod"
@@ -1590,7 +1586,7 @@ def layout(title: str, active_url: str, breadcrumb: str, topnav_extra: str, cont
         else:
             label, url = item[0], item[1]
             active_cls = ' active' if url == active_url else ''
-            ab = f'<span class="nav-badge">{APPROVAL_COUNT}</span>' if label == "Approval Queue" and APPROVAL_COUNT else ""
+            ab = f'<span class="nav-badge">{len(get_provider().get_approvals())}</span>' if label == "Approval Queue" and len(get_provider().get_approvals()) else ""
             nav_parts.append(f'<a href="{url}" class="nav-item{active_cls}">{label}{ab}</a>')
     if section_open:
         nav_parts.append('</div>')
@@ -1637,7 +1633,7 @@ def _operator_queue() -> str:
     # tuple: (priority, icon, label, detail, action_label, href)
 
     # 1. Pending approvals (with countdown)
-    pending = APPROVALS
+    pending = get_provider().get_approvals()
     if pending:
         soonest_min = min(int(a.get("countdown", "30:00").split(":")[0]) for a in pending)
         pri = "CRITICAL" if soonest_min < 5 else "HIGH" if soonest_min < 15 else "MED"
@@ -1651,7 +1647,7 @@ def _operator_queue() -> str:
         ))
 
     # 2. High-risk pending actions (subset of approvals, called out explicitly)
-    high_risk = [a for a in APPROVALS if a["tier"] == "HIGH RISK"]
+    high_risk = [a for a in get_provider().get_approvals() if a["tier"] == "HIGH RISK"]
     if high_risk:
         rows.append((
             "CRITICAL", "⚠",
@@ -1662,7 +1658,7 @@ def _operator_queue() -> str:
         ))
 
     # 3. Failed/partial batches recently
-    bad_batches = [b for b in BATCHES if b.get("status") in ("failed", "partial")]
+    bad_batches = [b for b in get_provider().get_batches() if b.get("status") in ("failed", "partial")]
     if bad_batches:
         latest = bad_batches[0]
         rows.append((
@@ -1674,7 +1670,7 @@ def _operator_queue() -> str:
         ))
 
     # 4. Failed VMs (last action failed)
-    failed_vms_now = [v for v in VMS if v["status"] == "failed"]
+    failed_vms_now = [v for v in get_provider().get_vms() if v["status"] == "failed"]
     if failed_vms_now:
         rows.append((
             "HIGH", "🔴",
@@ -1685,7 +1681,7 @@ def _operator_queue() -> str:
         ))
 
     # 5. Warning VMs (degraded — disk high, etc.)
-    warning_vms = [v for v in VMS if v["status"] == "warning"]
+    warning_vms = [v for v in get_provider().get_vms() if v["status"] == "warning"]
     if warning_vms:
         rows.append((
             "MED", "⚠",
@@ -1707,8 +1703,8 @@ def _operator_queue() -> str:
         ))
 
     # 7. Next maintenance window
-    sch = SCHEDULER_TIMELINE
-    nextrun = sch.get("next_runs", ["—"])[0]
+    sch = get_provider().get_scheduler_timeline()
+    nextrun = (sch.get("next_runs") or ["—"])[0]
     rows.append((
         "INFO", "🕐",
         f"Next scheduled maintenance window: {nextrun}",
@@ -1718,7 +1714,7 @@ def _operator_queue() -> str:
     ))
 
     # 8. Active batch (if running, otherwise show last completed)
-    ab = ACTIVE_BATCH
+    ab = get_provider().get_active_batch()
     if ab.get("status") not in ("completed",):
         rows.append((
             "INFO", "▶",
@@ -1774,23 +1770,23 @@ def _operator_queue() -> str:
 
 
 def page_fleet() -> str:
-    healthy       = sum(1 for v in VMS if v["status"] == "ok")
-    warnings      = sum(1 for v in VMS if v["status"] == "warning")
-    failed_ct     = sum(1 for v in VMS if v["status"] == "failed")
-    needs_approval = sum(1 for v in VMS if v["status"] == "pending")
-    total_pending  = sum(v.get("pending_patches", 0) for v in VMS)
+    healthy       = sum(1 for v in get_provider().get_vms() if v["status"] == "ok")
+    warnings      = sum(1 for v in get_provider().get_vms() if v["status"] == "warning")
+    failed_ct     = sum(1 for v in get_provider().get_vms() if v["status"] == "failed")
+    needs_approval = sum(1 for v in get_provider().get_vms() if v["status"] == "pending")
+    total_pending  = sum(v.get("pending_patches", 0) for v in get_provider().get_vms())
 
     kpis = f"""
     <div class="kpi-grid">
       <div class="card kpi-tile kpi-top-border" style="border-color:#4f46e5">
         <div class="kpi-label">Total VMs</div>
-        <div class="kpi-value" style="color:#0f172a">{len(VMS)}</div>
-        <div class="kpi-subtitle">{len(set(v['env'] for v in VMS))} environments &nbsp;·&nbsp; {total_pending} patches pending fleet-wide</div>
+        <div class="kpi-value" style="color:#0f172a">{len(get_provider().get_vms())}</div>
+        <div class="kpi-subtitle">{len(set(v['env'] for v in get_provider().get_vms()))} environments &nbsp;·&nbsp; {total_pending} patches pending fleet-wide</div>
       </div>
       <div class="card kpi-tile kpi-top-border" style="border-color:#16a34a">
         <div class="kpi-label">Healthy</div>
         <div class="kpi-value" style="color:#16a34a">{healthy}</div>
-        <div class="kpi-subtitle">{round(healthy/len(VMS)*100)}% of fleet &nbsp;·&nbsp; last batch 02:00 UTC</div>
+        <div class="kpi-subtitle">{round(healthy/max(len(get_provider().get_vms()), 1)*100)}% of fleet &nbsp;·&nbsp; last batch 02:00 UTC</div>
       </div>
       <div class="card kpi-tile kpi-top-border" style="border-color:#d97706">
         <div class="kpi-label">Warnings / Failed</div>
@@ -1805,7 +1801,7 @@ def page_fleet() -> str:
     </div>"""
 
     # Active batch
-    b = ACTIVE_BATCH
+    b = get_provider().get_active_batch()
     batch = f"""
     <div class="card batch-card">
       <div class="batch-header">
@@ -1838,7 +1834,7 @@ def page_fleet() -> str:
     </div>"""
 
     # Needs Attention box (only if there are non-ok VMs)
-    attn_vms = [v for v in VMS if v["status"] in ("warning", "failed", "pending")]
+    attn_vms = [v for v in get_provider().get_vms() if v["status"] in ("warning", "failed", "pending")]
     attn_box = ""
     if attn_vms:
         rows = ""
@@ -1873,7 +1869,7 @@ def page_fleet() -> str:
 
     # VM grid — enriched cards
     cards = ""
-    for vm in VMS:
+    for vm in get_provider().get_vms():
         color, _, border = STATUS_COLORS.get(vm["status"], ("#94a3b8", "", "#94a3b8"))
         cpu  = vm.get("cpu",  0)
         mem  = vm.get("mem",  0)
@@ -1947,7 +1943,7 @@ def page_fleet() -> str:
     <div class="section-hdr">
       <div>
         <div class="section-title">Fleet Inventory</div>
-        <div class="section-sub">{len(VMS)} hosts across {len(set(v['env'] for v in VMS))} environments &nbsp;·&nbsp; data as of 2026-04-23 02:14 UTC &nbsp;·&nbsp; full list in <a href="/inventory" style="color:#4f46e5;text-decoration:none">/inventory</a></div>
+        <div class="section-sub">{len(get_provider().get_vms())} hosts across {len(set(v['env'] for v in get_provider().get_vms()))} environments &nbsp;·&nbsp; data as of 2026-04-23 02:14 UTC &nbsp;·&nbsp; full list in <a href="/inventory" style="color:#4f46e5;text-decoration:none">/inventory</a></div>
       </div>
     </div>
     <div class="vm-grid">{cards}</div>"""
@@ -2175,7 +2171,7 @@ def _appr_confirm_modal_js() -> str:
 
 def page_approvals() -> str:
     cards = ""
-    for a in APPROVALS:
+    for a in get_provider().get_approvals():
         ev = APPROVAL_EVIDENCE.get(a["id"], {})
         tier_cls = "badge-danger" if a["tier"] == "HIGH RISK" else "badge-amber"
 
@@ -2282,7 +2278,7 @@ def page_approvals() -> str:
     <div class="section-hdr">
       <div>
         <div class="section-title">Pending Approval</div>
-        <div class="section-sub">{len(APPROVALS)} actions require your decision before the agent can proceed &nbsp;·&nbsp; auto-reject at the countdown</div>
+        <div class="section-sub">{len(get_provider().get_approvals())} actions require your decision before the agent can proceed &nbsp;·&nbsp; auto-reject at the countdown</div>
       </div>
       <div class="filter-chips" id="appr-chips">
         <a href="#" class="chip active" onclick="event.preventDefault();_apprFilter(this,'all')">All</a>
@@ -2311,7 +2307,7 @@ def page_approvals() -> str:
 
 
 def _vm_siblings_section(hostname: str, env: str) -> str:
-    siblings = [v for v in VMS if v["env"] == env and v["hostname"] != hostname]
+    siblings = [v for v in get_provider().get_vms() if v["env"] == env and v["hostname"] != hostname]
     if not siblings:
         return ""
     chips = ""
@@ -2627,18 +2623,14 @@ def _vm_resource_trends(
 
 
 def page_vm(hostname: str, metrics_by_window: dict[str, dict[str, Any]] | None = None) -> str:
-    vm = next((v for v in VMS if v["hostname"] == hostname), None)
+    vm = get_provider().get_vm(hostname)
     if vm is None:
         return f'<div class="card" style="padding:40px;text-align:center">VM <code>{hostname}</code> not found.</div>'
 
     color, _, border = STATUS_COLORS.get(vm["status"], ("#94a3b8", "", "#94a3b8"))
     ev = VM_EVIDENCE.get(hostname, {})
 
-    actions = VM_ACTIONS.get(hostname, [
-        {"ts": "2026-04-23 02:14", "action": "Log Rotation",   "status": "ok",  "duration": "9s",     "op": "agent", "detail": "Rotated 0.7 GB /var/log"},
-        {"ts": "2026-04-23 02:10", "action": "OS Patching",    "status": "ok",  "duration": "3m 22s", "op": "agent", "detail": "6 packages updated"},
-        {"ts": "2026-04-23 02:05", "action": "Pre-Validation", "status": "ok",  "duration": "3s",     "op": "agent", "detail": "SSH OK, OS verified"},
-    ])
+    actions = get_provider().get_vm_actions(hostname)
 
     _detail_cls_vm = {
         "ok":      ("audit-detail-ok",      "#f8f9ff"),
@@ -2835,12 +2827,12 @@ def page_audit() -> str:
     rows = ""
     actions_seen: set[str] = set()
     approvers_seen: set[str] = set()
-    for i, e in enumerate(AUDIT_EVENTS):
+    for i, e in enumerate(get_provider().get_audit_events()):
         ev = audit_evidence_for(i)
         actions_seen.add(e["action"])
         if "(none" not in ev["approver"] and "(n/a" not in ev["approver"]:
             approvers_seen.add(ev["approver"].split(" (")[0])
-        vm_env = next((v["env"] for v in VMS if v["hostname"] == e["vm"]), "")
+        vm_env = next((v["env"] for v in get_provider().get_vms() if v["hostname"] == e["vm"]), "")
         alt = ' row-alt' if i % 2 == 1 else ''
         status_cls = " row-failed" if e["status"] == "failed" else (" row-pending" if e["status"] == "pending" else "")
         det_cls = _detail_cls.get(e["status"], "audit-detail-ok")
@@ -2896,14 +2888,14 @@ def page_audit() -> str:
         </tr>"""
 
     # Filter dropdown values (real, derived from data)
-    env_opts = "".join(f'<option value="{en}">{en}</option>' for en in sorted({v["env"] for v in VMS}))
-    batch_opts = "".join(f'<option value="{b["id"]}">{b["id"]}</option>' for b in BATCHES)
-    vm_opts = "".join(f'<option value="{v["hostname"]}">{v["hostname"]}</option>' for v in VMS)
+    env_opts = "".join(f'<option value="{en}">{en}</option>' for en in sorted({v["env"] for v in get_provider().get_vms()}))
+    batch_opts = "".join(f'<option value="{b["id"]}">{b["id"]}</option>' for b in get_provider().get_batches())
+    vm_opts = "".join(f'<option value="{v["hostname"]}">{v["hostname"]}</option>' for v in get_provider().get_vms())
     action_opts = "".join(f'<option value="{a}">{a}</option>' for a in sorted(actions_seen))
     approver_opts = "".join(f'<option value="{a}">{a}</option>' for a in sorted(approvers_seen))
 
-    failures = sum(1 for e in AUDIT_EVENTS if e["status"] == "failed")
-    pendings = sum(1 for e in AUDIT_EVENTS if e["status"] == "pending")
+    failures = sum(1 for e in get_provider().get_audit_events() if e["status"] == "failed")
+    pendings = sum(1 for e in get_provider().get_audit_events() if e["status"] == "pending")
 
     js = """
     <script>
@@ -3036,7 +3028,7 @@ def page_audit() -> str:
       </div>
     </div>
     <div class="results-bar">
-      <strong><span id="flt-shown">{len(AUDIT_EVENTS)} / {len(AUDIT_EVENTS)}</span> events</strong> &nbsp;·&nbsp;
+      <strong><span id="flt-shown">{len(get_provider().get_audit_events())} / {len(get_provider().get_audit_events())}</span> events</strong> &nbsp;·&nbsp;
       <span style="color:#dc2626;font-weight:600">{failures} failures</span> &nbsp;·&nbsp;
       <span style="color:#7c3aed;font-weight:600">{pendings} pending</span> &nbsp;·&nbsp;
       <span style="color:#64748b">Filters above narrow client-side · Export respects current filter</span>
@@ -3119,7 +3111,7 @@ def page_batches() -> str:
     </div>"""
 
     rows = ""
-    for i, b in enumerate(BATCHES):
+    for i, b in enumerate(get_provider().get_batches()):
         alt = " row-alt" if i % 2 == 1 else ""
         failed_cls = " row-failed" if b["status"] == "failed" else ""
         env_cls = "env-prod" if b["env"] == "PROD" else "env-staging"
@@ -3257,15 +3249,15 @@ def page_batches() -> str:
 # ── Inventory page ───────────────────────────────────────────────────────────
 
 def page_inventory() -> str:
-    envs  = len(set(v["env"] for v in VMS))
-    os_ct = len(set(v["os"].split()[0] for v in VMS))
-    reachable = sum(1 for v in VMS if v["status"] != "offline")
+    envs  = len(set(v["env"] for v in get_provider().get_vms()))
+    os_ct = len(set(v["os"].split()[0] for v in get_provider().get_vms()))
+    reachable = sum(1 for v in get_provider().get_vms() if v["status"] != "offline")
 
     kpis = f"""
     <div class="inv-kpi">
       <div class="card kpi-tile kpi-top-border" style="border-color:#4f46e5">
         <div class="kpi-label">Total VMs</div>
-        <div class="kpi-value" style="color:#0f172a">{len(VMS)}</div>
+        <div class="kpi-value" style="color:#0f172a">{len(get_provider().get_vms())}</div>
         <div class="kpi-subtitle">{envs} environments</div>
       </div>
       <div class="card kpi-tile kpi-top-border" style="border-color:#0891b2">
@@ -3301,7 +3293,7 @@ def page_inventory() -> str:
     </div>"""
 
     rows = ""
-    for i, vm in enumerate(VMS):
+    for i, vm in enumerate(get_provider().get_vms()):
         alt  = " row-alt" if i % 2 == 1 else ""
         fcls = " row-failed" if vm["status"] == "failed" else (" row-pending" if vm["status"] == "pending" else "")
         ve = VM_EVIDENCE.get(vm["hostname"], {})
@@ -3325,7 +3317,7 @@ def page_inventory() -> str:
     <div class="section-hdr">
       <div>
         <div class="section-title">VM Inventory</div>
-        <div class="section-sub">{len(VMS)} hosts registered across {envs} environments</div>
+        <div class="section-sub">{len(get_provider().get_vms())} hosts registered across {envs} environments</div>
       </div>
       <div style="display:flex;gap:8px">
         <button class="btn-outline btn-outline-indigo" disabled title="Inventory CSV export — v2 roadmap" style="opacity:0.45;cursor:not-allowed">EXPORT <span style="font-size:0.65rem">v2</span></button>
@@ -3374,7 +3366,7 @@ def _inventory_env_breakdown() -> str:
     env_order = ["PROD", "STAGING", "DEV"]
     cards_html = ""
     for env_name in env_order:
-        group = [v for v in VMS if v["env"] == env_name]
+        group = [v for v in get_provider().get_vms() if v["env"] == env_name]
         if not group:
             continue
         ok_ct   = sum(1 for v in group if v["status"] == "ok")
@@ -4370,7 +4362,7 @@ def _layer_partition_html(ag: dict[str, Any]) -> str:
 
 
 def page_agent() -> str:
-    ag = AGENT_STATUS
+    ag = get_provider().get_agent_status()
 
     layer_partition = _layer_partition_html(ag)
 
@@ -4427,9 +4419,9 @@ def page_agent() -> str:
     </div>"""
 
     # ── 2. Execution trace ────────────────────────────────────────────────────
-    tr = EXECUTION_TRACE
+    tr = get_provider().get_execution_trace()
     nodes = tr["nodes"]
-    max_log = math.log10(max(n["duration_s"] for n in nodes) + 1)
+    max_log = math.log10(max((n["duration_s"] for n in nodes), default=0) + 1)
 
     trace_rows = ""
     for n in nodes:
@@ -4477,7 +4469,7 @@ def page_agent() -> str:
 
     # ── 3. Per-VM outcome grid ────────────────────────────────────────────────
     vm_rows = ""
-    for vt in VM_TRACE:
+    for vt in get_provider().get_vm_trace():
         vm_rows += f"""<tr>
           <td class="left"><a href="/vm/{vt['vm']}" class="outcome-vm">{vt['vm']}</a></td>
           <td class="left">{env_tag(vt['env'])}</td>
@@ -4511,11 +4503,12 @@ def page_agent() -> str:
     </div>"""
 
     # ── 4. LLM planning decisions ─────────────────────────────────────────────
-    avg_lat = round(sum(d["latency_ms"] for d in LLM_DECISIONS) / len(LLM_DECISIONS))
-    fallback_any = any(d["fallback"] for d in LLM_DECISIONS)
+    _ld = get_provider().get_llm_decisions()
+    avg_lat = round(sum(d["latency_ms"] for d in _ld) / len(_ld)) if _ld else 0
+    fallback_any = any(d["fallback"] for d in _ld)
 
     llm_rows = ""
-    for d in LLM_DECISIONS:
+    for d in _ld:
         sigs = d["signals"]
         sig_tags = ""
         if float(sigs.get("disk_trend","0").replace("+","").split("%")[0] or 0) >= 5:
@@ -4562,7 +4555,7 @@ def page_agent() -> str:
         <span class="llm-meta-item"><span class="llm-meta-lbl">FALLBACK USED</span>
           {'<span style="color:#dc2626;font-weight:700">YES — LLM unavailable</span>' if fallback_any else '<span style="color:#16a34a;font-weight:700">NEVER</span>'}
         </span>
-        <span class="llm-meta-item"><span class="llm-meta-lbl">VMs SHOWN</span> {len(LLM_DECISIONS)} of {len(VMS)}</span>
+        <span class="llm-meta-item"><span class="llm-meta-lbl">VMs SHOWN</span> {len(get_provider().get_llm_decisions())} of {len(get_provider().get_vms())}</span>
       </div>
       <table class="llm-table">
         <thead><tr>
@@ -4574,7 +4567,7 @@ def page_agent() -> str:
     </div>"""
 
     # ── 5. Scheduler (left) + Daily Probe (right) ─────────────────────────────
-    sched = SCHEDULER_TIMELINE
+    sched = get_provider().get_scheduler_timeline()
     sched_runs = ""
     for r in sched["recent_runs"]:
         dot_color = {"completed": "#16a34a", "partial": "#d97706", "failed": "#dc2626"}.get(r["status"], "#94a3b8")
@@ -4619,30 +4612,40 @@ def page_agent() -> str:
     </div>"""
 
     # Probe section
-    probe = PROBE_HISTORY[0]
-    probe2 = PROBE_HISTORY[1] if len(PROBE_HISTORY) > 1 else None
+    _ph = get_provider().get_probe_history()
+    probe = _ph[0] if _ph else {}
+    probe2 = _ph[1] if len(_ph) > 1 else None
 
-    if probe["escalated"]:
-        probe_banner = f"""
+    if not probe:
+        probe_card = """
+    <div class="card" style="padding:0;overflow:hidden">
+      <div style="padding:12px 16px 10px;border-bottom:1px solid #f1f5f9">
+        <span class="section-title" style="font-size:0.9375rem">Daily Probe</span>
+      </div>
+      <div style="padding:14px 16px;color:#94a3b8;font-size:0.875rem">No probe history available.</div>
+    </div>"""
+    else:
+        if probe["escalated"]:
+            probe_banner = f"""
         <div class="probe-escalated-banner">
           ⚠ ESCALATED &nbsp;·&nbsp; {probe['escalation_msg']}
         </div>"""
-    else:
-        probe_banner = '<div class="probe-ok-banner">✓ No escalation — all signals nominal</div>'
+        else:
+            probe_banner = '<div class="probe-ok-banner">✓ No escalation — all signals nominal</div>'
 
-    signal_groups = ""
-    for sg in probe.get("signals", []):
-        items_html = "".join(f'<div class="probe-signal-item">{sg["icon"]} {item}</div>' for item in sg["items"])
-        signal_groups += f"""
+        signal_groups = ""
+        for sg in probe.get("signals", []):
+            items_html = "".join(f'<div class="probe-signal-item">{sg["icon"]} {item}</div>' for item in sg["items"])
+            signal_groups += f"""
         <div class="probe-signal-group">
           <div class="probe-signal-type">{sg['type'].replace('_',' ')}</div>
           {items_html}
         </div>"""
 
-    probe2_html = ""
-    if probe2:
-        probe2_status_color = "#16a34a" if not probe2["escalated"] else "#dc2626"
-        probe2_html = f"""
+        probe2_html = ""
+        if probe2:
+            probe2_status_color = "#16a34a" if not probe2["escalated"] else "#dc2626"
+            probe2_html = f"""
         <div style="margin-top:14px;padding-top:14px;border-top:1px solid #f1f5f9">
           <div class="field-label" style="margin-bottom:4px">PREVIOUS PROBE</div>
           <div style="font-family:'JetBrains Mono',monospace;font-size:0.75rem;color:#94a3b8">
@@ -4651,14 +4654,14 @@ def page_agent() -> str:
           </div>
         </div>"""
 
-    probe_card = f"""
+        probe_card = f"""
     <div class="card" style="padding:0;overflow:hidden">
       <div style="padding:12px 16px 10px;border-bottom:1px solid #f1f5f9;display:flex;align-items:center;gap:10px">
         <span class="section-title" style="font-size:0.9375rem">Daily Probe</span>
         {'<span class="badge badge-red">ESCALATED</span>' if probe['escalated'] else '<span class="badge badge-green">CLEAN</span>'}
       </div>
       <div style="padding:14px 16px">
-        <div style="font-family:'JetBrains Mono',monospace;font-size:0.75rem;color:#94a3b8;margin-bottom:12px">
+        <div style="font-family:\'JetBrains Mono\',monospace;font-size:0.75rem;color:#94a3b8;margin-bottom:12px">
           {probe['ts']} &nbsp;·&nbsp; {probe['duration']} &nbsp;·&nbsp; {probe['vms_probed']} VMs probed
           &nbsp;·&nbsp; Slack: {'✓ posted' if probe['slack_posted'] else '—'}
         </div>
@@ -4675,12 +4678,12 @@ def page_agent() -> str:
     </div>"""
 
     # ── 6. Deferred queue ─────────────────────────────────────────────────────
-    if DEFERRED_QUEUE:
+    if get_provider().get_deferred_queue():
         dq_rows = "".join(
             f"""<tr><td class="td-mono">{q['vm']}</td><td class="td-ts">{q['approved_ts']}</td>
                 <td>{q['action']}</td><td class="td-ts">{q['window_opens']}</td>
                 <td><span class="td-link" style="opacity:0.4;cursor:default" title="Plan detail view — v2 roadmap">View Plan →</span></td></tr>"""
-            for q in DEFERRED_QUEUE
+            for q in get_provider().get_deferred_queue()
         )
         dq_body = f"""
         <table class="data-table">
@@ -4695,7 +4698,7 @@ def page_agent() -> str:
       <div style="padding:12px 16px 10px;border-bottom:1px solid #f1f5f9;display:flex;align-items:center;gap:10px">
         <span class="section-title" style="font-size:0.9375rem">Deferred Execution Queue</span>
         <span style="font-size:0.8125rem;color:#94a3b8">Approved plans waiting for a maintenance window to open</span>
-        {f'<span class="badge badge-amber">{len(DEFERRED_QUEUE)} queued</span>' if DEFERRED_QUEUE else '<span class="badge badge-green">EMPTY</span>'}
+        {f'<span class="badge badge-amber">{len(get_provider().get_deferred_queue())} queued</span>' if get_provider().get_deferred_queue() else '<span class="badge badge-green">EMPTY</span>'}
       </div>
       {dq_body}
     </div>"""
@@ -4753,7 +4756,7 @@ async def handle_approvals(request: web.Request) -> web.Response:
         title="Approval Queue",
         active_url="/approvals",
         breadcrumb="Approval Queue",
-        topnav_extra=f'{env_badge_top("PROD")}<span class="pending-chip">{APPROVAL_COUNT} PENDING</span>',
+        topnav_extra=f'{env_badge_top("PROD")}<span class="pending-chip">{len(get_provider().get_approvals())} PENDING</span>',
         content=page_approvals(),
     )
     return web.Response(text=html, content_type="text/html")
@@ -4762,7 +4765,7 @@ async def handle_approvals(request: web.Request) -> web.Response:
 async def handle_vm(request: web.Request) -> web.Response:
     from errander.observability.vm_metrics import query_metrics
     hostname = request.match_info["hostname"]
-    vm = next((v for v in VMS if v["hostname"] == hostname), None)
+    vm = get_provider().get_vm(hostname)
     env = vm["env"] if vm else "PROD"
 
     metrics_by_window: dict[str, Any] | None = None
@@ -4933,6 +4936,24 @@ async def handle_metrics_api(request: web.Request) -> web.Response:
 
 # ── Startup / cleanup hooks ────────────────────────────────────────────────────
 
+
+async def _refresh_live_provider(app: web.Application) -> None:
+    """Periodic job: refresh the LiveProvider cache from real stores."""
+    from errander.web.providers import LiveProvider as _LP
+    prov = app.get("_live_provider")
+    if not isinstance(prov, _LP):
+        return
+    try:
+        await prov.refresh(
+            db=app.get("_live_provider_db"),
+            approval_manager=app.get("approval_manager"),
+            deferred_store=app.get("deferred_store"),
+            inventory_path=app.get("_live_provider_inv"),
+        )
+    except Exception as exc:
+        logger.warning("LiveProvider periodic refresh failed: %s", exc)
+
+
 async def _on_startup(app: web.Application) -> None:
     import os as _os
 
@@ -4950,17 +4971,33 @@ async def _on_startup(app: web.Application) -> None:
     logger.info("DB opened: %s (migrations applied)", db_url)
 
     targets: list[Any] = []
+    _inv_path_for_provider: "Any | None" = None
     try:
         from pathlib import Path as _Path
         from errander.config.inventory import load_inventory
         _inv_path = _Path(_os.environ.get("ERRANDER_INVENTORY_PATH", "inventory.yaml"))
         if _inv_path.exists():
             targets = list(load_inventory(_inv_path))
+            _inv_path_for_provider = _inv_path
             logger.info("Loaded %d VM targets for metrics collection", len(targets))
         else:
             logger.info("Inventory file not found at %s — metrics collection disabled", _inv_path)
     except Exception as exc:
         logger.warning("Could not load inventory — metrics collection disabled: %s", exc)
+
+    # LiveProvider: initial cache fill + periodic refresh
+    from errander.web.providers import LiveProvider as _LiveProvider
+    _prov = get_provider()
+    if isinstance(_prov, _LiveProvider):
+        try:
+            await _prov.refresh(db=db, inventory_path=_inv_path_for_provider)
+        except Exception as exc:
+            logger.warning("LiveProvider initial refresh failed: %s", exc)
+        _refresh_secs = max(30, int(_os.environ.get("ERRANDER_UI_REFRESH_SECONDS", "60")))
+        app["_live_provider"] = _prov
+        app["_live_provider_db"] = db
+        app["_live_provider_inv"] = _inv_path_for_provider
+        logger.info("LiveProvider active; refresh every %ds", _refresh_secs)
 
     if targets:
         ne_port = int(_os.environ.get("ERRANDER_NODE_EXPORTER_PORT", "9100"))
@@ -4991,6 +5028,17 @@ async def _on_startup(app: web.Application) -> None:
             max_instances=1,
             coalesce=True,
         )
+        if isinstance(_prov, _LiveProvider):
+            scheduler.add_job(
+                _refresh_live_provider,
+                "interval",
+                seconds=_refresh_secs,
+                args=[app],
+                id="ui_provider_refresh",
+                max_instances=1,
+                coalesce=True,
+            )
+
         scheduler.start()
         app["metrics_scheduler"] = scheduler
 

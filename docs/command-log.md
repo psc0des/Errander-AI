@@ -1,5 +1,19 @@
 # Errander-AI Command Log
 
+## Provider layer — Operations Hub backed by real stores (2026-05-21)
+
+```bash
+# Run provider test suite (new tests)
+uv run pytest tests/ui/test_web_providers.py -v --tb=short
+# 43 passed in 0.43s
+
+# Run full UI suite to verify no regressions
+uv run pytest tests/ui/ -v --tb=short
+# 168 passed in 46.79s
+```
+
+---
+
 ## P0 regression fix — f-string JS brace escape (2026-05-21)
 
 ```bash

@@ -1,9 +1,28 @@
 # Errander-AI — Project Status
 
 ## Last Updated
-2026-05-20
+2026-05-21
 
 ## Current Phase
+**Provider layer — Operations Hub backed by real stores (2026-05-21, COMPLETE).** 2163 tests, all passing.
+
+Added `errander/web/providers.py` — `DataProvider` Protocol + `FixtureProvider` (static demo data, default) + `LiveProvider` (real backend stores, selected by `ERRANDER_UI_DATA_MODE=live`). All `page_*` functions in `server.py` now call `get_provider().get_*()` instead of importing data constants directly. LiveProvider never falls back to fixture data silently — missing stores produce empty lists or `_UNAVAIL_*` sentinel dicts. Mode banner reads real provider state. `_on_startup` initialises LiveProvider and schedules periodic refresh.
+
+Three server.py crash fixes for live mode with empty data:
+- `_operator_queue`: `(sch.get("next_runs") or ["—"])[0]` — guards empty `next_runs`
+- `page_agent` execution trace: `max(..., default=0)` — guards empty nodes list
+- `page_agent` probe section: `if not probe:` branch renders placeholder card
+
+43 new tests in `tests/ui/test_web_providers.py` (AST import contract, FixtureProvider, LiveProvider sentinels, page renders in both modes, env var selection, mode banner).
+
+### Files Changed
+- `errander/web/providers.py` (NEW) — DataProvider Protocol, FixtureProvider, LiveProvider, singleton
+- `errander/web/server.py` — all routes use get_provider(); 3 empty-state crash fixes
+- `tests/ui/test_web_providers.py` (NEW) — 43 tests
+
+---
+
+## Previous Phase
 **P0 regression fix — f-string JS brace escape + web server smoke tests (2026-05-21, COMPLETE).** 2120 tests, all passing.
 
 `_batchFilter` JS block was inside a Python f-string with unescaped `{`/`}`, making `errander/web/server.py` unimportable (`SyntaxError` at startup). Fixed by doubling all JS braces to `{{`/`}}`. Added `tests/ui/test_web_server_smoke.py` (14 tests) — compile check via `ast.parse`, import check, render check for every `page_*` function, regression guards for `_batchFilter` and `_invFilter` brace escaping.
@@ -14,7 +33,7 @@
 
 ---
 
-## Previous Phase
+## Previous Phase (older)
 **Project B3 — `errander vm-facts` CLI (2026-05-20, COMPLETE).** 2106 tests, all passing.
 
 New `errander/commands/vm_facts.py` — operator-facing CLI for spot-checking the operational learning facts that OperatorAssistant surfaces to the LLM. Three sections: action outcomes table (success rate ✓/~/✗, sample size, last success, last failure reason), reboot pattern (reboots/patching runs for the VM), and fleet-wide rejection facts (per-action-type approval rejections, last 90 days). Wired into `main.py` as `--vm-facts <vm_id>` and `--vm-facts-action <type>`. Cross-fleet mode when `--vm-facts-action` given without `vm_id`.

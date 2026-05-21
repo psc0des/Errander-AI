@@ -1,3 +1,13 @@
+## Provider layer — Operations Hub backed by real stores (2026-05-21, COMPLETED)
+
+- [x] `errander/web/providers.py` (NEW) — DataProvider Protocol, FixtureProvider (demo/CI default), LiveProvider (real stores, `ERRANDER_UI_DATA_MODE=live`), singleton + `reset_provider_for_testing()`.
+- [x] `errander/web/server.py` — all 14 data constants replaced with `get_provider().get_*()` calls; APPROVAL_COUNT inline; `_mode_banner_html()` reads provider state; `_on_startup` initialises LiveProvider + schedules refresh.
+- [x] Three crash fixes for live mode with empty data: `next_runs` list guard, `max()` default=0 for empty nodes, `if not probe:` placeholder branch.
+- [x] `tests/ui/test_web_providers.py` (NEW) — 43 tests: AST contract, FixtureProvider (19 tests), LiveProvider (10 tests), page renders in both modes (8 tests), env var selection (3 tests), mode banner (3 tests).
+- [x] 43/43 provider tests passing; 168/168 UI tests passing; 2163 total.
+
+---
+
 ## P0 regression fix — f-string JS brace escape (2026-05-21, COMPLETED)
 
 - [x] `errander/web/server.py` — `_batchFilter` JS braces escaped (`{{`/`}}`). Module now compiles and imports cleanly.

@@ -209,11 +209,18 @@ This rule applies to all Layer B actions. No grandfathering — the previous bul
 
 ### v1 Scope
 v1 supports Linux host maintenance only: OS patching (non-kernel), disk cleanup,
-log rotation, Docker prune, backup verification, and operator-triggered service restart
-(6 actions). Kubernetes, app runtimes (Tomcat/Nginx/Java GC), database management,
-network/firewall changes, and arbitrary user-supplied commands are explicitly out of
-scope. Adding new actions requires a new sub-graph + manifest + risk-tier classification
-+ rollback strategy — not a config flag.
+log rotation, Docker hygiene (replacing Docker prune in v1.1), backup verification,
+and operator-triggered service restart (6 actions). Kubernetes, app runtimes
+(Tomcat/Nginx/Java GC), database management, network/firewall changes, and
+arbitrary user-supplied commands are explicitly out of scope. Adding new actions
+requires a new sub-graph + manifest + risk-tier classification + rollback strategy
+— not a config flag.
+
+> **v1.1 transition note (2026-05-21):** Both `docker_prune` (legacy bulk action)
+> and `docker_hygiene` (new object-level workflow) are registered in
+> `BUILTIN_ACTIONS` during the transition. `docker_prune` is removed entirely
+> in v1.1 Session 3 once `docker_hygiene` gains execution and approval surfaces.
+> The 6-action count above reflects the post-transition state.
 
 - NEVER automate kernel patching — this is explicitly out of scope
 - NEVER touch files/directories outside the disk cleanup whitelist without human approval

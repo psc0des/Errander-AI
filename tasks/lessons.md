@@ -1,5 +1,16 @@
 # Errander-AI — Lessons Learned
 
+## 2026-05-21 — The doc-sync rule covers more than the "always update" list — test counts and action lists leak into README, CLAUDE.md, SETUP.md, AI-ARCHITECTURE.md
+
+After shipping Session 1 of docker_hygiene I updated STATUS.md, command-log.md, tasks/todo.md, and tasks/lessons.md (the "always update" list) but missed: README.md test-count references (3 places: tech stack table, project tree, key commands), CLAUDE.md "v1 Scope" action count + Docker prune wording, SETUP.md docker-cleanup section (needed a forward-looking transition note), and docs/AI-ARCHITECTURE.md Layer B sub-graph list. The user had to ask "did you update all the relevant docs and md file?" to surface it.
+
+**Why:** The doc-sync rule in CLAUDE.md has two lists — "always update" and "update when relevant". The second list isn't a checklist I run through automatically; I tend to forget it when the change feels small. But test counts and action lists are exactly the kind of facts that get scattered across the repo and rot when not updated.
+
+**How to apply:** After the "always update" list, run two grep checks before committing:
+1. `grep -rn "<old test count>" --include='*.md'` — catches any test count that needs bumping.
+2. `grep -rn "docker_prune\|6 actions\|<other affected term>" --include='*.md'` — catches scope/action-list references.
+If a new manifest is added: also grep for the manifest list in docs/AI-ARCHITECTURE.md and CLAUDE.md's v1 scope. Treat the second list in the doc-sync rule as a *mandatory grep pass*, not a "maybe."
+
 ## 2026-05-21 — Adding a new ActionManifest requires updating multiple test files, not just `test_registry.py`
 
 When the `docker_hygiene` manifest was registered in `BUILTIN_ACTIONS`, two separate test files failed on hardcoded count assertions: `tests/agent/subgraphs/test_registry.py` (`len(BUILTIN_ACTIONS) == 6`) and `tests/agent/subgraphs/test_service_restart_manifest.py` (`len(BUILTIN_ACTIONS) == 6` — duplicated from registry tests). Both needed to bump to 7.

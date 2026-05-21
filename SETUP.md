@@ -322,6 +322,8 @@ sudo -u errander sudo -n /usr/bin/id  # should FAIL — /usr/bin/id is not in su
 > **Skip this entire section if you are not enabling docker_prune.**
 > When you create `inventory.yaml` in Step 5, leave `actions.docker_prune.enabled: false` (the default). Continue to the next section.
 
+> ⚠️ **v1.1 transition (in progress, 2026-05-21):** `docker_prune` is being replaced by a richer `docker_hygiene` action with object-level approval (operator approves exact image IDs / container names rather than a bulk "approve docker prune"). Session 1 of v1.1 has shipped the assessment foundation; execution and approval surfaces land in Session 2. **Do not adopt `docker_hygiene` yet** — it's registered but not dispatchable. Once v1.1 is complete, this section will be rewritten and `docker_prune` will be removed. Existing `docker_prune` setups continue to work unchanged during the transition.
+
 The Docker group is effectively root: a user in it can mount the host filesystem via `docker run`. Do **not** add `errander` to the docker group, and do not grant raw `sudo /usr/bin/docker` in production.
 
 Errander supports three Docker modes per environment (`actions.docker_prune.command_mode` in `inventory.yaml`):

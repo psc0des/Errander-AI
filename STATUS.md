@@ -18,7 +18,8 @@ Session 1 delivered the assessment foundation — `docker_hygiene` sub-graph is 
 - `tests/agent/subgraphs/test_docker_hygiene.py` (NEW, 40 tests)
 - `tests/agent/subgraphs/test_registry.py` — bump count assertions 6→7 + docker_hygiene-specific tests
 - `tests/agent/subgraphs/test_service_restart_manifest.py` — bump count assertion 6→7
-- `tasks/todo.md`, `tasks/lessons.md`, `STATUS.md` — doc sync
+- `tasks/todo.md`, `tasks/lessons.md`, `STATUS.md`, `docs/command-log.md` — doc sync (always-update list)
+- **Follow-up doc sync (after user surfaced gap):** `README.md` (test counts 2172→2215 in 3 places), `CLAUDE.md` (v1 Scope action wording + transition note), `SETUP.md` (Optional Docker cleanup section: v1.1 transition warning), `docs/AI-ARCHITECTURE.md` (Layer B sub-graph list now includes docker_hygiene + service_restart).
 
 ### Session 2 (next) — execution + dual approval surface
 - Approval artifact schema (`ai_decisions` extension: per-object list + snapshot hash + surface field)

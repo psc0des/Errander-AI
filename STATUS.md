@@ -4,6 +4,27 @@
 2026-05-21
 
 ## Current Phase
+**Docker hygiene v1.1 design proposal + Exact-Object Approval invariant (2026-05-21, DESIGN ONLY).** No code changes; docs + rules only.
+
+Triggered by SRE feedback on `docker_prune` scope: bulk action-level approval is too blunt for a serious SRE tool, and the current `--volumes` / `-a` semantics aren't surfaced to the operator at approval time. Two outputs:
+
+1. **CLAUDE.md → AI Safety Invariant → Exact-Object Approval (MANDATORY)** — new project-wide rule for all destructive Layer B actions. Approval must enumerate exact objects (IDs/names), not action categories; wrapper must re-validate each object at execution time; per-object audit entries required. Existing `docker_prune` grandfathered as a legacy mode; new destructive actions must follow this from day one. Also corrects the earlier "HITL dissolves safety concerns" framing — HITL is necessary but not sufficient; safety comes from evidence quality of the approval artifact.
+
+2. **tasks/todo.md → Docker hygiene v1.1 design proposal (PROPOSED)** — split `docker_prune` into a new `docker_hygiene` sub-graph with rich assessment (5 resource classes: dangling images, unused images, stopped containers, volumes, build cache) + object-level approval + per-object wrapper validation. Phased execution rollout: v1.1 dangling images + exited-0 stopped containers >7d; v1.2 unused images >30d; v1.5 volumes with backup-verify attached; never v1 container start/restart. Three open questions for the user before implementation: implementation horizon, approval UI mechanism (Slack reply vs. thin web page), deprecation strategy for legacy `docker_prune`.
+
+### Files Changed
+- `CLAUDE.md` — new Exact-Object Approval (MANDATORY) subsection under AI Safety Invariant
+- `tasks/todo.md` — Docker hygiene v1.1 design proposal added at top
+- `tasks/lessons.md` — new lesson owning the "HITL dissolves safety" framing mistake
+- `STATUS.md` — this entry
+- (memory) `feedback_exact_object_approval.md`, `project_docker_hygiene_v11.md`, MEMORY.md index updates
+
+### In Progress
+- Awaiting user decisions on the three open questions before implementation work begins on `docker_hygiene`. SETUP.md `--check-targets` controller-vs-target clarification was committed separately (56ca7ac).
+
+---
+
+## Previous Phase
 **SRE QA round 3 — P2 inventory/admin static facts fixed (2026-05-21, COMPLETE).** 2172 tests, all passing.
 
 Four remaining P2 static-data issues fixed in `errander/web/server.py`:

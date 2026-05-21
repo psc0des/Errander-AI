@@ -192,6 +192,19 @@ Errander-AI uses a two-layer AI architecture. See `docs/AI-ARCHITECTURE.md` for 
 
 When proposing any AI-related feature or contribution, classify it as Layer A or Layer B first. If unsure, default to Layer A. Layer B changes require explicit safety review.
 
+### Exact-Object Approval (MANDATORY for destructive actions)
+
+For any action that removes, deletes, or otherwise destroys state (images, volumes, containers, files, package versions, etc.), the approval artifact must reference **exact objects**, not action categories.
+
+> The agent presents exact objects → the operator approves exact objects → execution removes only those exact approved objects → the wrapper re-validates each object at execution time → the audit log records every individual object removed.
+
+- **"Approved Docker cleanup"** is not a valid approval. **"Approved removal of image IDs `sha256:abc...`, `sha256:def...` and stopped container `worker-3` (exit 0)"** is.
+- Bulk approvals ("approve everything dangling") are acceptable *only* when the plan enumerates the exact objects at approval time and the wrapper re-validates each one is still in the same state at execution time. State drift between approval and execution must abort the action for the drifted object, not silently proceed.
+- Per-object audit entries are required. One audit row per removed object, not one row per batch.
+- HITL is necessary but not sufficient — a human can rubber-stamp a vague plan. The protection comes from the *evidence quality* of the approval artifact, not the approval gesture itself.
+
+This rule applies to all current and future Layer B actions. Existing bulk actions (`docker_prune` as originally shipped) are grandfathered as legacy modes but new actions must be designed around exact-object approval from day one.
+
 ## Domain Rules
 
 ### v1 Scope

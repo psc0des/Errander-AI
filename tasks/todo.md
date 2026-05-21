@@ -1,3 +1,109 @@
+## Docker hygiene — v1.1 design proposal (2026-05-21, PROPOSED)
+
+**Status:** Design proposal. Not yet approved for implementation.
+**Trigger:** SRE feedback (Docker prune scope review, 2026-05-21) — current `docker_prune` is too blunt for serious SRE use. Verdict: split into a richer assessment surface with object-level approval.
+**Driving invariant:** New exact-object approval rule in CLAUDE.md (Layer B → AI Safety Invariant → Exact-Object Approval section, added 2026-05-21). Applies to all destructive actions from day one of v1.1.
+
+### Background — what's wrong with the current `docker_prune`
+
+- Treats Docker as one cleanup action. Operator approves "docker_prune" with no view of what will be removed.
+- Hides three distinct resource classes (images, containers, build cache) behind one button. A fourth (volumes) is not addressed at all.
+- Approval is action-level ("approve the action") not object-level ("approve these 4 image IDs"). Violates the new Exact-Object Approval invariant.
+- `prune_aggressive` mode (`docker image prune -a`) removes *all* unused images, not just dangling — same approval gesture, very different blast radius. No way for the operator to see which is which from the Slack message alone.
+- No surfacing of stopped-container exit codes. An exited-137 container (OOM) is a *signal to investigate*, not a cleanup candidate. Current flow conflates them.
+
+### Proposed v1.1 design — `docker_hygiene` sub-graph
+
+Split `docker_prune` into a new sub-graph `docker_hygiene` with three lifecycle phases. The existing `docker_prune` sub-graph stays as a legacy `command_mode: prune_all` for the wrapper installs already in the field — do not break backwards compat.
+
+#### Phase 1 — Rich assessment (read-only, runs every batch when enabled)
+
+Wrapper `errander-docker-assess-v2` emits structured findings across 5 resource classes:
+
+```
+docker_hygiene_begin
+class=image_dangling
+  id=sha256:abc... size_bytes=1288490188 age_days=23 last_tag=api:v2.1.3-rc classification=cleanup_candidate
+  id=sha256:def... size_bytes=838860800 age_days=14 last_tag=<none>            classification=cleanup_candidate
+class=image_unused
+  id=sha256:ghi... size_bytes=2147483648 age_days=89 last_tag=worker:v1.4.0    classification=cleanup_candidate
+class=container_stopped
+  id=abc123 name=api_v1_backup       exit_code=0   stopped_age_hours=288 classification=cleanup_candidate
+  id=def456 name=worker-3            exit_code=137 stopped_age_hours=2   classification=investigate
+class=volume_unreferenced
+  name=pgdata_old     size_bytes=12884901888 last_mount_days=47 classification=report_only
+  name=redis_cache_v1 size_bytes=4294967296  last_mount_days=31 classification=report_only
+class=build_cache
+  reclaimable_bytes=8589934592 classification=report_only
+docker_hygiene_end
+```
+
+**Classification rules (deterministic, Python — no LLM):**
+
+| Resource | `cleanup_candidate` if … | `investigate` if … | `do_not_touch` / `report_only` if … |
+|---|---|---|---|
+| Dangling image | always | — | — |
+| Unused (non-dangling) image | age_days > 30 AND not currently referenced | age_days < 7 | — |
+| Stopped container | exit_code == 0 AND stopped_age_hours > 168 | exit_code in (137, 139, 143) OR restarting | exit_code == 0 AND stopped_age_hours < 24 |
+| Volume | — | — | always `report_only` in v1.1 |
+| Build cache | — | — | always `report_only` in v1.1 |
+
+#### Phase 2 — Object-level approval
+
+Slack message lists exact objects with size/age/classification grouped by resource class. Operator picks specific items (mechanism TBD — Slack reaction-per-item won't scale beyond ~10 items; likely need a structured reply pattern or a thin web approval UI fronted by the dashboard).
+
+Approval artifact stored in `ai_decisions` table includes the **exact object IDs** approved, with a hash of the assessment snapshot at approval time.
+
+#### Phase 3 — Validated execution
+
+Wrapper `errander-docker-remove-v2` accepts an allowlist of `(class, id)` pairs. For each pair:
+
+1. Re-query current state.
+2. Verify the object is still in the same classification it had at approval time. If drifted (e.g., image was re-tagged, container was restarted), **skip that object and log a drift event** — do not silently remove.
+3. Remove via the appropriate Docker subcommand (`docker rmi <id>`, `docker rm <id>`).
+4. Emit one audit row per object: `{vm, class, id, size_bytes, removed_at, approval_id}`.
+
+Per-object audit. No "batch removed N objects" shortcuts.
+
+### Phased rollout (matches SRE recommendation)
+
+- [ ] **v1.1** — Implement `docker_hygiene` with: rich assessment (all 5 classes), object-level approval, **execution scope limited to dangling images and exited-0 stopped containers > 7 days old**. Volumes / unused-images / build cache are report-only.
+- [ ] **v1.2** — Extend execution scope to unused (non-dangling) images with `age_days > 30` threshold. Same approval mechanism.
+- [ ] **v1.5** — Volume deletion. Requires: backup verification action attached to the same approval, multi-step confirmation, `last_mount_days` configurable threshold (default 90), default-off in inventory.
+- [ ] **Never v1** — Container start/restart. Confirmed out of scope. Surfacing crashed/unhealthy containers as `investigate` findings is the closest we get; the operator decides what to do, Errander does not touch container lifecycle.
+
+### What needs design work before implementation starts
+
+1. **Approval UI for >10 objects.** Slack reactions don't scale. Options: (a) structured Slack reply ("approve 1,3,5-7"), (b) thin web approval page rendered by the dashboard with a signed URL posted in Slack, (c) accept-all/reject-all-with-allowlist-in-inventory. Probably (b), reusing existing FastHTML Operations Hub.
+2. **Drift handling UX.** When wrapper finds 3 of 5 approved objects have drifted, what does the audit log + operator notification look like? Per-object failure rows + a summary Slack reply.
+3. **Manifest changes.** `docker_hygiene` needs its own `ActionManifest` entry. `command_modes` likely `("disabled", "wrapper")` — no `direct_sudo` for v1.1; the per-item validation requires the wrapper.
+4. **Migration from `docker_prune`.** Inventory migration helper (similar to existing `--migrate-inventory`) flips `docker_prune.enabled=true` → `docker_hygiene.enabled=true` + leaves a deprecation comment.
+5. **Backwards compat plan for legacy `docker_prune`.** Keep it functional under `command_mode: prune_all` (bulk prune, action-level approval, for CI/ephemeral hosts that genuinely want the simple model). Mark deprecated in docs. Plan removal in v2.
+
+### Open questions for the user
+
+- Implementation horizon: ship v1.1 docker_hygiene now (next 1–2 sessions) or queue behind other v1 work? (Look at Deferred section before deciding.)
+- Approval UI: ok with (b) thin web approval page? Reuses existing Operations Hub infra.
+- Legacy `docker_prune`: deprecate-and-warn in v1.1 or hard-cutover with migration helper? Recommend deprecate-and-warn.
+
+### Files that will change
+
+- `errander/agent/subgraphs/docker_hygiene.py` — new sub-graph
+- `errander/models/manifest.py` — register manifest
+- `errander/agent/subgraphs/docker_prune.py` — add deprecation warning
+- `errander/config/migrate.py` — migration path for inventory
+- `scripts/errander-docker-assess-v2` — new wrapper (extends existing assess output)
+- `scripts/errander-docker-remove-v2` — new wrapper (allowlist + per-object validation)
+- `errander/models/actions.py` — new ActionType + per-object result model
+- `errander/safety/audit.py` — per-object audit entry support
+- `errander/web/server.py` — approval page (if option b)
+- `tests/agent/subgraphs/test_docker_hygiene.py` — full suite
+- `SETUP.md` — replace docker_prune section with docker_hygiene
+- `docs/learning/XX-docker-hygiene.md` — design + walkthrough
+- `CLAUDE.md` — update v1 action count (6 → 7) and docker action description
+
+---
+
 ## Provider layer — Operations Hub backed by real stores (2026-05-21, COMPLETED)
 
 - [x] `errander/web/providers.py` (NEW) — DataProvider Protocol, FixtureProvider (demo/CI default), LiveProvider (real stores, `ERRANDER_UI_DATA_MODE=live`), singleton + `reset_provider_for_testing()`.

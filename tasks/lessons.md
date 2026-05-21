@@ -1,5 +1,23 @@
 # Errander-AI — Lessons Learned
 
+## 2026-05-21 — "HITL dissolves safety concerns" is the wrong framing — exact-object approval is what matters
+
+In a Docker scope discussion I framed Human-In-The-Loop approval as sufficient safety justification for surfacing more findings: "HITL dissolves most safety concerns." The user's SRE consultant correctly pushed back — a human can rubber-stamp a bad plan if the approval artifact is vague. The protection comes from the **evidence quality of what is being approved**, not the approval gesture itself.
+
+The correct framing (now codified in CLAUDE.md → AI Safety Invariant → Exact-Object Approval):
+
+> Agent presents exact objects → operator approves exact objects → execution removes only those exact approved objects → wrapper re-validates each object at execution time → audit logs every individual object removed.
+
+**Why:** "Approved Docker cleanup" is not a meaningful approval. "Approved removal of these 4 specific image IDs and 2 stopped container names" is. Action-level approval lets the operator be wrong about *what* they approved; object-level approval doesn't.
+
+**How to apply:** When proposing any destructive action (remove/delete/destroy), check that:
+1. The approval artifact references exact objects (IDs, names, paths), not action categories.
+2. The wrapper re-validates each object's state at execution time, not just at approval time.
+3. The audit log has one row per object removed, not per batch.
+4. If the design only supports "approve the action" without enumerating objects, the design is wrong — flag it and propose object-level redesign before writing code.
+
+Never argue that HITL alone makes destructive automation safe.
+
 ## 2026-05-21 — Page functions that render live data must guard every dict access when the provider returns empty sentinels
 
 When rendering a live-mode page with an empty data store, any `dict["key"]` access on a sentinel dict (e.g., `probe = {}`, `nodes = []`) raises `KeyError` or `ValueError`. Three patterns to always apply:

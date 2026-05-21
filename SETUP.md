@@ -653,9 +653,17 @@ ERRANDER_LLM_API_KEY=<api-key-from-step-4>
 
 ERRANDER_AUDIT_DB_URL=errander.sqlite
 
-# Web UI auth — change these before going to production
-ERRANDER_UI_USER=admin
+# Inventory path (used by the web UI in live mode)
+ERRANDER_INVENTORY_PATH=inventory.yaml
+
+# Web UI auth — change all three before exposing to a network
+ERRANDER_UI_USERNAME=admin
 ERRANDER_UI_PASSWORD=changeme
+ERRANDER_UI_SECRET=change-this-to-a-random-32-char-string
+
+# Web UI data mode: "fixture" (demo/default) or "live" (real backend stores)
+# Set to "live" when running against real VMs
+ERRANDER_UI_DATA_MODE=fixture
 
 # Slack — optional (see "Slack notifications" below; remove # to enable)
 # ERRANDER_SLACK_BOT_TOKEN=xoxb-your-token-here
@@ -700,9 +708,18 @@ cp example/settings.yaml settings.yaml
 
 ### Web UI
 
-The agent exposes a web UI at `http://<master-vm-ip>:9090/ui` (port 9090 — see Prerequisites for NSG setup). The `ERRANDER_UI_USER` / `ERRANDER_UI_PASSWORD` env vars in the `.env` template above enable HTTP Basic Auth on it.
+The agent exposes a web UI at `http://<master-vm-ip>:9090/ui` (port 9090 — see Prerequisites for NSG setup). The `ERRANDER_UI_USERNAME` / `ERRANDER_UI_PASSWORD` env vars in the `.env` template above enable HTTP Basic Auth.
 
-> **Change the default password** — `changeme` is a placeholder. Update `ERRANDER_UI_PASSWORD` in `.env` before exposing the UI on any network.
+> **Change all three UI secrets** — `ERRANDER_UI_PASSWORD` and `ERRANDER_UI_SECRET` are placeholders. Set both to unique values in `.env` before exposing the UI on any network. `ERRANDER_UI_SECRET` signs the 8-hour session cookie; if left as default, any attacker who knows the default can forge a session.
+
+#### Data mode: fixture vs live
+
+| `ERRANDER_UI_DATA_MODE` | Behaviour |
+|---|---|
+| `fixture` (default) | Shows realistic demo data — safe for demos and CI. No real stores needed. |
+| `live` | Shows real data from your AuditStore, inventory, and ApprovalManager. Missing stores render "Unavailable" — never shows fake data. |
+
+Set `ERRANDER_UI_DATA_MODE=live` in `.env` when running against real VMs. Also set `ERRANDER_INVENTORY_PATH` to the path of your `inventory.yaml` so the web UI can read VM identity.
 
 The UI covers:
 - `/ui/` — batch run history, event log, pending approvals
@@ -1087,8 +1104,11 @@ Point the Task Scheduler action at this `.bat` file instead.
 | `ERRANDER_SLACK_BOT_TOKEN` | No | — | Slack bot token (`xoxb-...`). If omitted, approval falls back to web UI at `/ui/approvals` |
 | `ERRANDER_SLACK_CHANNEL_ID` | No | — | Slack approvals channel ID (`C...`). Required if `ERRANDER_SLACK_BOT_TOKEN` is set |
 | `ERRANDER_LLM_TEMPERATURE` | No | `0.1` | Sampling temperature (0.0–2.0; keep low for JSON output) |
-| `ERRANDER_UI_USER` | No | — | If set together with `ERRANDER_UI_PASSWORD`, enables HTTP Basic Auth on the Web UI |
-| `ERRANDER_UI_PASSWORD` | No | — | Password for the Web UI (compared with `secrets.compare_digest`) |
+| `ERRANDER_UI_USERNAME` | No | `admin` | Web UI login username |
+| `ERRANDER_UI_PASSWORD` | No | `errander` | Web UI login password — **change before any network exposure** |
+| `ERRANDER_UI_SECRET` | No | dev default | HMAC key for 8-hour session cookie — **change before any network exposure** |
+| `ERRANDER_UI_DATA_MODE` | No | `fixture` | UI data source: `fixture` (demo) or `live` (real stores) |
+| `ERRANDER_INVENTORY_PATH` | No | `inventory.yaml` | Path to inventory file — used by the web UI in live mode to read VM identity |
 
 ---
 

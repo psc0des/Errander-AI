@@ -205,6 +205,34 @@ For any action that removes, deletes, or otherwise destroys state (images, volum
 
 This rule applies to all Layer B actions. No grandfathering — the previous bulk `docker_prune` action is being removed in v1.1 precisely because it violates this invariant. Any future action that cannot satisfy exact-object approval is out of scope.
 
+### Implementation Contracts (for object-level destructive actions)
+
+The Exact-Object Approval invariant is **enforced in code** by two contracts. Every new destructive action must satisfy both. The reference implementation is `errander/agent/subgraphs/docker_hygiene.py` — **mirror it, don't reinvent it.**
+
+Grep `# INVARIANT:` across the codebase to find every site where these contracts are load-bearing. Each marker links back to this section.
+
+**Contract A — Layered drift gates.** A single drift check has a race window between approval and execution. Every object-level destructive action MUST implement two gates:
+
+1. **Snapshot-level (Python, in the execute node):** compare the current assessment's hash against the approval's `snapshot_hash`. Refuse execution outright on mismatch. The hash function MUST omit volatile fields (size, timestamps) that fluctuate between probes without indicating meaningful drift.
+2. **Per-object (wrapper, at execution time):** for each approved object, re-query its current state on the target VM and verify the classification still holds. Skip drifted objects with a named reason (e.g., `image_re_tagged`, `container_restarted`, `now_referenced`) — never silently proceed.
+
+Reference: `compute_assessment_hash()` + `execute_node()` in `docker_hygiene.py`; per-class re-validation in `errander-docker-remove-v2` wrapper.
+
+**Contract B — Per-object output parsers must never silently drop.** Wrappers return one result line per approved object. The Python parser MUST:
+
+1. **Synthesize FAILED for missing results.** If the wrapper omits a result for an approved object (crash mid-loop, network glitch), the parser MUST emit a `FAILED` result with `error="no_result_from_wrapper"` rather than dropping the object from the returned tuple. The audit log must record N outcomes for N approved objects.
+2. **Drop results for un-approved objects.** If the wrapper hallucinates a result for an object the operator didn't approve, the parser MUST log loudly and drop the result. Trusting wrapper output for un-approved objects creates a path for the wrapper to remove things the operator never saw.
+
+Reference: `parse_remove_v2_output()` in `docker_hygiene.py` — the `seen` set and the `for key, finding in by_key.items()` tail loop.
+
+**Tests that lock these contracts in:**
+- `TestExecuteNode::test_snapshot_hash_mismatch_refuses_execution`
+- `TestComputeAssessmentHash::test_unaffected_by_volatile_size`
+- `TestParseRemoveV2Output::test_missing_result_becomes_failed`
+- `TestParseRemoveV2Output::test_extra_result_for_unapproved_object_is_dropped`
+
+When extracting a shared base class for the second object-level action, these tests should migrate to the base-class test suite — they're invariants, not docker_hygiene-specific.
+
 ## Domain Rules
 
 ### v1 Scope
@@ -286,6 +314,22 @@ SSH keys: referenced by file path in inventory config, never inlined.
 ## Doc Sync Rule (mandatory)
 
 **Everything goes in one commit.** Code changes + doc updates = single atomic commit, then push. Never push first and sync docs afterward.
+
+### Pre-flight check before destructive-action work (mandatory)
+
+Before implementing, modifying, or extending any **destructive action** (removes/deletes/destroys state on a target VM — patching, docker_hygiene, disk_cleanup, service_restart, future selective actions):
+
+1. **Read** the "Implementation Contracts" subsection above (under AI Safety Invariant).
+2. **Grep** the codebase for `INVARIANT` (the marker prefix is `# INVARIANT:`) and read every match. These are load-bearing breadcrumbs at the sites where the contracts are enforced. Touching them without understanding the contract risks breaking the Exact-Object Approval invariant.
+   ```bash
+   # POSIX shell:
+   grep -rn "INVARIANT" errander/ scripts/
+   # PowerShell:
+   Select-String -Path errander\,scripts\ -Pattern "INVARIANT" -Recurse
+   ```
+3. **Mirror** the reference implementation (`docker_hygiene` for object-level approval flows) — do not reinvent the parser, the drift-gate pattern, or the approval artifact shape.
+
+Skipping this pre-flight is a process violation, not a stylistic preference. The invariants exist because earlier reviews caught specific safety gaps — the markers are there to keep them caught.
 
 Before every `git commit` + `git push`, update all files that are relevant to the changes made:
 

@@ -1,5 +1,22 @@
 # Errander-AI — Lessons Learned
 
+## 2026-05-22 — Vibe-coding with LLMs requires defense-in-depth for invariants because no LLM session has persistent memory
+
+Captured a substantive implementation contract in `lessons.md` after Session 2a (layered drift gates, per-object parsers never silently drop). User correctly pointed out: a *future* LLM session asked to add a second object-level destructive action won't grep `lessons.md` unless something nudges it. The lesson is at risk of being silently re-invented worse.
+
+The fix is multi-layer persistence, because no single layer is reliable:
+
+1. **`CLAUDE.md` — auto-loaded every conversation.** High-priority architectural invariants live here. Implementation contracts now have a dedicated subsection.
+2. **Auto-memory (`~/.claude/projects/.../memory/`)** — auto-loaded every conversation. Project-specific patterns and pointers to the reference implementation live here. Add a `pattern_*.md` memory entry whenever a non-trivial invariant is established.
+3. **`# INVARIANT:` markers in source code** — grep-discoverable at the load-bearing call sites. Each marker cites its contract in CLAUDE.md. Grep `INVARIANT` lists them all.
+4. **Tests with descriptive names** — `TestExecuteNode::test_snapshot_hash_mismatch_refuses_execution` documents the behavior in a place CI enforces.
+5. **Code abstraction (base class) when N>=2** — the strongest safeguard, but premature with N=1. The invariants then migrate from `# INVARIANT:` comments into a base class that physically prevents violations.
+
+**How to apply:**
+- When establishing a significant implementation contract, don't stop at `lessons.md`. Promote to CLAUDE.md (Implementation Contracts section), add `# INVARIANT:` markers at the load-bearing sites in source, add a `pattern_*.md` memory entry, and add a doc-sync rule that mandates the grep before similar future work.
+- When N reaches 2 (second action with the same pattern), extract a base class. The invariants then move from comments to inheritance contracts. Tests migrate to the base-class test suite.
+- Never argue "but the lesson is documented" as a substitute for these mechanisms. Documentation alone is unreliable when LLMs have no persistent attention.
+
 ## 2026-05-22 — Drift gates must compare assessment snapshot hashes, not just per-object state — defence in depth
 
 In `docker_hygiene.execute_node`, both layers of drift detection are required:

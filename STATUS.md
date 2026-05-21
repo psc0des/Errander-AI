@@ -4,6 +4,32 @@
 2026-05-21
 
 ## Current Phase
+**Defense-in-depth for vibe-coding LLM continuity (2026-05-22, COMPLETE).** No behavior change; mechanism for surviving LLM session boundaries.
+
+Problem surfaced by user: LLMs (Opus, me, future sessions) have no persistent memory. Lessons captured in `tasks/lessons.md` won't auto-surface to a future session asked to add a second object-level destructive action — that session won't grep `lessons.md` unless something nudges it. The two implementation contracts established in Session 2a (layered drift gates, per-object parsers never silently drop) are at risk of being silently re-invented worse.
+
+**Mitigations applied (defense in depth — none alone is sufficient):**
+1. **CLAUDE.md → AI Safety Invariant → Implementation Contracts (new section).** Names the two contracts, lists the reference implementation files, lists the tests that lock them in. CLAUDE.md is auto-loaded every conversation.
+2. **`# INVARIANT:` markers in source code (5 sites).** Each marker cites its contract and points back to CLAUDE.md. Grep-discoverable.
+   - `errander/models/docker_hygiene.py` `compute_assessment_hash` (volatile-field exclusion)
+   - `errander/agent/subgraphs/docker_hygiene.py` `execute_node` drift gate (snapshot-level)
+   - `errander/agent/subgraphs/docker_hygiene.py` `parse_remove_v2_output` drop-unapproved branch
+   - `errander/agent/subgraphs/docker_hygiene.py` `parse_remove_v2_output` synthesize-failed tail loop
+   - `scripts/install-docker-wrappers-v2.sh` per-object re-validation wrapper preamble
+3. **`MEMORY.md → pattern_object_level_approval.md` (new memory entry).** Tells future sessions where to look first when adding a new destructive action. Auto-loaded.
+4. **CLAUDE.md doc-sync rule extended.** Adds a "Pre-flight check before destructive-action work (mandatory)" subsection that requires: re-read Implementation Contracts → grep `INVARIANT` → mirror reference implementation. Skipping is a process violation.
+
+**Honest limit (documented in CLAUDE.md):** these mitigations reduce probability of drift; they don't eliminate it. The strongest safeguard is code that physically prevents wrong usage — base classes, type system, runtime asserts. That comes when N>=2 object-level destructive actions exist and a `PerObjectDestructiveAction` base class is justified.
+
+### Files changed this phase
+- `CLAUDE.md` — new "Implementation Contracts" subsection under AI Safety Invariant; doc-sync rule extended with pre-flight check
+- `errander/models/docker_hygiene.py` — `# INVARIANT:` marker on `compute_assessment_hash`
+- `errander/agent/subgraphs/docker_hygiene.py` — `# INVARIANT:` markers at 3 sites (drift gate, drop-unapproved, synthesize-failed)
+- `scripts/install-docker-wrappers-v2.sh` — `# INVARIANT:` marker on per-object re-validation preamble
+- (memory) `pattern_object_level_approval.md` (NEW) + MEMORY.md index update
+- `STATUS.md`, `tasks/todo.md`, `tasks/lessons.md`, `docs/command-log.md` — doc sync
+
+### Original phase from start of session
 **Docker hygiene v1.1 — Session 2a shipped (2026-05-22, SESSION 2a COMPLETE).** 2237 tests passing (+22 new), ruff clean on changed files, no new mypy errors.
 
 Session 2a delivered the execution path: real `errander-docker-remove-v2` wrapper (per-object allowlist + re-validation + drift detection), `execute_node` + drift gate (refuses execution when assessment snapshot hash mismatches approval), `vm_graph.py` dispatch wiring (`docker_hygiene` is now reachable by live batches), and per-object audit events (one `DOCKER_HYGIENE_OBJECT_REMOVED` / `_DRIFT_SKIPPED` / `_REMOVE_FAILED` row per approved object, per the Exact-Object Approval invariant). Approval artifacts (`DockerHygieneApproval` model + `compute_assessment_hash` helper) are wired through `planned_actions[i].params["approval"]` so tests can inject them directly; real Slack/web surfaces land in Session 2b.

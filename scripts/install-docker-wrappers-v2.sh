@@ -174,6 +174,14 @@ WRAPPER_EOF
 # Exit code is 0 even when individual objects drift/fail — the Python parser
 # inspects per-line status. Non-zero exit indicates the wrapper itself
 # failed to run (sudo denied, docker daemon down, etc.).
+#
+# INVARIANT (layered-drift-gates / per-object):
+# This wrapper is gate 2 of 2. The Python execute_node has already verified
+# the assessment snapshot hash (gate 1) before invoking us. Each branch below
+# MUST re-query the object's current state and emit drift_skipped — never
+# silently remove an object whose state has changed since approval. Adding
+# a class branch without re-validation breaks the Exact-Object Approval
+# invariant. See CLAUDE.md → Implementation Contracts (Contract A).
 cat > /usr/local/sbin/errander-docker-remove-v2 << 'WRAPPER_EOF'
 #!/bin/bash
 set -uo pipefail

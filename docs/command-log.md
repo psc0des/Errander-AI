@@ -2132,3 +2132,7 @@ uv run pytest tests/agent/subgraphs/test_docker_hygiene.py -x -q   # 62 passed (
 uv run pytest -x -q   # 2237 passed (+22 net new)
 uv run ruff check errander/models/docker_hygiene.py errander/agent/subgraphs/docker_hygiene.py errander/models/events.py errander/agent/vm_graph.py tests/agent/subgraphs/test_docker_hygiene.py   # All checks passed!
 uv run mypy errander/   # 9 pre-existing errors in unrelated files; no new errors in changed source files
+
+# Defense-in-depth for LLM continuity (2026-05-22)
+# No behavior change — pytest sanity only
+uv run pytest -x -q   # 2237 passed (no regressions; INVARIANT comments are pure additions)

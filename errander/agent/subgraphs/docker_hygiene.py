@@ -483,7 +483,11 @@ async def execute_node(
             "removal_results": (),
         }
 
-    # Drift gate: refuse to honor an approval against a stale assessment.
+    # INVARIANT (layered-drift-gates / snapshot-level):
+    # This is gate 1 of 2. It catches "the whole assessment is stale" cases.
+    # Gate 2 is per-object re-validation inside errander-docker-remove-v2.
+    # Removing either gate creates a race window between approval and execution.
+    # See CLAUDE.md → AI Safety Invariant → Implementation Contracts (Contract A).
     assessment = state.get("assessment")
     if assessment is not None:
         current_hash = compute_assessment_hash(assessment)
@@ -603,8 +607,12 @@ def parse_remove_v2_output(
         key = (obj_class, obj_id)
         finding = by_key.get(key)
         if finding is None:
-            # The wrapper returned a result for an object we didn't approve.
-            # Log loudly — this should never happen.
+            # INVARIANT (per-object-parser / drop-unapproved):
+            # The wrapper returned a result for an object the operator did NOT
+            # approve. Trusting it would create a path for the wrapper to remove
+            # things the operator never saw. Log loudly + drop the result.
+            # See CLAUDE.md → AI Safety Invariant → Implementation Contracts
+            # (Contract B, item 2).
             logger.error(
                 "remove-v2 returned result for un-approved object: class=%s id=%s",
                 obj_class, obj_id,
@@ -627,7 +635,12 @@ def parse_remove_v2_output(
         ))
         seen.add(key)
 
-    # Any approved finding without a result → FAILED (never silently dropped)
+    # INVARIANT (per-object-parser / synthesize-failed):
+    # Approved findings without a corresponding result MUST become FAILED —
+    # never silently dropped. The audit log must record N outcomes for N
+    # approved objects, even when the wrapper crashed mid-loop.
+    # See CLAUDE.md → AI Safety Invariant → Implementation Contracts
+    # (Contract B, item 1).
     for key, finding in by_key.items():
         if key not in seen:
             results.append(DockerHygieneRemovalResult(

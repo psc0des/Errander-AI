@@ -196,6 +196,12 @@ class DockerHygieneRemovalResult:
     error: str | None = None
 
 
+# INVARIANT (layered-drift-gates / volatile-field-exclusion):
+# Hash payload MUST exclude fields that fluctuate between probes without
+# indicating meaningful drift (size_bytes, age_days, exit_code, etc.).
+# Including them would trigger false drift refusals; excluding load-bearing
+# fields (identity, classification) would let real drift slip through.
+# See CLAUDE.md → AI Safety Invariant → Implementation Contracts (Contract A).
 def compute_assessment_hash(assessment: DockerHygieneAssessment) -> str:
     """Compute a stable hash of an assessment's findings.
 

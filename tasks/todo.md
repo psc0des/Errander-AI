@@ -24,6 +24,13 @@
 - [x] Green tree: **2237 pytest, ruff clean on changed files, no new mypy errors**
 - [x] Doc sync: README test count, STATUS, todo, lessons, command-log
 
+### Defense-in-depth for LLM continuity (2026-05-22, COMPLETE)
+- [x] CLAUDE.md → new "Implementation Contracts" subsection naming the two contracts (layered drift gates, per-object parser invariants)
+- [x] `# INVARIANT:` markers at 5 load-bearing sites (compute_assessment_hash, execute_node drift gate, parse_remove_v2_output × 2 branches, wrapper preamble) — grep-discoverable, each cites CLAUDE.md
+- [x] New memory entry `pattern_object_level_approval.md` + MEMORY.md index — auto-loaded, signposts docker_hygiene as canonical pattern
+- [x] CLAUDE.md doc-sync rule extended: "Pre-flight check before destructive-action work" requires re-reading Implementation Contracts + grepping `INVARIANT` + mirroring reference implementation
+- [x] New lesson capturing the meta-pattern (vibe-coding with LLMs requires defense-in-depth for invariants)
+
 ### Session 2b (next) — approval surfaces
 **Status:** Not started. Execution path is wired and tested end-to-end with mocked approvals injected via `planned_actions[i].params["approval"]`. Session 2b lands the real surfaces that produce those approvals.
 

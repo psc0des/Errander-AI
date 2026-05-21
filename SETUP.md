@@ -362,11 +362,13 @@ actions:
     command_mode: wrapper   # or direct_sudo for lab/pre-prod
 ```
 
-Then verify from the controller (after Step 5 — requires `inventory.yaml` and `.env`):
+Then verify from the **controller VM** (where Errander is installed — not on the targets):
 
 ```bash
 uv run python -m errander --check-targets <env>
 ```
+
+> `uv` runs only on the controller. Errander SSHes into target VMs internally — no agent software is needed on the targets.
 
 **Assess wrapper output format** (parsed by `parse_assess_output()` in `docker_prune.py`):
 
@@ -422,11 +424,13 @@ actions:
       - redis-server
 ```
 
-Then verify from the controller (after Step 5 — requires `inventory.yaml` and `.env`):
+Then verify from the **controller VM** (where Errander is installed — not on the targets):
 
 ```bash
 uv run python -m errander --check-targets <env>
 ```
+
+> `uv` runs only on the controller. Errander SSHes into target VMs internally — no agent software is needed on the targets.
 
 This verifies the wrapper exists on each VM, the sudoers entry is correct, and the on-target allowlist matches your inventory `restartable_units`. Drift in either direction is reported as a warning.
 

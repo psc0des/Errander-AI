@@ -1,5 +1,24 @@
 # Errander-AI Command Log
 
+## SRE QA round 2 — remaining fixture leaks (2026-05-21)
+
+```bash
+# Run provider tests after adding regression section 7
+uv run pytest tests/ui/test_web_providers.py -x --tb=short -q
+# 1 failed — Qwen3-8B-AWQ in settings env table; fixed description text
+# 1 failed — prod-web-01 echoed in not-found message; fixed test (expected)
+
+# All 52 provider tests pass
+uv run pytest tests/ui/test_web_providers.py --tb=short -q
+# 52 passed in 0.40s
+
+# Full UI suite — 177 tests passing (9 new regression tests)
+uv run pytest tests/ui/ --tb=short -q
+# 177 passed in 49.38s
+```
+
+---
+
 ## Evidence gating — fixture data leak fix (2026-05-21)
 
 ```bash

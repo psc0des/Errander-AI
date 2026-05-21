@@ -12,6 +12,17 @@ When rendering a live-mode page with an empty data store, any `dict["key"]` acce
 
 **How to apply:** After any change that introduces a new live-mode code path, run `test_page_*_live_renders` tests. They catch these crashes immediately since they use an unrefreshed LiveProvider.
 
+## 2026-05-21 — Live-mode regression tests must assert specific fixture strings, not just "no crash"
+
+After gating evidence overlays, there can still be fixture strings in page renders from:
+1. Hardcoded inline strings in f-strings (dates, counts, model names)
+2. Default values in `.get()` calls (e.g., `ev.get("window", "Tue/Thu 02:00–04:00 UTC")`)
+3. Documentation/example text in UI reference tables
+
+**Fix:** Write parametrized regression tests that render every page in live mode and assert a known list of fixture-only strings never appear (`"2026-04"`, `"prod-0423"`, specific hostnames, model names, demo IPs, hardcoded counts). Run these after each evidence-gating session. Any failure reveals a new leak.
+
+**How to apply:** Build `_FIXTURE_ONLY_STRINGS` as a list of unambiguous demo values. Add to it whenever a new SRE QA round finds a new leak. The test prevents regressions.
+
 ## 2026-05-21 — Fixture evidence overlays must be gated at the helper level, not at every call site
 
 When introducing a provider layer that separates `fixture` mode from `live` mode, any fixture-only data (e.g., `VM_EVIDENCE`, `BATCH_EVIDENCE`, `APPROVAL_EVIDENCE`, `audit_evidence_for()`) will silently leak into live mode if page functions call them directly. The correct fix is to introduce thin gate helpers (`_ev_vm()`, `_ev_batch()`, `_ev_approval()`, `_ev_audit()`) that return `{}` / a null sentinel in live mode and the real lookup in fixture mode. Page functions then call only the gate helpers.

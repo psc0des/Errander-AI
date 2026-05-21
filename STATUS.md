@@ -4,6 +4,26 @@
 2026-05-21
 
 ## Current Phase
+**SRE QA round 2 — remaining fixture leaks fixed (2026-05-21, COMPLETE).** 2177 tests, all passing.
+
+Second SRE QA pass found 9 more fixture strings leaking in live mode across 4 pages. All fixed in `errander/web/server.py`:
+
+- `page_fleet()`: gated `"last batch 02:00 UTC"`, `"Slack approval expires < 30 min"`, `"Completed 2026-04-23 02:14 UTC"`, `"data as of 2026-04-23 02:14 UTC"` behind `_is_fixture`.
+- `handle_fleet()` topnav: `"Last batch: 2026-04-23 02:00 UTC"` chip only in fixture mode.
+- `page_approvals()`: `"RESOLVED TODAY — 14 actions"` banner gated.
+- `page_vm()`: `"Next: 2026-04-24 02:00 UTC"`, 30d KPIs (`34`/`8`/`3`), fake batch deep-link IDs, `/keys/{hostname}.pem` SSH FP, hardcoded maintenance window — all `"—"` in live mode.
+- Settings env var table: `"Qwen3-8B-AWQ"` example replaced with generic description.
+- Metrics API: unknown hostname → 404 (was 200 with empty arrays).
+
+9 new regression tests in `tests/ui/test_web_providers.py` — 8 parametrized page renders + VM not-found check — assert no known fixture string appears in live mode.
+
+### Files Changed
+- `errander/web/server.py` — fixture-leak gates in `page_fleet`, `handle_fleet`, `page_approvals`, `page_vm`, `handle_metrics_api`, settings env table
+- `tests/ui/test_web_providers.py` — 9 regression tests (section 7)
+
+---
+
+## Previous Phase
 **Evidence gating — fixture data leak fix (2026-05-21, COMPLETE).** 2163 tests, all passing.
 
 SRE QA found that `ERRANDER_UI_DATA_MODE=live` still served fixture operational facts: `VM_EVIDENCE` lock holders on the dashboard, `BATCH_EVIDENCE` KPIs and April 2026 chart on the batches page, `APPROVAL_EVIDENCE` and `AUDIT_EVIDENCE` overlays on approvals/audit, and static demo values on admin/settings/agent pages.

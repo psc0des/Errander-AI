@@ -400,3 +400,59 @@ def test_mode_banner_shows_live_freshness(live_provider, server_module) -> None:
     _install(live_provider)
     html = server_module._mode_banner_html()
     assert "live" in html
+
+
+# ---------------------------------------------------------------------------
+# 7. Live-mode regression — no fixture operational facts in any page render
+# ---------------------------------------------------------------------------
+
+# Strings that identify fixture-only data. If any appear when LiveProvider is
+# active (no stores connected), it is a data-leak bug.
+_FIXTURE_ONLY_STRINGS = [
+    "2026-04",             # April 2026 fixture dates
+    "prod-0423",           # fixture batch IDs
+    "staging-0422",        # fixture staging batch IDs
+    "prod-web-01",         # fixture VM hostnames
+    "prod-db-01",          # fixture VM hostnames
+    "Qwen3-8B-AWQ",        # fixture LLM model
+    "10.0.0.100",          # fixture LLM endpoint IP
+    "14 actions approved", # fixture resolved-today count
+    "28 batches",          # fixture batch KPI
+    "96.4%",               # fixture completion rate
+    "2,418 actions",       # fixture action total
+]
+
+
+@pytest.mark.parametrize("page_fn", [
+    "page_fleet",
+    "page_approvals",
+    "page_batches",
+    "page_audit",
+    "page_agent",
+    "page_inventory",
+    "page_settings",
+    "page_admin",
+])
+def test_live_mode_no_fixture_facts(live_provider, server_module, page_fn) -> None:
+    """No known fixture-only string should appear when LiveProvider is active."""
+    _install(live_provider)
+    html = getattr(server_module, page_fn)()
+    for marker in _FIXTURE_ONLY_STRINGS:
+        assert marker not in html, (
+            f"{page_fn}() in live mode leaks fixture string {marker!r}. "
+            "Live mode must only show real provider data or an explicit unavailable state."
+        )
+
+
+def test_live_mode_vm_page_unknown_host_not_found(live_provider, server_module) -> None:
+    """In live mode with no VMs, a fixture hostname returns 'not found', not fixture data."""
+    _install(live_provider)
+    html = server_module.page_vm("prod-web-01")
+    assert "not found" in html
+    # Operational facts that must not appear (excluding the hostname itself, which
+    # is legitimately echoed back in the "not found" message).
+    _ops_facts = [m for m in _FIXTURE_ONLY_STRINGS if "prod-web-01" not in m]
+    for marker in _ops_facts:
+        assert marker not in html, (
+            f"page_vm('prod-web-01') in live mode leaks fixture string {marker!r}"
+        )

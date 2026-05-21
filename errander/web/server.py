@@ -1799,6 +1799,7 @@ def _operator_queue() -> str:
 
 
 def page_fleet() -> str:
+    _is_fixture = get_provider().data_mode() == "FIXTURE"
     healthy       = sum(1 for v in get_provider().get_vms() if v["status"] == "ok")
     warnings      = sum(1 for v in get_provider().get_vms() if v["status"] == "warning")
     failed_ct     = sum(1 for v in get_provider().get_vms() if v["status"] == "failed")
@@ -1815,7 +1816,7 @@ def page_fleet() -> str:
       <div class="card kpi-tile kpi-top-border" style="border-color:#16a34a">
         <div class="kpi-label">Healthy</div>
         <div class="kpi-value" style="color:#16a34a">{healthy}</div>
-        <div class="kpi-subtitle">{round(healthy/max(len(get_provider().get_vms()), 1)*100)}% of fleet &nbsp;·&nbsp; last batch 02:00 UTC</div>
+        <div class="kpi-subtitle">{round(healthy/max(len(get_provider().get_vms()), 1)*100)}% of fleet{' &nbsp;·&nbsp; last batch 02:00 UTC' if _is_fixture else ''}</div>
       </div>
       <div class="card kpi-tile kpi-top-border" style="border-color:#d97706">
         <div class="kpi-label">Warnings / Failed</div>
@@ -1825,7 +1826,7 @@ def page_fleet() -> str:
       <div class="card kpi-tile kpi-top-border" style="border-color:#7c3aed">
         <div class="kpi-label">Needs Approval</div>
         <div class="kpi-value" style="color:#7c3aed">{needs_approval}</div>
-        <div class="kpi-subtitle">Slack approval expires &lt; 30 min — act now</div>
+        <div class="kpi-subtitle">{'Slack approval expires &lt; 30 min — act now' if _is_fixture else ('pending · awaiting decision' if needs_approval > 0 else 'no pending approvals')}</div>
       </div>
     </div>"""
 
@@ -1836,7 +1837,7 @@ def page_fleet() -> str:
       <div class="batch-header">
         <span class="batch-id">{b['id']}</span>
         {audit_badge(str(b['status']))}
-        <span style="margin-left:auto;font-size:0.75rem;color:#94a3b8;font-family:'JetBrains Mono',monospace">Completed 2026-04-23 02:14 UTC</span>
+        <span style="margin-left:auto;font-size:0.75rem;color:#94a3b8;font-family:'JetBrains Mono',monospace">{'Completed 2026-04-23 02:14 UTC' if _is_fixture else b.get('completed_at', '—')}</span>
       </div>
       <div class="batch-bars">
         <div class="bar-row">
@@ -1972,7 +1973,7 @@ def page_fleet() -> str:
     <div class="section-hdr">
       <div>
         <div class="section-title">Fleet Inventory</div>
-        <div class="section-sub">{len(get_provider().get_vms())} hosts across {len(set(v['env'] for v in get_provider().get_vms()))} environments &nbsp;·&nbsp; data as of 2026-04-23 02:14 UTC &nbsp;·&nbsp; full list in <a href="/inventory" style="color:#4f46e5;text-decoration:none">/inventory</a></div>
+        <div class="section-sub">{len(get_provider().get_vms())} hosts across {len(set(v['env'] for v in get_provider().get_vms()))} environments &nbsp;·&nbsp; {'data as of 2026-04-23 02:14 UTC' if _is_fixture else get_provider().data_freshness()} &nbsp;·&nbsp; full list in <a href="/inventory" style="color:#4f46e5;text-decoration:none">/inventory</a></div>
       </div>
     </div>
     <div class="vm-grid">{cards}</div>"""
@@ -2297,11 +2298,11 @@ def page_approvals() -> str:
       </div>
     </div>"""
 
-    resolved = """
+    resolved = ("""
     <div class="card resolved-card" style="margin-top:8px">
       <span class="resolved-label">RESOLVED TODAY — 14 actions approved or rejected</span>
       <a href="/audit" style="margin-left:auto; color:#4f46e5; font-size:0.875rem; text-decoration:none; font-weight:500">View in Audit Log →</a>
-    </div>"""
+    </div>""" if get_provider().data_mode() == "FIXTURE" else "")
 
     return f"""
     <div class="section-hdr">
@@ -2656,6 +2657,7 @@ def page_vm(hostname: str, metrics_by_window: dict[str, dict[str, Any]] | None =
     if vm is None:
         return f'<div class="card" style="padding:40px;text-align:center">VM <code>{hostname}</code> not found.</div>'
 
+    _is_fixture = get_provider().data_mode() == "FIXTURE"
     color, _, border = STATUS_COLORS.get(vm["status"], ("#94a3b8", "", "#94a3b8"))
     ev = _ev_vm(hostname)
 
@@ -2739,16 +2741,18 @@ def page_vm(hostname: str, metrics_by_window: dict[str, dict[str, Any]] | None =
 
     # VM_EVIDENCE operational fields
     ev_lock        = ev.get("lock")
-    ev_window      = ev.get("window", "Tue/Thu 02:00–04:00 UTC")
+    ev_window      = ev.get("window", "—")
     ev_last_patch  = ev.get("last_patched", "—")
     ev_noop        = ev.get("noop_now", False)
-    ev_ssh_fp      = ev.get("ssh_key_fp", f"/keys/{hostname}.pem")
+    ev_ssh_fp      = ev.get("ssh_key_fp", "—")
 
     # Derive last batch id from actions list for deep links
     last_batch = next((a.get("batch") for a in actions if a.get("batch")), None)
     if last_batch is None:
-        # Fall back to hostname-based fixture batch id
-        last_batch = f"prod-0423-0200" if vm["env"] == "PROD" else "staging-0422-1400"
+        last_batch = (
+            (f"prod-0423-0200" if vm["env"] == "PROD" else "staging-0422-1400")
+            if _is_fixture else "—"
+        )
 
     lock_alert = ""
     if ev_lock:
@@ -2794,7 +2798,7 @@ def page_vm(hostname: str, metrics_by_window: dict[str, dict[str, Any]] | None =
         <div class="divider"></div>
         <div class="maint-label">Maintenance Window</div>
         <div class="maint-val">{ev_window}</div>
-        <div class="maint-next">Next: 2026-04-24 02:00 UTC</div>
+        <div class="maint-next">Next: {'2026-04-24 02:00 UTC' if _is_fixture else '—'}</div>
       </div>
       <div class="card disk-card">
         <div class="disk-header">
@@ -2815,17 +2819,17 @@ def page_vm(hostname: str, metrics_by_window: dict[str, dict[str, Any]] | None =
       </div>
       <div class="card kpi-tile kpi-top-border" style="border-color:#16a34a">
         <div class="kpi-label">Patches Applied (30d)</div>
-        <div class="kpi-value" style="color:#16a34a">34</div>
+        <div class="kpi-value" style="color:#16a34a">{'34' if _is_fixture else '—'}</div>
         <div class="kpi-subtitle">packages updated</div>
       </div>
       <div class="card kpi-tile kpi-top-border" style="border-color:#4f46e5">
         <div class="kpi-label">Log Rotations (30d)</div>
-        <div class="kpi-value" style="color:#4f46e5">8</div>
+        <div class="kpi-value" style="color:#4f46e5">{'8' if _is_fixture else '—'}</div>
         <div class="kpi-subtitle">sessions</div>
       </div>
       <div class="card kpi-tile kpi-top-border" style="border-color:#0891b2">
         <div class="kpi-label">Docker Prunes (30d)</div>
-        <div class="kpi-value" style="color:#0891b2">3</div>
+        <div class="kpi-value" style="color:#0891b2">{'3' if _is_fixture else '—'}</div>
         <div class="kpi-subtitle">runs</div>
       </div>
     </div>
@@ -3565,7 +3569,7 @@ def page_settings() -> str:
 
     env_rows = [
         ("ERRANDER_LLM_BASE_URL",      "LLM endpoint base URL",                           "set"),
-        ("ERRANDER_LLM_MODEL",         "Model identifier (e.g. Qwen3-8B-AWQ)",            "set"),
+        ("ERRANDER_LLM_MODEL",         "Model identifier from your LLM provider",         "set"),
         ("ERRANDER_LLM_API_KEY",       "API key — leave blank for unauthenticated vLLM",  "set"),
         ("ERRANDER_LLM_TIMEOUT",       "Request timeout in seconds (default 60)",          "default"),
         ("ERRANDER_LLM_TEMPERATURE",   "Sampling temperature (default 0.1)",               "default"),
@@ -4878,8 +4882,8 @@ async def handle_fleet(request: web.Request) -> web.Response:
         active_url="/",
         breadcrumb="Fleet Dashboard",
         topnav_extra=f'{env_badge_top("PROD")}'
-                     f'<span class="last-batch">Last batch: 2026-04-23 02:00 UTC</span>'
-                     f'<button class="btn-primary" disabled title="Use CLI: errander --run-now --env &lt;env&gt;" style="opacity:0.45;cursor:not-allowed">&#9654; RUN BATCH NOW</button>',
+                     + (f'<span class="last-batch">Last batch: 2026-04-23 02:00 UTC</span>' if get_provider().data_mode() == "FIXTURE" else "")
+                     + f'<button class="btn-primary" disabled title="Use CLI: errander --run-now --env &lt;env&gt;" style="opacity:0.45;cursor:not-allowed">&#9654; RUN BATCH NOW</button>',
         content=page_fleet(),
     )
     return web.Response(text=html, content_type="text/html")
@@ -5050,6 +5054,9 @@ async def handle_logout(request: web.Request) -> web.Response:
 async def handle_metrics_api(request: web.Request) -> web.Response:
     from errander.observability.vm_metrics import query_metrics
     hostname = request.match_info["hostname"]
+    known = {v["hostname"] for v in get_provider().get_vms()}
+    if known and hostname not in known:
+        raise web.HTTPNotFound(reason=f"VM {hostname!r} not in inventory")
     window = request.rel_url.query.get("window", "24h")
     db: aiosqlite.Connection | None = request.app.get("db")
     if db is None:

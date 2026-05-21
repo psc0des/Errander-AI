@@ -22,6 +22,17 @@ SRE QA verdict: live mode still served fixture operational data (`VM_EVIDENCE` l
 - [x] Agent page SSH pool count: `"11 hosts"` → `f"{len(get_provider().get_vms())} host(s)"`.
 - [x] 168/168 UI tests passing after all 10 edits.
 
+### SRE QA round 2: remaining fixture leaks (2026-05-21, COMPLETED)
+
+- [x] `page_fleet()` — gated `"last batch 02:00 UTC"`, `"Slack approval expires < 30 min"`, `"Completed 2026-04-23 02:14 UTC"`, `"data as of 2026-04-23 02:14 UTC"` behind `_is_fixture`.
+- [x] `handle_fleet()` topnav — `"Last batch: 2026-04-23 02:00 UTC"` chip only rendered in fixture mode.
+- [x] `page_approvals()` — `"RESOLVED TODAY — 14 actions approved or rejected"` banner gated.
+- [x] `page_vm()` — `"Next: 2026-04-24 02:00 UTC"`, `34`/`8`/`3` KPIs, hardcoded `prod-0423-0200` deep-link batch ID, `/keys/{hostname}.pem` SSH FP, `"Tue/Thu 02:00–04:00 UTC"` window all gated/replaced with `"—"` in live mode.
+- [x] Settings env var reference table: `"Qwen3-8B-AWQ"` example replaced with generic text.
+- [x] Metrics API: unknown hostname returns 404 (not 200 with empty arrays).
+- [x] 9 new regression tests in `tests/ui/test_web_providers.py` — 8 parametrized page renders + VM not-found check — assert no fixture string appears in live mode.
+- [x] 177/177 UI tests passing.
+
 ---
 
 ## P0 regression fix — f-string JS brace escape (2026-05-21, COMPLETED)

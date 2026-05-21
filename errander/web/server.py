@@ -21,6 +21,34 @@ from .evidence import (
     UI_MODE, VM_EVIDENCE, audit_evidence_for,
 )
 
+# ── Evidence gating — overlays are fixture-mode-only ─────────────────────────
+# In live mode every _ev_* helper returns {} / a null sentinel so page
+# functions never accidentally render April-2026 demo facts.
+
+_NULL_AUDIT_EV: dict[str, Any] = {
+    "event_id": "—", "action_id": "—", "plan_hash": "—",
+    "approver": "(n/a)", "approval_source": "(n/a)",
+    "before": "", "after": "", "command": "",
+    "stdout_summary": "", "stderr_summary": "", "rollback_status": "",
+}
+
+
+def _ev_vm(hostname: str) -> dict[str, Any]:
+    return VM_EVIDENCE.get(hostname, {}) if get_provider().data_mode() == "FIXTURE" else {}
+
+
+def _ev_batch(batch_id: str) -> dict[str, Any]:
+    return BATCH_EVIDENCE.get(batch_id, {}) if get_provider().data_mode() == "FIXTURE" else {}
+
+
+def _ev_approval(batch_id: str) -> dict[str, Any]:
+    return APPROVAL_EVIDENCE.get(batch_id, {}) if get_provider().data_mode() == "FIXTURE" else {}
+
+
+def _ev_audit(idx: int) -> dict[str, Any]:
+    return audit_evidence_for(idx) if get_provider().data_mode() == "FIXTURE" else _NULL_AUDIT_EV
+
+
 PORT = 8099
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
@@ -1691,16 +1719,17 @@ def _operator_queue() -> str:
             f"/vm/{warning_vms[0]['hostname']}",
         ))
 
-    # 6. Blocked VMs (lock held — from VM_EVIDENCE)
-    locked = [(h, e["lock"]) for h, e in VM_EVIDENCE.items() if e.get("lock")]
-    if locked:
-        rows.append((
-            "MED", "🔒",
-            f"{len(locked)} VM(s) currently locked by the agent",
-            " · ".join(f"{h}: {lock}" for h, lock in locked),
-            f"View {locked[0][0]}",
-            f"/vm/{locked[0][0]}",
-        ))
+    # 6. Blocked VMs (lock held — fixture mode only; live mode has no lock evidence yet)
+    if get_provider().data_mode() == "FIXTURE":
+        locked = [(h, e["lock"]) for h, e in VM_EVIDENCE.items() if e.get("lock")]
+        if locked:
+            rows.append((
+                "MED", "🔒",
+                f"{len(locked)} VM(s) currently locked by the agent",
+                " · ".join(f"{h}: {lock}" for h, lock in locked),
+                f"View {locked[0][0]}",
+                f"/vm/{locked[0][0]}",
+            ))
 
     # 7. Next maintenance window
     sch = get_provider().get_scheduler_timeline()
@@ -2172,7 +2201,7 @@ def _appr_confirm_modal_js() -> str:
 def page_approvals() -> str:
     cards = ""
     for a in get_provider().get_approvals():
-        ev = APPROVAL_EVIDENCE.get(a["id"], {})
+        ev = _ev_approval(a["id"])
         tier_cls = "badge-danger" if a["tier"] == "HIGH RISK" else "badge-amber"
 
         cpu  = a.get("vm_cpu",  0)
@@ -2428,7 +2457,7 @@ def _vm_resource_trends(
     Falls back to VM_EVIDENCE fixture for any window with no DB rows.
     JS polls /api/vm/{hostname}/metrics every 60 s and updates SVG in-place.
     """
-    ev = VM_EVIDENCE.get(hostname, {})
+    ev = _ev_vm(hostname)
     db_data = metrics_by_window or {}
 
     # ── Per-window data resolution ─────────────────────────────────────────
@@ -2628,7 +2657,7 @@ def page_vm(hostname: str, metrics_by_window: dict[str, dict[str, Any]] | None =
         return f'<div class="card" style="padding:40px;text-align:center">VM <code>{hostname}</code> not found.</div>'
 
     color, _, border = STATUS_COLORS.get(vm["status"], ("#94a3b8", "", "#94a3b8"))
-    ev = VM_EVIDENCE.get(hostname, {})
+    ev = _ev_vm(hostname)
 
     actions = get_provider().get_vm_actions(hostname)
 
@@ -2660,7 +2689,7 @@ def page_vm(hostname: str, metrics_by_window: dict[str, dict[str, Any]] | None =
           <td class="td-mono">{a['op']}</td>
         </tr>"""
 
-    _disk_hist = VM_EVIDENCE.get(hostname, {}).get("disk_history", {})
+    _disk_hist = _ev_vm(hostname).get("disk_history", {})
     disk_data = [
         ("/",     vm["disk"], f"{round(vm['disk']*50/100,1)} GB / 50 GB"),
         ("/var",  52,         "26.0 GB / 50 GB"),
@@ -2828,7 +2857,7 @@ def page_audit() -> str:
     actions_seen: set[str] = set()
     approvers_seen: set[str] = set()
     for i, e in enumerate(get_provider().get_audit_events()):
-        ev = audit_evidence_for(i)
+        ev = _ev_audit(i)
         actions_seen.add(e["action"])
         if "(none" not in ev["approver"] and "(n/a" not in ev["approver"]:
             approvers_seen.add(ev["approver"].split(" (")[0])
@@ -3047,7 +3076,11 @@ def page_audit() -> str:
 
 
 def page_batches() -> str:
-    kpis = """
+    _batches = get_provider().get_batches()
+    _is_fixture = get_provider().data_mode() == "FIXTURE"
+
+    if _is_fixture:
+        kpis = """
     <div class="kpi-grid" style="margin-bottom:20px">
       <div class="card kpi-tile kpi-top-border" style="border-color:#4f46e5">
         <div class="kpi-label">Total Batches (30d)</div>
@@ -3070,24 +3103,51 @@ def page_batches() -> str:
         <div class="kpi-subtitle">this period</div>
       </div>
     </div>"""
+    else:
+        _total = len(_batches)
+        _ok = sum(1 for b in _batches if b.get("status") == "completed")
+        _rate = f"{round(_ok / max(_total, 1) * 100, 1)}%" if _total else "—"
+        _actions = sum(b.get("actions", 0) for b in _batches)
+        kpis = f"""
+    <div class="kpi-grid" style="margin-bottom:20px">
+      <div class="card kpi-tile kpi-top-border" style="border-color:#4f46e5">
+        <div class="kpi-label">Total Batches</div>
+        <div class="kpi-value" style="color:#0f172a">{_total if _total else "—"}</div>
+        <div class="kpi-subtitle">from audit log</div>
+      </div>
+      <div class="card kpi-tile kpi-top-border" style="border-color:#16a34a">
+        <div class="kpi-label">Success Rate</div>
+        <div class="kpi-value" style="color:#16a34a">{_rate}</div>
+        <div class="kpi-subtitle">completed / total</div>
+      </div>
+      <div class="card kpi-tile kpi-top-border" style="border-color:#0891b2">
+        <div class="kpi-label">Avg Duration</div>
+        <div class="kpi-value" style="color:#0891b2">—</div>
+        <div class="kpi-subtitle">not yet tracked live</div>
+      </div>
+      <div class="card kpi-tile kpi-top-border" style="border-color:#7c3aed">
+        <div class="kpi-label">Actions Executed</div>
+        <div class="kpi-value" style="color:#7c3aed">{_actions if _actions else "—"}</div>
+        <div class="kpi-subtitle">audit log total</div>
+      </div>
+    </div>"""
 
-    # Simple SVG sparkline
-    durations = [14.5, 12.1, 11.8, 13.7, 10.9, 12.3, 11.5, 10.8, 12.9, 11.2,
-                 13.1, 12.8, 11.7, 14.1, 12.2, 11.9, 13.4, 19.1, 10.7, 12.5,
-                 11.1, 13.8, 12.7, 11.4, 14.3, 12.1, 11.8, 12.2, 11.5, 14.5]
-    max_d, min_d = max(durations), min(durations)
-    w, h = 900, 60
-    pts = []
-    for i, d in enumerate(durations):
-        x = round(i / (len(durations) - 1) * w, 1)
-        y = round(h - (d - min_d) / (max_d - min_d) * (h - 10) - 5, 1)
-        pts.append(f"{x},{y}")
-    polyline = " ".join(pts)
-    anomaly_x = round(17 / 29 * w, 1)
-    anomaly_y = round(h - (19.1 - min_d) / (max_d - min_d) * (h - 10) - 5, 1)
-    months_labels = "".join(f'<span>Apr {i+1}</span>' for i in range(0, 30, 5))
-
-    chart = f"""
+    if _is_fixture:
+        durations = [14.5, 12.1, 11.8, 13.7, 10.9, 12.3, 11.5, 10.8, 12.9, 11.2,
+                     13.1, 12.8, 11.7, 14.1, 12.2, 11.9, 13.4, 19.1, 10.7, 12.5,
+                     11.1, 13.8, 12.7, 11.4, 14.3, 12.1, 11.8, 12.2, 11.5, 14.5]
+        max_d, min_d = max(durations), min(durations)
+        w, h = 900, 60
+        pts = []
+        for i, d in enumerate(durations):
+            x = round(i / (len(durations) - 1) * w, 1)
+            y = round(h - (d - min_d) / (max_d - min_d) * (h - 10) - 5, 1)
+            pts.append(f"{x},{y}")
+        polyline = " ".join(pts)
+        anomaly_x = round(17 / 29 * w, 1)
+        anomaly_y = round(h - (19.1 - min_d) / (max_d - min_d) * (h - 10) - 5, 1)
+        months_labels = "".join(f'<span>Apr {i+1}</span>' for i in range(0, 30, 5))
+        chart = f"""
     <div class="card" style="padding:18px 20px;margin-bottom:20px">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
         <span class="section-title" style="font-size:0.875rem;font-family:'JetBrains Mono',monospace;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:#64748b">Batch Duration — Last 30 Days</span>
@@ -3109,9 +3169,11 @@ def page_batches() -> str:
       </div>
       <div class="spark-x-labels">{months_labels}</div>
     </div>"""
+    else:
+        chart = ""
 
     rows = ""
-    for i, b in enumerate(get_provider().get_batches()):
+    for i, b in enumerate(_batches):
         alt = " row-alt" if i % 2 == 1 else ""
         failed_cls = " row-failed" if b["status"] == "failed" else ""
         env_cls = "env-prod" if b["env"] == "PROD" else "env-staging"
@@ -3130,7 +3192,7 @@ def page_batches() -> str:
             )
             failed_vms_html = f'<div style="font-size:0.7rem;color:#94a3b8;margin-top:2px">{links}</div>'
 
-        be = BATCH_EVIDENCE.get(b["id"], {})
+        be = _ev_batch(b["id"])
         plan_hash     = be.get("plan_hash", "—")
         approver      = be.get("approver", "—")
         approval_src  = be.get("approval_source", "—")
@@ -3296,9 +3358,9 @@ def page_inventory() -> str:
     for i, vm in enumerate(get_provider().get_vms()):
         alt  = " row-alt" if i % 2 == 1 else ""
         fcls = " row-failed" if vm["status"] == "failed" else (" row-pending" if vm["status"] == "pending" else "")
-        ve = VM_EVIDENCE.get(vm["hostname"], {})
+        ve = _ev_vm(vm["hostname"])
         ssh_fp   = ve.get("ssh_key_fp", f'/keys/{vm["hostname"]}.pem')
-        win_str  = ve.get("window", "Tue/Thu 02:00–04:00")
+        win_str  = ve.get("window", "—")
         # shorten window for table cell
         win_short = win_str.split(" (")[0] if " (" in win_str else win_str
         rows += f"""<tr class="inv-row{alt}{fcls}" data-host="{vm['hostname']}" data-ip="{vm['ip']}" data-os="{vm['os']}" data-env="{vm['env']}" data-status="{vm['status']}">
@@ -3423,9 +3485,54 @@ def _inventory_env_breakdown() -> str:
 
 # ── Settings page ─────────────────────────────────────────────────────────────
 
+def _live_settings_sections() -> list[dict[str, Any]]:
+    """Build settings cards from real env vars — no demo values in live mode."""
+    def _mask(v: str) -> str:
+        return (v[:4] + "••••••••") if len(v) > 4 else "••••••••"
+
+    llm_url   = os.environ.get("ERRANDER_LLM_BASE_URL", "—")
+    llm_model = os.environ.get("ERRANDER_LLM_MODEL", "—")
+    llm_key   = os.environ.get("ERRANDER_LLM_API_KEY", "")
+    llm_to    = os.environ.get("ERRANDER_LLM_TIMEOUT", "60") + "s"
+    llm_temp  = os.environ.get("ERRANDER_LLM_TEMPERATURE", "0.1")
+    slack_tok = os.environ.get("ERRANDER_SLACK_BOT_TOKEN", "")
+    slack_ch  = os.environ.get("ERRANDER_SLACK_CHANNEL_ID", "—")
+    slack_to  = str(int(os.environ.get("ERRANDER_SLACK_TIMEOUT", "1800")) // 60) + " min"
+    slack_pol = os.environ.get("ERRANDER_SLACK_POLL_INTERVAL", "30") + "s"
+    audit_db  = os.environ.get("ERRANDER_AUDIT_DB_URL", "—")
+    sch = get_provider().get_scheduler_timeline()
+    return [
+        {"title": "LLM Configuration", "icon": "🤖", "icon_bg": "#ede9fe", "rows": [
+            ("Base URL",    llm_url,                            False),
+            ("Model",       llm_model,                          False),
+            ("API Key",     _mask(llm_key) if llm_key else "—", True),
+            ("Timeout",     llm_to,                             False),
+            ("Temperature", llm_temp,                           False),
+        ]},
+        {"title": "Slack Integration", "icon": "💬", "icon_bg": "#e0f2fe", "rows": [
+            ("Bot Token",        _mask(slack_tok) if slack_tok else "—", True),
+            ("Channel ID",       slack_ch,                               False),
+            ("Approval Timeout", slack_to,                               False),
+            ("Poll Interval",    slack_pol,                              False),
+        ]},
+        {"title": "Scheduling", "icon": "🕐", "icon_bg": "#fef3c7", "rows": [
+            ("Cron Expression", sch.get("cron", "—"),  False),
+            ("Human Schedule",  sch.get("human", "—"), False),
+            ("Dry Run Default", "ON",                   False),
+            ("Force Override",  "Requires reason",      False),
+        ]},
+        {"title": "Safety & Audit", "icon": "🛡", "icon_bg": "#dcfce7", "rows": [
+            ("Audit DB Path", audit_db,  False),
+            ("Log Retention", "90 days", False),
+            ("Strict Mode",   "ON",      False),
+        ]},
+    ]
+
+
 def page_settings() -> str:
+    _sections = _SETTINGS_SECTIONS if get_provider().data_mode() == "FIXTURE" else _live_settings_sections()
     cards = ""
-    for s in _SETTINGS_SECTIONS:
+    for s in _sections:
         rows_html = ""
         for key, val, masked in s["rows"]:
             if masked:
@@ -3566,31 +3673,40 @@ def page_settings() -> str:
 # ── Admin page ────────────────────────────────────────────────────────────────
 
 def page_admin() -> str:
+    _ag = get_provider().get_agent_status()
+    _ab = get_provider().get_active_batch()
+    _last = _ag.get("last_batch_id", "—")
+    _dur  = _ab.get("duration", "—") if _last != "—" else ""
+    _last_str = f"{_last} &nbsp;·&nbsp; {_dur}" if _dur else _last
+    _next = _ag.get("next_run", "—")
+    _mode = _ag.get("mode", "DRY RUN")
+    _active_id = _ab.get("id", "—") if _ab.get("status") not in ("unavailable", "completed") else "None"
+
     # Agent controls card
-    agent_card = """
+    agent_card = f"""
     <div class="card admin-card">
       <div class="admin-section-title">Agent Controls</div>
       <div class="agent-row">
         <span class="agent-row-label">Scheduler</span>
         <span class="agent-row-val">
-          <span class="sys-dot dot-green" style="display:inline-block;margin-right:6px"></span>RUNNING
+          <span class="sys-dot dot-green" style="display:inline-block;margin-right:6px"></span>{_ag.get('scheduler', 'UNAVAILABLE')}
         </span>
       </div>
       <div class="agent-row">
         <span class="agent-row-label">Last batch</span>
-        <span class="agent-row-val">prod-0423-0200 &nbsp;·&nbsp; 14m 32s</span>
+        <span class="agent-row-val">{_last_str}</span>
       </div>
       <div class="agent-row">
         <span class="agent-row-label">Next scheduled</span>
-        <span class="agent-row-val">2026-05-14 02:00 UTC</span>
+        <span class="agent-row-val">{_next}</span>
       </div>
       <div class="agent-row">
         <span class="agent-row-label">Current mode</span>
-        <span class="badge badge-indigo">DRY RUN</span>
+        <span class="badge badge-indigo">{_mode}</span>
       </div>
       <div class="agent-row">
         <span class="agent-row-label">Active batch</span>
-        <span class="agent-row-val" style="color:#94a3b8">None</span>
+        <span class="agent-row-val" style="color:#94a3b8">{_active_id}</span>
       </div>
       <div class="admin-btns">
         <button class="btn-run" disabled title="Use CLI: errander --run-now --env &lt;env&gt;" style="opacity:0.45;cursor:not-allowed">▶ RUN BATCH NOW</button>
@@ -3601,9 +3717,27 @@ def page_admin() -> str:
       </div>
     </div>"""
 
-    # System health card
+    # System health card — real env vars in live mode, fixture data in demo mode
+    def _live_health_checks() -> list[dict[str, Any]]:
+        llm_url = os.environ.get("ERRANDER_LLM_BASE_URL", "")
+        slack_tok = os.environ.get("ERRANDER_SLACK_BOT_TOKEN", "")
+        audit_db = os.environ.get("ERRANDER_AUDIT_DB_URL", "")
+        return [
+            {"label": "vLLM Endpoint", "detail": llm_url or "—",
+             "status": "ok" if llm_url else "warn", "meta": "configured" if llm_url else "ERRANDER_LLM_BASE_URL not set"},
+            {"label": "Slack API", "detail": "api.slack.com",
+             "status": "ok" if slack_tok else "warn", "meta": "token configured" if slack_tok else "ERRANDER_SLACK_BOT_TOKEN not set"},
+            {"label": "Audit DB", "detail": audit_db or "—",
+             "status": "ok" if audit_db else "warn", "meta": "configured" if audit_db else "ERRANDER_AUDIT_DB_URL not set"},
+            {"label": "SSH Keys", "detail": "key-auth enforced",
+             "status": "ok", "meta": "no passwords"},
+            {"label": "APScheduler", "detail": _ag.get("scheduler", "—"),
+             "status": "ok", "meta": "running"},
+        ]
+
+    _health = _HEALTH_CHECKS if get_provider().data_mode() == "FIXTURE" else _live_health_checks()
     health_rows = ""
-    for h in _HEALTH_CHECKS:
+    for h in _health:
         if h["status"] == "ok":
             ind = f'<span class="h-ok"><span class="hdot-ok"></span>OK &nbsp;·&nbsp; {h["meta"]}</span>'
         elif h["status"] == "warn":
@@ -4349,7 +4483,7 @@ def _layer_partition_html(ag: dict[str, Any]) -> str:
           <div class="layer-pane-row"><span class="lbl">APScheduler</span><span class="val">{ag.get('scheduler', '—')}</span></div>
           <div class="layer-pane-row"><span class="lbl">Last batch</span><span class="val">{ag.get('last_batch_id', '—')}</span></div>
           <div class="layer-pane-row"><span class="lbl">Next batch</span><span class="val">{ag.get('next_run', '—')}</span></div>
-          <div class="layer-pane-row"><span class="lbl">SSH pool</span><span class="val">11 hosts · key-auth · no passwords</span></div>
+          <div class="layer-pane-row"><span class="lbl">SSH pool</span><span class="val">{len(get_provider().get_vms())} host(s) · key-auth · no passwords</span></div>
           <div class="layer-pane-row"><span class="lbl">Audit DB</span><span class="val">SQLite · strict mode · 0 write failures</span></div>
           <div class="layer-pane-row"><span class="lbl">Slack poll</span><span class="val">outbound only · 30s cadence</span></div>
         </div>

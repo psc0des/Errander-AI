@@ -12,6 +12,17 @@ When rendering a live-mode page with an empty data store, any `dict["key"]` acce
 
 **How to apply:** After any change that introduces a new live-mode code path, run `test_page_*_live_renders` tests. They catch these crashes immediately since they use an unrefreshed LiveProvider.
 
+## 2026-05-21 — Fixture evidence overlays must be gated at the helper level, not at every call site
+
+When introducing a provider layer that separates `fixture` mode from `live` mode, any fixture-only data (e.g., `VM_EVIDENCE`, `BATCH_EVIDENCE`, `APPROVAL_EVIDENCE`, `audit_evidence_for()`) will silently leak into live mode if page functions call them directly. The correct fix is to introduce thin gate helpers (`_ev_vm()`, `_ev_batch()`, `_ev_approval()`, `_ev_audit()`) that return `{}` / a null sentinel in live mode and the real lookup in fixture mode. Page functions then call only the gate helpers.
+
+**Why:** Provider layer tells page functions WHERE to get live data, but fixture enrichment overlays are a separate concern — decorators layered on top. Without the gate, live mode shows fake operational facts (e.g., "prod-db-01 holds a lock", "April 2026 chart", "Qwen3-8B-AWQ") even though no live stores are connected.
+
+**How to apply:**
+1. For every fixture-only data lookup in server.py, create a `_ev_*()` helper that checks `get_provider().data_mode() == "FIXTURE"` before calling it.
+2. For every static computed value (KPIs, settings sections, admin health checks), provide a `_live_*()` variant that reads from the provider or `os.environ`.
+3. For computed aggregates (chart data, total counts), use `if _is_fixture:` blocks — a list comprehension that generates the chart only in fixture mode; a computed value from the provider in live mode.
+
 ## 2026-05-21 — anyio 4.13 + pytest on Windows makes asyncio event loop creation take ~250 s per test
 
 With `asyncio_mode=AUTO` and `anyio-4.13.0` installed, any event loop creation inside a pytest run — even `asyncio.new_event_loop()` in a sync test — takes ~250 seconds. The root cause is anyio intercepting the loop factory.

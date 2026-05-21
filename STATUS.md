@@ -4,6 +4,26 @@
 2026-05-21
 
 ## Current Phase
+**Evidence gating — fixture data leak fix (2026-05-21, COMPLETE).** 2163 tests, all passing.
+
+SRE QA found that `ERRANDER_UI_DATA_MODE=live` still served fixture operational facts: `VM_EVIDENCE` lock holders on the dashboard, `BATCH_EVIDENCE` KPIs and April 2026 chart on the batches page, `APPROVAL_EVIDENCE` and `AUDIT_EVIDENCE` overlays on approvals/audit, and static demo values on admin/settings/agent pages.
+
+Fix: 10 surgical edits to `errander/web/server.py`:
+- Gate helpers `_ev_vm()`, `_ev_batch()`, `_ev_approval()`, `_ev_audit()` return `{}` / `_NULL_AUDIT_EV` sentinel in live mode, fixture lookup in fixture mode.
+- All `VM_EVIDENCE`, `BATCH_EVIDENCE`, `APPROVAL_EVIDENCE`, `audit_evidence_for()` call sites replaced with gate helpers.
+- `page_batches()` in live mode: KPIs computed from provider, chart suppressed.
+- `page_settings()` in live mode: `_live_settings_sections()` reads `os.environ`.
+- `page_admin()` in live mode: agent controls from `get_provider().get_agent_status()`; health checks from `_live_health_checks()`.
+- SSH pool count: hardcoded `"11 hosts"` → `f"{len(get_provider().get_vms())} host(s)"`.
+
+168/168 UI tests passing.
+
+### Files Changed
+- `errander/web/server.py` — 10 evidence-gating edits (181 insertions, 47 deletions)
+
+---
+
+## Previous Phase
 **Provider layer — Operations Hub backed by real stores (2026-05-21, COMPLETE).** 2163 tests, all passing.
 
 Added `errander/web/providers.py` — `DataProvider` Protocol + `FixtureProvider` (static demo data, default) + `LiveProvider` (real backend stores, selected by `ERRANDER_UI_DATA_MODE=live`). All `page_*` functions in `server.py` now call `get_provider().get_*()` instead of importing data constants directly. LiveProvider never falls back to fixture data silently — missing stores produce empty lists or `_UNAVAIL_*` sentinel dicts. Mode banner reads real provider state. `_on_startup` initialises LiveProvider and schedules periodic refresh.

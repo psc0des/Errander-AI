@@ -6,6 +6,22 @@
 - [x] `tests/ui/test_web_providers.py` (NEW) — 43 tests: AST contract, FixtureProvider (19 tests), LiveProvider (10 tests), page renders in both modes (8 tests), env var selection (3 tests), mode banner (3 tests).
 - [x] 43/43 provider tests passing; 168/168 UI tests passing; 2163 total.
 
+### SRE QA: evidence gating — fixture data leak in live mode (2026-05-21, COMPLETED)
+
+SRE QA verdict: live mode still served fixture operational data (`VM_EVIDENCE` lock holders, `BATCH_EVIDENCE` KPIs, `APPROVAL_EVIDENCE`, `AUDIT_EVIDENCE`, static April 2026 chart, static settings/admin/health values).
+
+- [x] Added `_NULL_AUDIT_EV` sentinel + `_ev_vm()`, `_ev_batch()`, `_ev_approval()`, `_ev_audit()` gate helpers — return `{}` / null sentinel in live mode, fixture lookup in fixture mode.
+- [x] `_operator_queue()` — VM_EVIDENCE lock section gated behind `if get_provider().data_mode() == "FIXTURE":`.
+- [x] `page_approvals()` — `APPROVAL_EVIDENCE.get(a["id"], {})` → `_ev_approval(a["id"])`.
+- [x] `page_audit()` — `audit_evidence_for(i)` → `_ev_audit(i)`.
+- [x] `page_vm()` — all 3 `VM_EVIDENCE.get(hostname, {})` → `_ev_vm(hostname)`.
+- [x] Fleet inventory table — `VM_EVIDENCE.get(vm["hostname"], {})` → `_ev_vm(vm["hostname"])`; default window `"—"` in live mode.
+- [x] `page_batches()` — live mode computes KPIs from `get_provider().get_batches()`; chart rendered only in fixture mode; `BATCH_EVIDENCE` → `_ev_batch()`.
+- [x] `page_settings()` — `_live_settings_sections()` reads env vars in live mode; fixture sections only in fixture mode.
+- [x] `page_admin()` — agent controls read from `get_provider().get_agent_status()` + `get_provider().get_active_batch()`; `_live_health_checks()` reads env vars in live mode.
+- [x] Agent page SSH pool count: `"11 hosts"` → `f"{len(get_provider().get_vms())} host(s)"`.
+- [x] 168/168 UI tests passing after all 10 edits.
+
 ---
 
 ## P0 regression fix — f-string JS brace escape (2026-05-21, COMPLETED)

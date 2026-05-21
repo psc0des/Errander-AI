@@ -1,5 +1,23 @@
 # Errander-AI Command Log
 
+## Evidence gating — fixture data leak fix (2026-05-21)
+
+```bash
+# Verify all UI tests still pass after evidence gating edits
+uv run pytest tests/ui/ -v --tb=short
+# 168 passed in 51.58s
+
+# Run provider tests alone to confirm no regressions
+uv run pytest tests/ui/test_web_providers.py -v --tb=short
+# 43 passed in 0.43s
+
+# Check git diff to review all server.py evidence gating changes
+git diff errander/web/server.py --stat
+# errander/web/server.py | 228 +++/--- (181 insertions, 47 deletions)
+```
+
+---
+
 ## Provider layer — Operations Hub backed by real stores (2026-05-21)
 
 ```bash

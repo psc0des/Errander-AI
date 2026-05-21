@@ -253,13 +253,16 @@ errander/
     subgraphs/
       disk_cleanup.py       # Disk space management
       log_rotation.py       # Log compression and rotation
-      docker_prune.py       # Docker resource cleanup
+      docker_prune.py       # Docker resource cleanup (legacy — removed in v1.1 Session 3)
+      docker_hygiene.py     # Rich Docker assessment + object-level removal (v1.1)
       patching.py           # Non-kernel OS patching
       backup_verify.py      # Backup verification (read-only)
+      service_restart.py    # Operator-triggered systemd unit restart
   safety/                   # Safety architecture
     validators.py           # Pre-execution validation (kernel exclusion, whitelist)
     rollback.py             # Rollback strategies per action type
     approval.py             # Dual-channel approval (Slack + Web UI)
+    hygiene_approval.py     # docker_hygiene approval surface (Slack formatter + parser + manager)
     locking.py              # VM-level locking (file-based v1)
     audit.py                # Audit logging (async SQLite)
   execution/                # Command execution layer
@@ -269,6 +272,7 @@ errander/
     sandbox.py              # Dry-run / sandbox execution mode
   integrations/             # External service integrations
     slack.py                # Slack API client (outbound only)
+    signed_url.py           # HMAC-signed time-limited tokens (web approval URLs)
     llm.py                  # LLM client (OpenAI SDK → any OpenAI-compatible endpoint)
   observability/            # Metrics and monitoring
     metrics.py              # Prometheus metrics + Web UI + /metrics endpoint

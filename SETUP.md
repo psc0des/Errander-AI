@@ -674,6 +674,12 @@ ERRANDER_UI_DATA_MODE=fixture
 # Slack — optional (see "Slack notifications" below; remove # to enable)
 # ERRANDER_SLACK_BOT_TOKEN=xoxb-your-token-here
 # ERRANDER_SLACK_CHANNEL_ID=C0123456789
+
+# Signed-URL HMAC secret — required for docker_hygiene web approval (v1.1).
+# Generate with: head -c 32 /dev/urandom | base64
+# Not used yet by any live route; will be required once v1.1 Session 2b-ii
+# ships the web approval page. Set it now to avoid scrambling later.
+# ERRANDER_SIGNING_SECRET=paste-base64-output-here
 EOF
 ```
 

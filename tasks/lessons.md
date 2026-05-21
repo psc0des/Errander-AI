@@ -1,5 +1,19 @@
 # Errander-AI — Lessons Learned
 
+## 2026-05-22 — When introducing a new env var, the grep must include the canonical secrets lists, not just test counts
+
+I shipped Session 2b-i with `ERRANDER_SIGNING_SECRET` as a new env var, did the doc-sync grep for test counts (per the prior lesson), and still missed the canonical env var lists in CLAUDE.md (line ~295 + ~399), docs/SECRETS.md, README.md project tree, and SETUP.md `.env` template. User caught it for the second time in three sessions with the exact same question: "did you update all the relevant docs?"
+
+**Why:** The previous lesson narrowed the grep target to "test counts and action lists". I treated that as exhaustive instead of as one example of a broader category. Env vars, file additions to the project tree, and references in `docs/SECRETS.md` all leak across the same canonical-list pattern.
+
+**How to apply:** Extend the pre-commit grep pass to cover ALL canonical lists that a new addition could leak into. Run these grep checks before any commit that touches:
+- **New module file** → grep README project tree (`grep -n "<sibling_file>" README.md`) + grep CLAUDE.md architecture (`grep -n "<directory>/" CLAUDE.md`).
+- **New env var** → grep every existing env var name (`grep -rn "ERRANDER_" --include='*.md'`) — every place that lists *some* env vars MUST list yours too if it's user-facing. Specifically check CLAUDE.md secrets block, docs/SECRETS.md, SETUP.md `.env` template.
+- **New ActionType / manifest** → grep `BUILTIN_ACTIONS` count assertions in tests, action enum lists in CLAUDE.md / AI-ARCHITECTURE.md.
+- **New test file** → grep test count in README (3 places) + STATUS + tasks/todo.
+
+This is now mandatory before every commit, not optional after the user asks. The pattern is: **whatever I'm adding, grep the *type* of thing it is across the repo and update every canonical list.**
+
 ## 2026-05-22 — Signing-secret-missing must fail loud, not silently disable signing
 
 The `signed_url.py` module raises `SigningSecretMissingError` when `ERRANDER_SIGNING_SECRET` is unset. A common alternate design — auto-generate an ephemeral secret in memory, or warn-and-continue — would create a critical vulnerability: an attacker who could cause the env var to be unset (CI misconfiguration, container restart with a missing secret) would be handed a system where unsigned URLs flow because the signature check has been silently bypassed.

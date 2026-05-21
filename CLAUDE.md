@@ -297,6 +297,9 @@ ERRANDER_SLACK_CHANNEL_ID     # dedicated approvals channel
 ERRANDER_LLM_BASE_URL         # private vLLM endpoint
 ERRANDER_LLM_API_KEY          # if vLLM requires auth
 ERRANDER_AUDIT_DB_URL         # SQLite path for v1
+ERRANDER_SIGNING_SECRET       # HMAC secret for signed web-approval URLs
+                              # (docker_hygiene v1.1; required once Session 2b-ii ships)
+                              # 32+ random bytes: head -c 32 /dev/urandom | base64
 ```
 SSH keys: referenced by file path in inventory config, never inlined.
 `.gitignore` must include: `.env`, `*.pem`, `*.key`, `*.sqlite`
@@ -399,6 +402,7 @@ ERRANDER_LLM_MODEL=...
 ERRANDER_SLACK_BOT_TOKEN=...
 ERRANDER_SLACK_CHANNEL_ID=...
 ERRANDER_AUDIT_DB_URL=errander.sqlite
+ERRANDER_SIGNING_SECRET=...   # required once docker_hygiene v1.1 Session 2b-ii ships
 ```
 
 Nothing else is needed. `.venv/` and `.sqlite` are always regenerated locally.

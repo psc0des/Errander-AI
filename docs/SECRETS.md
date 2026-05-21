@@ -196,3 +196,24 @@ against this value using `secrets.compare_digest()` (timing-safe). The password
 is never hashed at rest — encryption via `enc:v1:` is its protection at rest.
 If you set `ERRANDER_UI_USER` without `ERRANDER_UI_PASSWORD` (or vice versa),
 Basic Auth is disabled entirely and a warning is logged on startup.
+
+**`ERRANDER_SIGNING_SECRET`** — HMAC-SHA256 key for signed web-approval URLs
+issued by `docker_hygiene` (v1.1). The agent embeds a signed token in the
+Slack approval message; the web approval route verifies the token before
+accepting the operator's selection. Used by
+`errander.integrations.signed_url.{make,verify}_signed_token`.
+
+Generate with 32+ random bytes:
+
+```bash
+head -c 32 /dev/urandom | base64
+```
+
+The signer fails loud (`SigningSecretMissingError`) when the env var is unset
+— it will not auto-generate an ephemeral secret, because that would silently
+disable signature verification. If the secret is rotated, in-flight signed
+URLs are immediately invalidated (intentional: rotation means revocation).
+
+Status as of 2026-05-22: produced and verified by the primitive in
+`signed_url.py`. Actually consumed end-to-end once docker_hygiene Session 2b-ii
+wires the web approval route.

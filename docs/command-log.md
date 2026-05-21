@@ -2126,3 +2126,9 @@ uv run pytest -x -q   # 2215 passed (+43 new from docker_hygiene + 3 registry up
 uv run ruff check errander/models/docker_hygiene.py errander/agent/subgraphs/docker_hygiene.py errander/agent/subgraphs/__init__.py errander/models/actions.py errander/execution/target_validation.py tests/agent/subgraphs/test_docker_hygiene.py tests/agent/subgraphs/test_registry.py tests/agent/subgraphs/test_service_restart_manifest.py   # All checks passed!
 uv run ruff check tests/agent/subgraphs/test_docker_hygiene.py --fix   # 1 import-order fix applied
 uv run mypy errander/   # 9 pre-existing errors in unrelated files, none in new code
+
+# Docker hygiene v1.1 Session 2a (2026-05-22)
+uv run pytest tests/agent/subgraphs/test_docker_hygiene.py -x -q   # 62 passed (40 Session 1 + 22 Session 2a)
+uv run pytest -x -q   # 2237 passed (+22 net new)
+uv run ruff check errander/models/docker_hygiene.py errander/agent/subgraphs/docker_hygiene.py errander/models/events.py errander/agent/vm_graph.py tests/agent/subgraphs/test_docker_hygiene.py   # All checks passed!
+uv run mypy errander/   # 9 pre-existing errors in unrelated files; no new errors in changed source files

@@ -4,6 +4,36 @@
 2026-05-21
 
 ## Current Phase
+**Docker hygiene v1.1 — Session 2a shipped (2026-05-22, SESSION 2a COMPLETE).** 2237 tests passing (+22 new), ruff clean on changed files, no new mypy errors.
+
+Session 2a delivered the execution path: real `errander-docker-remove-v2` wrapper (per-object allowlist + re-validation + drift detection), `execute_node` + drift gate (refuses execution when assessment snapshot hash mismatches approval), `vm_graph.py` dispatch wiring (`docker_hygiene` is now reachable by live batches), and per-object audit events (one `DOCKER_HYGIENE_OBJECT_REMOVED` / `_DRIFT_SKIPPED` / `_REMOVE_FAILED` row per approved object, per the Exact-Object Approval invariant). Approval artifacts (`DockerHygieneApproval` model + `compute_assessment_hash` helper) are wired through `planned_actions[i].params["approval"]` so tests can inject them directly; real Slack/web surfaces land in Session 2b.
+
+### Files added/changed in Session 2a
+- `errander/models/docker_hygiene.py` — added `ApprovalSurface`, `RemovalStatus` enums + `DockerHygieneApproval`, `DockerHygieneRemovalResult` dataclasses + `compute_assessment_hash` helper
+- `errander/models/events.py` — added `DOCKER_HYGIENE_OBJECT_REMOVED`, `DOCKER_HYGIENE_OBJECT_DRIFT_SKIPPED`, `DOCKER_HYGIENE_OBJECT_REMOVE_FAILED` event types
+- `errander/agent/subgraphs/docker_hygiene.py` — `execute_node`, `parse_remove_v2_output`, `_build_allowlist`, drift gate logic, updated `route_after_assess` (now branches on `nothing_to_do` / `approval` presence), updated `build_docker_hygiene_subgraph` (now includes execute node)
+- `errander/agent/vm_graph.py` — imported `DockerHygieneGraphState` + `build_docker_hygiene_subgraph`; added `docker_hygiene_compiled` param to `dispatch_action_node`; added `DOCKER_HYGIENE` branch in dispatch; added `_run_docker_hygiene` runner; added `_write_docker_hygiene_per_object_audit` helper called from `audit_results_node`; compiled docker_hygiene sub-graph in `build_vm_subgraph`
+- `scripts/install-docker-wrappers-v2.sh` — replaced Session 1 stub of `errander-docker-remove-v2` with real implementation (reads allowlist on stdin, per-object re-validation, per-object output)
+- `tests/agent/subgraphs/test_docker_hygiene.py` — added 22 new tests: `TestParseRemoveV2Output` (6), `TestExecuteNode` (8), `TestComputeAssessmentHash` (4), `TestVmGraphDispatch` (1), `TestPerObjectAuditHook` (1) + 2 updated routing tests + 1 new routing test
+- `tasks/todo.md`, `tasks/lessons.md`, `STATUS.md`, `docs/command-log.md`, `README.md` (test count) — doc sync
+
+### Session 2b (next) — approval surfaces
+- Slack message format with rich object list grouped by class + signed web URL
+- Slack reply parser (structured commands: `approve images 1,3 containers 1`)
+- Web approval page (FastHTML, signed URL verification, checkbox UI, submit handler)
+- Signed URL infrastructure (HMAC + time-limited tokens)
+- Wire approval artifacts from these surfaces into `planned_actions[i].params["approval"]`
+- Tests for both surfaces
+
+### Session 3 — Removal of docker_prune + final docs
+- Delete `docker_prune.py`, `test_docker_prune.py`, `test_docker_prune_modes.py`, the docker_prune branch from vm_graph.py, the legacy wrapper install script
+- `schema.py` loader fails loud on legacy `docker_prune` inventory key
+- `migrate.py` extension for `docker_prune` → `docker_hygiene` rename
+- SETUP.md rewrite (Docker hygiene replaces Docker cleanup section)
+- `docs/learning/XX-docker-hygiene.md` (new feature learning doc)
+- Final lint/typecheck/test + READMETest count update
+
+### Original phase from start of session
 **Docker hygiene v1.1 — Session 1 shipped (2026-05-21, SESSION 1 COMPLETE).** 2215 tests passing (+43 new), ruff clean on changed files, no new mypy errors.
 
 Session 1 delivered the assessment foundation — `docker_hygiene` sub-graph is buildable, testable in isolation, and registered in `BUILTIN_ACTIONS`. It is **not yet wired into vm_graph.py dispatch** — a live batch will not reach it until Session 2 lands the dispatch wiring. Existing `docker_prune` is untouched and continues to work; removal is Session 3.

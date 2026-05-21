@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import contextlib
 import logging
+import shlex
 from typing import TYPE_CHECKING, Any, TypedDict
 
 from langgraph.graph import END, StateGraph
@@ -33,10 +34,14 @@ from langgraph.graph import END, StateGraph
 from errander.execution.privilege import privileged
 from errander.models.actions import ActionStatus
 from errander.models.docker_hygiene import (
+    DockerHygieneApproval,
     DockerHygieneAssessment,
     DockerHygieneFinding,
+    DockerHygieneRemovalResult,
     DockerResourceClass,
     FindingClassification,
+    RemovalStatus,
+    compute_assessment_hash,
 )
 from errander.models.manifest import ActionManifest
 
@@ -97,6 +102,15 @@ class DockerHygieneGraphState(TypedDict, total=False):
 
     assessment: DockerHygieneAssessment
     nothing_to_do: bool
+
+    # Approval artifact injected by the parent VM graph after operator approval.
+    # When absent, the sub-graph ends after assess (Slack/web surface didn't
+    # produce an approval yet, or the operator rejected). When present and
+    # nothing_approved(), the sub-graph also ends without executing.
+    approval: DockerHygieneApproval | None
+
+    # Execution results — one DockerHygieneRemovalResult per approved object.
+    removal_results: tuple[DockerHygieneRemovalResult, ...]
 
 
 # --- Node functions ---
@@ -436,6 +450,195 @@ def _get_connection_params(state: DockerHygieneGraphState) -> dict[str, str]:
     }
 
 
+# --- Execute node (Session 2a) ---
+
+async def execute_node(
+    state: DockerHygieneGraphState,
+    *,
+    executor: SandboxExecutor,
+) -> dict[str, Any]:
+    """Invoke the remove-v2 wrapper for each approved object and parse results.
+
+    Drift handling lives in the wrapper itself: it re-queries each object's
+    current state and skips drifted ones with ``status=drift_skipped``. This
+    function parses the per-object results into ``DockerHygieneRemovalResult``
+    instances. The caller is responsible for writing one audit row per result
+    (see :func:`_run_docker_hygiene` in ``vm_graph.py``).
+
+    Dry-run: skip execution, return an empty results tuple with status
+    DRY_RUN_OK. The audit log records the dry-run intent at the action level
+    (via vm_graph.py).
+    """
+    approval = state.get("approval")
+    if approval is None:
+        # No approval injected — should not happen if routing is correct.
+        return {
+            "status": ActionStatus.SKIPPED.value,
+            "error": "execute_node reached without an approval artifact in state",
+            "removal_results": (),
+        }
+    if approval.nothing_approved():
+        return {
+            "status": ActionStatus.SKIPPED.value,
+            "removal_results": (),
+        }
+
+    # Drift gate: refuse to honor an approval against a stale assessment.
+    assessment = state.get("assessment")
+    if assessment is not None:
+        current_hash = compute_assessment_hash(assessment)
+        if current_hash != approval.snapshot_hash:
+            logger.warning(
+                "docker_hygiene approval snapshot mismatch on %s "
+                "(approval=%s, current=%s) — refusing to execute",
+                state.get("vm_id", "unknown"),
+                approval.snapshot_hash,
+                current_hash,
+            )
+            return {
+                "status": ActionStatus.SKIPPED.value,
+                "error": "assessment drifted between approval and execution",
+                "removal_results": (),
+            }
+
+    if state.get("dry_run", True):
+        # Dry-run path: don't actually invoke the wrapper. Synthesise "would
+        # remove" results for visibility but mark status DRY_RUN_OK.
+        synthetic = tuple(
+            DockerHygieneRemovalResult(finding=f, status=RemovalStatus.REMOVED)
+            for f in approval.approved_findings
+        )
+        return {
+            "status": ActionStatus.DRY_RUN_OK.value,
+            "removal_results": synthetic,
+        }
+
+    vm_id = state["vm_id"]
+    target = _get_connection_params(state)
+    allowlist_text = _build_allowlist(approval.approved_findings)
+
+    # printf %s <quoted-allowlist> | sudo -n /usr/local/sbin/errander-docker-remove-v2
+    command = (
+        f"printf %s {shlex.quote(allowlist_text)} | "
+        f"{privileged('/usr/local/sbin/errander-docker-remove-v2')}"
+    )
+
+    result = await executor.execute(
+        vm_id,
+        target["hostname"],
+        target["username"],
+        target["key_path"],
+        command=command,
+        dry_run=False,
+    )
+
+    if not result.success:
+        return {
+            "status": ActionStatus.FAILED.value,
+            "error": f"remove-v2 wrapper failed: {result.stderr.strip()[:200]}",
+            "removal_results": (),
+        }
+
+    results = parse_remove_v2_output(result.stdout, approval.approved_findings)
+
+    # Status reflects the aggregate outcome:
+    # - any FAILED → FAILED
+    # - any REMOVED → SUCCESS
+    # - all DRIFT_SKIPPED or SKIPPED_NOT_FOUND → SKIPPED
+    if any(r.status == RemovalStatus.FAILED for r in results):
+        agg_status = ActionStatus.FAILED.value
+    elif any(r.status == RemovalStatus.REMOVED for r in results):
+        agg_status = ActionStatus.SUCCESS.value
+    else:
+        agg_status = ActionStatus.SKIPPED.value
+
+    return {
+        "status": agg_status,
+        "removal_results": results,
+    }
+
+
+def _build_allowlist(findings: tuple[DockerHygieneFinding, ...]) -> str:
+    """Render the approved findings as the remove-v2 wrapper's stdin format."""
+    lines = [
+        f"class={f.resource_class.value} id={f.identity} expected={f.classification.value}"
+        for f in findings
+    ]
+    # Trailing newline so the wrapper's `while read` loop processes the last line.
+    return "\n".join(lines) + "\n"
+
+
+# --- Remove-v2 output parser ---
+
+def parse_remove_v2_output(
+    stdout: str,
+    approved: tuple[DockerHygieneFinding, ...],
+) -> tuple[DockerHygieneRemovalResult, ...]:
+    """Parse the per-object output of the remove-v2 wrapper.
+
+    Expected format (one line per object)::
+
+        result class=<class> id=<id> status=<status> reason=<text>
+
+    Each result is matched back to its DockerHygieneFinding by (class, identity).
+    Findings that have no matching result line are recorded as FAILED with
+    reason="no_result_from_wrapper" — never silently dropped.
+    """
+    by_key: dict[tuple[str, str], DockerHygieneFinding] = {
+        (f.resource_class.value, f.identity): f for f in approved
+    }
+    seen: set[tuple[str, str]] = set()
+    results: list[DockerHygieneRemovalResult] = []
+
+    for raw in stdout.splitlines():
+        line = raw.strip()
+        if not line.startswith("result "):
+            continue
+        kv = _parse_kv_line(line[len("result "):])
+        obj_class = kv.get("class", "")
+        obj_id = kv.get("id", "")
+        status_str = kv.get("status", "")
+        reason = kv.get("reason", "") or None
+
+        key = (obj_class, obj_id)
+        finding = by_key.get(key)
+        if finding is None:
+            # The wrapper returned a result for an object we didn't approve.
+            # Log loudly — this should never happen.
+            logger.error(
+                "remove-v2 returned result for un-approved object: class=%s id=%s",
+                obj_class, obj_id,
+            )
+            continue
+
+        try:
+            status = RemovalStatus(status_str)
+        except ValueError:
+            status = RemovalStatus.FAILED
+            reason = f"unknown_status:{status_str}"
+
+        drift_reason = reason if status == RemovalStatus.DRIFT_SKIPPED else None
+        error = reason if status == RemovalStatus.FAILED else None
+        results.append(DockerHygieneRemovalResult(
+            finding=finding,
+            status=status,
+            drift_reason=drift_reason,
+            error=error,
+        ))
+        seen.add(key)
+
+    # Any approved finding without a result → FAILED (never silently dropped)
+    for key, finding in by_key.items():
+        if key not in seen:
+            results.append(DockerHygieneRemovalResult(
+                finding=finding,
+                status=RemovalStatus.FAILED,
+                error="no_result_from_wrapper",
+            ))
+
+    return tuple(results)
+
+
 # --- Routing ---
 
 def route_after_validate(state: DockerHygieneGraphState) -> str:
@@ -446,7 +649,18 @@ def route_after_validate(state: DockerHygieneGraphState) -> str:
 
 
 def route_after_assess(state: DockerHygieneGraphState) -> str:
-    """Route after assessment. Session 1: always END (no execute node yet)."""
+    """Route after assessment.
+
+    - nothing_to_do → END (idempotent — no findings to surface).
+    - approval present → execute (operator approved exact objects).
+    - approval absent → END (report-only path; Session 2b will inject an
+      approval after Slack/web surfaces decide). vm_graph.py is responsible
+      for re-invoking the sub-graph with an approval injected when one arrives.
+    """
+    if state.get("nothing_to_do"):
+        return END
+    if state.get("approval") is not None:
+        return "execute"
     return END
 
 
@@ -455,23 +669,28 @@ def route_after_assess(state: DockerHygieneGraphState) -> str:
 def build_docker_hygiene_subgraph(
     executor: SandboxExecutor,
 ) -> StateGraph[DockerHygieneGraphState]:
-    """Construct the docker_hygiene sub-graph (validate → assess → END).
+    """Construct the docker_hygiene sub-graph (validate → assess → execute → END).
 
-    Session 1 wiring: no execute node yet. The sub-graph is callable and
-    testable in isolation; vm_graph.py dispatch wiring lands in Session 2
-    alongside the dual approval surface.
+    Execute node is reached only when an approval artifact is injected into
+    state. Without an approval, the graph ends after assess — the assessment
+    becomes input for the Slack/web approval surfaces (Session 2b).
     """
     builder: StateGraph[DockerHygieneGraphState] = StateGraph(DockerHygieneGraphState)
 
     async def _assess(state: DockerHygieneGraphState) -> dict[str, Any]:
         return await assess_node(state, executor=executor)
 
+    async def _execute(state: DockerHygieneGraphState) -> dict[str, Any]:
+        return await execute_node(state, executor=executor)
+
     builder.add_node("validate", validate_node)
     builder.add_node("assess", _assess)
+    builder.add_node("execute", _execute)
 
     builder.set_entry_point("validate")
 
     builder.add_conditional_edges("validate", route_after_validate, ["assess", END])
-    builder.add_conditional_edges("assess", route_after_assess, [END])
+    builder.add_conditional_edges("assess", route_after_assess, ["execute", END])
+    builder.add_edge("execute", END)
 
     return builder

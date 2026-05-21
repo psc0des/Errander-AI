@@ -12,7 +12,10 @@ cleanly through YAML/JSON.
 
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from enum import StrEnum
 
 
@@ -111,3 +114,104 @@ class DockerHygieneAssessment:
     def nothing_to_surface(self) -> bool:
         """True when assessment found no objects worth showing the operator."""
         return not self.findings
+
+
+class ApprovalSurface(StrEnum):
+    """Which surface the operator used to record an approval.
+
+    Both surfaces produce the same DockerHygieneApproval artifact — the
+    execute path doesn't branch on this field, but the audit log records
+    it for traceability.
+    """
+
+    SLACK_REPLY = "slack_reply"
+    WEB_PAGE = "web_page"
+    TEST_INJECT = "test_inject"  # for tests bypassing both real surfaces
+
+
+class RemovalStatus(StrEnum):
+    """Per-object outcome from the remove wrapper."""
+
+    REMOVED = "removed"
+    DRIFT_SKIPPED = "drift_skipped"
+    FAILED = "failed"
+    SKIPPED_NOT_FOUND = "skipped_not_found"
+
+
+@dataclass(frozen=True)
+class DockerHygieneApproval:
+    """The operator's approval artifact for a docker_hygiene execution.
+
+    Names exact objects (by resource_class + identity), pins the assessment
+    snapshot via a hash, and records who/which surface created the artifact.
+    The remove wrapper re-validates each (class, id, expected_classification)
+    against current state at execution time — if any object's state has
+    drifted, that object is skipped (not silently removed).
+
+    Attributes:
+        vm_id: VM the approval applies to.
+        approved_findings: Tuple of findings the operator approved. Each
+            finding carries its classification *at approval time* — the
+            wrapper re-checks that classification still holds.
+        snapshot_hash: SHA-256 (first 16 hex chars) of the assessment that
+            generated these findings. Used to detect drift across the full
+            assessment, not just per-object.
+        surface: Which channel the approval came from.
+        operator_id: Slack user ID or web session identifier.
+        approved_at: When the operator submitted approval.
+    """
+
+    vm_id: str
+    approved_findings: tuple[DockerHygieneFinding, ...]
+    snapshot_hash: str
+    surface: ApprovalSurface
+    operator_id: str
+    approved_at: datetime = field(default_factory=lambda: datetime.now(tz=UTC))
+
+    def nothing_approved(self) -> bool:
+        """True when the artifact records a rejection (no objects approved)."""
+        return not self.approved_findings
+
+
+@dataclass(frozen=True)
+class DockerHygieneRemovalResult:
+    """Per-object outcome from one invocation of the remove wrapper.
+
+    One DockerHygieneRemovalResult corresponds to one approved finding.
+    The audit log gets exactly one row per result (per the Exact-Object
+    Approval invariant — one audit row per object, not per batch).
+
+    Attributes:
+        finding: The original finding the operator approved.
+        status: Outcome (removed / drift_skipped / failed / skipped_not_found).
+        drift_reason: When status == DRIFT_SKIPPED, why the object was
+            skipped (e.g. ``image_re_tagged``, ``container_restarted``,
+            ``volume_now_referenced``). None for other statuses.
+        error: Stderr message when status == FAILED. None otherwise.
+    """
+
+    finding: DockerHygieneFinding
+    status: RemovalStatus
+    drift_reason: str | None = None
+    error: str | None = None
+
+
+def compute_assessment_hash(assessment: DockerHygieneAssessment) -> str:
+    """Compute a stable hash of an assessment's findings.
+
+    Used to pin the approval artifact to a specific assessment snapshot.
+    If the assessment is re-run between approval and execution, the hashes
+    will differ — surfaces should refuse to honor approvals against stale
+    snapshots.
+
+    The hash covers (resource_class, identity, classification) for every
+    finding, sorted for determinism. Fields like size_bytes are NOT in the
+    hash because they can fluctuate between probes without indicating
+    meaningful drift.
+    """
+    payload = sorted(
+        (f.resource_class.value, f.identity, f.classification.value)
+        for f in assessment.findings
+    )
+    blob = json.dumps(payload, separators=(",", ":"))
+    return hashlib.sha256(blob.encode()).hexdigest()[:16]

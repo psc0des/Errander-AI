@@ -153,23 +153,149 @@ fi
 echo "docker_hygiene_end"
 WRAPPER_EOF
 
-# --- errander-docker-remove-v2 (Session 1: stub only) ---
-# This wrapper is referenced by docker_hygiene.MANIFEST.required_wrappers so
-# --check-targets surfaces missing installs. The real remove logic (per-object
-# allowlist + re-validation + per-object audit) lands in Session 2. The stub
-# returns a clear error if invoked prematurely.
+# --- errander-docker-remove-v2 ---
+# Per-object remove wrapper. Reads an allowlist on stdin (one object per line):
+#
+#   class=<resource_class> id=<object_id_or_name> expected=<classification>
+#
+# Examples:
+#   class=image_dangling id=sha256:abc123 expected=cleanup_candidate
+#   class=container_stopped id=cont1 expected=cleanup_candidate
+#
+# For each line: re-query current state, verify the object still has the
+# expected classification, remove it if so. Drifted objects are skipped
+# (NOT removed). Emits one result line per input line:
+#
+#   result class=<class> id=<id> status=<removed|drift_skipped|failed|skipped_not_found> reason=<text>
+#
+# Output is parsed by errander/agent/subgraphs/docker_hygiene.py
+# (parse_remove_v2_output). The schema MUST stay in sync.
+#
+# Exit code is 0 even when individual objects drift/fail — the Python parser
+# inspects per-line status. Non-zero exit indicates the wrapper itself
+# failed to run (sudo denied, docker daemon down, etc.).
 cat > /usr/local/sbin/errander-docker-remove-v2 << 'WRAPPER_EOF'
 #!/bin/bash
-set -euo pipefail
+set -uo pipefail
 
 if [ "${1:-}" = "--check" ]; then
     echo "ok"
     exit 0
 fi
 
-echo "ERROR: errander-docker-remove-v2 is a Session 1 stub." >&2
-echo "       Per-object removal lands in v1.1 Session 2." >&2
-exit 64
+if ! /usr/bin/docker info >/dev/null 2>&1; then
+    echo "result class=- id=- status=failed reason=docker daemon not reachable"
+    exit 1
+fi
+
+now_epoch=$(date +%s)
+
+# Read allowlist line by line.
+while IFS= read -r line; do
+    [ -z "$line" ] && continue
+
+    # Parse class=, id=, expected= from the line.
+    obj_class=""
+    obj_id=""
+    expected=""
+    for token in $line; do
+        key="${token%%=*}"
+        value="${token#*=}"
+        case "$key" in
+            class)    obj_class="$value" ;;
+            id)       obj_id="$value" ;;
+            expected) expected="$value" ;;
+        esac
+    done
+
+    if [ -z "$obj_class" ] || [ -z "$obj_id" ]; then
+        echo "result class=${obj_class:--} id=${obj_id:--} status=failed reason=malformed input line"
+        continue
+    fi
+
+    case "$obj_class" in
+        image_dangling)
+            # Re-validate: is this image still dangling?
+            still_dangling=$(/usr/bin/docker images --filter dangling=true -q --no-trunc 2>/dev/null \
+                | grep -Fx "$obj_id" || true)
+            if [ -z "$still_dangling" ]; then
+                # Could be: gone already, or re-tagged. Distinguish.
+                if /usr/bin/docker image inspect "$obj_id" >/dev/null 2>&1; then
+                    echo "result class=$obj_class id=$obj_id status=drift_skipped reason=image_re_tagged"
+                else
+                    echo "result class=$obj_class id=$obj_id status=skipped_not_found reason=already_removed"
+                fi
+                continue
+            fi
+            # Remove.
+            if /usr/bin/docker rmi "$obj_id" >/dev/null 2>&1; then
+                echo "result class=$obj_class id=$obj_id status=removed reason="
+            else
+                err=$(/usr/bin/docker rmi "$obj_id" 2>&1 || true)
+                echo "result class=$obj_class id=$obj_id status=failed reason=${err:0:80}"
+            fi
+            ;;
+
+        image_unused)
+            # Re-validate: still unreferenced by any container?
+            if ! /usr/bin/docker image inspect "$obj_id" >/dev/null 2>&1; then
+                echo "result class=$obj_class id=$obj_id status=skipped_not_found reason=already_removed"
+                continue
+            fi
+            referenced=$(/usr/bin/docker ps -a --format '{{.Image}}' 2>/dev/null \
+                | grep -Fx "$obj_id" || true)
+            if [ -n "$referenced" ]; then
+                echo "result class=$obj_class id=$obj_id status=drift_skipped reason=now_referenced"
+                continue
+            fi
+            if /usr/bin/docker rmi "$obj_id" >/dev/null 2>&1; then
+                echo "result class=$obj_class id=$obj_id status=removed reason="
+            else
+                err=$(/usr/bin/docker rmi "$obj_id" 2>&1 || true)
+                echo "result class=$obj_class id=$obj_id status=failed reason=${err:0:80}"
+            fi
+            ;;
+
+        container_stopped)
+            # Re-validate: still stopped (exited), and exit code still 0?
+            state_json=$(/usr/bin/docker inspect "$obj_id" --format '{{.State.Status}}|{{.State.ExitCode}}' 2>/dev/null || echo "")
+            if [ -z "$state_json" ]; then
+                echo "result class=$obj_class id=$obj_id status=skipped_not_found reason=already_removed"
+                continue
+            fi
+            state="${state_json%%|*}"
+            exit_code="${state_json##*|}"
+            if [ "$state" != "exited" ]; then
+                echo "result class=$obj_class id=$obj_id status=drift_skipped reason=container_restarted"
+                continue
+            fi
+            # If the operator approved a clean-exit container, refuse if exit code changed.
+            if [ "$expected" = "cleanup_candidate" ] && [ "$exit_code" != "0" ]; then
+                echo "result class=$obj_class id=$obj_id status=drift_skipped reason=exit_code_changed"
+                continue
+            fi
+            if /usr/bin/docker rm "$obj_id" >/dev/null 2>&1; then
+                echo "result class=$obj_class id=$obj_id status=removed reason="
+            else
+                err=$(/usr/bin/docker rm "$obj_id" 2>&1 || true)
+                echo "result class=$obj_class id=$obj_id status=failed reason=${err:0:80}"
+            fi
+            ;;
+
+        volume_unreferenced|build_cache)
+            # v1.1 execution scope does NOT cover volumes or build cache.
+            # These are report-only classifications. If they reach the wrapper,
+            # something is wrong upstream — refuse loudly.
+            echo "result class=$obj_class id=$obj_id status=failed reason=class_out_of_scope_v1.1"
+            ;;
+
+        *)
+            echo "result class=$obj_class id=$obj_id status=failed reason=unknown_class"
+            ;;
+    esac
+done
+
+exit 0
 WRAPPER_EOF
 
 chmod 755 /usr/local/sbin/errander-docker-assess-v2 \
@@ -190,5 +316,5 @@ chmod 440 /etc/sudoers.d/errander-docker-hygiene
 
 echo "Installed docker_hygiene wrappers:"
 echo "  /usr/local/sbin/errander-docker-assess-v2"
-echo "  /usr/local/sbin/errander-docker-remove-v2 (Session 1 stub)"
+echo "  /usr/local/sbin/errander-docker-remove-v2"
 echo "  /etc/sudoers.d/errander-docker-hygiene"

@@ -1,5 +1,25 @@
 # Errander-AI — Lessons Learned
 
+## 2026-05-22 — Drift gates must compare assessment snapshot hashes, not just per-object state — defence in depth
+
+In `docker_hygiene.execute_node`, both layers of drift detection are required:
+1. **Snapshot-level gate (Python):** compare `compute_assessment_hash(current_assessment)` against `approval.snapshot_hash`. If they differ, refuse execution outright — the operator approved against a stale view of the world.
+2. **Per-object gate (wrapper):** the `errander-docker-remove-v2` wrapper re-queries each object's current state at execution time and skips drifted ones (e.g., dangling image that's now re-tagged, container that's now running).
+
+The Python snapshot gate catches the "whole assessment is stale" case (e.g., the assessment ran an hour ago, lots changed); the wrapper catches the "this specific object changed since the snapshot" case. Neither alone is sufficient. The snapshot hash deliberately omits volatile fields (`size_bytes`) so it doesn't trigger false drifts when only the size changed.
+
+**Why:** A single drift gate creates a race window between approval and execution. The defence-in-depth design closes the window: the snapshot hash rejects bulk drift; the wrapper rejects per-object drift even within a stable snapshot.
+
+**How to apply:** For any future destructive action that supports object-level approval, design two drift gates: a hash-level snapshot pin in the orchestrator + per-object re-validation in the wrapper. Document which fields are *in* the snapshot hash vs which are deliberately excluded as volatile.
+
+## 2026-05-22 — Wrapper output that returns per-object results must NEVER silently drop approved objects
+
+In `parse_remove_v2_output`, when the wrapper returns results for fewer objects than were approved (e.g., crashed mid-loop, network glitch), the missing objects are recorded as `RemovalStatus.FAILED` with `error="no_result_from_wrapper"` — never silently dropped from the returned tuple. Conversely, when the wrapper returns a result for an *un-approved* object (which should never happen), the parser logs an error and drops the result rather than trusting it.
+
+**Why:** Silent drops violate the Exact-Object Approval invariant — the operator approved N objects, the audit log must record N outcomes. If the wrapper failed for some, the audit shows that explicitly. Trusting wrapper output for objects we didn't approve would create a path for the wrapper to remove things the operator didn't see.
+
+**How to apply:** Any per-object wrapper output parser must (a) ensure every input object has a corresponding result in the output (synthesise `FAILED` if missing), (b) drop wrapper-emitted results for objects not in the input set. Both are non-negotiable for the audit invariant to hold.
+
 ## 2026-05-21 — The doc-sync rule covers more than the "always update" list — test counts and action lists leak into README, CLAUDE.md, SETUP.md, AI-ARCHITECTURE.md
 
 After shipping Session 1 of docker_hygiene I updated STATUS.md, command-log.md, tasks/todo.md, and tasks/lessons.md (the "always update" list) but missed: README.md test-count references (3 places: tech stack table, project tree, key commands), CLAUDE.md "v1 Scope" action count + Docker prune wording, SETUP.md docker-cleanup section (needed a forward-looking transition note), and docs/AI-ARCHITECTURE.md Layer B sub-graph list. The user had to ask "did you update all the relevant docs and md file?" to surface it.

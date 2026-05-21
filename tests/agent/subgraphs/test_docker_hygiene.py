@@ -456,9 +456,29 @@ class TestRouting:
         from langgraph.graph import END
         assert route_after_validate(state) == END
 
-    def test_route_after_assess_always_ends_in_session1(self) -> None:
+    def test_route_after_assess_ends_when_nothing_to_do(self) -> None:
         from langgraph.graph import END
-        assert route_after_assess(_base_state()) == END
+        assert route_after_assess(_base_state(nothing_to_do=True)) == END
+
+    def test_route_after_assess_ends_when_no_approval(self) -> None:
+        from langgraph.graph import END
+        # Assessment ran, has findings, but no approval injected → report-only path
+        assert route_after_assess(_base_state(nothing_to_do=False)) == END
+
+    def test_route_after_assess_executes_when_approval_present(self) -> None:
+        from errander.models.docker_hygiene import (
+            ApprovalSurface,
+            DockerHygieneApproval,
+        )
+        approval = DockerHygieneApproval(
+            vm_id="dev/web-01",
+            approved_findings=(),
+            snapshot_hash="abc123",
+            surface=ApprovalSurface.TEST_INJECT,
+            operator_id="test",
+        )
+        state = _base_state(nothing_to_do=False, approval=approval)  # type: ignore[call-arg]
+        assert route_after_assess(state) == "execute"
 
 
 # --- Graph builder smoke ---
@@ -480,3 +500,491 @@ class TestGraphBuilder:
         with patch.object(executor, "execute", side_effect=mock_execute):
             final = await compiled.ainvoke(_base_state(docker_command_mode="disabled"))
         assert final["status"] == ActionStatus.SKIPPED.value
+
+
+# --- Session 2a: parse_remove_v2_output ---
+
+class TestParseRemoveV2Output:
+    def _finding(self, klass: DockerResourceClass, obj_id: str) -> object:
+        from errander.models.docker_hygiene import DockerHygieneFinding
+        return DockerHygieneFinding(
+            resource_class=klass,
+            classification=FindingClassification.CLEANUP_CANDIDATE,
+            object_id=obj_id,
+        )
+
+    def test_all_removed(self) -> None:
+        from errander.agent.subgraphs.docker_hygiene import parse_remove_v2_output
+        from errander.models.docker_hygiene import RemovalStatus
+        approved = (
+            self._finding(DockerResourceClass.IMAGE_DANGLING, "sha256:a"),
+            self._finding(DockerResourceClass.IMAGE_DANGLING, "sha256:b"),
+        )
+        stdout = (
+            "result class=image_dangling id=sha256:a status=removed reason=\n"
+            "result class=image_dangling id=sha256:b status=removed reason=\n"
+        )
+        results = parse_remove_v2_output(stdout, approved)  # type: ignore[arg-type]
+        assert len(results) == 2
+        assert all(r.status == RemovalStatus.REMOVED for r in results)
+
+    def test_drift_skipped_carries_reason(self) -> None:
+        from errander.agent.subgraphs.docker_hygiene import parse_remove_v2_output
+        from errander.models.docker_hygiene import RemovalStatus
+        approved = (self._finding(DockerResourceClass.IMAGE_DANGLING, "sha256:a"),)
+        stdout = "result class=image_dangling id=sha256:a status=drift_skipped reason=image_re_tagged\n"
+        results = parse_remove_v2_output(stdout, approved)  # type: ignore[arg-type]
+        assert len(results) == 1
+        assert results[0].status == RemovalStatus.DRIFT_SKIPPED
+        assert results[0].drift_reason == "image_re_tagged"
+        assert results[0].error is None
+
+    def test_failed_carries_error(self) -> None:
+        from errander.agent.subgraphs.docker_hygiene import parse_remove_v2_output
+        from errander.models.docker_hygiene import RemovalStatus
+        approved = (self._finding(DockerResourceClass.CONTAINER_STOPPED, "cont1"),)
+        stdout = "result class=container_stopped id=cont1 status=failed reason=permission_denied\n"
+        results = parse_remove_v2_output(stdout, approved)  # type: ignore[arg-type]
+        assert results[0].status == RemovalStatus.FAILED
+        assert results[0].error == "permission_denied"
+        assert results[0].drift_reason is None
+
+    def test_missing_result_becomes_failed(self) -> None:
+        """If wrapper returns no result for an approved object, it MUST be flagged failed."""
+        from errander.agent.subgraphs.docker_hygiene import parse_remove_v2_output
+        from errander.models.docker_hygiene import RemovalStatus
+        approved = (
+            self._finding(DockerResourceClass.IMAGE_DANGLING, "sha256:a"),
+            self._finding(DockerResourceClass.IMAGE_DANGLING, "sha256:gone"),
+        )
+        stdout = "result class=image_dangling id=sha256:a status=removed reason=\n"
+        results = parse_remove_v2_output(stdout, approved)  # type: ignore[arg-type]
+        assert len(results) == 2
+        statuses = {r.finding.object_id: r.status for r in results}
+        assert statuses["sha256:a"] == RemovalStatus.REMOVED
+        assert statuses["sha256:gone"] == RemovalStatus.FAILED
+
+    def test_unknown_status_becomes_failed(self) -> None:
+        from errander.agent.subgraphs.docker_hygiene import parse_remove_v2_output
+        from errander.models.docker_hygiene import RemovalStatus
+        approved = (self._finding(DockerResourceClass.IMAGE_DANGLING, "sha256:a"),)
+        stdout = "result class=image_dangling id=sha256:a status=teleported reason=alien\n"
+        results = parse_remove_v2_output(stdout, approved)  # type: ignore[arg-type]
+        assert results[0].status == RemovalStatus.FAILED
+        assert "teleported" in (results[0].error or "")
+
+    def test_extra_result_for_unapproved_object_is_dropped(self) -> None:
+        """Wrapper hallucinating a result for an unapproved object — must NOT be acted on."""
+        from errander.agent.subgraphs.docker_hygiene import parse_remove_v2_output
+        approved = (self._finding(DockerResourceClass.IMAGE_DANGLING, "sha256:a"),)
+        stdout = (
+            "result class=image_dangling id=sha256:a status=removed reason=\n"
+            "result class=image_dangling id=sha256:hallucinated status=removed reason=\n"
+        )
+        results = parse_remove_v2_output(stdout, approved)  # type: ignore[arg-type]
+        ids = {r.finding.object_id for r in results}
+        assert ids == {"sha256:a"}
+
+
+# --- Session 2a: execute_node ---
+
+class TestExecuteNode:
+    def _approval(
+        self,
+        findings: tuple = (),
+        snapshot_hash: str = "abc123",
+    ) -> object:
+        from errander.models.docker_hygiene import (
+            ApprovalSurface,
+            DockerHygieneApproval,
+        )
+        return DockerHygieneApproval(
+            vm_id="dev/web-01",
+            approved_findings=findings,
+            snapshot_hash=snapshot_hash,
+            surface=ApprovalSurface.TEST_INJECT,
+            operator_id="test-user",
+        )
+
+    def _finding(self, obj_id: str) -> object:
+        from errander.models.docker_hygiene import DockerHygieneFinding
+        return DockerHygieneFinding(
+            resource_class=DockerResourceClass.IMAGE_DANGLING,
+            classification=FindingClassification.CLEANUP_CANDIDATE,
+            object_id=obj_id,
+            size_bytes=100,
+            age_days=10,
+        )
+
+    @pytest.mark.asyncio
+    async def test_no_approval_skips(self) -> None:
+        from errander.agent.subgraphs.docker_hygiene import execute_node
+        executor = _make_executor()
+
+        async def mock_execute(*args: object, **kwargs: object) -> SSHResult:
+            pytest.fail("execute_node must not call wrapper without an approval")
+
+        with patch.object(executor, "execute", side_effect=mock_execute):
+            result = await execute_node(_base_state(), executor=executor)
+
+        assert result["status"] == ActionStatus.SKIPPED.value
+        assert result["removal_results"] == ()
+        assert "without an approval" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_empty_approval_skips(self) -> None:
+        from errander.agent.subgraphs.docker_hygiene import execute_node
+        executor = _make_executor()
+        approval = self._approval(findings=())
+
+        async def mock_execute(*args: object, **kwargs: object) -> SSHResult:
+            pytest.fail("wrapper must not be called when approval is empty (rejection)")
+
+        with patch.object(executor, "execute", side_effect=mock_execute):
+            state = _base_state(approval=approval)  # type: ignore[call-arg]
+            result = await execute_node(state, executor=executor)
+
+        assert result["status"] == ActionStatus.SKIPPED.value
+        assert result["removal_results"] == ()
+
+    @pytest.mark.asyncio
+    async def test_dry_run_synthesises_results_without_wrapper(self) -> None:
+        from errander.agent.subgraphs.docker_hygiene import execute_node
+        from errander.models.docker_hygiene import RemovalStatus
+        executor = _make_executor()
+        approval = self._approval(findings=(self._finding("sha256:a"),))
+
+        async def mock_execute(*args: object, **kwargs: object) -> SSHResult:
+            pytest.fail("wrapper must NOT be invoked in dry-run mode")
+
+        with patch.object(executor, "execute", side_effect=mock_execute):
+            state = _base_state(approval=approval, dry_run=True)  # type: ignore[call-arg]
+            result = await execute_node(state, executor=executor)
+
+        assert result["status"] == ActionStatus.DRY_RUN_OK.value
+        assert len(result["removal_results"]) == 1
+        assert result["removal_results"][0].status == RemovalStatus.REMOVED
+
+    @pytest.mark.asyncio
+    async def test_live_run_invokes_wrapper_and_parses_results(self) -> None:
+        from errander.agent.subgraphs.docker_hygiene import execute_node
+        from errander.models.docker_hygiene import RemovalStatus
+        executor = _make_executor()
+        approval = self._approval(findings=(
+            self._finding("sha256:a"),
+            self._finding("sha256:b"),
+        ))
+        wrapper_stdout = (
+            "result class=image_dangling id=sha256:a status=removed reason=\n"
+            "result class=image_dangling id=sha256:b status=drift_skipped reason=image_re_tagged\n"
+        )
+
+        async def mock_execute(*args: object, **kwargs: object) -> SSHResult:
+            return _make_result(wrapper_stdout)
+
+        with patch.object(executor, "execute", side_effect=mock_execute):
+            state = _base_state(approval=approval, dry_run=False)  # type: ignore[call-arg]
+            result = await execute_node(state, executor=executor)
+
+        # Aggregate status: at least one REMOVED → SUCCESS
+        assert result["status"] == ActionStatus.SUCCESS.value
+        statuses = {r.finding.object_id: r.status for r in result["removal_results"]}
+        assert statuses["sha256:a"] == RemovalStatus.REMOVED
+        assert statuses["sha256:b"] == RemovalStatus.DRIFT_SKIPPED
+
+    @pytest.mark.asyncio
+    async def test_all_drift_aggregates_to_skipped(self) -> None:
+        from errander.agent.subgraphs.docker_hygiene import execute_node
+        executor = _make_executor()
+        approval = self._approval(findings=(self._finding("sha256:a"),))
+        wrapper_stdout = "result class=image_dangling id=sha256:a status=drift_skipped reason=image_re_tagged\n"
+
+        async def mock_execute(*args: object, **kwargs: object) -> SSHResult:
+            return _make_result(wrapper_stdout)
+
+        with patch.object(executor, "execute", side_effect=mock_execute):
+            state = _base_state(approval=approval, dry_run=False)  # type: ignore[call-arg]
+            result = await execute_node(state, executor=executor)
+
+        assert result["status"] == ActionStatus.SKIPPED.value
+
+    @pytest.mark.asyncio
+    async def test_any_failed_aggregates_to_failed(self) -> None:
+        from errander.agent.subgraphs.docker_hygiene import execute_node
+        executor = _make_executor()
+        approval = self._approval(findings=(
+            self._finding("sha256:a"),
+            self._finding("sha256:b"),
+        ))
+        wrapper_stdout = (
+            "result class=image_dangling id=sha256:a status=removed reason=\n"
+            "result class=image_dangling id=sha256:b status=failed reason=permission_denied\n"
+        )
+
+        async def mock_execute(*args: object, **kwargs: object) -> SSHResult:
+            return _make_result(wrapper_stdout)
+
+        with patch.object(executor, "execute", side_effect=mock_execute):
+            state = _base_state(approval=approval, dry_run=False)  # type: ignore[call-arg]
+            result = await execute_node(state, executor=executor)
+
+        assert result["status"] == ActionStatus.FAILED.value
+
+    @pytest.mark.asyncio
+    async def test_snapshot_hash_mismatch_refuses_execution(self) -> None:
+        """Approval against a stale assessment must be refused, even in live mode."""
+        from errander.agent.subgraphs.docker_hygiene import execute_node
+        from errander.models.docker_hygiene import (
+            DockerHygieneAssessment,
+            compute_assessment_hash,
+        )
+        executor = _make_executor()
+
+        # Build an assessment, compute its real hash, then mutate the approval
+        # to carry a stale hash.
+        finding = self._finding("sha256:a")
+        assessment = DockerHygieneAssessment(
+            vm_id="dev/web-01",
+            findings=(finding,),  # type: ignore[arg-type]
+        )
+        real_hash = compute_assessment_hash(assessment)
+        approval = self._approval(
+            findings=(finding,),  # type: ignore[arg-type]
+            snapshot_hash="deadbeefdeadbeef",  # NOT the real hash
+        )
+
+        async def mock_execute(*args: object, **kwargs: object) -> SSHResult:
+            pytest.fail("wrapper must NOT be called when snapshot hash drifted")
+
+        with patch.object(executor, "execute", side_effect=mock_execute):
+            state = _base_state(
+                approval=approval,  # type: ignore[call-arg]
+                assessment=assessment,  # type: ignore[call-arg]
+                dry_run=False,
+            )
+            result = await execute_node(state, executor=executor)
+
+        assert result["status"] == ActionStatus.SKIPPED.value
+        assert "drifted" in result["error"]
+        # Sanity: the real_hash is different from the stale one
+        assert real_hash != "deadbeefdeadbeef"
+
+    @pytest.mark.asyncio
+    async def test_wrapper_failure_aggregates_to_failed(self) -> None:
+        from errander.agent.subgraphs.docker_hygiene import execute_node
+        executor = _make_executor()
+        approval = self._approval(findings=(self._finding("sha256:a"),))
+
+        async def mock_execute(*args: object, **kwargs: object) -> SSHResult:
+            return SSHResult(exit_code=1, stdout="", stderr="sudo denied", command="mocked")
+
+        with patch.object(executor, "execute", side_effect=mock_execute):
+            state = _base_state(approval=approval, dry_run=False)  # type: ignore[call-arg]
+            result = await execute_node(state, executor=executor)
+
+        assert result["status"] == ActionStatus.FAILED.value
+        assert "sudo denied" in result["error"]
+
+
+# --- Session 2a: compute_assessment_hash ---
+
+class TestComputeAssessmentHash:
+    def test_deterministic_across_runs(self) -> None:
+        from errander.models.docker_hygiene import (
+            DockerHygieneAssessment,
+            DockerHygieneFinding,
+            compute_assessment_hash,
+        )
+        f = DockerHygieneFinding(
+            resource_class=DockerResourceClass.IMAGE_DANGLING,
+            classification=FindingClassification.CLEANUP_CANDIDATE,
+            object_id="sha256:abc",
+            size_bytes=100,
+            age_days=5,
+        )
+        a1 = DockerHygieneAssessment(vm_id="v1", findings=(f,))
+        a2 = DockerHygieneAssessment(vm_id="v1", findings=(f,))
+        assert compute_assessment_hash(a1) == compute_assessment_hash(a2)
+
+    def test_changes_when_finding_added(self) -> None:
+        from errander.models.docker_hygiene import (
+            DockerHygieneAssessment,
+            DockerHygieneFinding,
+            compute_assessment_hash,
+        )
+        f1 = DockerHygieneFinding(
+            resource_class=DockerResourceClass.IMAGE_DANGLING,
+            classification=FindingClassification.CLEANUP_CANDIDATE,
+            object_id="sha256:a",
+        )
+        f2 = DockerHygieneFinding(
+            resource_class=DockerResourceClass.IMAGE_DANGLING,
+            classification=FindingClassification.CLEANUP_CANDIDATE,
+            object_id="sha256:b",
+        )
+        h1 = compute_assessment_hash(DockerHygieneAssessment(vm_id="v1", findings=(f1,)))
+        h2 = compute_assessment_hash(DockerHygieneAssessment(vm_id="v1", findings=(f1, f2)))
+        assert h1 != h2
+
+    def test_unaffected_by_volatile_size(self) -> None:
+        """size_bytes can fluctuate between probes; it must NOT change the hash."""
+        from errander.models.docker_hygiene import (
+            DockerHygieneAssessment,
+            DockerHygieneFinding,
+            compute_assessment_hash,
+        )
+        f1 = DockerHygieneFinding(
+            resource_class=DockerResourceClass.IMAGE_DANGLING,
+            classification=FindingClassification.CLEANUP_CANDIDATE,
+            object_id="sha256:a",
+            size_bytes=100,
+        )
+        f2 = DockerHygieneFinding(
+            resource_class=DockerResourceClass.IMAGE_DANGLING,
+            classification=FindingClassification.CLEANUP_CANDIDATE,
+            object_id="sha256:a",
+            size_bytes=200,
+        )
+        h1 = compute_assessment_hash(DockerHygieneAssessment(vm_id="v1", findings=(f1,)))
+        h2 = compute_assessment_hash(DockerHygieneAssessment(vm_id="v1", findings=(f2,)))
+        assert h1 == h2
+
+    def test_order_independence(self) -> None:
+        from errander.models.docker_hygiene import (
+            DockerHygieneAssessment,
+            DockerHygieneFinding,
+            compute_assessment_hash,
+        )
+        f1 = DockerHygieneFinding(
+            resource_class=DockerResourceClass.IMAGE_DANGLING,
+            classification=FindingClassification.CLEANUP_CANDIDATE,
+            object_id="sha256:a",
+        )
+        f2 = DockerHygieneFinding(
+            resource_class=DockerResourceClass.IMAGE_DANGLING,
+            classification=FindingClassification.CLEANUP_CANDIDATE,
+            object_id="sha256:b",
+        )
+        h12 = compute_assessment_hash(DockerHygieneAssessment(vm_id="v1", findings=(f1, f2)))
+        h21 = compute_assessment_hash(DockerHygieneAssessment(vm_id="v1", findings=(f2, f1)))
+        assert h12 == h21
+
+
+# --- Session 2a: vm_graph dispatch wiring ---
+
+class TestVmGraphDispatch:
+    """Sanity that docker_hygiene is reachable through vm_graph.dispatch_action_node."""
+
+    @pytest.mark.asyncio
+    async def test_dispatch_routes_docker_hygiene_to_runner(self) -> None:
+        """Verify ActionType.DOCKER_HYGIENE goes to _run_docker_hygiene, not the unknown branch."""
+        from errander.agent.vm_graph import dispatch_action_node
+        from errander.models.actions import ActionType
+
+        called = {"hygiene": False}
+
+        async def fake_runner(state: object, compiled: object) -> dict[str, object]:
+            called["hygiene"] = True
+            return {
+                "action_type": ActionType.DOCKER_HYGIENE.value,
+                "status": ActionStatus.SKIPPED.value,
+                "vm_id": "v1",
+                "started_at": "2026-05-22T00:00:00+00:00",
+                "completed_at": "2026-05-22T00:00:00+00:00",
+                "detail": "fake",
+            }
+
+        with patch(
+            "errander.agent.vm_graph._run_docker_hygiene",
+            side_effect=fake_runner,
+        ):
+            vm_state: dict[str, object] = {
+                "vm_id": "v1",
+                "os_family": "ubuntu",
+                "planned_actions": [{
+                    "action_type": ActionType.DOCKER_HYGIENE.value,
+                    "risk_tier": "medium",
+                    "params": {},
+                }],
+                "current_action_index": 0,
+                "results": [],
+            }
+            result = await dispatch_action_node(
+                vm_state,  # type: ignore[arg-type]
+                executor=_make_executor(),
+                docker_hygiene_compiled=object(),  # sentinel — runner is mocked
+            )
+
+        assert called["hygiene"] is True
+        assert result["current_action_index"] == 1
+        assert len(result["results"]) == 1
+
+
+# --- Session 2a: per-object audit hook ---
+
+class TestPerObjectAuditHook:
+    @pytest.mark.asyncio
+    async def test_writes_one_audit_event_per_removal_result(self) -> None:
+        from errander.agent.vm_graph import _write_docker_hygiene_per_object_audit
+        from errander.models.actions import ActionType
+        from errander.models.docker_hygiene import (
+            DockerHygieneFinding,
+            DockerHygieneRemovalResult,
+            RemovalStatus,
+        )
+        from errander.models.events import EventType
+
+        events: list[object] = []
+
+        class _FakeAuditStore:
+            async def log_event(self, evt: object) -> None:
+                events.append(evt)
+
+        f1 = DockerHygieneFinding(
+            resource_class=DockerResourceClass.IMAGE_DANGLING,
+            classification=FindingClassification.CLEANUP_CANDIDATE,
+            object_id="sha256:a",
+            size_bytes=100,
+        )
+        f2 = DockerHygieneFinding(
+            resource_class=DockerResourceClass.IMAGE_DANGLING,
+            classification=FindingClassification.CLEANUP_CANDIDATE,
+            object_id="sha256:b",
+        )
+        f3 = DockerHygieneFinding(
+            resource_class=DockerResourceClass.IMAGE_DANGLING,
+            classification=FindingClassification.CLEANUP_CANDIDATE,
+            object_id="sha256:c",
+        )
+        result_dict = {
+            "action_type": ActionType.DOCKER_HYGIENE.value,
+            "removal_results": (
+                DockerHygieneRemovalResult(finding=f1, status=RemovalStatus.REMOVED),
+                DockerHygieneRemovalResult(
+                    finding=f2,
+                    status=RemovalStatus.DRIFT_SKIPPED,
+                    drift_reason="image_re_tagged",
+                ),
+                DockerHygieneRemovalResult(
+                    finding=f3,
+                    status=RemovalStatus.FAILED,
+                    error="permission_denied",
+                ),
+            ),
+        }
+
+        await _write_docker_hygiene_per_object_audit(
+            _FakeAuditStore(),  # type: ignore[arg-type]
+            batch_id="b1",
+            vm_id="v1",
+            result_dict=result_dict,
+        )
+
+        assert len(events) == 3
+        types = [e.event_type for e in events]  # type: ignore[attr-defined]
+        assert EventType.DOCKER_HYGIENE_OBJECT_REMOVED in types
+        assert EventType.DOCKER_HYGIENE_OBJECT_DRIFT_SKIPPED in types
+        assert EventType.DOCKER_HYGIENE_OBJECT_REMOVE_FAILED in types
+        # Each event carries the exact object_id in metadata
+        ids = {e.metadata.get("object_id") for e in events}  # type: ignore[attr-defined]
+        assert ids == {"sha256:a", "sha256:b", "sha256:c"}

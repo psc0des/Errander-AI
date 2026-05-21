@@ -31,6 +31,10 @@ from errander.agent.subgraphs.disk_cleanup import (
     DiskCleanupGraphState,
     build_disk_cleanup_subgraph,
 )
+from errander.agent.subgraphs.docker_hygiene import (
+    DockerHygieneGraphState,
+    build_docker_hygiene_subgraph,
+)
 from errander.agent.subgraphs.docker_prune import (
     DockerPruneGraphState,
     build_docker_prune_subgraph,
@@ -441,6 +445,7 @@ async def dispatch_action_node(
     disk_cleanup_compiled: Any = None,
     log_rotation_compiled: Any = None,
     docker_prune_compiled: Any = None,
+    docker_hygiene_compiled: Any = None,
     patching_compiled: Any = None,
     backup_verify_compiled: Any = None,
 ) -> dict[str, Any]:
@@ -507,6 +512,8 @@ async def dispatch_action_node(
         result_dict = await _run_log_rotation(state, log_rotation_compiled)
     elif action_type == ActionType.DOCKER_PRUNE.value:
         result_dict = await _run_docker_prune(state, docker_prune_compiled)
+    elif action_type == ActionType.DOCKER_HYGIENE.value:
+        result_dict = await _run_docker_hygiene(state, docker_hygiene_compiled)
     elif action_type == ActionType.PATCHING.value:
         result_dict = await _run_patching(state, patching_compiled)
     elif action_type == ActionType.BACKUP_VERIFY.value:
@@ -781,6 +788,118 @@ async def _run_docker_prune(
     }
 
 
+async def _run_docker_hygiene(
+    state: VMGraphState,
+    compiled: Any,
+) -> dict[str, object]:
+    """Run the docker_hygiene sub-graph and return a serialised result dict.
+
+    Approval handling (Session 2a):
+    - The approval artifact is read from the planned action's params dict
+      under key ``"approval"``. The dispatch layer (Session 2b) is responsible
+      for populating this from the real Slack/web surfaces. For Session 2a,
+      tests inject the approval directly.
+    - When no approval is present, the sub-graph runs assessment-only and
+      reports findings — execution is skipped.
+
+    Per-object audit:
+    - One audit event per DockerHygieneRemovalResult is written here, in
+      addition to the aggregate action result dict returned to the parent
+      graph. The action-level audit is unchanged; the per-object events are
+      new and live alongside it (Exact-Object Approval invariant).
+    """
+    vm_id = state["vm_id"]
+    now = datetime.now(tz=UTC)
+    vm_info = state.get("vm_info", {})
+
+    planned = state.get("planned_actions", [])
+    index = state.get("current_action_index", 0)
+    action_params: dict[str, object] = {}
+    if index < len(planned):
+        _raw = planned[index].get("params")
+        action_params = dict(_raw) if isinstance(_raw, dict) else {}
+
+    # Pull approval from action params if present. The object is expected to
+    # be a DockerHygieneApproval instance (not a serialised dict) — Session 2b
+    # decides whether to serialise/deserialise at the planner boundary.
+    approval = action_params.get("approval")
+
+    sub_state: DockerHygieneGraphState = {
+        "vm_id": vm_id,
+        "os_family": state.get("os_family", "ubuntu"),
+        "dry_run": state.get("dry_run", True),
+        "docker_available": bool(vm_info.get("docker_available", True)),
+        "docker_command_mode": str(state.get("docker_command_mode", "wrapper")),
+    }
+    if approval is not None:
+        sub_state["approval"] = approval  # type: ignore[typeddict-item]
+    # Connection params live outside the TypedDict — see _get_connection_params
+    # in docker_hygiene.py for how they're read.
+    sub_state_with_conn: dict[str, Any] = dict(sub_state)
+    sub_state_with_conn["hostname"] = state.get("hostname", "")
+    sub_state_with_conn["username"] = state.get("ssh_user", "")
+    sub_state_with_conn["key_path"] = state.get("ssh_key_path", "")
+
+    try:
+        final_state = await compiled.ainvoke(sub_state_with_conn)
+    except (ConnectionError, OSError, TimeoutError) as exc:
+        logger.error("Sub-graph docker_hygiene failed for %s: %s", vm_id, exc)
+        return {
+            "action_type": ActionType.DOCKER_HYGIENE.value,
+            "status": ActionStatus.FAILED.value,
+            "vm_id": vm_id,
+            "started_at": now.isoformat(),
+            "completed_at": datetime.now(tz=UTC).isoformat(),
+            "detail": "sub-graph raised exception",
+            "error": str(exc),
+        }
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Unexpected error in docker_hygiene for %s", vm_id)
+        return {
+            "action_type": ActionType.DOCKER_HYGIENE.value,
+            "status": ActionStatus.FAILED.value,
+            "vm_id": vm_id,
+            "started_at": now.isoformat(),
+            "completed_at": datetime.now(tz=UTC).isoformat(),
+            "detail": "sub-graph raised exception",
+            "error": str(exc),
+        }
+
+    status = final_state.get("status", ActionStatus.SKIPPED.value)
+    detail_parts: list[str] = []
+    assessment = final_state.get("assessment")
+    if assessment is not None:
+        n_findings = len(assessment.findings)
+        n_cleanup = len(assessment.cleanup_candidates())
+        n_investigate = len(assessment.investigate())
+        detail_parts.append(
+            f"assessed: {n_findings} findings "
+            f"({n_cleanup} cleanup, {n_investigate} investigate)"
+        )
+
+    removal_results = final_state.get("removal_results") or ()
+    if removal_results:
+        n_removed = sum(1 for r in removal_results if r.status.value == "removed")
+        n_drift = sum(1 for r in removal_results if r.status.value == "drift_skipped")
+        n_failed = sum(1 for r in removal_results if r.status.value == "failed")
+        detail_parts.append(
+            f"removed {n_removed}, drift_skipped {n_drift}, failed {n_failed}"
+        )
+
+    return {
+        "action_type": ActionType.DOCKER_HYGIENE.value,
+        "status": status,
+        "vm_id": vm_id,
+        "started_at": now.isoformat(),
+        "completed_at": datetime.now(tz=UTC).isoformat(),
+        "detail": "; ".join(detail_parts) if detail_parts else "no findings",
+        "error": final_state.get("error"),
+        # Surface the per-object results to the caller so audit_results_node
+        # (Session 2b: per-object audit writer) can pick them up.
+        "removal_results": removal_results,
+    }
+
+
 async def _run_patching(
     state: VMGraphState,
     compiled: Any,
@@ -935,6 +1054,57 @@ async def _run_backup_verify(
     }
 
 
+async def _write_docker_hygiene_per_object_audit(
+    audit_store: AuditStore,
+    batch_id: str,
+    vm_id: str,
+    result_dict: dict[str, Any],
+) -> None:
+    """Write one audit event per docker_hygiene removal result.
+
+    Per Exact-Object Approval invariant: each removed/drifted/failed object
+    gets its own audit row, not just a batch-level summary.
+    """
+    removal_results = result_dict.get("removal_results") or ()
+    for rr in removal_results:
+        status = rr.status.value
+        if status == "removed":
+            event_type = EventType.DOCKER_HYGIENE_OBJECT_REMOVED
+        elif status == "drift_skipped":
+            event_type = EventType.DOCKER_HYGIENE_OBJECT_DRIFT_SKIPPED
+        elif status == "failed":
+            event_type = EventType.DOCKER_HYGIENE_OBJECT_REMOVE_FAILED
+        else:
+            # skipped_not_found — log as drift_skipped (object already gone)
+            event_type = EventType.DOCKER_HYGIENE_OBJECT_DRIFT_SKIPPED
+
+        finding = rr.finding
+        detail = (
+            f"{finding.resource_class.value} {finding.identity} → {status}"
+        )
+        metadata: dict[str, Any] = {
+            "resource_class": finding.resource_class.value,
+            "object_id": finding.object_id,
+            "object_name": finding.name,
+            "classification_at_approval": finding.classification.value,
+            "removal_status": status,
+            "drift_reason": rr.drift_reason,
+            "error": rr.error,
+            "size_bytes": finding.size_bytes,
+        }
+        await audit_store.log_event(
+            AuditEvent(
+                event_type=event_type,
+                batch_id=batch_id,
+                vm_id=vm_id,
+                action_type=ActionType.DOCKER_HYGIENE.value,
+                detail=detail,
+                timestamp=datetime.now(tz=UTC),
+                metadata=metadata,
+            )
+        )
+
+
 async def audit_results_node(
     state: VMGraphState,
     *,
@@ -970,6 +1140,13 @@ async def audit_results_node(
                 },
             )
         )
+
+        # docker_hygiene per-object audit (Exact-Object Approval invariant —
+        # one audit row per removed/drifted/failed object, not per batch).
+        if r.get("action_type") == ActionType.DOCKER_HYGIENE.value:
+            await _write_docker_hygiene_per_object_audit(
+                audit_store, batch_id, vm_id, r,
+            )
 
     if error:
         await audit_store.log_event(
@@ -1443,6 +1620,7 @@ def build_vm_graph(
     disk_cleanup_compiled = build_disk_cleanup_subgraph(executor).compile()
     log_rotation_compiled = build_log_rotation_subgraph(executor).compile()
     docker_prune_compiled = build_docker_prune_subgraph(executor).compile()
+    docker_hygiene_compiled = build_docker_hygiene_subgraph(executor).compile()
     patching_compiled = build_patching_subgraph(
         executor,
         audit_store=audit_store,
@@ -1463,6 +1641,7 @@ def build_vm_graph(
             disk_cleanup_compiled=disk_cleanup_compiled,
             log_rotation_compiled=log_rotation_compiled,
             docker_prune_compiled=docker_prune_compiled,
+            docker_hygiene_compiled=docker_hygiene_compiled,
             patching_compiled=patching_compiled,
             backup_verify_compiled=backup_verify_compiled,
         )

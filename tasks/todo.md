@@ -14,8 +14,34 @@
 - [x] `tests/agent/subgraphs/test_service_restart_manifest.py` — bump count 6→7
 - [x] Green tree: **2215 pytest, ruff clean on changed files, no new mypy errors**
 
-### Session 2 (next) — execution + dual approval surface
-**Status:** Not started. The Session 1 sub-graph is buildable and testable in isolation but is NOT wired into `vm_graph.py` dispatch yet — a live batch will not reach docker_hygiene until Session 2 lands the dispatch wiring.
+### Session 2a completed (2026-05-22)
+- [x] `errander/models/docker_hygiene.py` — added `ApprovalSurface`, `RemovalStatus` enums + `DockerHygieneApproval`, `DockerHygieneRemovalResult` dataclasses + `compute_assessment_hash` helper
+- [x] `errander/models/events.py` — added 3 new EventType entries for per-object audit
+- [x] `errander/agent/subgraphs/docker_hygiene.py` — `execute_node`, `parse_remove_v2_output`, drift gate, updated routing + graph builder
+- [x] `errander/agent/vm_graph.py` — dispatch wiring (`docker_hygiene_compiled` threaded through), `_run_docker_hygiene` runner, `_write_docker_hygiene_per_object_audit` helper
+- [x] `scripts/install-docker-wrappers-v2.sh` — real `errander-docker-remove-v2` (replaces Session 1 stub)
+- [x] Tests: 22 new (parse_remove_v2_output, execute_node, compute_assessment_hash, dispatch routing, per-object audit hook). 2 routing tests updated.
+- [x] Green tree: **2237 pytest, ruff clean on changed files, no new mypy errors**
+- [x] Doc sync: README test count, STATUS, todo, lessons, command-log
+
+### Session 2b (next) — approval surfaces
+**Status:** Not started. Execution path is wired and tested end-to-end with mocked approvals injected via `planned_actions[i].params["approval"]`. Session 2b lands the real surfaces that produce those approvals.
+
+- Slack message format (rich object list grouped by resource class with size/age + signed web URL)
+- Slack reply parser (structured commands: `approve images 1,3 containers 1` and `reject all`)
+- Web approval page (FastHTML route, signed URL verifier, checkbox UI, submit handler)
+- Signed URL infrastructure (HMAC + time-limited tokens, env var for signing secret)
+- Wire approval artifacts from both surfaces into the planner / dispatch path
+- Tests for both surfaces, signed URL verification, expired/tampered URL rejection
+
+### Session 3 — Removal of docker_prune + final docs
+**Status:** Not started.
+- Delete `docker_prune.py`, `test_docker_prune.py`, `test_docker_prune_modes.py`, the docker_prune branch from `vm_graph.py`, the legacy wrapper install script
+- `schema.py` loader fails loud on legacy `docker_prune` inventory key with migration command
+- `migrate.py` extension for `docker_prune` → `docker_hygiene` rename + drop unsupported `direct_sudo` mode
+- SETUP.md rewrite (Docker hygiene replaces "Optional: Docker cleanup" section)
+- `docs/learning/XX-docker-hygiene.md` (new feature learning doc)
+- README test count, CLAUDE.md "(6 actions)" cleanup (post-transition)
 **Trigger:** SRE feedback (Docker prune scope review, 2026-05-21) — current `docker_prune` is too blunt for serious SRE use. Verdict: split into a richer assessment surface with object-level approval.
 **Driving invariant:** New exact-object approval rule in CLAUDE.md (Layer B → AI Safety Invariant → Exact-Object Approval section, added 2026-05-21). Applies to all destructive actions from day one of v1.1.
 

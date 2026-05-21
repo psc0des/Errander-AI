@@ -66,6 +66,10 @@ class EventType(StrEnum):
     SERVICE_RESTART_VERIFY_FAILED = "service_restart_verify_failed"
     # Project A — workflow durability
     OPERATOR_FORCE_RESUME = "operator_force_resume"
+    # v1.1 — docker_hygiene per-object audit (Exact-Object Approval invariant)
+    DOCKER_HYGIENE_OBJECT_REMOVED = "docker_hygiene_object_removed"
+    DOCKER_HYGIENE_OBJECT_DRIFT_SKIPPED = "docker_hygiene_object_drift_skipped"
+    DOCKER_HYGIENE_OBJECT_REMOVE_FAILED = "docker_hygiene_object_remove_failed"
 
 
 @dataclass

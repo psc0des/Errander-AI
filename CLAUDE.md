@@ -203,7 +203,7 @@ For any action that removes, deletes, or otherwise destroys state (images, volum
 - Per-object audit entries are required. One audit row per removed object, not one row per batch.
 - HITL is necessary but not sufficient — a human can rubber-stamp a vague plan. The protection comes from the *evidence quality* of the approval artifact, not the approval gesture itself.
 
-This rule applies to all current and future Layer B actions. Existing bulk actions (`docker_prune` as originally shipped) are grandfathered as legacy modes but new actions must be designed around exact-object approval from day one.
+This rule applies to all Layer B actions. No grandfathering — the previous bulk `docker_prune` action is being removed in v1.1 precisely because it violates this invariant. Any future action that cannot satisfy exact-object approval is out of scope.
 
 ## Domain Rules
 

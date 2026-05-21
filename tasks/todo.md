@@ -1,8 +1,13 @@
-## Docker hygiene — v1.1 design proposal (2026-05-21, PROPOSED)
+## Docker hygiene — v1.1 implementation plan (2026-05-21, APPROVED — IN PROGRESS)
 
-**Status:** Design proposal. Not yet approved for implementation.
+**Status:** Design approved by user 2026-05-21. Implementation starts next session.
 **Trigger:** SRE feedback (Docker prune scope review, 2026-05-21) — current `docker_prune` is too blunt for serious SRE use. Verdict: split into a richer assessment surface with object-level approval.
 **Driving invariant:** New exact-object approval rule in CLAUDE.md (Layer B → AI Safety Invariant → Exact-Object Approval section, added 2026-05-21). Applies to all destructive actions from day one of v1.1.
+
+**Locked decisions (2026-05-21):**
+- **Implementation horizon:** Now. Next 1–2 sessions.
+- **Approval UI:** Both surfaces. Slack structured reply for ≤10-object sets; thin web approval page (FastHTML, signed URL) for larger sets. Both write the same approval artifact to `ai_decisions`. Slack message always includes the web URL so either path works.
+- **Legacy `docker_prune`:** **Removed altogether.** No grandfathering — keeping a bulk action-level mode contradicts the new Exact-Object Approval invariant. Config loader fails loud on the legacy key with a migration command. Existing audit rows referencing `docker_prune` stay readable but no new rows can use that action_type.
 
 ### Background — what's wrong with the current `docker_prune`
 
@@ -12,9 +17,9 @@
 - `prune_aggressive` mode (`docker image prune -a`) removes *all* unused images, not just dangling — same approval gesture, very different blast radius. No way for the operator to see which is which from the Slack message alone.
 - No surfacing of stopped-container exit codes. An exited-137 container (OOM) is a *signal to investigate*, not a cleanup candidate. Current flow conflates them.
 
-### Proposed v1.1 design — `docker_hygiene` sub-graph
+### v1.1 design — `docker_hygiene` sub-graph (replaces `docker_prune` entirely)
 
-Split `docker_prune` into a new sub-graph `docker_hygiene` with three lifecycle phases. The existing `docker_prune` sub-graph stays as a legacy `command_mode: prune_all` for the wrapper installs already in the field — do not break backwards compat.
+Replace `docker_prune` with a new sub-graph `docker_hygiene` with three lifecycle phases. The existing `docker_prune` sub-graph, manifest, wrapper scripts, ActionType enum value, and inventory key are all removed in v1.1. Legacy inventories fail loud on load with a migration command (see Migration section below).
 
 #### Phase 1 — Rich assessment (read-only, runs every batch when enabled)
 
@@ -48,11 +53,23 @@ docker_hygiene_end
 | Volume | — | — | always `report_only` in v1.1 |
 | Build cache | — | — | always `report_only` in v1.1 |
 
-#### Phase 2 — Object-level approval
+#### Phase 2 — Object-level approval (dual surface)
 
-Slack message lists exact objects with size/age/classification grouped by resource class. Operator picks specific items (mechanism TBD — Slack reaction-per-item won't scale beyond ~10 items; likely need a structured reply pattern or a thin web approval UI fronted by the dashboard).
+Slack message lists exact objects with size/age/classification grouped by resource class. Operator can approve either:
 
-Approval artifact stored in `ai_decisions` table includes the **exact object IDs** approved, with a hash of the assessment snapshot at approval time.
+**Surface A — Slack structured reply (best for ≤10 objects, mobile, in-thread):**
+Operator replies to the approval message with a structured pattern:
+```
+@errander approve images 1,3 containers 1 reject volumes all
+@errander approve all cleanup_candidate
+@errander reject all
+```
+Bot parses the reply, resolves indices against the assessment snapshot, writes the approval artifact.
+
+**Surface B — Web approval page (best for >10 objects, desk, detail view):**
+Slack message includes a signed URL (HMAC-signed, time-limited) to a FastHTML page rendered by the existing Operations Hub. Page shows each object with size/age/classification/last-tag, checkboxes per item, "approve selected" / "reject all" buttons. Submission writes the same approval artifact.
+
+**Shared:** Approval artifact stored in `ai_decisions` table includes the **exact object IDs** approved, the surface used (`slack_reply` | `web_page`), the operator identity (Slack user ID or web session), and a hash of the assessment snapshot at approval time. The poller doesn't care which surface generated the approval — it only checks for the artifact.
 
 #### Phase 3 — Validated execution
 
@@ -72,35 +89,95 @@ Per-object audit. No "batch removed N objects" shortcuts.
 - [ ] **v1.5** — Volume deletion. Requires: backup verification action attached to the same approval, multi-step confirmation, `last_mount_days` configurable threshold (default 90), default-off in inventory.
 - [ ] **Never v1** — Container start/restart. Confirmed out of scope. Surfacing crashed/unhealthy containers as `investigate` findings is the closest we get; the operator decides what to do, Errander does not touch container lifecycle.
 
-### What needs design work before implementation starts
+### Migration from `docker_prune` (hard cutover, no grandfathering)
 
-1. **Approval UI for >10 objects.** Slack reactions don't scale. Options: (a) structured Slack reply ("approve 1,3,5-7"), (b) thin web approval page rendered by the dashboard with a signed URL posted in Slack, (c) accept-all/reject-all-with-allowlist-in-inventory. Probably (b), reusing existing FastHTML Operations Hub.
-2. **Drift handling UX.** When wrapper finds 3 of 5 approved objects have drifted, what does the audit log + operator notification look like? Per-object failure rows + a summary Slack reply.
-3. **Manifest changes.** `docker_hygiene` needs its own `ActionManifest` entry. `command_modes` likely `("disabled", "wrapper")` — no `direct_sudo` for v1.1; the per-item validation requires the wrapper.
-4. **Migration from `docker_prune`.** Inventory migration helper (similar to existing `--migrate-inventory`) flips `docker_prune.enabled=true` → `docker_hygiene.enabled=true` + leaves a deprecation comment.
-5. **Backwards compat plan for legacy `docker_prune`.** Keep it functional under `command_mode: prune_all` (bulk prune, action-level approval, for CI/ephemeral hosts that genuinely want the simple model). Mark deprecated in docs. Plan removal in v2.
+`docker_prune` is removed entirely in v1.1. Existing deployments must run the migration before upgrading.
 
-### Open questions for the user
+1. **Loud failure on legacy key.** Config loader detects `docker_prune` in `inventory.yaml` and raises `ConfigError` with a one-line migration command. No silent ignore, no auto-rewrite.
+2. **Migration helper.** Extend the existing `--migrate-inventory` flag (which already handles the legacy `docker_command_mode` field) to:
+   - Rename `docker_prune` → `docker_hygiene` in every environment's `actions:` block.
+   - Drop `command_mode: direct_sudo` entries with a clear message — `direct_sudo` cannot satisfy the per-object validation requirement of the new wrapper. Operators using direct_sudo must install the wrapper before re-enabling.
+   - Preserve `enabled: true/false` and `command_mode: wrapper/disabled`.
+   - Write `inventory.yaml.migrated` for operator review (same pattern as current migration).
+   - Print a list of VMs that need new wrappers installed (`errander-docker-assess-v2`, `errander-docker-remove-v2`).
+3. **Audit log.** Historical `docker_prune` action_type rows stay readable. The `ActionType` enum keeps the value but new rows cannot use it (validator in `models/actions.py`).
+4. **Wrapper deprecation.** Install scripts no longer deploy `errander-docker-prune-safe` / `errander-docker-prune-aggressive`. Operators should remove them manually post-migration (the migration output lists the paths).
 
-- Implementation horizon: ship v1.1 docker_hygiene now (next 1–2 sessions) or queue behind other v1 work? (Look at Deferred section before deciding.)
-- Approval UI: ok with (b) thin web approval page? Reuses existing Operations Hub infra.
-- Legacy `docker_prune`: deprecate-and-warn in v1.1 or hard-cutover with migration helper? Recommend deprecate-and-warn.
+### Drift handling UX
+
+When the remove-wrapper finds approved objects have drifted between approval and execution:
+
+- **Per-object failure rows in audit.** One row per drifted object with `status=drift_skipped` and `drift_reason` (e.g., `image_re_tagged`, `container_restarted`, `volume_now_referenced`).
+- **Summary Slack reply.** Posted to the same thread as the approval. Format: "Removed N of M approved objects. K skipped due to drift: [list]. See audit log for detail."
+- **No silent proceed.** A drifted object is never removed under the original approval. If the operator still wants it removed, they re-run the assessment and re-approve.
+
+### Manifest
+
+`docker_hygiene` ActionManifest:
+- `command_modes = ("disabled", "wrapper")` — no `direct_sudo`. Per-object validation requires the wrapper.
+- `required_binaries = ("/usr/bin/docker",)`
+- `required_wrappers = ("/usr/local/sbin/errander-docker-assess-v2", "/usr/local/sbin/errander-docker-remove-v2")`
+- `risk_tier = "MEDIUM"` (assessment is LOW, removal is MEDIUM — the manifest reflects the worst case)
+- `default_enabled = False`
+
+### Session-by-session implementation plan
+
+**Session 1 (estimate: 1 long session) — Core sub-graph + assessment, no execution yet:**
+- New ActionType + per-object result models (`errander/models/actions.py`)
+- ActionManifest registration (`errander/models/manifest.py`)
+- `docker_hygiene.py` sub-graph skeleton: validate → assess → END (no removal node yet)
+- New assess wrapper (`scripts/errander-docker-assess-v2`) emitting the 5-class output
+- Parser for the new output format
+- Classification rules (deterministic Python, table from above)
+- Config-loader migration: detect legacy `docker_prune` → fail with migration command
+- `--migrate-inventory` extension
+- Tests: parser, classification rules, migration, loader failure
+- Inventory schema update
+- **No removal, no approval UI yet.** Action runs in report-only mode end-to-end.
+
+**Session 2 — Approval surfaces + execution:**
+- Approval artifact schema (`ai_decisions` extension: per-object list + snapshot hash + surface field)
+- Slack message format with object list + signed web URL
+- Slack reply parser (structured commands: `approve images 1,3 containers 1`)
+- Web approval page (FastHTML, signed URL verification, checkbox UI, submit handler)
+- Remove wrapper (`scripts/errander-docker-remove-v2`) with per-object re-validation
+- `docker_hygiene.py` execute node + drift handling
+- Per-object audit rows
+- Tests: dual approval surfaces, drift handling, audit rows, signed URL verification
+
+**Session 3 (if needed) — Docs + cleanup:**
+- SETUP.md rewrite (replace docker_prune section)
+- `docs/learning/XX-docker-hygiene.md`
+- Remove old `docker_prune.py`, wrappers, tests
+- CLAUDE.md updates (action list, scope note, action count stays at 6 since we replaced not added)
+- README test count update
+- Full pytest run, ruff, mypy
 
 ### Files that will change
 
-- `errander/agent/subgraphs/docker_hygiene.py` — new sub-graph
-- `errander/models/manifest.py` — register manifest
-- `errander/agent/subgraphs/docker_prune.py` — add deprecation warning
-- `errander/config/migrate.py` — migration path for inventory
-- `scripts/errander-docker-assess-v2` — new wrapper (extends existing assess output)
-- `scripts/errander-docker-remove-v2` — new wrapper (allowlist + per-object validation)
-- `errander/models/actions.py` — new ActionType + per-object result model
+- `errander/agent/subgraphs/docker_hygiene.py` — **NEW** sub-graph
+- `errander/agent/subgraphs/docker_prune.py` — **DELETED**
+- `errander/models/manifest.py` — register `docker_hygiene` manifest, remove `docker_prune`
+- `errander/models/actions.py` — new `ActionType.DOCKER_HYGIENE`, per-object result model, `DOCKER_PRUNE` marked legacy/read-only
+- `errander/config/schema.py` — loader fails on legacy `docker_prune` key
+- `errander/config/migrate.py` — migration path
+- `scripts/errander-docker-assess-v2` — **NEW** wrapper
+- `scripts/errander-docker-remove-v2` — **NEW** wrapper
+- `scripts/errander-docker-assess` — **DELETED** post-migration
+- `scripts/errander-docker-prune-safe` — **DELETED** post-migration
+- `scripts/errander-docker-prune-aggressive` — **DELETED** post-migration
 - `errander/safety/audit.py` — per-object audit entry support
-- `errander/web/server.py` — approval page (if option b)
-- `tests/agent/subgraphs/test_docker_hygiene.py` — full suite
-- `SETUP.md` — replace docker_prune section with docker_hygiene
-- `docs/learning/XX-docker-hygiene.md` — design + walkthrough
-- `CLAUDE.md` — update v1 action count (6 → 7) and docker action description
+- `errander/integrations/slack.py` — reply parser for structured approval commands
+- `errander/web/server.py` — approval page route + signed URL verifier
+- `errander/safety/approval.py` — dual-surface artifact resolution
+- `tests/agent/subgraphs/test_docker_hygiene.py` — **NEW** full suite
+- `tests/agent/subgraphs/test_docker_prune.py` — **DELETED**
+- `tests/integrations/test_slack_reply_parser.py` — **NEW**
+- `tests/web/test_approval_page.py` — **NEW**
+- `SETUP.md` — replace docker_prune section
+- `RUN.md` — inventory migration note
+- `docs/learning/XX-docker-hygiene.md` — **NEW** design + walkthrough
+- `CLAUDE.md` — replace "Docker prune" with "Docker hygiene" in action list, update risk-tier table
 
 ---
 

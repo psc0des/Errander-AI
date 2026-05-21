@@ -4,23 +4,30 @@
 2026-05-21
 
 ## Current Phase
-**Docker hygiene v1.1 design proposal + Exact-Object Approval invariant (2026-05-21, DESIGN ONLY).** No code changes; docs + rules only.
+**Docker hygiene v1.1 — design approved, implementation pending (2026-05-21, DESIGN APPROVED).** No code changes yet; docs + rules + locked decisions.
 
-Triggered by SRE feedback on `docker_prune` scope: bulk action-level approval is too blunt for a serious SRE tool, and the current `--volumes` / `-a` semantics aren't surfaced to the operator at approval time. Two outputs:
+Triggered by SRE feedback on `docker_prune` scope. Two outputs:
 
-1. **CLAUDE.md → AI Safety Invariant → Exact-Object Approval (MANDATORY)** — new project-wide rule for all destructive Layer B actions. Approval must enumerate exact objects (IDs/names), not action categories; wrapper must re-validate each object at execution time; per-object audit entries required. Existing `docker_prune` grandfathered as a legacy mode; new destructive actions must follow this from day one. Also corrects the earlier "HITL dissolves safety concerns" framing — HITL is necessary but not sufficient; safety comes from evidence quality of the approval artifact.
+1. **CLAUDE.md → AI Safety Invariant → Exact-Object Approval (MANDATORY)** — new project-wide rule for all destructive Layer B actions. Approval must enumerate exact objects (IDs/names), not action categories; wrapper must re-validate each object at execution time; per-object audit entries required. **No grandfathering** — the previous bulk `docker_prune` action is being removed in v1.1 because it violates this invariant. Also corrects the earlier "HITL dissolves safety concerns" framing — HITL is necessary but not sufficient.
 
-2. **tasks/todo.md → Docker hygiene v1.1 design proposal (PROPOSED)** — split `docker_prune` into a new `docker_hygiene` sub-graph with rich assessment (5 resource classes: dangling images, unused images, stopped containers, volumes, build cache) + object-level approval + per-object wrapper validation. Phased execution rollout: v1.1 dangling images + exited-0 stopped containers >7d; v1.2 unused images >30d; v1.5 volumes with backup-verify attached; never v1 container start/restart. Three open questions for the user before implementation: implementation horizon, approval UI mechanism (Slack reply vs. thin web page), deprecation strategy for legacy `docker_prune`.
+2. **tasks/todo.md → Docker hygiene v1.1 implementation plan (APPROVED — IN PROGRESS)** — replace `docker_prune` with new `docker_hygiene` sub-graph. Rich assessment (5 resource classes), dual approval surface (Slack structured reply + FastHTML web page with signed URL), per-object validation, drift handling, per-object audit. Phased execution: v1.1 dangling images + exited-0 stopped containers >7d; v1.2 unused images >30d; v1.5 volumes with backup-verify; never v1 container start/restart.
 
-### Files Changed
-- `CLAUDE.md` — new Exact-Object Approval (MANDATORY) subsection under AI Safety Invariant
-- `tasks/todo.md` — Docker hygiene v1.1 design proposal added at top
+**Locked decisions (2026-05-21):**
+- Implementation horizon: now, next 1-2 sessions.
+- Approval UI: both surfaces (Slack reply + web page) over a shared `ai_decisions` artifact schema.
+- Legacy `docker_prune`: removed altogether. Config loader fails loud on legacy key. Migration helper extends existing `--migrate-inventory`.
+
+**Implementation broken into 3 sessions:** Session 1 = sub-graph skeleton + assessment + classification + loader migration (report-only end-to-end). Session 2 = dual approval surfaces + remove wrapper + drift handling. Session 3 = docs + cleanup + lint/typecheck/test.
+
+### Files Changed (this session — design + invariant only)
+- `CLAUDE.md` — Exact-Object Approval (MANDATORY) subsection; no-grandfathering language
+- `tasks/todo.md` — Docker hygiene v1.1 implementation plan (locked decisions, session breakdown, file-change list)
 - `tasks/lessons.md` — new lesson owning the "HITL dissolves safety" framing mistake
 - `STATUS.md` — this entry
 - (memory) `feedback_exact_object_approval.md`, `project_docker_hygiene_v11.md`, MEMORY.md index updates
 
 ### In Progress
-- Awaiting user decisions on the three open questions before implementation work begins on `docker_hygiene`. SETUP.md `--check-targets` controller-vs-target clarification was committed separately (56ca7ac).
+- Awaiting user green-light to start Session 1 coding. SETUP.md `--check-targets` controller-vs-target clarification was committed separately (56ca7ac); design proposal committed in e4963ee.
 
 ---
 

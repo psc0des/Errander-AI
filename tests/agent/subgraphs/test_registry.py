@@ -6,18 +6,33 @@ from errander.agent.subgraphs import BUILTIN_ACTIONS
 
 
 class TestRegistryContents:
-    def test_has_exactly_six_entries(self) -> None:
-        assert len(BUILTIN_ACTIONS) == 6
+    def test_has_exactly_seven_entries(self) -> None:
+        # docker_hygiene added in v1.1 Session 1; docker_prune removed in Session 3.
+        assert len(BUILTIN_ACTIONS) == 7
 
     def test_expected_action_names_present(self) -> None:
         expected = {
             "patching", "disk_cleanup", "log_rotation",
-            "docker_prune", "backup_verify", "service_restart",
+            "docker_prune", "docker_hygiene", "backup_verify", "service_restart",
         }
         assert set(BUILTIN_ACTIONS.keys()) == expected
 
     def test_docker_prune_default_disabled(self) -> None:
         assert BUILTIN_ACTIONS["docker_prune"].default_enabled is False
+
+    def test_docker_hygiene_default_disabled(self) -> None:
+        assert BUILTIN_ACTIONS["docker_hygiene"].default_enabled is False
+
+    def test_docker_hygiene_has_wrapper_only_modes(self) -> None:
+        modes = BUILTIN_ACTIONS["docker_hygiene"].command_modes
+        assert modes is not None
+        assert "disabled" in modes
+        assert "wrapper" in modes
+        # direct_sudo intentionally not supported — per-object validation requires wrapper.
+        assert "direct_sudo" not in modes
+
+    def test_docker_hygiene_risk_tier_medium(self) -> None:
+        assert BUILTIN_ACTIONS["docker_hygiene"].risk_tier == "MEDIUM"
 
     def test_patching_default_enabled(self) -> None:
         assert BUILTIN_ACTIONS["patching"].default_enabled is True

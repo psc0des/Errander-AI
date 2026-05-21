@@ -1,5 +1,21 @@
 # Errander-AI — Lessons Learned
 
+## 2026-05-21 — Adding a new ActionManifest requires updating multiple test files, not just `test_registry.py`
+
+When the `docker_hygiene` manifest was registered in `BUILTIN_ACTIONS`, two separate test files failed on hardcoded count assertions: `tests/agent/subgraphs/test_registry.py` (`len(BUILTIN_ACTIONS) == 6`) and `tests/agent/subgraphs/test_service_restart_manifest.py` (`len(BUILTIN_ACTIONS) == 6` — duplicated from registry tests). Both needed to bump to 7.
+
+**Why:** Manifest count is asserted in multiple places defensively. There's no single source of truth for "how many actions exist" in tests.
+
+**How to apply:** When adding a new ActionManifest, grep tests for `BUILTIN_ACTIONS) ==` and `len(BUILTIN_ACTIONS)` before running pytest. Update every count assertion in one pass. Future maintainers should consider consolidating these into a single registry test file (out of scope for this session).
+
+## 2026-05-21 — Docker actions need special-case handling in `target_validation.py` — they don't fit the generic manifest loop
+
+`target_validation.py` has a generic loop that iterates `BUILTIN_ACTIONS` and probes each action's `required_wrappers`. Docker is explicitly skipped because it has a `command_mode` (`wrapper`/`direct_sudo`/`disabled`) that the generic loop can't represent. When `docker_hygiene` was added (its own manifest, its own wrappers, also `command_mode`-gated), the generic loop tried to probe its wrappers too — breaking `test_disabled_mode_skips_docker_checks` which asserted no docker-related commands when mode is disabled.
+
+**Why:** Each docker action has its own privilege escalation model. `docker_prune` supports three modes; `docker_hygiene` supports two (wrapper-only — per-object validation requires the wrapper). The generic loop assumes one wrapper-probing path per action; docker actions have command_mode-driven branching that needs custom code.
+
+**How to apply:** When adding a new action that involves privileged commands with multiple modes, exempt it from the generic wrapper loop in `target_validation.py` (alongside `docker_prune` and `docker_hygiene`) and add a dedicated probe block. The backward-compat path (`enabled_actions=None`) should be conservative and only probe actions that are on by default or explicitly enabled — not every registered action.
+
 ## 2026-05-21 — "HITL dissolves safety concerns" is the wrong framing — exact-object approval is what matters
 
 In a Docker scope discussion I framed Human-In-The-Loop approval as sufficient safety justification for surfacing more findings: "HITL dissolves most safety concerns." The user's SRE consultant correctly pushed back — a human can rubber-stamp a bad plan if the approval artifact is vague. The protection comes from the **evidence quality of what is being approved**, not the approval gesture itself.

@@ -2119,3 +2119,10 @@ uv run pytest -x -q   # 1989 passed, 0 failures
 git add errander/agent/subgraphs/patching.py errander/agent/graph.py tests/agent/subgraphs/test_patching.py tests/agent/test_deferred_replay.py STATUS.md tasks/todo.md tasks/lessons.md docs/command-log.md README.md
 git commit -m "fix: P0-1 complete closure — assess artifact path, verify exact match, approved_at required"
 ```
+
+# Docker hygiene v1.1 Session 1 (2026-05-21)
+uv run pytest tests/agent/subgraphs/test_docker_hygiene.py -x -q   # 40 passed (new file)
+uv run pytest -x -q   # 2215 passed (+43 new from docker_hygiene + 3 registry updates)
+uv run ruff check errander/models/docker_hygiene.py errander/agent/subgraphs/docker_hygiene.py errander/agent/subgraphs/__init__.py errander/models/actions.py errander/execution/target_validation.py tests/agent/subgraphs/test_docker_hygiene.py tests/agent/subgraphs/test_registry.py tests/agent/subgraphs/test_service_restart_manifest.py   # All checks passed!
+uv run ruff check tests/agent/subgraphs/test_docker_hygiene.py --fix   # 1 import-order fix applied
+uv run mypy errander/   # 9 pre-existing errors in unrelated files, none in new code

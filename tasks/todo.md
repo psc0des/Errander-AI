@@ -1,6 +1,21 @@
-## Docker hygiene — v1.1 implementation plan (2026-05-21, APPROVED — IN PROGRESS)
+## Docker hygiene — v1.1 implementation (2026-05-21, SESSION 1 COMPLETE)
 
-**Status:** Design approved by user 2026-05-21. Implementation starts next session.
+**Status:** Session 1 (assessment foundation) shipped 2026-05-21. Session 2 (execution + dual approval surface) pending.
+
+### Session 1 completed (2026-05-21)
+- [x] `errander/models/actions.py` — `ActionType.DOCKER_HYGIENE` + risk tier MEDIUM
+- [x] `errander/models/docker_hygiene.py` (NEW) — `DockerResourceClass`, `FindingClassification`, `DockerHygieneFinding`, `DockerHygieneAssessment` models
+- [x] `errander/agent/subgraphs/docker_hygiene.py` (NEW) — MANIFEST + validate + assess nodes + parser + classification rules + graph builder (no execute yet)
+- [x] `errander/agent/subgraphs/__init__.py` — register `docker_hygiene` in BUILTIN_ACTIONS (docker_prune still present)
+- [x] `errander/execution/target_validation.py` — skip docker_hygiene in generic loop (alongside docker_prune); add explicit probe block gated by `enabled_actions`
+- [x] `scripts/install-docker-wrappers-v2.sh` (NEW) — `errander-docker-assess-v2` wrapper (5-class output) + `errander-docker-remove-v2` stub + sudoers
+- [x] `tests/agent/subgraphs/test_docker_hygiene.py` (NEW) — 40 tests: parser (every class), classification (every cell), validate node, assess node happy paths, idempotency, graph builder smoke
+- [x] `tests/agent/subgraphs/test_registry.py` — bump count 6→7, add docker_hygiene-specific assertions
+- [x] `tests/agent/subgraphs/test_service_restart_manifest.py` — bump count 6→7
+- [x] Green tree: **2215 pytest, ruff clean on changed files, no new mypy errors**
+
+### Session 2 (next) — execution + dual approval surface
+**Status:** Not started. The Session 1 sub-graph is buildable and testable in isolation but is NOT wired into `vm_graph.py` dispatch yet — a live batch will not reach docker_hygiene until Session 2 lands the dispatch wiring.
 **Trigger:** SRE feedback (Docker prune scope review, 2026-05-21) — current `docker_prune` is too blunt for serious SRE use. Verdict: split into a richer assessment surface with object-level approval.
 **Driving invariant:** New exact-object approval rule in CLAUDE.md (Layer B → AI Safety Invariant → Exact-Object Approval section, added 2026-05-21). Applies to all destructive actions from day one of v1.1.
 
@@ -122,18 +137,15 @@ When the remove-wrapper finds approved objects have drifted between approval and
 
 ### Session-by-session implementation plan
 
-**Session 1 (estimate: 1 long session) — Core sub-graph + assessment, no execution yet:**
-- New ActionType + per-object result models (`errander/models/actions.py`)
-- ActionManifest registration (`errander/models/manifest.py`)
-- `docker_hygiene.py` sub-graph skeleton: validate → assess → END (no removal node yet)
-- New assess wrapper (`scripts/errander-docker-assess-v2`) emitting the 5-class output
-- Parser for the new output format
-- Classification rules (deterministic Python, table from above)
-- Config-loader migration: detect legacy `docker_prune` → fail with migration command
-- `--migrate-inventory` extension
-- Tests: parser, classification rules, migration, loader failure
-- Inventory schema update
-- **No removal, no approval UI yet.** Action runs in report-only mode end-to-end.
+**Session 1 (estimate: 1 long session) — Add `docker_hygiene` alongside `docker_prune`, no execution, no removal:**
+- New ActionType `DOCKER_HYGIENE` + risk tier entry (`errander/models/actions.py`)
+- New finding models (`errander/models/docker_hygiene.py`): `DockerResourceClass`, `FindingClassification` enums + `DockerHygieneFinding` + `DockerHygieneAssessment` frozen dataclasses
+- `docker_hygiene.py` sub-graph (new file): MANIFEST + validate node + assess node + parser + classification rules + sub-graph builder. No execute node yet. validate → assess → END.
+- MANIFEST registration in `errander/agent/subgraphs/__init__.py` (BUILTIN_ACTIONS gets a new entry; docker_prune entry untouched)
+- New wrapper installer `scripts/install-docker-wrappers-v2.sh` with `errander-docker-assess-v2` emitting the 5-class output
+- Tests in `tests/agent/subgraphs/test_docker_hygiene.py`: parser (all 5 classes), classification rules (every cell in the table), validate node, assess node happy path, idempotency (nothing-to-do)
+- **Intentionally deferred to Session 2:** vm_graph.py dispatch wiring. The sub-graph is buildable and testable in isolation but won't be reached by a live batch yet.
+- **Intentionally deferred to Session 3:** docker_prune removal, schema.py legacy rejection, migrate.py extension. Keeping these untouched in Session 1 keeps the tree green at every commit.
 
 **Session 2 — Approval surfaces + execution:**
 - Approval artifact schema (`ai_decisions` extension: per-object list + snapshot hash + surface field)

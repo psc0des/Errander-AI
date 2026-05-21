@@ -152,8 +152,10 @@ async def check_target(
     # 3. Non-docker wrapper probes — manifest-driven for all other enabled actions
     from errander.agent.subgraphs import BUILTIN_ACTIONS
     for _action_name, _manifest in BUILTIN_ACTIONS.items():
-        if _action_name == "docker_prune":
-            continue  # docker_prune handled below (command_mode concept)
+        # Docker actions handled below — they have their own command_mode concept
+        # that the generic loop can't represent.
+        if _action_name in ("docker_prune", "docker_hygiene"):
+            continue
         if enabled_actions is not None and _action_name not in enabled_actions:
             continue
         for wrapper in _manifest.required_wrappers:
@@ -184,6 +186,23 @@ async def check_target(
         if not ok:
             readiness.issues.append("sudo -n denied for: /usr/bin/docker")
     # disabled mode: no docker check needed
+
+    # 5. docker_hygiene wrapper probes — only when explicitly enabled.
+    # Unlike docker_prune, docker_hygiene supports only "wrapper" mode, so
+    # there's no direct_sudo branch. The backward-compat path (enabled_actions
+    # is None) intentionally does NOT probe docker_hygiene — it's an opt-in
+    # action, off by default, and we want --check-targets to be quiet about it
+    # when the operator hasn't enabled it.
+    if enabled_actions is not None and "docker_hygiene" in enabled_actions:
+        hygiene_manifest = BUILTIN_ACTIONS.get("docker_hygiene")
+        wrapper_paths = list(hygiene_manifest.required_wrappers) if hygiene_manifest else []
+        for wrapper in wrapper_paths:
+            cmd = f"sudo -n {wrapper} --check 2>/dev/null"
+            result = await ssh_manager.execute(vm_id, hostname, username, key_path, cmd)
+            ok = result.success and "ok" in result.stdout.strip()
+            readiness.wrappers_ok[wrapper] = ok
+            if not ok:
+                readiness.issues.append(f"wrapper script not ready: {wrapper}")
 
     readiness.verdict = "blocked" if readiness.issues else "ready"
     return readiness

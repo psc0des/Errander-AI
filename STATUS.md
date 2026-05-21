@@ -4,6 +4,34 @@
 2026-05-21
 
 ## Current Phase
+**Docker hygiene v1.1 — Session 1 shipped (2026-05-21, SESSION 1 COMPLETE).** 2215 tests passing (+43 new), ruff clean on changed files, no new mypy errors.
+
+Session 1 delivered the assessment foundation — `docker_hygiene` sub-graph is buildable, testable in isolation, and registered in `BUILTIN_ACTIONS`. It is **not yet wired into vm_graph.py dispatch** — a live batch will not reach it until Session 2 lands the dispatch wiring. Existing `docker_prune` is untouched and continues to work; removal is Session 3.
+
+### Files added/changed this session
+- `errander/models/actions.py` — `ActionType.DOCKER_HYGIENE` + risk tier MEDIUM
+- `errander/models/docker_hygiene.py` (NEW) — finding & assessment models
+- `errander/agent/subgraphs/docker_hygiene.py` (NEW) — sub-graph: validate + assess + parser + classification + graph builder
+- `errander/agent/subgraphs/__init__.py` — register manifest in BUILTIN_ACTIONS
+- `errander/execution/target_validation.py` — docker_hygiene exempt from generic loop; explicit probe block gated by enabled_actions
+- `scripts/install-docker-wrappers-v2.sh` (NEW) — assess-v2 + remove-v2-stub + sudoers
+- `tests/agent/subgraphs/test_docker_hygiene.py` (NEW, 40 tests)
+- `tests/agent/subgraphs/test_registry.py` — bump count assertions 6→7 + docker_hygiene-specific tests
+- `tests/agent/subgraphs/test_service_restart_manifest.py` — bump count assertion 6→7
+- `tasks/todo.md`, `tasks/lessons.md`, `STATUS.md` — doc sync
+
+### Session 2 (next) — execution + dual approval surface
+- Approval artifact schema (`ai_decisions` extension: per-object list + snapshot hash + surface field)
+- Slack message format with object list + signed web URL
+- Slack reply parser (structured commands: `approve images 1,3 containers 1`)
+- Web approval page (FastHTML, signed URL verification, checkbox UI, submit handler)
+- Real `errander-docker-remove-v2` wrapper (replace Session 1 stub) with per-object re-validation
+- `docker_hygiene.py` execute node + drift handling
+- `vm_graph.py` dispatch wiring (so live batches reach docker_hygiene)
+- Per-object audit rows in `safety/audit.py`
+- Tests: dual approval surfaces, drift handling, audit rows, signed URL verification
+
+### Original phase from start of session
 **Docker hygiene v1.1 — design approved, implementation pending (2026-05-21, DESIGN APPROVED).** No code changes yet; docs + rules + locked decisions.
 
 Triggered by SRE feedback on `docker_prune` scope. Two outputs:

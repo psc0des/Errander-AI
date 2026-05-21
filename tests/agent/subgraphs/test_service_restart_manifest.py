@@ -45,8 +45,9 @@ class TestServiceRestartRegistry:
     def test_registered_in_builtin_actions(self) -> None:
         assert "service_restart" in BUILTIN_ACTIONS
 
-    def test_registry_has_six_entries(self) -> None:
-        assert len(BUILTIN_ACTIONS) == 6
+    def test_registry_has_seven_entries(self) -> None:
+        # docker_hygiene added in v1.1 Session 1; docker_prune removed in Session 3.
+        assert len(BUILTIN_ACTIONS) == 7
 
     def test_registry_manifest_matches_module_manifest(self) -> None:
         assert BUILTIN_ACTIONS["service_restart"] is MANIFEST

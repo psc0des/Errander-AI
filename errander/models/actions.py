@@ -19,6 +19,7 @@ class ActionType(StrEnum):
 
     PATCHING = "patching"
     DOCKER_PRUNE = "docker_prune"
+    DOCKER_HYGIENE = "docker_hygiene"
     LOG_ROTATION = "log_rotation"
     DISK_CLEANUP = "disk_cleanup"
     BACKUP_VERIFY = "backup_verify"
@@ -61,6 +62,7 @@ ACTION_RISK_TIERS: dict[ActionType, RiskTier] = {
     ActionType.DISK_CLEANUP: RiskTier.LOW,
     ActionType.LOG_ROTATION: RiskTier.LOW,
     ActionType.DOCKER_PRUNE: RiskTier.MEDIUM,
+    ActionType.DOCKER_HYGIENE: RiskTier.MEDIUM,
     ActionType.PATCHING: RiskTier.MEDIUM,
     ActionType.BACKUP_VERIFY: RiskTier.LOW,
     ActionType.SERVICE_RESTART: RiskTier.HIGH,

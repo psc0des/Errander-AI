@@ -38,8 +38,16 @@
 - [x] Green tree: **2289 pytest, ruff clean on new files, no new mypy errors**
 - [x] Doc sync: README test count, STATUS, todo, lessons, command-log
 
-### Session 2b-ii (next) — approval surfaces
-**Status:** Not started. Slack formatter/parser/manager are wired and tested in isolation. 2b-ii adds the web page + Slack polling + batch orchestration wiring so approvals actually flow back into the execution path.
+### Session 2b-ii shipped (2026-05-22)
+- [x] `errander/web/server.py` — `page_hygiene_approve` renderer + `handle_hygiene_approve_get` / `handle_hygiene_approve_post` route handlers + supporting helpers. Routes registered.
+- [x] `errander/integrations/slack.py` — `SlackClient.conversations_replies` method
+- [x] `errander/safety/hygiene_approval.py` — `poll_hygiene_replies_once` polling helper
+- [x] 20 new tests: `tests/safety/test_hygiene_web_approve.py` (11) + `tests/safety/test_hygiene_reply_polling.py` (9)
+- [x] Green tree: **2309 pytest, ruff clean on new code, no new mypy errors**
+- [x] Doc sync: README test count, STATUS, todo, lessons, command-log
+
+### Session 2b-iii (next) — batch orchestration wiring
+**Status:** Not started. Both Slack reply polling and web approval routes resolve approvals through `HygieneApprovalManager`. What's missing is the connective tissue: the batch coroutine needs to post the Slack message, mint the signed URL, register the pending approval, run the reply poller, wait for resolution, and inject the approval into the planned action params before re-dispatching the sub-graph for execution.
 
 - Slack message format (rich object list grouped by resource class with size/age + signed web URL)
 - Slack reply parser (structured commands: `approve images 1,3 containers 1` and `reject all`)

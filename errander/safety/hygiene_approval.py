@@ -509,3 +509,65 @@ class HygieneApprovalManager:
     def get_history(self) -> list[PendingHygieneApproval]:
         """Snapshot of resolved approvals (for audit / debug)."""
         return list(self._history)
+
+
+# ---------------------------------------------------------------------------
+# Slack reply polling
+# ---------------------------------------------------------------------------
+
+async def poll_hygiene_replies_once(
+    slack_client: object,
+    pending: PendingHygieneApproval,
+    manager: HygieneApprovalManager,
+) -> bool:
+    """Single poll iteration: fetch thread replies and try to resolve.
+
+    Walks through replies (skipping the bot's own message at index 0 and any
+    other bot messages) and attempts :func:`parse_hygiene_reply` on each
+    text. The FIRST reply that parses successfully resolves the pending
+    approval; subsequent replies in the same thread are ignored (resolve()
+    is idempotent).
+
+    Replies that fail to parse are logged at INFO with the
+    :class:`HygieneReplyError` reason — the operator can correct and reply
+    again. The poller never replies to Slack itself (Session 2b-iii could
+    add a "couldn't parse that, here's the syntax" reply if helpful).
+
+    Returns:
+        True if the pending was resolved this iteration; False otherwise.
+    """
+    if pending.slack_message_ts is None:
+        return False  # Nothing to poll — manager was registered without Slack
+    if pending.is_decided():
+        return True  # Already resolved by another channel
+
+    messages = await slack_client.conversations_replies(  # type: ignore[attr-defined]
+        thread_ts=pending.slack_message_ts,
+    )
+
+    for msg in messages:
+        # Skip the bot's own message (the thread parent posted by us).
+        if msg.get("bot_id") or msg.get("subtype") == "bot_message":
+            continue
+        text = str(msg.get("text", "")).strip()
+        if not text:
+            continue
+        user_id = str(msg.get("user", "unknown"))
+        try:
+            approval = parse_hygiene_reply(
+                text,
+                pending.assessment,
+                operator_id=user_id,
+                surface=ApprovalSurface.SLACK_REPLY,
+            )
+        except HygieneReplyError as exc:
+            logger.info(
+                "Slack reply on batch=%s vm=%s did not parse: %s "
+                "(reply text: %r)",
+                pending.batch_id, pending.vm_id, exc, text[:80],
+            )
+            continue
+        manager.resolve(pending.batch_id, pending.vm_id, approval)
+        return True
+
+    return False

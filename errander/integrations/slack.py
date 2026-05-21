@@ -112,6 +112,32 @@ class SlackClient:
         reactions: list[dict[str, object]] = message.get("reactions") or []  # type: ignore[assignment]
         return reactions
 
+    async def conversations_replies(
+        self,
+        thread_ts: str,
+        channel_id: str | None = None,
+        limit: int = 100,
+    ) -> list[dict[str, object]]:
+        """Fetch replies in a thread. Used by docker_hygiene reply polling.
+
+        Returns the message list including the original thread parent at
+        index 0. Each message dict has at minimum ``ts``, ``user``, ``text``,
+        and optionally ``bot_id`` / ``subtype``. Callers should filter out
+        the bot's own messages by checking for ``bot_id``.
+
+        Args:
+            thread_ts: Slack timestamp of the thread parent.
+            channel_id: Override default channel.
+            limit: Maximum replies to return (Slack defaults to 1000).
+        """
+        data = await self._call("conversations.replies", {
+            "channel": channel_id or self._channel_id,
+            "ts": thread_ts,
+            "limit": limit,
+        }, http_method="GET")
+        messages: list[dict[str, object]] = data.get("messages") or []  # type: ignore[assignment]
+        return messages
+
     async def post_alert(self, text: str, channel_id: str | None = None) -> None:
         """Post a critical alert message.
 

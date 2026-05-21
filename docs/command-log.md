@@ -2142,3 +2142,8 @@ uv run pytest tests/integrations/test_signed_url.py tests/safety/test_hygiene_ap
 uv run pytest -x -q   # 2289 passed (+52 net new)
 uv run ruff check errander/integrations/signed_url.py errander/safety/hygiene_approval.py tests/integrations/test_signed_url.py tests/safety/test_hygiene_approval.py   # All checks passed!
 uv run mypy errander/integrations/signed_url.py errander/safety/hygiene_approval.py   # Success: no issues found in 2 source files
+
+# Docker hygiene v1.1 Session 2b-ii (2026-05-22)
+uv run pytest tests/safety/test_hygiene_web_approve.py tests/safety/test_hygiene_reply_polling.py -x -q   # 20 passed (11 web + 9 polling)
+uv run pytest -x -q   # 2309 passed (+20 net new; resolved pytest-asyncio runner pollution from tests/ui by moving web tests under tests/safety + using manual event-loop driver)
+uv run ruff check errander/web/server.py errander/safety/hygiene_approval.py errander/integrations/slack.py tests/safety/test_hygiene_web_approve.py tests/safety/test_hygiene_reply_polling.py   # All clean on new code; pre-existing N814/UP037/no-any-return errors in unrelated lines of server.py

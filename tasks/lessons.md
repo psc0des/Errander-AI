@@ -1,5 +1,16 @@
 # Errander-AI — Lessons Learned
 
+## 2026-05-22 — pytest-asyncio + pytest-playwright collide; isolate async tests with manual event-loop drivers when full suite breaks
+
+Web route tests in `tests/web/test_hygiene_approve.py` (later moved to `tests/safety/test_hygiene_web_approve.py`) passed in isolation but failed in the full suite with `RuntimeError: Runner.run() cannot be called from a running event loop` during pytest-asyncio teardown. Bisection showed `tests/ui/` (which uses pytest-playwright) corrupts the asyncio runner state. Since `tests/web/` sorts AFTER `tests/ui/` alphabetically, the corruption propagated. Two fixes were applied:
+
+1. **Bypass pytest-asyncio for these tests.** Switched the test methods from `async def + @pytest.mark.asyncio` to sync methods that drive a fresh `asyncio.new_event_loop().run_until_complete(coro)` per test. This isolates each test from any prior asyncio state.
+2. **Move the test file to `tests/safety/`.** This sorts the new tests *before* `tests/ui/` runs, avoiding the corruption window entirely. The relocation is also semantically correct — they're testing the approval surface, which is a `safety/` concern.
+
+**Why:** Both fixes are belt-and-suspenders. The manual event-loop driver makes the tests robust to ANY upstream pytest-asyncio state damage. The directory move addresses the specific cause that caught me here. Either alone would work; both together close the door.
+
+**How to apply:** When adding new tests that involve aiohttp handlers or async code, and the full suite includes pytest-playwright (`tests/ui/`), either (a) place the new tests in a directory that sorts before `tests/ui/`, or (b) drive event loops manually with `asyncio.new_event_loop().run_until_complete()` instead of pytest-asyncio. The auto-mode pytest-asyncio in this project is convenient but fragile across plugin boundaries.
+
 ## 2026-05-22 — When introducing a new env var, the grep must include the canonical secrets lists, not just test counts
 
 I shipped Session 2b-i with `ERRANDER_SIGNING_SECRET` as a new env var, did the doc-sync grep for test counts (per the prior lesson), and still missed the canonical env var lists in CLAUDE.md (line ~295 + ~399), docs/SECRETS.md, README.md project tree, and SETUP.md `.env` template. User caught it for the second time in three sessions with the exact same question: "did you update all the relevant docs?"

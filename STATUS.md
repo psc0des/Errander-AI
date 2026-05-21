@@ -4,6 +4,29 @@
 2026-05-21
 
 ## Current Phase
+**Docker hygiene v1.1 — Session 2b-ii shipped (2026-05-22, SESSION 2b-ii COMPLETE).** 2309 tests passing (+20 net new), ruff clean on changed code, no new mypy errors.
+
+Session 2b-ii delivers the web approval surface (`/ui/docker-hygiene/approve` GET + POST) and the Slack reply poller. Both surfaces resolve through the same `HygieneApprovalManager` registered in 2b-i — they're decoupled and independently testable. The remaining work for Session 2b-iii is batch orchestration wiring: where in the parent batch graph does "assess → post approval message → wait → execute" live.
+
+### Files added/changed in Session 2b-ii
+- `errander/web/server.py` — new `page_hygiene_approve` renderer, `handle_hygiene_approve_get`, `handle_hygiene_approve_post`, `_hygiene_error_page`, `_hygiene_confirmation_page`, `_html_escape`. Routes registered as `GET /ui/docker-hygiene/approve` and `POST /ui/docker-hygiene/approve`. Defence in depth: POST re-verifies the signed token (doesn't trust that GET checked it). Operator identity recorded from `_AUTH_USERNAME` (the configured admin) since the current cookie-based auth doesn't track per-user identity.
+- `errander/integrations/slack.py` — new `SlackClient.conversations_replies` method (fetch thread replies via the Slack API).
+- `errander/safety/hygiene_approval.py` — new `poll_hygiene_replies_once` function. Walks thread replies, skips bot's own messages (by `bot_id` or `subtype == "bot_message"`), tries `parse_hygiene_reply` on each text. First parseable non-bot reply wins; subsequent replies are ignored (manager.resolve is idempotent). Parse failures log at INFO so operators can correct and re-reply.
+- `tests/safety/test_hygiene_web_approve.py` (NEW, 11 tests) — uses `make_mocked_request` + manual event-loop driver (`asyncio.new_event_loop().run_until_complete`) to bypass pytest-asyncio entirely. Avoids runner-state pollution from prior tests in the full suite. Covers: missing token (400), tampered token (400), no pending (404), happy-path render (200), missing manager (503), reject → empty approval, approve with checkboxes → selected findings only, approve with no checkboxes → empty (not auto-reject), invalid decision (400), tampered token on POST (400), POST to unknown pending (404).
+- `tests/safety/test_hygiene_reply_polling.py` (NEW, 9 tests) — `poll_hygiene_replies_once`: no Slack ts → False, already-resolved → True (short-circuit), bot messages skipped (both `bot_id` and `subtype`), first parseable reply wins, unparseable replies ignored, reject reply → empty approval, empty text skipped, idempotent under multiple replies.
+- `README.md`, `STATUS.md`, `tasks/todo.md`, `tasks/lessons.md`, `docs/command-log.md` — doc sync (always-update list).
+
+### Session 2b-iii (next) — batch orchestration wiring
+- Where in `errander/agent/graph.py` / `errander/main.py` does the assess → post-message → wait → execute sequence live? Likely a new node pair around docker_hygiene dispatch.
+- Build the signed URL at the post-message site (`make_signed_token({"batch_id": ..., "vm_id": ...}, ttl_seconds=...)`).
+- Post Slack message via `format_hygiene_approval_message(assessment, web_approval_url=signed_url, batch_id=...)`.
+- Register pending with manager via `manager.register(batch_id, vm_id, assessment, slack_message_ts=ts)`.
+- Spawn a background coroutine that calls `poll_hygiene_replies_once` every ~30s until resolved or timeout.
+- Wait for `manager.wait_for_decision(batch_id, vm_id, timeout=1800)`.
+- Inject resolved approval into `planned_actions[i].params["approval"]` and re-dispatch sub-graph for the execute phase (Session 2a's execute_node already supports this).
+- End-to-end integration tests.
+
+### Original phase from start of session
 **Docker hygiene v1.1 — Session 2b-i shipped (2026-05-22, SESSION 2b-i COMPLETE).** 2289 tests passing (+52 new), ruff clean on changed files, no new mypy errors.
 
 Session 2b-i delivers the Slack approval surface end-to-end (formatter + reply parser + manager) and the signed URL primitive that Session 2b-ii will use for the web approval page. The pieces are decoupled: both Slack and web surfaces resolve through the same `HygieneApprovalManager`, so wiring is independent of surface implementation.

@@ -5033,6 +5033,324 @@ async def handle_placeholder(request: web.Request) -> web.Response:
     return web.Response(text=html, content_type="text/html")
 
 
+# ── docker_hygiene approval surface (v1.1 Session 2b-ii) ─────────────────────
+
+def page_hygiene_approve(
+    assessment: Any,
+    *,
+    token: str,
+    batch_id: str,
+    vm_id: str,
+) -> str:
+    """Render the docker_hygiene approval form.
+
+    Findings are grouped by class with one checkbox per executable item
+    (dangling images / unused images / stopped containers). Volumes and
+    build cache are shown as report-only — they don't get checkboxes and
+    can't be submitted for removal in v1.1.
+    """
+    from errander.models.docker_hygiene import DockerResourceClass  # noqa: PLC0415
+    from errander.safety.hygiene_approval import _short_class_key
+
+    _executable: tuple[Any, ...] = (
+        DockerResourceClass.IMAGE_DANGLING, DockerResourceClass.IMAGE_UNUSED, DockerResourceClass.CONTAINER_STOPPED,
+    )
+
+    by_class = assessment.by_class()
+
+    sections: list[str] = []
+    has_any_executable = False
+    for klass in _executable + (DockerResourceClass.VOLUME_UNREFERENCED, DockerResourceClass.BUILD_CACHE):
+        items = by_class.get(klass, [])
+        if not items:
+            continue
+        short = _short_class_key(klass)
+        is_executable = klass in _executable
+        if is_executable:
+            has_any_executable = True
+        rows: list[str] = []
+        for i, f in enumerate(items, start=1):
+            checked = "checked" if (is_executable and f.classification.value == "cleanup_candidate") else ""
+            disabled = "" if is_executable else "disabled"
+            tag = (f.last_tag or f.name or "—")
+            size = (
+                f"{f.size_bytes // 1024 // 1024} MB" if f.size_bytes else "—"
+            ) if klass != DockerResourceClass.BUILD_CACHE else (
+                f"{(f.reclaimable_bytes or 0) // 1024 // 1024} MB"
+            )
+            input_name = f"finding_{short}_{i}"
+            checkbox_html = (
+                f'<input type="checkbox" name="{input_name}" id="{input_name}" {checked} {disabled} />'
+                if is_executable else
+                '<span style="color:#94a3b8">report-only</span>'
+            )
+            rows.append(
+                f'<tr><td>{checkbox_html}</td>'
+                f'<td style="font-family:monospace;font-size:0.8rem">{_html_escape(f.identity[:32])}</td>'
+                f'<td>{_html_escape(tag)}</td>'
+                f'<td>{size}</td>'
+                f'<td>{_html_escape(f.classification.value)}</td></tr>'
+            )
+        sections.append(f'''
+        <div class="card" style="margin-bottom:16px;padding:18px">
+          <div style="font-weight:600;font-size:1.05rem;margin-bottom:8px">
+            {_html_escape(klass.value)} ({len(items)})
+          </div>
+          <table style="width:100%;border-collapse:collapse">
+            <thead><tr style="text-align:left;color:#64748b;font-size:0.75rem">
+              <th style="width:40px"></th><th>ID</th><th>Tag/Name</th><th>Size</th><th>Classification</th>
+            </tr></thead>
+            <tbody>{"".join(rows)}</tbody>
+          </table>
+        </div>''')
+
+    if not has_any_executable:
+        action_buttons = '<p>No executable findings — nothing to approve.</p>'
+    else:
+        action_buttons = '''
+        <div style="margin-top:24px;display:flex;gap:12px">
+          <button type="submit" name="decision" value="approve"
+            style="padding:12px 24px;background:#16a34a;color:white;border:none;border-radius:6px;font-weight:600;cursor:pointer">
+            ✓ Approve selected
+          </button>
+          <button type="submit" name="decision" value="reject"
+            style="padding:12px 24px;background:#dc2626;color:white;border:none;border-radius:6px;font-weight:600;cursor:pointer">
+            ✗ Reject all
+          </button>
+        </div>'''
+
+    return f'''
+    <div style="max-width:1000px;margin:0 auto;padding:24px">
+      <h1 style="font-family:'Space Grotesk',sans-serif;margin-bottom:4px">Docker hygiene approval</h1>
+      <div style="color:#64748b;margin-bottom:24px">
+        VM <code>{_html_escape(vm_id)}</code> · batch <code>{_html_escape(batch_id)}</code>
+      </div>
+      <form method="POST" action="/ui/docker-hygiene/approve">
+        <input type="hidden" name="token" value="{_html_escape(token)}" />
+        {"".join(sections)}
+        {action_buttons}
+      </form>
+    </div>
+    '''
+
+
+def _html_escape(s: str) -> str:
+    return (
+        s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        .replace('"', "&quot;").replace("'", "&#39;")
+    )
+
+
+async def handle_hygiene_approve_get(request: web.Request) -> web.Response:
+    """GET /ui/docker-hygiene/approve?token=<signed_token>
+
+    Verify token, look up pending approval, render the form. Both auth gate
+    (cookie session via middleware) and signed-URL verification apply —
+    defence in depth.
+    """
+    from errander.integrations.signed_url import (
+        InvalidSignedTokenError,
+        verify_signed_token,
+    )
+
+    token = request.query.get("token", "")
+    if not token:
+        return web.Response(
+            text=_hygiene_error_page("Missing token in approval URL."),
+            content_type="text/html",
+            status=400,
+        )
+    try:
+        payload = verify_signed_token(token)
+    except InvalidSignedTokenError as exc:
+        return web.Response(
+            text=_hygiene_error_page(f"Invalid or expired approval URL: {exc}"),
+            content_type="text/html",
+            status=400,
+        )
+
+    batch_id = str(payload.get("batch_id", ""))
+    vm_id = str(payload.get("vm_id", ""))
+    manager = request.app.get("hygiene_manager")
+    if manager is None:
+        return web.Response(
+            text=_hygiene_error_page("Approval manager not available."),
+            content_type="text/html",
+            status=503,
+        )
+
+    # Look up pending. Use a public accessor (added below) rather than poking
+    # at the private dict.
+    pending = next(
+        (p for p in manager.get_pending() if p.key == (batch_id, vm_id)),
+        None,
+    )
+    if pending is None:
+        return web.Response(
+            text=_hygiene_error_page(
+                "This approval has already been resolved or has expired. "
+                "Operators only see this page when there is an active pending request."
+            ),
+            content_type="text/html",
+            status=404,
+        )
+
+    content = page_hygiene_approve(
+        pending.assessment,
+        token=token,
+        batch_id=batch_id,
+        vm_id=vm_id,
+    )
+    html = layout(
+        title="Docker hygiene approval",
+        active_url="/approvals",
+        breadcrumb="Docker hygiene approval",
+        topnav_extra="",
+        content=content,
+    )
+    return web.Response(text=html, content_type="text/html")
+
+
+async def handle_hygiene_approve_post(request: web.Request) -> web.Response:
+    """POST /ui/docker-hygiene/approve
+
+    Re-verify token (defence in depth — never trust that a previous request
+    verified it), parse checkbox selections back into approved findings,
+    build the artifact, call manager.resolve.
+    """
+    from errander.integrations.signed_url import (
+        InvalidSignedTokenError,
+        verify_signed_token,
+    )
+    from errander.models.docker_hygiene import (
+        ApprovalSurface,
+        DockerHygieneApproval,
+        compute_assessment_hash,
+    )
+    from errander.safety.hygiene_approval import _short_class_key
+
+    data = await request.post()
+    token = str(data.get("token", ""))
+    decision = str(data.get("decision", "")).lower()
+    if decision not in ("approve", "reject"):
+        return web.Response(
+            text=_hygiene_error_page("Missing or invalid decision."),
+            content_type="text/html",
+            status=400,
+        )
+
+    try:
+        payload = verify_signed_token(token)
+    except InvalidSignedTokenError as exc:
+        return web.Response(
+            text=_hygiene_error_page(f"Invalid or expired approval URL: {exc}"),
+            content_type="text/html",
+            status=400,
+        )
+    batch_id = str(payload.get("batch_id", ""))
+    vm_id = str(payload.get("vm_id", ""))
+
+    manager = request.app.get("hygiene_manager")
+    if manager is None:
+        return web.Response(
+            text=_hygiene_error_page("Approval manager not available."),
+            content_type="text/html",
+            status=503,
+        )
+    pending = next(
+        (p for p in manager.get_pending() if p.key == (batch_id, vm_id)),
+        None,
+    )
+    if pending is None:
+        return web.Response(
+            text=_hygiene_error_page(
+                "This approval is no longer pending — another channel may have resolved it."
+            ),
+            content_type="text/html",
+            status=404,
+        )
+
+    assessment = pending.assessment
+
+    if decision == "reject":
+        approval = DockerHygieneApproval(
+            vm_id=vm_id,
+            approved_findings=(),
+            snapshot_hash=compute_assessment_hash(assessment),
+            surface=ApprovalSurface.WEB_PAGE,
+            operator_id=_AUTH_USERNAME,
+        )
+        manager.resolve(batch_id, vm_id, approval)
+        return web.Response(
+            text=_hygiene_confirmation_page(
+                "Rejected", "All findings rejected — no objects will be removed.",
+            ),
+            content_type="text/html",
+        )
+
+    # decision == "approve" — collect checked items from form.
+    approved: list[Any] = []
+    seen: set[tuple[str, str]] = set()
+    by_class = assessment.by_class()
+    from errander.models.docker_hygiene import DockerResourceClass  # noqa: PLC0415
+    _executable = (
+        DockerResourceClass.IMAGE_DANGLING,
+        DockerResourceClass.IMAGE_UNUSED,
+        DockerResourceClass.CONTAINER_STOPPED,
+    )
+    for klass in _executable:
+        items = by_class.get(klass, [])
+        short = _short_class_key(klass)
+        for i, f in enumerate(items, start=1):
+            field_name = f"finding_{short}_{i}"
+            if data.get(field_name) is not None:
+                key = (f.resource_class.value, f.identity)
+                if key in seen:
+                    continue
+                seen.add(key)
+                approved.append(f)
+
+    approval = DockerHygieneApproval(
+        vm_id=vm_id,
+        approved_findings=tuple(approved),
+        snapshot_hash=compute_assessment_hash(assessment),
+        surface=ApprovalSurface.WEB_PAGE,
+        operator_id=_AUTH_USERNAME,
+    )
+    manager.resolve(batch_id, vm_id, approval)
+
+    return web.Response(
+        text=_hygiene_confirmation_page(
+            "Approved",
+            f"{len(approved)} object(s) approved for removal. The agent will "
+            f"re-validate each object against current state before removing.",
+        ),
+        content_type="text/html",
+    )
+
+
+def _hygiene_error_page(msg: str) -> str:
+    """Standalone error page (no nav chrome) for invalid token / not-found cases."""
+    return f'''
+    <html><body style="font-family:Inter,sans-serif;max-width:600px;margin:80px auto;padding:24px">
+      <h1 style="color:#dc2626">Approval error</h1>
+      <p>{_html_escape(msg)}</p>
+      <p><a href="/approvals">← Return to approval queue</a></p>
+    </body></html>
+    '''
+
+
+def _hygiene_confirmation_page(verdict: str, detail: str) -> str:
+    color = "#16a34a" if verdict == "Approved" else "#dc2626"
+    return f'''
+    <html><body style="font-family:Inter,sans-serif;max-width:600px;margin:80px auto;padding:24px">
+      <h1 style="color:{color}">{verdict}</h1>
+      <p>{_html_escape(detail)}</p>
+      <p><a href="/approvals">← Return to approval queue</a></p>
+    </body></html>
+    '''
+
+
 # ── Auth handlers ──────────────────────────────────────────────────────────────
 
 async def handle_login_get(request: web.Request) -> web.Response:
@@ -5256,6 +5574,9 @@ def create_app() -> web.Application:
     app.router.add_post("/login",                        handle_login_post)
     app.router.add_get("/logout",                        handle_logout)
     app.router.add_get("/api/vm/{hostname}/metrics",     handle_metrics_api)
+    # docker_hygiene approval surface (v1.1 Session 2b-ii)
+    app.router.add_get("/ui/docker-hygiene/approve",     handle_hygiene_approve_get)
+    app.router.add_post("/ui/docker-hygiene/approve",    handle_hygiene_approve_post)
     app.on_startup.append(_on_startup)
     app.on_cleanup.append(_on_cleanup)
     return app

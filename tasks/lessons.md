@@ -1,5 +1,21 @@
 # Errander-AI — Lessons Learned
 
+## 2026-05-22 — Local imports inside a function body change the patch target
+
+When `poll_hygiene_replies_once` is imported *inside* `_run_docker_hygiene` (not at module level), patching `errander.agent.vm_graph.poll_hygiene_replies_once` fails — the name never exists in that module's namespace. The correct patch target is the source module: `errander.safety.hygiene_approval.poll_hygiene_replies_once`. When the local import runs at call time, Python resolves it from `errander.safety.hygiene_approval`, so patching the attribute there before the call works.
+
+**Why:** Module-level imports create a reference in the importing module's namespace at load time, so patching the importer works. Local imports happen at call time and always resolve from the *source* module. They leave no attribute in the importing module's namespace.
+
+**How to apply:** Before writing `patch("errander.X.function_name")`, verify the import is at module level in `errander/X.py`. If the import is inside a function body, patch the source module instead: `patch("errander.source_module.function_name")`.
+
+## 2026-05-22 — Mock functions that stand in for an interface must accept **kwargs when the interface gains new parameters
+
+When `dispatch_action_node` gained new keyword parameters (`hygiene_manager`, `slack_client`, etc.), test functions that mocked `_run_docker_hygiene` with plain positional signatures broke with `TypeError: fake_runner() got an unexpected keyword argument 'hygiene_manager'`. The fix is to add `**_: object` to the mock function signature so it silently absorbs any extra keyword arguments.
+
+**Why:** The production caller passes kwargs by name. Tests that fake out the callee get the same kwargs; a positional-only signature rejects them.
+
+**How to apply:** Any test mock function that stands in for a real function should use `**_: object` in its signature if the real function accepts (or may in future accept) keyword arguments. This future-proofs the mock against interface evolution.
+
 ## 2026-05-22 — pytest-asyncio + pytest-playwright collide; isolate async tests with manual event-loop drivers when full suite breaks
 
 Web route tests in `tests/web/test_hygiene_approve.py` (later moved to `tests/safety/test_hygiene_web_approve.py`) passed in isolation but failed in the full suite with `RuntimeError: Runner.run() cannot be called from a running event loop` during pytest-asyncio teardown. Bisection showed `tests/ui/` (which uses pytest-playwright) corrupts the asyncio runner state. Since `tests/web/` sorts AFTER `tests/ui/` alphabetically, the corruption propagated. Two fixes were applied:

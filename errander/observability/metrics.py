@@ -37,6 +37,7 @@ if TYPE_CHECKING:
     from errander.models.vm import VMTarget
     from errander.safety.approval import ApprovalManager
     from errander.safety.audit import AuditStore
+    from errander.safety.hygiene_approval import HygieneApprovalManager
     from errander.safety.overrides import OverridesStore
 
 _esc = _html_mod.escape  # escape untrusted data before HTML interpolation
@@ -48,6 +49,7 @@ def _uq(s: str) -> str:
 #: Typed app keys for storing shared objects on the aiohttp Application.
 _AUDIT_STORE_KEY: web.AppKey[AuditStore | None] = web.AppKey("audit_store")
 _APPROVAL_MANAGER_KEY: web.AppKey[ApprovalManager | None] = web.AppKey("approval_manager")
+_HYGIENE_MANAGER_KEY: web.AppKey[HygieneApprovalManager | None] = web.AppKey("hygiene_manager")
 _OVERRIDES_STORE_KEY: web.AppKey[OverridesStore | None] = web.AppKey("overrides_store")
 _BASE_INVENTORY_KEY: web.AppKey[list[VMTarget]] = web.AppKey("base_inventory")
 _UI_USER_KEY: web.AppKey[str] = web.AppKey("ui_user")
@@ -1557,6 +1559,237 @@ async def _health_handler(request: web.Request) -> web.Response:
 
 
 # ---------------------------------------------------------------------------
+# docker_hygiene web approval handlers
+# ---------------------------------------------------------------------------
+
+
+def _hygiene_error_html(msg: str) -> str:
+    """Standalone error page for invalid-token / not-found cases."""
+    return (
+        f"<html><body style=\"font-family:Inter,sans-serif;max-width:600px;margin:80px auto;padding:24px\">"
+        f"<h1 style=\"color:#dc2626\">Approval error</h1>"
+        f"<p>{_esc(msg)}</p>"
+        f"<p><a href=\"/ui/approvals\">← Return to approval queue</a></p>"
+        f"</body></html>"
+    )
+
+
+def _hygiene_confirm_html(verdict: str, detail: str) -> str:
+    """Body fragment for the approval confirmation page (used via _page())."""
+    color = "#16a34a" if verdict == "Approved" else "#dc2626"
+    return (
+        f"<p style=\"font-size:1.1rem;font-weight:600;color:{color}\">{_esc(verdict)}</p>"
+        f"<p>{_esc(detail)}</p>"
+        f"<p><a href=\"/ui/approvals\">← Return to approval queue</a></p>"
+    )
+
+
+def _render_hygiene_form(
+    assessment: object,
+    *,
+    token: str,
+    batch_id: str,
+    vm_id: str,
+) -> str:
+    """Build the approval form HTML body fragment."""
+    from errander.models.docker_hygiene import DockerResourceClass
+    from errander.safety.hygiene_approval import _short_class_key
+
+    _executable = (
+        DockerResourceClass.IMAGE_DANGLING,
+        DockerResourceClass.IMAGE_UNUSED,
+        DockerResourceClass.CONTAINER_STOPPED,
+    )
+    by_class = assessment.by_class()  # type: ignore[attr-defined]
+    sections: list[str] = []
+    has_any = False
+
+    for klass in _executable + (DockerResourceClass.VOLUME_UNREFERENCED, DockerResourceClass.BUILD_CACHE):
+        items = by_class.get(klass, [])
+        if not items:
+            continue
+        short = _short_class_key(klass)
+        is_exec = klass in _executable
+        if is_exec:
+            has_any = True
+        rows: list[str] = []
+        for i, f in enumerate(items, start=1):
+            checked = "checked" if (is_exec and f.classification.value == "cleanup_candidate") else ""
+            disabled = "" if is_exec else "disabled"
+            identity = _esc(f.identity[:32])
+            tag = _esc(f.last_tag or getattr(f, "name", None) or "—")
+            size_bytes: int = f.size_bytes or getattr(f, "reclaimable_bytes", None) or 0
+            size = f"{size_bytes // 1024 // 1024} MB" if size_bytes else "—"
+            input_name = f"finding_{short}_{i}"
+            cb = (
+                f"<input type=\"checkbox\" name=\"{input_name}\" id=\"{input_name}\" {checked} {disabled} />"
+                if is_exec
+                else '<span style="color:#94a3b8">report-only</span>'
+            )
+            rows.append(
+                f"<tr><td>{cb}</td>"
+                f"<td style=\"font-family:monospace;font-size:.8rem\">{identity}</td>"
+                f"<td>{tag}</td><td>{size}</td><td>{_esc(f.classification.value)}</td></tr>"
+            )
+        sections.append(
+            f"<div class=\"card\" style=\"margin-bottom:12px;padding:16px\">"
+            f"<div style=\"font-weight:600;margin-bottom:8px\">{_esc(klass.value)} ({len(items)})</div>"
+            f"<table style=\"width:100%;border-collapse:collapse\">"
+            f"<thead><tr style=\"text-align:left;color:#64748b;font-size:.75rem\">"
+            f"<th style=\"width:40px\"></th><th>ID</th><th>Tag/Name</th><th>Size</th><th>Classification</th>"
+            f"</tr></thead><tbody>{''.join(rows)}</tbody></table></div>"
+        )
+
+    btns = (
+        "<div style=\"margin-top:20px;display:flex;gap:10px\">"
+        "<button type=\"submit\" name=\"decision\" value=\"approve\" "
+        "style=\"padding:10px 20px;background:#16a34a;color:white;border:none;border-radius:4px;cursor:pointer\">"
+        "✓ Approve selected</button>"
+        "<button type=\"submit\" name=\"decision\" value=\"reject\" "
+        "style=\"padding:10px 20px;background:#dc2626;color:white;border:none;border-radius:4px;cursor:pointer\">"
+        "✗ Reject all</button>"
+        "</div>"
+        if has_any
+        else "<p>No executable findings.</p>"
+    )
+
+    return (
+        f"<p>VM <code>{_esc(vm_id)}</code> &middot; batch <code>{_esc(batch_id)}</code></p>"
+        f"<form method=\"POST\" action=\"/ui/docker-hygiene/approve\">"
+        f"<input type=\"hidden\" name=\"token\" value=\"{_esc(token)}\" />"
+        f"{''.join(sections)}"
+        f"{btns}"
+        f"</form>"
+    )
+
+
+async def _ui_hygiene_approve_get(request: web.Request) -> web.Response:
+    """GET /ui/docker-hygiene/approve?token=<signed_token> — render approval form."""
+    from errander.integrations.signed_url import InvalidSignedTokenError, verify_signed_token
+
+    token = request.query.get("token", "")
+    if not token:
+        return web.Response(text=_hygiene_error_html("Missing token in approval URL."), content_type="text/html", status=400)
+    try:
+        payload = verify_signed_token(token)
+    except InvalidSignedTokenError as exc:
+        return web.Response(text=_hygiene_error_html(f"Invalid or expired approval URL: {exc}"), content_type="text/html", status=400)
+
+    batch_id = str(payload.get("batch_id", ""))
+    vm_id = str(payload.get("vm_id", ""))
+
+    manager: HygieneApprovalManager | None = request.app.get(_HYGIENE_MANAGER_KEY)
+    if manager is None:
+        return web.Response(text=_hygiene_error_html("Approval manager not available."), content_type="text/html", status=503)
+
+    pending = next((p for p in manager.get_pending() if p.key == (batch_id, vm_id)), None)
+    if pending is None:
+        return web.Response(
+            text=_hygiene_error_html(
+                "This approval has already been resolved or has expired. "
+                "Operators only see this page when there is an active pending request."
+            ),
+            content_type="text/html",
+            status=404,
+        )
+
+    body = _render_hygiene_form(pending.assessment, token=token, batch_id=batch_id, vm_id=vm_id)
+    return _page("Docker hygiene approval", body, request=request)
+
+
+async def _ui_hygiene_approve_post(request: web.Request) -> web.Response:
+    """POST /ui/docker-hygiene/approve — process approval form submission."""
+    from errander.integrations.signed_url import InvalidSignedTokenError, verify_signed_token
+    from errander.models.docker_hygiene import (
+        ApprovalSurface,
+        DockerHygieneApproval,
+        DockerResourceClass,
+        compute_assessment_hash,
+    )
+    from errander.safety.hygiene_approval import _short_class_key
+
+    data = await request.post()
+    token = str(data.get("token", ""))
+    decision = str(data.get("decision", "")).lower()
+
+    if decision not in ("approve", "reject"):
+        return web.Response(text=_hygiene_error_html("Missing or invalid decision."), content_type="text/html", status=400)
+
+    try:
+        payload = verify_signed_token(token)
+    except InvalidSignedTokenError as exc:
+        return web.Response(text=_hygiene_error_html(f"Invalid or expired approval URL: {exc}"), content_type="text/html", status=400)
+
+    batch_id = str(payload.get("batch_id", ""))
+    vm_id = str(payload.get("vm_id", ""))
+
+    manager: HygieneApprovalManager | None = request.app.get(_HYGIENE_MANAGER_KEY)
+    if manager is None:
+        return web.Response(text=_hygiene_error_html("Approval manager not available."), content_type="text/html", status=503)
+
+    pending = next((p for p in manager.get_pending() if p.key == (batch_id, vm_id)), None)
+    if pending is None:
+        return web.Response(
+            text=_hygiene_error_html("This approval is no longer pending — another channel may have resolved it."),
+            content_type="text/html",
+            status=404,
+        )
+
+    assessment = pending.assessment
+    operator_id = str(request.app.get(_UI_USER_KEY) or "web")
+
+    if decision == "reject":
+        approval = DockerHygieneApproval(
+            vm_id=vm_id,
+            approved_findings=(),
+            snapshot_hash=compute_assessment_hash(assessment),
+            surface=ApprovalSurface.WEB_PAGE,
+            operator_id=operator_id,
+        )
+        manager.resolve(batch_id, vm_id, approval)
+        return _page(
+            "Docker hygiene — rejected",
+            _hygiene_confirm_html("Rejected", "All findings rejected — no objects will be removed."),
+            request=request,
+        )
+
+    # decision == "approve" — collect checked findings
+    _executable = (DockerResourceClass.IMAGE_DANGLING, DockerResourceClass.IMAGE_UNUSED, DockerResourceClass.CONTAINER_STOPPED)
+    by_class = assessment.by_class()
+    approved = []
+    seen: set[tuple[str, str]] = set()
+    for klass in _executable:
+        items = by_class.get(klass, [])
+        short = _short_class_key(klass)
+        for i, f in enumerate(items, start=1):
+            field_name = f"finding_{short}_{i}"
+            if data.get(field_name) is not None:
+                key = (f.resource_class.value, f.identity)
+                if key not in seen:
+                    seen.add(key)
+                    approved.append(f)
+
+    approval = DockerHygieneApproval(
+        vm_id=vm_id,
+        approved_findings=tuple(approved),
+        snapshot_hash=compute_assessment_hash(assessment),
+        surface=ApprovalSurface.WEB_PAGE,
+        operator_id=operator_id,
+    )
+    manager.resolve(batch_id, vm_id, approval)
+
+    return _page(
+        "Docker hygiene — approved",
+        _hygiene_confirm_html(
+            "Approved",
+            f"{len(approved)} object(s) approved for removal. "
+            "The agent will re-validate each object against current state before removing.",
+        ),
+        request=request,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Server lifecycle
 # ---------------------------------------------------------------------------
 
@@ -1564,6 +1797,7 @@ async def start_metrics_server(
     port: int = 9090,
     audit_store: AuditStore | None = None,
     approval_manager: ApprovalManager | None = None,
+    hygiene_manager: HygieneApprovalManager | None = None,
     overrides_store: OverridesStore | None = None,
     base_inventory: list[VMTarget] | None = None,
     ui_user: str = "",
@@ -1590,11 +1824,14 @@ async def start_metrics_server(
     - POST /ui/inventory/toggle                  — Enable/disable a VM
     - POST /ui/inventory/add                     — Add an ad-hoc VM
     - POST /ui/inventory/delete/{env}/{vm}       — Delete an ad-hoc VM
+    - GET  /ui/docker-hygiene/approve            — Docker hygiene approval form (signed-URL entry)
+    - POST /ui/docker-hygiene/approve            — Submit approval / rejection
 
     Args:
         port: Port to listen on (default 9090).
         audit_store: Connected AuditStore for UI queries.
         approval_manager: ApprovalManager for dual-channel approval UI.
+        hygiene_manager: HygieneApprovalManager for docker_hygiene object-level approvals.
         overrides_store: OverridesStore for settings/inventory overrides.
         base_inventory: Flat list of VMTarget from inventory.yaml — shown as the base fleet on /ui/inventory.
         ui_user: HTTP Basic Auth username for /ui/* (empty = auth disabled).
@@ -1626,6 +1863,7 @@ async def start_metrics_server(
     app = web.Application(middlewares=[_basic_auth_middleware, _csrf_middleware])  # type: ignore[list-item]
     app[_AUDIT_STORE_KEY] = audit_store
     app[_APPROVAL_MANAGER_KEY] = approval_manager
+    app[_HYGIENE_MANAGER_KEY] = hygiene_manager
     app[_OVERRIDES_STORE_KEY] = overrides_store
     app[_BASE_INVENTORY_KEY] = base_inventory or []
     app[_UI_USER_KEY] = ui_user
@@ -1652,6 +1890,8 @@ async def start_metrics_server(
     app.router.add_post("/ui/inventory/add", _ui_inventory_add)
     app.router.add_post(r"/ui/inventory/delete/{env_name:[^/]+}/{vm_name:[^/]+}", _ui_inventory_delete)
     app.router.add_get("/ui/glossary", _ui_glossary)
+    app.router.add_get("/ui/docker-hygiene/approve", _ui_hygiene_approve_get)
+    app.router.add_post("/ui/docker-hygiene/approve", _ui_hygiene_approve_post)
 
     runner = web.AppRunner(app, access_log=None)
     await runner.setup()

@@ -51,6 +51,7 @@ if TYPE_CHECKING:
     from errander.integrations.slack import SlackClient
     from errander.safety.audit import AuditStore
     from errander.safety.deferred import DeferredExecutionStore
+    from errander.safety.hygiene_approval import HygieneApprovalManager
     from errander.safety.locking import FileLocker
 
 logger = logging.getLogger(__name__)
@@ -1707,6 +1708,11 @@ def make_wave_dispatcher(
     sre_drift_settings: object = None,
     sre_failed_logins_settings: object = None,
     vm_state_store: object = None,
+    hygiene_manager: HygieneApprovalManager | None = None,
+    slack_client: SlackClient | None = None,
+    web_base_url: str = "",
+    approval_timeout_seconds: int = 1800,
+    approval_poll_interval_seconds: int = 30,
 ) -> tuple[Any, Any]:
     """Build the wave dispatch routing function.
 
@@ -1723,6 +1729,11 @@ def make_wave_dispatcher(
         sre_drift_settings=sre_drift_settings,
         sre_failed_logins_settings=sre_failed_logins_settings,
         vm_state_store=vm_state_store,
+        hygiene_manager=hygiene_manager,
+        slack_client=slack_client,
+        web_base_url=web_base_url,
+        approval_timeout_seconds=approval_timeout_seconds,
+        approval_poll_interval_seconds=approval_poll_interval_seconds,
     ).compile()
 
     def dispatch_current_wave(state: BatchGraphState) -> str | list[Send]:
@@ -1868,6 +1879,8 @@ def build_batch_graph(
     sre_drift_settings: object = None,
     sre_failed_logins_settings: object = None,
     vm_state_store: object = None,
+    hygiene_manager: HygieneApprovalManager | None = None,
+    web_base_url: str = "",
 ) -> StateGraph[BatchGraphState]:
     """Construct the batch orchestrator graph.
 
@@ -1966,6 +1979,11 @@ def build_batch_graph(
         sre_drift_settings=sre_drift_settings,
         sre_failed_logins_settings=sre_failed_logins_settings,
         vm_state_store=vm_state_store,
+        hygiene_manager=hygiene_manager,
+        slack_client=slack_client,
+        web_base_url=web_base_url,
+        approval_timeout_seconds=_settings.approval_timeout_seconds,
+        approval_poll_interval_seconds=_settings.approval_poll_interval_seconds,
     )
 
     async def _run_vm(state: VMGraphState) -> dict[str, Any]:

@@ -883,7 +883,7 @@ class TestVmGraphDispatch:
 
         called = {"hygiene": False}
 
-        async def fake_runner(state: object, compiled: object) -> dict[str, object]:
+        async def fake_runner(state: object, compiled: object, **_: object) -> dict[str, object]:
             called["hygiene"] = True
             return {
                 "action_type": ActionType.DOCKER_HYGIENE.value,

@@ -171,6 +171,11 @@ class Settings:
     # Auth is mandatory when bind != 127.0.0.1.
     ui_bind_address: str = "127.0.0.1"
 
+    # Base URL for agent-initiated web approval links (docker_hygiene signed URLs).
+    # Set to the externally-reachable address of the agent VM, e.g. http://10.0.0.5:9090.
+    # Empty = web approval URLs are omitted from Slack messages.
+    web_base_url: str = ""
+
     # UI auth (env-only — bootstrap credentials must not live in DB)
     ui_user: str = ""
     ui_password: str = ""
@@ -458,6 +463,8 @@ def load_settings(
         ssh_strict_host_keys=_load_env_bool("ERRANDER_SSH_STRICT_HOST_KEYS", True),
         # UI bind address
         ui_bind_address=_load_env_str("ERRANDER_UI_BIND", "127.0.0.1"),
+        # Web base URL for signed approval links
+        web_base_url=_load_env_str("ERRANDER_WEB_BASE_URL", ""),
         # SRE signals — build from YAML block, falling back to all defaults
         sre_signals=_build_sre_settings(sre_yaml),
         # Prometheus adapter — optional, empty = disabled

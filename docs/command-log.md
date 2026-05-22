@@ -1,5 +1,25 @@
 # Errander-AI Command Log
 
+## Docker hygiene v1.1 Session 2b-iii (2026-05-22)
+```bash
+# Run new orchestration test suite
+uv run pytest tests/agent/test_hygiene_orchestration.py -x -q   # 8 passed
+
+# Fix: fake_runner() got unexpected keyword argument — added **_: object
+# Fix: ApprovalSurface.SLACK → ApprovalSurface.SLACK_REPLY
+# Fix: patch target errander.safety.hygiene_approval.poll_hygiene_replies_once (not vm_graph)
+uv run pytest tests/agent/test_hygiene_orchestration.py -x -q   # 8 passed
+
+# Full suite
+uv run pytest -x -q   # 2317 passed (+8 net new)
+
+# Ruff on changed files
+uv run ruff check errander/config/settings.py errander/observability/metrics.py errander/agent/vm_graph.py errander/agent/graph.py errander/main.py tests/agent/test_hygiene_orchestration.py   # All checks passed
+
+# Mypy on changed files
+uv run mypy errander/config/settings.py errander/observability/metrics.py errander/agent/vm_graph.py errander/agent/graph.py errander/main.py   # no new errors
+```
+
 ## SRE QA round 3 — P2 inventory/admin static facts (2026-05-21)
 
 ```bash

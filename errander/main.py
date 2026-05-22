@@ -36,6 +36,7 @@ from errander.observability.metrics import start_metrics_server
 from errander.safety.approval import ApprovalManager
 from errander.safety.audit import AuditStore
 from errander.safety.deferred import DeferredExecutionStore
+from errander.safety.hygiene_approval import HygieneApprovalManager
 from errander.safety.locking import FileLocker
 from errander.safety.overrides import OverridesStore
 from errander.scheduling.scheduler import MaintenanceScheduler
@@ -713,10 +714,10 @@ async def run_check_targets(env_name: str, inventory_path: Path) -> int:
         strict_host_keys=settings.ssh_strict_host_keys,
     )
     results = []
-    docker_prune_cfg = env.actions.get("docker_prune")
+    docker_hygiene_cfg = env.actions.get("docker_hygiene")
     docker_mode = (
-        (docker_prune_cfg.command_mode or "wrapper")
-        if docker_prune_cfg and docker_prune_cfg.enabled
+        (docker_hygiene_cfg.command_mode or "wrapper")
+        if docker_hygiene_cfg and docker_hygiene_cfg.enabled
         else "disabled"
     )
     enabled_action_names = [name for name, cfg in env.actions.items() if cfg.enabled]
@@ -1222,6 +1223,7 @@ async def run_env_batch(
     force_reason: str = "",
     approval_manager: ApprovalManager | None = None,
     slack_client: SlackClient | None = None,
+    hygiene_manager: HygieneApprovalManager | None = None,
     overrides_store: OverridesStore | None = None,
     deferred_store: DeferredExecutionStore | None = None,
     llm_client: LLMClient | None = None,
@@ -1274,6 +1276,8 @@ async def run_env_batch(
         window=window,
         approval_manager=approval_manager,
         slack_client=slack_client,
+        hygiene_manager=hygiene_manager,
+        web_base_url=settings.web_base_url,
         settings=settings,
         deferred_store=deferred_store,
         llm_client=llm_client,
@@ -1341,10 +1345,10 @@ async def run_env_batch(
         yaml_count, disabled_count, added_count, len(targets),
     )
 
-    _docker_prune_cfg = env_schema.actions.get("docker_prune")
+    _docker_hygiene_cfg = env_schema.actions.get("docker_hygiene")
     _docker_mode = (
-        (_docker_prune_cfg.command_mode or "wrapper")
-        if _docker_prune_cfg and _docker_prune_cfg.enabled
+        (_docker_hygiene_cfg.command_mode or "wrapper")
+        if _docker_hygiene_cfg and _docker_hygiene_cfg.enabled
         else "disabled"
     )
     _enabled_actions = [name for name, cfg in env_schema.actions.items() if cfg.enabled]
@@ -1735,8 +1739,9 @@ async def async_main(args: argparse.Namespace) -> int:
     vm_state_store = _VMStateStore(settings.audit_db_url)
     await vm_state_store.initialize()
 
-    # --- Approval manager (shared between graph and web UI) ---
+    # --- Approval managers (shared between graph and web UI) ---
     approval_manager = ApprovalManager()
+    hygiene_manager = HygieneApprovalManager()
 
     try:
         # --- Metrics server ---
@@ -1744,6 +1749,7 @@ async def async_main(args: argparse.Namespace) -> int:
             port=settings.metrics_port,
             audit_store=audit_store,
             approval_manager=approval_manager,
+            hygiene_manager=hygiene_manager,
             overrides_store=overrides_store,
             base_inventory=flat_inventory,
             ui_user=settings.ui_user,
@@ -1767,6 +1773,7 @@ async def async_main(args: argparse.Namespace) -> int:
                 force_reason=force_reason,
                 approval_manager=approval_manager,
                 slack_client=slack,
+                hygiene_manager=hygiene_manager,
                 overrides_store=overrides_store,
                 deferred_store=deferred_store,
                 llm_client=llm,
@@ -1804,6 +1811,7 @@ async def async_main(args: argparse.Namespace) -> int:
                     dry_run=dry_run,
                     approval_manager=approval_manager,
                     slack_client=slack,
+                    hygiene_manager=hygiene_manager,
                     overrides_store=overrides_store,
                     deferred_store=deferred_store,
                     llm_client=llm,

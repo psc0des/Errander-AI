@@ -46,15 +46,15 @@
 - [x] Green tree: **2309 pytest, ruff clean on new code, no new mypy errors**
 - [x] Doc sync: README test count, STATUS, todo, lessons, command-log
 
-### Session 2b-iii (next) — batch orchestration wiring
-**Status:** Not started. Both Slack reply polling and web approval routes resolve approvals through `HygieneApprovalManager`. What's missing is the connective tissue: the batch coroutine needs to post the Slack message, mint the signed URL, register the pending approval, run the reply poller, wait for resolution, and inject the approval into the planned action params before re-dispatching the sub-graph for execution.
-
-- Slack message format (rich object list grouped by resource class with size/age + signed web URL)
-- Slack reply parser (structured commands: `approve images 1,3 containers 1` and `reject all`)
-- Web approval page (FastHTML route, signed URL verifier, checkbox UI, submit handler)
-- Signed URL infrastructure (HMAC + time-limited tokens, env var for signing secret)
-- Wire approval artifacts from both surfaces into the planner / dispatch path
-- Tests for both surfaces, signed URL verification, expired/tampered URL rejection
+### Session 2b-iii (COMPLETE — 2026-05-22)
+- [x] `errander/config/settings.py` — `web_base_url` field + `ERRANDER_WEB_BASE_URL` env var
+- [x] `errander/observability/metrics.py` — `_HYGIENE_MANAGER_KEY` typed AppKey, GET/POST handlers for `/ui/docker-hygiene/approve`, `hygiene_manager` param in `start_metrics_server()`
+- [x] `errander/agent/vm_graph.py` — full `_run_docker_hygiene` orchestration: fast-path, assess-only, Slack+URL post, manager register, background poll, `wait_for_decision`, execute; params threaded through `dispatch_action_node` + `build_vm_graph`
+- [x] `errander/agent/graph.py` — hygiene/slack/web params threaded through `make_wave_dispatcher` + `build_batch_graph`
+- [x] `errander/main.py` — `HygieneApprovalManager` instantiated, passed to metrics server + both `run_env_batch()` calls; stale docker_prune refs fixed
+- [x] `tests/agent/test_hygiene_orchestration.py` (NEW, 8 tests) — approve path, rejection, timeout, no-candidates, dry-run, no-manager, pre-injected fast-path, signed URL in Slack
+- [x] Green tree: **2317 pytest, ruff clean on changed files, no new mypy errors**
+- [x] Doc sync: README test count, STATUS, todo, lessons, command-log
 
 ### Session 3 — Removal of docker_prune + final docs
 **Status:** Not started.

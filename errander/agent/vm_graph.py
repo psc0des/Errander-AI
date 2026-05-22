@@ -16,6 +16,8 @@ Dependencies (injected at build time):
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import logging
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, TypedDict
@@ -67,8 +69,10 @@ from errander.safety.validators import validate_action
 if TYPE_CHECKING:
     from errander.execution.sandbox import SandboxExecutor
     from errander.execution.ssh import SSHConnectionManager
+    from errander.integrations.slack import SlackClient
     from errander.safety.ai_audit import AIDecisionStore
     from errander.safety.audit import AuditStore
+    from errander.safety.hygiene_approval import HygieneApprovalManager
     from errander.safety.locking import FileLocker
 
 logger = logging.getLogger(__name__)
@@ -448,6 +452,11 @@ async def dispatch_action_node(
     docker_hygiene_compiled: Any = None,
     patching_compiled: Any = None,
     backup_verify_compiled: Any = None,
+    hygiene_manager: HygieneApprovalManager | None = None,
+    slack_client: SlackClient | None = None,
+    web_base_url: str = "",
+    approval_timeout_seconds: int = 1800,
+    approval_poll_interval_seconds: int = 30,
 ) -> dict[str, Any]:
     """Dispatch the current action to its sub-graph."""
     index = state.get("current_action_index", 0)
@@ -513,7 +522,14 @@ async def dispatch_action_node(
     elif action_type == ActionType.DOCKER_PRUNE.value:
         result_dict = await _run_docker_prune(state, docker_prune_compiled)
     elif action_type == ActionType.DOCKER_HYGIENE.value:
-        result_dict = await _run_docker_hygiene(state, docker_hygiene_compiled)
+        result_dict = await _run_docker_hygiene(
+            state, docker_hygiene_compiled,
+            hygiene_manager=hygiene_manager,
+            slack_client=slack_client,
+            web_base_url=web_base_url,
+            approval_timeout_seconds=approval_timeout_seconds,
+            approval_poll_interval_seconds=approval_poll_interval_seconds,
+        )
     elif action_type == ActionType.PATCHING.value:
         result_dict = await _run_patching(state, patching_compiled)
     elif action_type == ActionType.BACKUP_VERIFY.value:
@@ -788,83 +804,12 @@ async def _run_docker_prune(
     }
 
 
-async def _run_docker_hygiene(
-    state: VMGraphState,
-    compiled: Any,
+def _format_hygiene_result(
+    final_state: dict[str, Any],
+    vm_id: str,
+    started_at: datetime,
 ) -> dict[str, object]:
-    """Run the docker_hygiene sub-graph and return a serialised result dict.
-
-    Approval handling (Session 2a):
-    - The approval artifact is read from the planned action's params dict
-      under key ``"approval"``. The dispatch layer (Session 2b) is responsible
-      for populating this from the real Slack/web surfaces. For Session 2a,
-      tests inject the approval directly.
-    - When no approval is present, the sub-graph runs assessment-only and
-      reports findings — execution is skipped.
-
-    Per-object audit:
-    - One audit event per DockerHygieneRemovalResult is written here, in
-      addition to the aggregate action result dict returned to the parent
-      graph. The action-level audit is unchanged; the per-object events are
-      new and live alongside it (Exact-Object Approval invariant).
-    """
-    vm_id = state["vm_id"]
-    now = datetime.now(tz=UTC)
-    vm_info = state.get("vm_info", {})
-
-    planned = state.get("planned_actions", [])
-    index = state.get("current_action_index", 0)
-    action_params: dict[str, object] = {}
-    if index < len(planned):
-        _raw = planned[index].get("params")
-        action_params = dict(_raw) if isinstance(_raw, dict) else {}
-
-    # Pull approval from action params if present. The object is expected to
-    # be a DockerHygieneApproval instance (not a serialised dict) — Session 2b
-    # decides whether to serialise/deserialise at the planner boundary.
-    approval = action_params.get("approval")
-
-    sub_state: DockerHygieneGraphState = {
-        "vm_id": vm_id,
-        "os_family": state.get("os_family", "ubuntu"),
-        "dry_run": state.get("dry_run", True),
-        "docker_available": bool(vm_info.get("docker_available", True)),
-        "docker_command_mode": str(state.get("docker_command_mode", "wrapper")),
-    }
-    if approval is not None:
-        sub_state["approval"] = approval  # type: ignore[typeddict-item]
-    # Connection params live outside the TypedDict — see _get_connection_params
-    # in docker_hygiene.py for how they're read.
-    sub_state_with_conn: dict[str, Any] = dict(sub_state)
-    sub_state_with_conn["hostname"] = state.get("hostname", "")
-    sub_state_with_conn["username"] = state.get("ssh_user", "")
-    sub_state_with_conn["key_path"] = state.get("ssh_key_path", "")
-
-    try:
-        final_state = await compiled.ainvoke(sub_state_with_conn)
-    except (ConnectionError, OSError, TimeoutError) as exc:
-        logger.error("Sub-graph docker_hygiene failed for %s: %s", vm_id, exc)
-        return {
-            "action_type": ActionType.DOCKER_HYGIENE.value,
-            "status": ActionStatus.FAILED.value,
-            "vm_id": vm_id,
-            "started_at": now.isoformat(),
-            "completed_at": datetime.now(tz=UTC).isoformat(),
-            "detail": "sub-graph raised exception",
-            "error": str(exc),
-        }
-    except Exception as exc:  # noqa: BLE001
-        logger.exception("Unexpected error in docker_hygiene for %s", vm_id)
-        return {
-            "action_type": ActionType.DOCKER_HYGIENE.value,
-            "status": ActionStatus.FAILED.value,
-            "vm_id": vm_id,
-            "started_at": now.isoformat(),
-            "completed_at": datetime.now(tz=UTC).isoformat(),
-            "detail": "sub-graph raised exception",
-            "error": str(exc),
-        }
-
+    """Build the action result dict from a completed docker_hygiene sub-graph state."""
     status = final_state.get("status", ActionStatus.SKIPPED.value)
     detail_parts: list[str] = []
     assessment = final_state.get("assessment")
@@ -876,7 +821,6 @@ async def _run_docker_hygiene(
             f"assessed: {n_findings} findings "
             f"({n_cleanup} cleanup, {n_investigate} investigate)"
         )
-
     removal_results = final_state.get("removal_results") or ()
     if removal_results:
         n_removed = sum(1 for r in removal_results if r.status.value == "removed")
@@ -885,19 +829,272 @@ async def _run_docker_hygiene(
         detail_parts.append(
             f"removed {n_removed}, drift_skipped {n_drift}, failed {n_failed}"
         )
-
     return {
         "action_type": ActionType.DOCKER_HYGIENE.value,
         "status": status,
         "vm_id": vm_id,
-        "started_at": now.isoformat(),
+        "started_at": started_at.isoformat(),
         "completed_at": datetime.now(tz=UTC).isoformat(),
         "detail": "; ".join(detail_parts) if detail_parts else "no findings",
         "error": final_state.get("error"),
-        # Surface the per-object results to the caller so audit_results_node
-        # (Session 2b: per-object audit writer) can pick them up.
         "removal_results": removal_results,
     }
+
+
+async def _run_docker_hygiene(
+    state: VMGraphState,
+    compiled: Any,
+    *,
+    hygiene_manager: HygieneApprovalManager | None = None,
+    slack_client: SlackClient | None = None,
+    web_base_url: str = "",
+    approval_timeout_seconds: int = 1800,
+    approval_poll_interval_seconds: int = 30,
+) -> dict[str, object]:
+    """Run the docker_hygiene sub-graph with full assess → approve → execute flow.
+
+    Fast path: if ``approval`` is already present in the action params (test
+    injection or replay), the sub-graph is invoked directly with it.
+
+    Live path: assess-only first, then post a Slack message + register with the
+    HygieneApprovalManager, background-poll for thread replies while waiting
+    for a decision, and re-invoke with the resolved approval.
+
+    Per-object audit:
+    - One audit event per DockerHygieneRemovalResult is written here, in
+      addition to the aggregate action result dict returned to the parent
+      graph. The action-level audit is unchanged; the per-object events are
+      new and live alongside it (Exact-Object Approval invariant).
+    """
+    vm_id = state["vm_id"]
+    now = datetime.now(tz=UTC)
+    vm_info = state.get("vm_info", {})
+    batch_id = state.get("batch_id", "unknown")
+
+    planned = state.get("planned_actions", [])
+    index = state.get("current_action_index", 0)
+    action_params: dict[str, object] = {}
+    if index < len(planned):
+        _raw = planned[index].get("params")
+        action_params = dict(_raw) if isinstance(_raw, dict) else {}
+
+    sub_state: DockerHygieneGraphState = {
+        "vm_id": vm_id,
+        "os_family": state.get("os_family", "ubuntu"),
+        "dry_run": state.get("dry_run", True),
+        "docker_available": bool(vm_info.get("docker_available", True)),
+        "docker_command_mode": str(state.get("docker_command_mode", "wrapper")),
+    }
+    sub_state_with_conn: dict[str, Any] = dict(sub_state)
+    sub_state_with_conn["hostname"] = state.get("hostname", "")
+    sub_state_with_conn["username"] = state.get("ssh_user", "")
+    sub_state_with_conn["key_path"] = state.get("ssh_key_path", "")
+
+    # Fast path: approval pre-injected (test / replay) — skip approval gate.
+    pre_approval = action_params.get("approval")
+    if pre_approval is not None:
+        sub_state_with_conn["approval"] = pre_approval
+        try:
+            final_state: dict[str, Any] = await compiled.ainvoke(sub_state_with_conn)
+        except (ConnectionError, OSError, TimeoutError) as exc:
+            logger.error("Sub-graph docker_hygiene failed for %s: %s", vm_id, exc)
+            return {
+                "action_type": ActionType.DOCKER_HYGIENE.value,
+                "status": ActionStatus.FAILED.value,
+                "vm_id": vm_id,
+                "started_at": now.isoformat(),
+                "completed_at": datetime.now(tz=UTC).isoformat(),
+                "detail": "sub-graph raised exception",
+                "error": str(exc),
+            }
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("Unexpected error in docker_hygiene for %s", vm_id)
+            return {
+                "action_type": ActionType.DOCKER_HYGIENE.value,
+                "status": ActionStatus.FAILED.value,
+                "vm_id": vm_id,
+                "started_at": now.isoformat(),
+                "completed_at": datetime.now(tz=UTC).isoformat(),
+                "detail": "sub-graph raised exception",
+                "error": str(exc),
+            }
+        return _format_hygiene_result(final_state, vm_id, now)
+
+    # Live path — Phase 1: assess-only (no approval in state).
+    try:
+        assess_state: dict[str, Any] = await compiled.ainvoke(sub_state_with_conn)
+    except (ConnectionError, OSError, TimeoutError) as exc:
+        logger.error("Sub-graph docker_hygiene assess failed for %s: %s", vm_id, exc)
+        return {
+            "action_type": ActionType.DOCKER_HYGIENE.value,
+            "status": ActionStatus.FAILED.value,
+            "vm_id": vm_id,
+            "started_at": now.isoformat(),
+            "completed_at": datetime.now(tz=UTC).isoformat(),
+            "detail": "sub-graph raised exception during assess",
+            "error": str(exc),
+        }
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Unexpected error in docker_hygiene assess for %s", vm_id)
+        return {
+            "action_type": ActionType.DOCKER_HYGIENE.value,
+            "status": ActionStatus.FAILED.value,
+            "vm_id": vm_id,
+            "started_at": now.isoformat(),
+            "completed_at": datetime.now(tz=UTC).isoformat(),
+            "detail": "sub-graph raised exception during assess",
+            "error": str(exc),
+        }
+
+    assessment = assess_state.get("assessment")
+
+    # No assessment (docker unavailable or failed): return assess result as-is.
+    if assessment is None:
+        return _format_hygiene_result(assess_state, vm_id, now)
+
+    # Nothing actionable: return assess result (no approval needed).
+    if not assessment.cleanup_candidates():
+        return _format_hygiene_result(assess_state, vm_id, now)
+
+    # Dry-run: report findings without requesting approval.
+    dry_run = state.get("dry_run", True)
+    if dry_run:
+        return _format_hygiene_result(assess_state, vm_id, now)
+
+    # No approval manager available: cannot obtain approval — skip execution.
+    if hygiene_manager is None:
+        logger.warning(
+            "docker_hygiene: no approval manager available for %s — skipping execution", vm_id
+        )
+        return {
+            "action_type": ActionType.DOCKER_HYGIENE.value,
+            "status": ActionStatus.SKIPPED.value,
+            "vm_id": vm_id,
+            "started_at": now.isoformat(),
+            "completed_at": datetime.now(tz=UTC).isoformat(),
+            "detail": "no approval manager; skipping execution",
+            "error": None,
+            "removal_results": (),
+        }
+
+    # Phase 2: post Slack approval message + register with manager.
+    from errander.safety.hygiene_approval import (
+        format_hygiene_approval_message,
+        poll_hygiene_replies_once,
+    )
+
+    # Build signed web-approval URL if a base URL is configured.
+    web_approval_url: str | None = None
+    if web_base_url:
+        try:
+            from errander.integrations.signed_url import make_signed_token
+            token = make_signed_token(
+                {"batch_id": batch_id, "vm_id": vm_id},
+                ttl_seconds=approval_timeout_seconds,
+            )
+            web_approval_url = f"{web_base_url.rstrip('/')}/ui/docker-hygiene/approve?token={token}"
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Could not build signed URL for %s: %s", vm_id, exc)
+
+    msg_body = format_hygiene_approval_message(
+        assessment,
+        web_approval_url=web_approval_url,
+        batch_id=batch_id,
+    )
+    slack_ts: str | None = None
+    if slack_client is not None:
+        try:
+            slack_ts = await slack_client.post_message(msg_body)
+            logger.info("docker_hygiene Slack approval message posted ts=%s for %s", slack_ts, vm_id)
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Failed to post hygiene Slack message for %s: %s", vm_id, exc)
+
+    pending = hygiene_manager.register(batch_id, vm_id, assessment, slack_message_ts=slack_ts)
+
+    # Background Slack reply poller (runs until decision or cancellation).
+    async def _poll_loop() -> None:
+        while not pending.is_decided():
+            await asyncio.sleep(approval_poll_interval_seconds)
+            try:
+                await poll_hygiene_replies_once(slack_client, pending, hygiene_manager)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Hygiene Slack poll error for %s: %s", vm_id, exc)
+
+    poll_task: asyncio.Task[None] | None = None
+    if slack_ts is not None and slack_client is not None:
+        poll_task = asyncio.create_task(_poll_loop())
+
+    # Phase 3: wait for operator decision.
+    try:
+        decision = await hygiene_manager.wait_for_decision(
+            batch_id, vm_id, timeout_seconds=approval_timeout_seconds
+        )
+    finally:
+        if poll_task is not None:
+            poll_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await poll_task
+
+    if decision is None:
+        logger.warning(
+            "docker_hygiene approval timed out for %s after %ds", vm_id, approval_timeout_seconds
+        )
+        return {
+            "action_type": ActionType.DOCKER_HYGIENE.value,
+            "status": ActionStatus.SKIPPED.value,
+            "vm_id": vm_id,
+            "started_at": now.isoformat(),
+            "completed_at": datetime.now(tz=UTC).isoformat(),
+            "detail": "approval timeout",
+            "error": None,
+            "removal_results": (),
+        }
+
+    if not decision.approved_findings:
+        logger.info("docker_hygiene rejected by operator for %s", vm_id)
+        return {
+            "action_type": ActionType.DOCKER_HYGIENE.value,
+            "status": ActionStatus.SKIPPED.value,
+            "vm_id": vm_id,
+            "started_at": now.isoformat(),
+            "completed_at": datetime.now(tz=UTC).isoformat(),
+            "detail": "rejected by operator",
+            "error": None,
+            "removal_results": (),
+        }
+
+    # Phase 4: re-invoke sub-graph with approval to execute removals.
+    sub_state_exec: dict[str, Any] = dict(sub_state_with_conn)
+    sub_state_exec["approval"] = decision
+
+    try:
+        exec_state: dict[str, Any] = await compiled.ainvoke(sub_state_exec)
+    except (ConnectionError, OSError, TimeoutError) as exc:
+        logger.error("Sub-graph docker_hygiene execute failed for %s: %s", vm_id, exc)
+        return {
+            "action_type": ActionType.DOCKER_HYGIENE.value,
+            "status": ActionStatus.FAILED.value,
+            "vm_id": vm_id,
+            "started_at": now.isoformat(),
+            "completed_at": datetime.now(tz=UTC).isoformat(),
+            "detail": "sub-graph raised exception during execute",
+            "error": str(exc),
+        }
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Unexpected error in docker_hygiene execute for %s", vm_id)
+        return {
+            "action_type": ActionType.DOCKER_HYGIENE.value,
+            "status": ActionStatus.FAILED.value,
+            "vm_id": vm_id,
+            "started_at": now.isoformat(),
+            "completed_at": datetime.now(tz=UTC).isoformat(),
+            "detail": "sub-graph raised exception during execute",
+            "error": str(exc),
+        }
+
+    return _format_hygiene_result(exec_state, vm_id, now)
 
 
 async def _run_patching(
@@ -1602,6 +1799,11 @@ def build_vm_graph(
     sre_drift_settings: object = None,
     sre_failed_logins_settings: object = None,
     vm_state_store: object = None,
+    hygiene_manager: HygieneApprovalManager | None = None,
+    slack_client: SlackClient | None = None,
+    web_base_url: str = "",
+    approval_timeout_seconds: int = 1800,
+    approval_poll_interval_seconds: int = 30,
 ) -> StateGraph[VMGraphState]:
     """Construct the per-VM maintenance graph.
 
@@ -1644,6 +1846,11 @@ def build_vm_graph(
             docker_hygiene_compiled=docker_hygiene_compiled,
             patching_compiled=patching_compiled,
             backup_verify_compiled=backup_verify_compiled,
+            hygiene_manager=hygiene_manager,
+            slack_client=slack_client,
+            web_base_url=web_base_url,
+            approval_timeout_seconds=approval_timeout_seconds,
+            approval_poll_interval_seconds=approval_poll_interval_seconds,
         )
 
     async def _drift_check(state: VMGraphState) -> dict[str, Any]:

@@ -214,6 +214,7 @@ The signer fails loud (`SigningSecretMissingError`) when the env var is unset
 disable signature verification. If the secret is rotated, in-flight signed
 URLs are immediately invalidated (intentional: rotation means revocation).
 
-Status as of 2026-05-22: produced and verified by the primitive in
-`signed_url.py`. Actually consumed end-to-end once docker_hygiene Session 2b-ii
-wires the web approval route.
+Status as of 2026-05-22: Session 2b-ii shipped the web approval routes
+(`/ui/docker-hygiene/approve`); the env var is actively checked when operators
+navigate to those routes. Full end-to-end batch consumption (agent minting signed
+URLs during maintenance runs) lands in Session 2b-iii batch orchestration wiring.

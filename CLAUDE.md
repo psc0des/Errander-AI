@@ -244,10 +244,15 @@ arbitrary user-supplied commands are explicitly out of scope. Adding new actions
 requires a new sub-graph + manifest + risk-tier classification + rollback strategy
 — not a config flag.
 
-> **v1.1 transition note (2026-05-21):** Both `docker_prune` (legacy bulk action)
-> and `docker_hygiene` (new object-level workflow) are registered in
-> `BUILTIN_ACTIONS` during the transition. `docker_prune` is removed entirely
-> in v1.1 Session 3 once `docker_hygiene` gains execution and approval surfaces.
+> **v1.1 transition note (2026-05-21, updated 2026-05-22):** Both `docker_prune`
+> (legacy bulk action) and `docker_hygiene` (new object-level workflow) are
+> registered in `BUILTIN_ACTIONS` during the transition. As of Session 2b-ii,
+> `docker_hygiene` has execution (Session 2a) + both approval surfaces
+> (Slack reply parser/poller + web `/ui/docker-hygiene/approve` routes,
+> Sessions 2b-i / 2b-ii). What remains for `docker_hygiene` to be live is
+> **batch orchestration wiring** (Session 2b-iii — connecting assessment →
+> Slack message + signed URL → manager.wait → execute back into the parent
+> batch graph). `docker_prune` is then removed entirely in Session 3.
 > The 6-action count above reflects the post-transition state.
 
 - NEVER automate kernel patching — this is explicitly out of scope
@@ -298,7 +303,8 @@ ERRANDER_LLM_BASE_URL         # private vLLM endpoint
 ERRANDER_LLM_API_KEY          # if vLLM requires auth
 ERRANDER_AUDIT_DB_URL         # SQLite path for v1
 ERRANDER_SIGNING_SECRET       # HMAC secret for signed web-approval URLs
-                              # (docker_hygiene v1.1; required once Session 2b-ii ships)
+                              # (docker_hygiene v1.1; routes shipped 2b-ii,
+                              #  enforced by orchestration when 2b-iii wires it)
                               # 32+ random bytes: head -c 32 /dev/urandom | base64
 ```
 SSH keys: referenced by file path in inventory config, never inlined.

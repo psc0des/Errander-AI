@@ -677,8 +677,9 @@ ERRANDER_UI_DATA_MODE=fixture
 
 # Signed-URL HMAC secret — required for docker_hygiene web approval (v1.1).
 # Generate with: head -c 32 /dev/urandom | base64
-# Not used yet by any live route; will be required once v1.1 Session 2b-ii
-# ships the web approval page. Set it now to avoid scrambling later.
+# The web approval routes (/ui/docker-hygiene/approve) ship in v1.1 Session 2b-ii
+# and verify this secret. The agent will require it once Session 2b-iii wires
+# the batch orchestration to mint signed URLs. Set it now to avoid scrambling later.
 # ERRANDER_SIGNING_SECRET=paste-base64-output-here
 EOF
 ```

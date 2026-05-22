@@ -319,20 +319,19 @@ sudo -u errander sudo -n /usr/bin/id  # should FAIL — /usr/bin/id is not in su
 
 ## Optional: Docker cleanup
 
-> **Skip this entire section if you are not enabling docker_prune.**
-> When you create `inventory.yaml` in Step 5, leave `actions.docker_prune.enabled: false` (the default). Continue to the next section.
+> **Skip this entire section if you are not enabling Docker cleanup.**
+> When you create `inventory.yaml` in Step 5, leave `actions.docker_hygiene.enabled: false` (the default). Continue to the next section.
 
-> ⚠️ **v1.1 transition (in progress, 2026-05-21):** `docker_prune` is being replaced by a richer `docker_hygiene` action with object-level approval (operator approves exact image IDs / container names rather than a bulk "approve docker prune"). Session 1 of v1.1 has shipped the assessment foundation; execution and approval surfaces land in Session 2. **Do not adopt `docker_hygiene` yet** — it's registered but not dispatchable. Once v1.1 is complete, this section will be rewritten and `docker_prune` will be removed. Existing `docker_prune` setups continue to work unchanged during the transition.
+> ⚠️ **v1.1 transition note (updated 2026-05-22):** `docker_prune` (legacy bulk action) is being replaced by `docker_hygiene`. As of Session 2b-ii, `docker_hygiene` has execution + both approval surfaces (Slack reply parser and web UI at `/ui/docker-hygiene/approve`). Batch orchestration wiring (Session 2b-iii) is the final remaining step — until it ships, a live maintenance batch will not dispatch `docker_hygiene` end-to-end. **New installations should configure `docker_hygiene`** (shown below). Existing `docker_prune` setups continue to work unchanged; the action is removed in Session 3.
 
 The Docker group is effectively root: a user in it can mount the host filesystem via `docker run`. Do **not** add `errander` to the docker group, and do not grant raw `sudo /usr/bin/docker` in production.
 
-Errander supports three Docker modes per environment (`actions.docker_prune.command_mode` in `inventory.yaml`):
+Errander supports two Docker modes per environment (`actions.docker_hygiene.command_mode` in `inventory.yaml`):
 
 | Mode | Description | Use case |
 |---|---|---|
-| `wrapper` (default) | Root-owned wrapper scripts at `/usr/local/sbin/errander-docker-*` | Production — narrow sudoers, no raw `sudo docker` |
-| `direct_sudo` | `sudo -n /usr/bin/docker ...` directly | Lab / pre-prod only. Logs a warning every batch. |
-| `disabled` | No docker_prune actions planned or executed | Envs without Docker |
+| `wrapper` (default) | Root-owned wrapper scripts at `/usr/local/sbin/errander-docker-*` | Production and all deployments — per-object validation requires the wrapper |
+| `disabled` | No Docker actions planned or executed | Envs without Docker |
 
 ### Part 1 — Install wrapper on each target VM *(do this now, after Step 3)*
 
@@ -341,27 +340,27 @@ Two steps — copy from the controller, then run on the target:
 **From the controller** — copy using the errander key (no admin key needed on the controller):
 
 ```bash
-scp -i ~/.ssh/errander_prod scripts/install-docker-wrappers.sh errander@<target>:/tmp/
+scp -i ~/.ssh/errander_prod scripts/install-docker-wrappers-v2.sh errander@<target>:/tmp/
 ```
 
 **On the target** — SSH in as your admin user and run as root:
 
 ```bash
 ssh <admin-user>@<target>
-sudo bash /tmp/install-docker-wrappers.sh
+sudo bash /tmp/install-docker-wrappers-v2.sh
 ```
 
 > **Lab / pre-prod shortcut only:** Set `command_mode: direct_sudo` in `inventory.yaml`. You may then add `/usr/bin/docker` to the main sudoers file. The agent will log a warning every batch. Do not use `direct_sudo` in production.
 
 ### Part 2 — Configure inventory and verify *(complete this during Step 5 and Step 6)*
 
-In your `inventory.yaml`, enable docker_prune and set the command mode:
+In your `inventory.yaml`, enable docker_hygiene and set the command mode:
 
 ```yaml
 actions:
-  docker_prune:
+  docker_hygiene:
     enabled: true
-    command_mode: wrapper   # or direct_sudo for lab/pre-prod
+    command_mode: wrapper
 ```
 
 Then verify from the **controller VM** (where Errander is installed — not on the targets):
@@ -372,16 +371,23 @@ uv run python -m errander --check-targets <env>
 
 > `uv` runs only on the controller. Errander SSHes into target VMs internally — no agent software is needed on the targets.
 
-**Assess wrapper output format** (parsed by `parse_assess_output()` in `docker_prune.py`):
+**Assess wrapper output format** (parsed by `parse_assess_v2_output()` in `docker_hygiene.py`):
 
 ```
 reachable=yes|no
-dangling_images=N
-stopped_containers=N
 error=<optional message>
-system_df_begin
-<raw docker system df output>
-system_df_end
+docker_hygiene_begin
+class=image_dangling
+  id=<sha256> size_bytes=N age_days=N last_tag=<none>
+class=image_unused
+  id=<sha256> size_bytes=N age_days=N last_tag=<repo:tag>
+class=container_stopped
+  id=<sha256> name=<name> exit_code=N stopped_age_hours=N
+class=volume_unreferenced
+  name=<vol> size_bytes=N last_mount_days=N
+class=build_cache
+  reclaimable_bytes=N
+docker_hygiene_end
 ```
 
 ---
@@ -915,9 +921,9 @@ This confirms SSH access, sudo permissions, OS detection, and binary paths for e
 
 ```yaml
 actions:
-  docker_prune:
+  docker_hygiene:
     enabled: true
-    command_mode: wrapper   # or direct_sudo for lab/pre-prod
+    command_mode: wrapper
 ```
 
 ```bash

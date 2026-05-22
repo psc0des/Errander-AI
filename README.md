@@ -9,7 +9,7 @@ Errander-AI is a supervised maintenance agent for small-to-medium Linux fleets. 
 | `patching` | ✅ enabled | No | MEDIUM — HITL approval + maintenance window |
 | `disk_cleanup` | ✅ enabled | No | LOW — whitelist-bounded, non-destructive |
 | `log_rotation` | ✅ enabled | No | LOW — compresses, does not delete |
-| `docker_prune` | ❌ disabled | Yes — install wrappers, set `enabled: true` | MEDIUM |
+| `docker_hygiene` | ❌ disabled | Yes — install v2 wrappers, set `enabled: true` | MEDIUM — object-level Slack/web approval |
 | `backup_verify` | ❌ disabled | Yes — requires `backup:` config section | LOW |
 | `service_restart` | ❌ disabled | Yes — install wrapper + declare `restartable_units` | HIGH — Slack approval always required, operator-triggered |
 

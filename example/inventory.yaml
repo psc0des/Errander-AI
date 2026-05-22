@@ -38,14 +38,14 @@
 #           enabled: true               # Bounded by whitelist + age threshold; safe to run automatically
 #         log_rotation:
 #           enabled: true               # Compresses logs; does not delete payload data
-#         docker_prune:
-#           enabled: false              # Off by default — requires wrapper install (see SETUP.md)
-#           command_mode: disabled      # disabled | wrapper | direct_sudo
-#           #   wrapper (recommended production mode): uses root-owned wrapper scripts at
-#           #     /usr/local/sbin/errander-docker-{assess,prune-safe,prune-aggressive}.
-#           #   direct_sudo: uses `sudo -n /usr/bin/docker ...` directly. Lab/pre-prod only.
-#           #   disabled: Errander will not plan or execute docker_prune on this env.
-#           # Run `scripts/install-docker-wrappers.sh` on each target to install wrappers.
+#         docker_hygiene:
+#           enabled: false              # Off by default — requires v2 wrapper install (see SETUP.md)
+#           command_mode: disabled      # disabled | wrapper
+#           #   wrapper (required): uses root-owned wrapper scripts at
+#           #     /usr/local/sbin/errander-docker-{assess-v2,remove-v2}.
+#           #     Per-object re-validation at execution time requires the wrapper.
+#           #   disabled: Errander will not plan or execute docker_hygiene on this env.
+#           # Run `scripts/install-docker-wrappers-v2.sh` on each target to install wrappers.
 #         backup_verify:
 #           enabled: false              # Off by default — requires `backup:` section in settings.yaml
 #         service_restart:

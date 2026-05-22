@@ -388,9 +388,8 @@ def _classify_image(
     """Classify an image finding.
 
     - IMAGE_DANGLING: always ``cleanup_candidate``.
-    - IMAGE_UNUSED: ``cleanup_candidate`` if age_days > 30; otherwise ``report_only``.
-      (Note: actual removal of unused images is v1.2 scope. v1.1 only acts on
-      dangling. But classification surfaces both for visibility.)
+    - IMAGE_UNUSED: ``cleanup_candidate`` if age_days > UNUSED_IMAGE_CLEANUP_AGE_DAYS (30);
+      otherwise ``report_only`` (too recent — shown but not eligible for removal).
     """
     if resource_class == DockerResourceClass.IMAGE_DANGLING:
         return FindingClassification.CLEANUP_CANDIDATE
@@ -399,6 +398,8 @@ def _classify_image(
         and age_days is not None
         and age_days > UNUSED_IMAGE_CLEANUP_AGE_DAYS
     ):
+        # Unused (non-dangling) images older than the threshold are eligible for
+        # removal via the same object-level approval flow as dangling images.
         return FindingClassification.CLEANUP_CANDIDATE
     return FindingClassification.REPORT_ONLY
 

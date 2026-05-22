@@ -1,5 +1,17 @@
 # Errander-AI Command Log
 
+## Docker hygiene v1.2 — unused image execution scope (2026-05-22)
+```bash
+# Targeted test run after changes
+uv run pytest tests/agent/subgraphs/test_docker_hygiene.py tests/safety/test_hygiene_approval.py -x -q  # 104 passed
+
+# Full suite validation
+uv run pytest -x -q  # 2258 passed
+
+# Lint changed source files
+uv run ruff check errander/models/docker_hygiene.py errander/agent/subgraphs/docker_hygiene.py errander/safety/hygiene_approval.py  # All checks passed
+```
+
 ## Docker hygiene v1.1 Session 3 (2026-05-22)
 ```bash
 # Delete docker_prune source files and tests

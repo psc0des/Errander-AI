@@ -1,5 +1,18 @@
 # Errander-AI — Lessons Learned
 
+## 2026-05-22 — Approval-surface scope must be per-finding, not per-class
+
+When an executable class has findings at different classifications (e.g. `image_unused` with age > 30 is `cleanup_candidate` but age ≤ 30 is `report_only`), gating the approval surface at the class level is insufficient. The formatter showed `✓` for ALL `image_unused` items; the parser allowed approving any by index; `approve all` would have selected report_only findings.
+
+Fix: push the scope check to the individual finding level in three places:
+1. **Formatter** — per-finding classification marker (`✓` only when classification==CLEANUP_CANDIDATE AND class in _EXECUTABLE_CLASSES).
+2. **`_select_all`** — default to CLEANUP_CANDIDATE; raise on INVESTIGATE/REPORT_ONLY filter.
+3. **`_parse_explicit_indices`** — reject each finding where `classification != CLEANUP_CANDIDATE` before adding to the selected set.
+
+**Why:** Without this, an operator could accidentally (or intentionally) approve a report_only finding by index. The formatter showing `✓` would mislead them into thinking it was safe to remove.
+
+**How to apply:** Every time a new resource class or sub-classification is added to `_EXECUTABLE_CLASSES`, ask: "Can ALL findings in this class be removed, or only a subset?" If only a subset, add a per-finding guard at all three sites above.
+
 ## 2026-05-22 — LEGACY_ACTION_TYPES pattern: keep an enum value for read-back, skip it in active-action assertions
 
 When removing an action type from active use, do NOT delete its `ActionType` enum value if it appears in historical audit rows — that breaks deserialization of old records. Instead:

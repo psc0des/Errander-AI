@@ -35,8 +35,8 @@ class FindingClassification(StrEnum):
     - ``cleanup_candidate``: safe to remove given current execution-scope rules.
     - ``investigate``: signal of a possible problem (OOM, SIGSEGV, restart loop).
       Surfaced to the operator but never auto-marked for removal.
-    - ``report_only``: shown for visibility but out of scope for v1.1 removal
-      (volumes, build cache, recent or mid-aged images).
+    - ``report_only``: shown for visibility but not eligible for removal
+      (volumes, build cache, images younger than the age threshold).
     """
 
     CLEANUP_CANDIDATE = "cleanup_candidate"

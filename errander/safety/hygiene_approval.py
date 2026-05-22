@@ -58,8 +58,11 @@ class HygieneReplyError(ValueError):
 #: Slack soft message limit; we leave headroom for code-block fencing.
 _SLACK_BUDGET_CHARS = 3600
 
-#: Resource classes whose findings can be approved for removal in v1.1.
-#: Volumes and build_cache are report-only (CLAUDE.md → docker_hygiene scope).
+#: Resource classes whose findings can be approved for removal.
+#: Volumes and build_cache are always report-only (CLAUDE.md → docker_hygiene scope).
+#: Within executable classes, only CLEANUP_CANDIDATE findings are selectable —
+#: report_only findings (e.g. image_unused younger than the age threshold) are
+#: surfaced for visibility but cannot be approved.
 _EXECUTABLE_CLASSES: tuple[DockerResourceClass, ...] = (
     DockerResourceClass.IMAGE_DANGLING,
     DockerResourceClass.IMAGE_UNUSED,
@@ -118,7 +121,12 @@ def format_hygiene_approval_message(
             tag = f.last_tag or f.name or "—"
             size = _human_bytes(f.size_bytes)
             age = _format_age(f)
-            executable = " ✓" if klass in _EXECUTABLE_CLASSES else " (report-only)"
+            if f.classification == FindingClassification.CLEANUP_CANDIDATE and klass in _EXECUTABLE_CLASSES:
+                executable = " ✓"
+            elif f.classification == FindingClassification.INVESTIGATE:
+                executable = " ⚠ investigate"
+            else:
+                executable = " (report-only)"
             lines.append(
                 f"  {short_key}.{i} `{f.identity[:24]}` {tag} · {size} · {age}"
                 f" · {f.classification.value}{executable}"
@@ -273,12 +281,28 @@ def _select_all(
     assessment: DockerHygieneAssessment,
     classification_filter: FindingClassification | None,
 ) -> tuple[DockerHygieneFinding, ...]:
-    """Return all findings in executable classes, optionally filtered by classification."""
+    """Return all cleanup_candidate findings in executable classes.
+
+    When classification_filter is None, only CLEANUP_CANDIDATE findings are
+    selected — ``approve all`` never implicitly approves report_only or
+    investigate findings.
+
+    Raises HygieneReplyError when the filter is a classification that cannot
+    be approved for removal (INVESTIGATE or REPORT_ONLY).
+    """
+    if classification_filter in (
+        FindingClassification.INVESTIGATE,
+        FindingClassification.REPORT_ONLY,
+    ):
+        raise HygieneReplyError(
+            f"classification {classification_filter.value!r} cannot be approved for removal"
+        )
+    effective = classification_filter if classification_filter is not None else FindingClassification.CLEANUP_CANDIDATE
     selected: list[DockerHygieneFinding] = []
     by_class = assessment.by_class()
     for klass in _EXECUTABLE_CLASSES:
         for f in by_class.get(klass, []):
-            if classification_filter is None or f.classification == classification_filter:
+            if f.classification == effective:
                 selected.append(f)
     return tuple(selected)
 
@@ -309,7 +333,7 @@ def _parse_explicit_indices(
             )
         if klass not in _EXECUTABLE_CLASSES:
             raise HygieneReplyError(
-                f"class {class_key!r} is report-only and cannot be approved for removal in v1.1"
+                f"class {class_key!r} is report-only and cannot be approved for removal"
             )
         if i + 1 >= len(tokens):
             raise HygieneReplyError(
@@ -319,6 +343,11 @@ def _parse_explicit_indices(
         items = by_class.get(klass, [])
         for idx in _expand_index_expr(index_expr, class_key, len(items)):
             f = items[idx - 1]  # 1-based → 0-based
+            if f.classification != FindingClassification.CLEANUP_CANDIDATE:
+                raise HygieneReplyError(
+                    f"{class_key}.{idx} is classified {f.classification.value!r} "
+                    f"— only cleanup_candidate findings can be approved for removal"
+                )
             key = (f.resource_class.value, f.identity)
             if key in seen_identities:
                 continue

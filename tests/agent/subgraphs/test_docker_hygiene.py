@@ -785,6 +785,44 @@ class TestExecuteNode:
         assert result["status"] == ActionStatus.FAILED.value
         assert "sudo denied" in result["error"]
 
+    @pytest.mark.asyncio
+    async def test_unused_image_cleanup_candidate_execute_path(self) -> None:
+        """IMAGE_UNUSED cleanup candidate (age > 30) goes through the execute path."""
+        from errander.agent.subgraphs.docker_hygiene import execute_node
+        from errander.models.docker_hygiene import (
+            ApprovalSurface,
+            DockerHygieneApproval,
+            DockerHygieneFinding,
+            RemovalStatus,
+        )
+        executor = _make_executor()
+        unused_finding = DockerHygieneFinding(
+            resource_class=DockerResourceClass.IMAGE_UNUSED,
+            classification=FindingClassification.CLEANUP_CANDIDATE,
+            object_id="sha256:unused-old",
+            age_days=60,
+        )
+        approval = DockerHygieneApproval(
+            vm_id="dev/web-01",
+            approved_findings=(unused_finding,),
+            snapshot_hash="abc123",
+            surface=ApprovalSurface.TEST_INJECT,
+            operator_id="test-user",
+        )
+        wrapper_stdout = "result class=image_unused id=sha256:unused-old status=removed reason=\n"
+
+        async def mock_execute(*args: object, **kwargs: object) -> SSHResult:
+            return _make_result(wrapper_stdout)
+
+        with patch.object(executor, "execute", side_effect=mock_execute):
+            state = _base_state(approval=approval, dry_run=False)  # type: ignore[call-arg]
+            result = await execute_node(state, executor=executor)
+
+        assert result["status"] == ActionStatus.SUCCESS.value
+        assert len(result["removal_results"]) == 1
+        assert result["removal_results"][0].status == RemovalStatus.REMOVED
+        assert result["removal_results"][0].finding.object_id == "sha256:unused-old"
+
 
 # --- Session 2a: compute_assessment_hash ---
 

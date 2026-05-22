@@ -145,6 +145,20 @@ class TestFormatMessage:
         # Either GB or MB depending on rounding, but not raw bytes
         assert "1200000000" not in msg
 
+    def test_cleanup_candidate_unused_image_marked_executable(self) -> None:
+        """IMAGE_UNUSED with age > 30 (cleanup_candidate) shows ✓."""
+        a = _assessment((_unused("sha256:old", age=60),))
+        msg = format_hygiene_approval_message(a)
+        assert "✓" in msg
+        assert "(report-only)" not in msg
+
+    def test_report_only_unused_image_not_marked_executable(self) -> None:
+        """IMAGE_UNUSED with age ≤ 30 (report_only) shows (report-only), not ✓."""
+        a = _assessment((_unused("sha256:young", age=5),))
+        msg = format_hygiene_approval_message(a)
+        assert "(report-only)" in msg
+        assert "✓" not in msg
+
 
 # ---------------------------------------------------------------------------
 # Slack reply parser
@@ -251,10 +265,31 @@ class TestParseReply:
             parse_hygiene_reply("approve gizmos 1", a, operator_id="U123")
 
     def test_report_only_class_cannot_be_approved(self) -> None:
-        """volumes / build_cache are report-only in v1.1 — explicit approval must fail."""
+        """volumes / build_cache are always report-only — explicit approval must fail."""
         a = _assessment((_volume("vol1"),))
         with pytest.raises(HygieneReplyError, match="report-only"):
             parse_hygiene_reply("approve volumes 1", a, operator_id="U123")
+
+    def test_report_only_finding_in_executable_class_rejected(self) -> None:
+        """image_unused with age ≤ 30 is report_only — approval by index must fail."""
+        a = _assessment((_unused("sha256:young", age=5),))
+        with pytest.raises(HygieneReplyError, match="report_only"):
+            parse_hygiene_reply("approve images 1", a, operator_id="U123")
+
+    def test_approve_all_excludes_report_only_unused_images(self) -> None:
+        """approve all must not select report_only image_unused findings."""
+        old = _unused("sha256:old", age=60)   # cleanup_candidate
+        young = _unused("sha256:young", age=5) # report_only
+        a = _assessment((old, young))
+        approval = parse_hygiene_reply("approve all", a, operator_id="U123")
+        ids = {f.identity for f in approval.approved_findings}
+        assert ids == {"sha256:old"}
+
+    def test_approve_all_report_only_raises(self) -> None:
+        """approve all report_only is never a valid command."""
+        a = _assessment((_unused("sha256:young", age=5),))
+        with pytest.raises(HygieneReplyError, match="report_only"):
+            parse_hygiene_reply("approve all report_only", a, operator_id="U123")
 
     def test_empty_class_yields_clear_error(self) -> None:
         """Selecting from a class with no findings should fail loud, not silently approve nothing."""

@@ -291,10 +291,9 @@ while IFS= read -r line; do
             ;;
 
         volume_unreferenced|build_cache)
-            # v1.1 execution scope does NOT cover volumes or build cache.
-            # These are report-only classifications. If they reach the wrapper,
-            # something is wrong upstream — refuse loudly.
-            echo "result class=$obj_class id=$obj_id status=failed reason=class_out_of_scope_v1.1"
+            # Volumes and build cache are report-only and not in execution scope.
+            # If they reach the wrapper, something is wrong upstream — refuse loudly.
+            echo "result class=$obj_class id=$obj_id status=failed reason=class_out_of_scope"
             ;;
 
         *)

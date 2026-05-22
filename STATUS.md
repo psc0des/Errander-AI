@@ -4,6 +4,19 @@
 2026-05-22
 
 ## Current Phase
+**Docker hygiene v1.2 — unused image execution scope (2026-05-22, COMPLETE).** 2258 tests passing (+6), ruff clean, no new mypy errors.
+
+v1.2 formalises unused-image (non-dangling, age > 30 days) removal. The execution wiring was already in place from v1.1; v1.2 closes the approval-surface gap: formatter now shows per-finding ✓ (not per-class), parser blocks approval of `report_only` findings in executable classes, and `approve all` defaults to cleanup_candidate only.
+
+### Files changed in v1.2
+- `errander/safety/hygiene_approval.py` — formatter per-finding marker; `_select_all` defaults to CLEANUP_CANDIDATE; parser per-finding guard; error message de-versioned
+- `errander/agent/subgraphs/docker_hygiene.py` — stale "v1.2 scope" comment removed; `_classify_image` docstring updated
+- `errander/models/docker_hygiene.py` — `FindingClassification.REPORT_ONLY` docstring updated
+- `scripts/install-docker-wrappers-v2.sh` — wrapper scope comment updated
+- `tests/agent/subgraphs/test_docker_hygiene.py` — 1 new test: unused image execute path
+- `tests/safety/test_hygiene_approval.py` — 5 new tests: formatter markers, parser rejection of report_only, approve-all scope
+
+## Previous Phase
 **Docker hygiene v1.1 — Session 3 shipped (2026-05-22, SESSION 3 COMPLETE).** 2252 tests passing (net -65 from deleted docker_prune tests), ruff clean on changed code, no new mypy errors.
 
 Session 3 removes `docker_prune` entirely — subgraph, tests, install script, BUILTIN_ACTIONS entry, vm_graph dispatch branch, rollback strategy, and target_validation probe. `ActionType.DOCKER_PRUNE` is retained in the enum for audit-log read-back only, marked by `LEGACY_ACTION_TYPES`. Schema raises `ConfigError` on `docker_prune:` key in inventory (migrate.py renames it to `docker_hygiene`). `docker_hygiene` contradiction check added. SETUP.md docker section rewritten.

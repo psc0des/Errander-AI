@@ -91,7 +91,7 @@ errander/
 │   ├── subgraphs/          # Sub-graphs per action type
 │   │   ├── patching.py     # OS patching (non-kernel)
 │   │   ├── log_rotation.py # Log rotation
-│   │   ├── docker_prune.py # Docker cleanup
+│   │   ├── docker_hygiene.py # Rich Docker assessment + object-level removal (v1.1)
 │   │   ├── disk_cleanup.py # Disk space management
 │   │   └── backup_verify.py# Backup verification
 │   ├── state.py            # Agent state definitions (batch, per-VM, per-action)
@@ -203,7 +203,7 @@ For any action that removes, deletes, or otherwise destroys state (images, volum
 - Per-object audit entries are required. One audit row per removed object, not one row per batch.
 - HITL is necessary but not sufficient — a human can rubber-stamp a vague plan. The protection comes from the *evidence quality* of the approval artifact, not the approval gesture itself.
 
-This rule applies to all Layer B actions. No grandfathering — the previous bulk `docker_prune` action is being removed in v1.1 precisely because it violates this invariant. Any future action that cannot satisfy exact-object approval is out of scope.
+This rule applies to all Layer B actions. No grandfathering — the previous bulk `docker_prune` action was removed in v1.1 Session 3 precisely because it violates this invariant. Any future action that cannot satisfy exact-object approval is out of scope.
 
 ### Implementation Contracts (for object-level destructive actions)
 

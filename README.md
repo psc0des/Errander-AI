@@ -253,7 +253,6 @@ errander/
     subgraphs/
       disk_cleanup.py       # Disk space management
       log_rotation.py       # Log compression and rotation
-      docker_prune.py       # Docker resource cleanup (legacy — removed in v1.1 Session 3)
       docker_hygiene.py     # Rich Docker assessment + object-level removal (v1.1)
       patching.py           # Non-kernel OS patching
       backup_verify.py      # Backup verification (read-only)

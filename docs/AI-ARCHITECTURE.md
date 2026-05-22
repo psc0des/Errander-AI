@@ -101,7 +101,7 @@ Layer B's safety story is the entire product. The list of "things that won't blo
 
 ### What Layer B includes
 
-- **Action sub-graphs** (patching, log_rotation, docker_prune, docker_hygiene, disk_cleanup, backup_verify, service_restart). `docker_hygiene` (v1.1, in progress) replaces `docker_prune` with object-level approval — see CLAUDE.md → Exact-Object Approval invariant.
+- **Action sub-graphs** (patching, log_rotation, docker_hygiene, disk_cleanup, backup_verify, service_restart). `docker_hygiene` (v1.1, complete) implements object-level approval — see CLAUDE.md → Exact-Object Approval invariant.
 - **HITL approval gate** (Slack + Web UI dual-channel, fail-closed when no approval manager)
 - **Risk tier policy gates** (LOW / MEDIUM / HIGH / CRITICAL with per-environment policy)
 - **Sudo preflight** (`sudo -n` capability check per binary before any privileged action)

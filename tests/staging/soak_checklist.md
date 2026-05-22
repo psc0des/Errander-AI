@@ -47,7 +47,7 @@ uv run python -m errander --run-now --env staging-soak --dry-run
 
 **Pass criteria:**
 - [ ] `plan_hash` appears in logs
-- [ ] All action types are from the allow-list (disk_cleanup, log_rotation, docker_prune, patching, backup_verify)
+- [ ] All action types are from the allow-list (disk_cleanup, log_rotation, docker_hygiene, patching, backup_verify)
 - [ ] No kernel packages appear in planned patching actions
 - [ ] `ai_decisions` table populated (if LLM configured)
 - [ ] All actions show `DRY_RUN_OK` status
@@ -93,10 +93,11 @@ uv run python -m errander --run-now --env staging-soak --live
 - [ ] No files outside `/var/log` touched
 - [ ] Idempotent: second run shows `nothing_to_do`
 
-### docker_prune (non-aggressive default)
-- [ ] Only dangling images + stopped containers removed
+### docker_hygiene
+- [ ] Assessment posted to Slack with exact image IDs and container names for approval
+- [ ] Only operator-approved objects removed (exact-object approval)
 - [ ] Running containers unaffected
-- [ ] `docker images` shows only non-dangling after prune
+- [ ] Per-object audit entries recorded (one row per removed object)
 
 ### patching
 - [ ] No kernel packages in `pending_updates` list

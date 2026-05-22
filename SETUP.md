@@ -367,6 +367,21 @@ uv run python -m errander --check-targets <env>
 
 > `uv` runs only on the controller. Errander SSHes into target VMs internally — no agent software is needed on the targets.
 
+**Execution scope** — what Errander will propose for removal vs show for visibility only:
+
+| Resource class | Classification | Eligible for removal? |
+|---|---|---|
+| `image_dangling` | `cleanup_candidate` | ✓ Always |
+| `image_unused` (age > 30 days, unreferenced) | `cleanup_candidate` | ✓ Yes |
+| `image_unused` (age ≤ 30 days) | `report_only` | No — shown for visibility |
+| `container_stopped` (exit 0, age > 7 days) | `cleanup_candidate` | ✓ Yes |
+| `container_stopped` (exit 137/139 — OOM/SIGSEGV) | `investigate` | No — operator decides |
+| `container_stopped` (other) | `report_only` | No — shown for visibility |
+| `volume_unreferenced` | `report_only` | No — v1.5 scope |
+| `build_cache` | `report_only` | No — v1.5 scope |
+
+The Slack approval message shows `✓` next to each `cleanup_candidate` finding and `(report-only)` next to others. `approve all cleanup_candidate` selects only eligible objects.
+
 **Assess wrapper output format** (parsed by `parse_assess_v2_output()` in `docker_hygiene.py`):
 
 ```

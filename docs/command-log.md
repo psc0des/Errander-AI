@@ -1,5 +1,14 @@
 # Errander-AI Command Log
 
+## decisions.py semantic debt — DOCKER_PRUNE → DOCKER_HYGIENE (2026-05-22)
+```bash
+# Lint decisions.py after each edit
+uv run ruff check errander/agent/decisions.py  # All checks passed
+
+# Full suite validation (caught 6 stale test references to DOCKER_PRUNE)
+uv run pytest -x -q  # 2258 passed after fixing all references
+```
+
 ## Docker hygiene v1.2 — unused image execution scope (2026-05-22)
 ```bash
 # Targeted test run after changes

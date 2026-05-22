@@ -128,7 +128,7 @@ class TestRecordActionResult:
 
     def test_skips_duration_when_no_completed_at(self) -> None:
         result = _make_result(
-            action_type=ActionType.DOCKER_PRUNE,
+            action_type=ActionType.DOCKER_HYGIENE,
             status=ActionStatus.FAILED,
             vm_id="vm-nodur-001",
             duration_seconds=None,

@@ -66,10 +66,10 @@ class TestFilterApplicableActions:
         result = filter_applicable_actions(list(ActionType), vm_info)
         assert set(result) == set(ActionType)
 
-    def test_docker_prune_excluded_when_no_docker(self) -> None:
+    def test_docker_hygiene_excluded_when_no_docker(self) -> None:
         vm_info = _make_vm_info(docker_available=False)
         result = filter_applicable_actions(list(ActionType), vm_info)
-        assert ActionType.DOCKER_PRUNE not in result
+        assert ActionType.DOCKER_HYGIENE not in result
 
     def test_patching_excluded_when_no_pending(self) -> None:
         vm_info = _make_vm_info(pending_packages=0)
@@ -107,7 +107,7 @@ class TestPrioritizeActions:
         vm_info = _make_vm_info(docker_available=False, pending_packages=0)
         actions = await prioritize_actions(vm_info)
         action_types = [a.action_type for a in actions]
-        assert ActionType.DOCKER_PRUNE not in action_types
+        assert ActionType.DOCKER_HYGIENE not in action_types
         assert ActionType.PATCHING not in action_types
 
     @pytest.mark.asyncio
@@ -135,7 +135,7 @@ class TestPrioritizeActions:
         vm_info = _make_vm_info(docker_available=False, pending_packages=0)
         actions = await prioritize_actions(
             vm_info,
-            available_actions=[ActionType.DOCKER_PRUNE, ActionType.PATCHING],
+            available_actions=[ActionType.DOCKER_HYGIENE, ActionType.PATCHING],
         )
         assert actions == []
 

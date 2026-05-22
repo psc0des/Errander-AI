@@ -70,7 +70,7 @@ DEFAULT_PRIORITY: list[ActionType] = [
     ActionType.BACKUP_VERIFY,   # LOW — read-only check, run first
     ActionType.DISK_CLEANUP,    # LOW
     ActionType.LOG_ROTATION,    # LOW
-    ActionType.DOCKER_PRUNE,    # MEDIUM
+    ActionType.DOCKER_HYGIENE,  # MEDIUM
     ActionType.PATCHING,        # MEDIUM
 ]
 
@@ -97,7 +97,7 @@ class _Report(BaseModel):
 
 def _is_action_applicable(action_type: ActionType, vm_info: VMInfo) -> bool:
     """Check if an action type is applicable given discovered VM state."""
-    if action_type == ActionType.DOCKER_PRUNE:
+    if action_type == ActionType.DOCKER_HYGIENE:
         return vm_info.docker_available
     if action_type == ActionType.PATCHING:
         return vm_info.pending_packages > 0

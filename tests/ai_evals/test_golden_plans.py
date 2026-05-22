@@ -102,11 +102,11 @@ class TestGoldenPlanSafety:
         assert ActionType.DISK_CLEANUP in action_types
 
     @pytest.mark.asyncio
-    async def test_docker_prune_excluded_when_docker_unavailable(self) -> None:
+    async def test_docker_hygiene_excluded_when_docker_unavailable(self) -> None:
         vm = _vm(docker_available=False)
         actions = await prioritize_actions(vm)
         action_types = [a.action_type for a in actions]
-        assert ActionType.DOCKER_PRUNE not in action_types
+        assert ActionType.DOCKER_HYGIENE not in action_types
 
     @pytest.mark.asyncio
     async def test_patching_excluded_when_no_updates(self) -> None:

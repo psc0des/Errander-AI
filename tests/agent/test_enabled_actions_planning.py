@@ -67,7 +67,7 @@ class TestPrioritizeActionsEnforcement:
 
     @pytest.mark.asyncio
     async def test_docker_disabled_not_in_plan(self) -> None:
-        """docker_prune.enabled: false must not produce docker_prune in the plan."""
+        """docker_hygiene.enabled: false must not produce docker_hygiene in the plan."""
         vm = _make_vm_info(docker_available=True)
         available = [
             ActionType.BACKUP_VERIFY,
@@ -77,8 +77,8 @@ class TestPrioritizeActionsEnforcement:
         ]
         actions = await prioritize_actions(vm, available_actions=available)
         action_types = [a.action_type for a in actions]
-        assert ActionType.DOCKER_PRUNE not in action_types, (
-            "docker_prune must not be planned when excluded from available_actions"
+        assert ActionType.DOCKER_HYGIENE not in action_types, (
+            "docker_hygiene must not be planned when excluded from available_actions"
         )
 
     @pytest.mark.asyncio
@@ -91,7 +91,7 @@ class TestPrioritizeActionsEnforcement:
         action_types = [a.action_type for a in actions]
         assert action_types == [ActionType.DISK_CLEANUP]
         assert ActionType.PATCHING not in action_types
-        assert ActionType.DOCKER_PRUNE not in action_types
+        assert ActionType.DOCKER_HYGIENE not in action_types
 
     @pytest.mark.asyncio
     async def test_backup_verify_disabled_not_in_plan(self) -> None:

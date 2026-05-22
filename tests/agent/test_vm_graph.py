@@ -215,7 +215,7 @@ class TestPlanActionsNode:
         result = await plan_actions_node(state)
         action_types = [a["action_type"] for a in result["planned_actions"]]
         assert ActionType.DISK_CLEANUP.value in action_types
-        assert ActionType.DOCKER_PRUNE.value in action_types
+        assert ActionType.DOCKER_HYGIENE.value in action_types
         assert ActionType.PATCHING.value in action_types
         assert result["current_action_index"] == 0
 
@@ -233,7 +233,7 @@ class TestPlanActionsNode:
         )
         result = await plan_actions_node(state)
         action_types = [a["action_type"] for a in result["planned_actions"]]
-        assert ActionType.DOCKER_PRUNE.value not in action_types
+        assert ActionType.DOCKER_HYGIENE.value not in action_types
         assert ActionType.PATCHING.value not in action_types
 
     @pytest.mark.asyncio

@@ -4,9 +4,17 @@
 2026-05-22
 
 ## Current Phase
-**Docker hygiene v1.2 — unused image execution scope (2026-05-22, COMPLETE).** 2258 tests passing (+6), ruff clean, no new mypy errors.
+**decisions.py semantic debt — replace stale DOCKER_PRUNE refs with DOCKER_HYGIENE (2026-05-22, COMPLETE).** 2258 tests passing, ruff clean, no new mypy errors.
 
 v1.2 formalises unused-image (non-dangling, age > 30 days) removal. The execution wiring was already in place from v1.1; v1.2 closes the approval-surface gap: formatter now shows per-finding ✓ (not per-class), parser blocks approval of `report_only` findings in executable classes, and `approve all` defaults to cleanup_candidate only.
+
+### Files changed in decisions.py semantic debt fix
+- `errander/agent/decisions.py` — `DEFAULT_PRIORITY`: DOCKER_PRUNE → DOCKER_HYGIENE; `_is_action_applicable`: DOCKER_PRUNE → DOCKER_HYGIENE
+- `tests/agent/test_decisions.py` — renamed 2 tests + assertions to use DOCKER_HYGIENE
+- `tests/agent/test_enabled_actions_planning.py` — renamed 1 test + 2 assertions
+- `tests/agent/test_vm_graph.py` — 2 assertions updated
+- `tests/ai_evals/test_golden_plans.py` — 1 test renamed + assertion updated
+- `tests/observability/test_metrics.py` — 1 test fixture updated
 
 ### Files changed in v1.2
 - `errander/safety/hygiene_approval.py` — formatter per-finding marker; `_select_all` defaults to CLEANUP_CANDIDATE; parser per-finding guard; error message de-versioned

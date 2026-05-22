@@ -1,5 +1,13 @@
 # Errander-AI — Lessons Learned
 
+## 2026-05-22 — When replacing an action type in source, grep tests too
+
+Replacing `ActionType.DOCKER_PRUNE` with `DOCKER_HYGIENE` in `decisions.py` required matching fixes in 6 test files. `uv run pytest -x` surfaced them one by one; the final count was 6 stale references across `test_decisions.py`, `test_enabled_actions_planning.py`, `test_vm_graph.py`, `test_golden_plans.py`, and `test_metrics.py`.
+
+**Why:** Tests that reference action type enum values by name must be updated alongside the production code they exercise. `DOCKER_PRUNE` in `_is_action_applicable` controlled the "docker unavailable → skip" logic — any test exercising that code path had a stale assertion.
+
+**How to apply:** After any enum-value rename or replacement in source, run `grep -rn "OLD_NAME" tests/` before the full test run to find all impacted test files at once rather than fixing them one failure at a time.
+
 ## 2026-05-22 — Approval-surface scope must be per-finding, not per-class
 
 When an executable class has findings at different classifications (e.g. `image_unused` with age > 30 is `cleanup_candidate` but age ≤ 30 is `report_only`), gating the approval surface at the class level is insufficient. The formatter showed `✓` for ALL `image_unused` items; the parser allowed approving any by index; `approve all` would have selected report_only findings.

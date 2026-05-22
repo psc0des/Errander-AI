@@ -67,6 +67,9 @@ is deliberately *not* here — it's an ordinary stop signal used by Docker
 itself for graceful shutdowns.
 """
 
+VOLUME_LAST_MOUNT_AGE_DAYS = 90
+"""Unreferenced volumes not mounted for this many days are cleanup candidates."""
+
 
 # --- Manifest ---
 
@@ -111,6 +114,11 @@ class DockerHygieneGraphState(TypedDict, total=False):
 
     # Execution results — one DockerHygieneRemovalResult per approved object.
     removal_results: tuple[DockerHygieneRemovalResult, ...]
+
+    # v1.5 volume / build-cache deletion config (threaded from action_params).
+    volume_deletion_enabled: bool
+    volume_last_mount_days_threshold: int
+    build_cache_deletion_enabled: bool
 
 
 # --- Node functions ---
@@ -181,7 +189,15 @@ async def assess_node(
             "nothing_to_do": True,
         }
 
-    assessment = parse_assess_v2_output(result.stdout, vm_id=vm_id)
+    assessment = parse_assess_v2_output(
+        result.stdout,
+        vm_id=vm_id,
+        volume_deletion_enabled=bool(state.get("volume_deletion_enabled", False)),
+        volume_last_mount_days_threshold=int(
+            state.get("volume_last_mount_days_threshold", VOLUME_LAST_MOUNT_AGE_DAYS)
+        ),
+        build_cache_deletion_enabled=bool(state.get("build_cache_deletion_enabled", False)),
+    )
 
     if not assessment.reachable:
         return {
@@ -217,7 +233,14 @@ async def assess_node(
 
 # --- Parser ---
 
-def parse_assess_v2_output(stdout: str, *, vm_id: str) -> DockerHygieneAssessment:
+def parse_assess_v2_output(
+    stdout: str,
+    *,
+    vm_id: str,
+    volume_deletion_enabled: bool = False,
+    volume_last_mount_days_threshold: int = VOLUME_LAST_MOUNT_AGE_DAYS,
+    build_cache_deletion_enabled: bool = False,
+) -> DockerHygieneAssessment:
     """Parse the errander-docker-assess-v2 wrapper output.
 
     Expected format::
@@ -285,7 +308,13 @@ def parse_assess_v2_output(stdout: str, *, vm_id: str) -> DockerHygieneAssessmen
         kv = _parse_kv_line(stripped)
         if not kv:
             continue
-        finding = _build_finding(current_class, kv)
+        finding = _build_finding(
+            current_class,
+            kv,
+            volume_deletion_enabled=volume_deletion_enabled,
+            volume_last_mount_days_threshold=volume_last_mount_days_threshold,
+            build_cache_deletion_enabled=build_cache_deletion_enabled,
+        )
         if finding is not None:
             findings.append(finding)
 
@@ -316,6 +345,10 @@ def _parse_kv_line(line: str) -> dict[str, str]:
 def _build_finding(
     resource_class: DockerResourceClass,
     kv: dict[str, str],
+    *,
+    volume_deletion_enabled: bool = False,
+    volume_last_mount_days_threshold: int = VOLUME_LAST_MOUNT_AGE_DAYS,
+    build_cache_deletion_enabled: bool = False,
 ) -> DockerHygieneFinding | None:
     """Construct a finding from a parsed key-value line + classify it.
 
@@ -328,7 +361,9 @@ def _build_finding(
             return None
         return DockerHygieneFinding(
             resource_class=resource_class,
-            classification=FindingClassification.REPORT_ONLY,
+            classification=_classify_build_cache(reclaimable, enabled=build_cache_deletion_enabled),
+            # name="build_cache" gives identity="build_cache" for the allowlist and parser key.
+            name="build_cache",
             reclaimable_bytes=reclaimable,
         )
 
@@ -336,12 +371,17 @@ def _build_finding(
         name = kv.get("name")
         if not name:
             return None
+        last_mount = _safe_int(kv.get("last_mount_days"))
         return DockerHygieneFinding(
             resource_class=resource_class,
-            classification=FindingClassification.REPORT_ONLY,
+            classification=_classify_volume(
+                last_mount,
+                threshold=volume_last_mount_days_threshold,
+                enabled=volume_deletion_enabled,
+            ),
             name=name,
             size_bytes=_safe_int(kv.get("size_bytes")),
-            last_mount_days=_safe_int(kv.get("last_mount_days")),
+            last_mount_days=last_mount,
         )
 
     if resource_class == DockerResourceClass.CONTAINER_STOPPED:
@@ -423,6 +463,42 @@ def _classify_stopped_container(
     ):
         return FindingClassification.CLEANUP_CANDIDATE
     return FindingClassification.REPORT_ONLY
+
+
+def _classify_volume(
+    last_mount_days: int | None,
+    *,
+    threshold: int = VOLUME_LAST_MOUNT_AGE_DAYS,
+    enabled: bool = False,
+) -> FindingClassification:
+    """Classify an unreferenced volume finding.
+
+    Returns CLEANUP_CANDIDATE only when volume_deletion_enabled=True AND
+    last_mount_days is not None AND last_mount_days > threshold (default 90).
+    Everything else is REPORT_ONLY.
+    """
+    if not enabled:
+        return FindingClassification.REPORT_ONLY
+    if last_mount_days is None or last_mount_days <= threshold:
+        return FindingClassification.REPORT_ONLY
+    return FindingClassification.CLEANUP_CANDIDATE
+
+
+def _classify_build_cache(
+    reclaimable_bytes: int | None,
+    *,
+    enabled: bool = False,
+) -> FindingClassification:
+    """Classify a build cache finding.
+
+    Returns CLEANUP_CANDIDATE only when build_cache_deletion_enabled=True AND
+    reclaimable_bytes > 0. Everything else is REPORT_ONLY.
+    """
+    if not enabled:
+        return FindingClassification.REPORT_ONLY
+    if reclaimable_bytes is None or reclaimable_bytes <= 0:
+        return FindingClassification.REPORT_ONLY
+    return FindingClassification.CLEANUP_CANDIDATE
 
 
 # --- Helpers ---

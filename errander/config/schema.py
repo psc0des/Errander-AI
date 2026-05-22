@@ -61,6 +61,10 @@ class ActionConfig(BaseModel):
     enabled: bool
     command_mode: str | None = None
     restartable_units: list[str] = []
+    # docker_hygiene v1.5 — volume and build-cache deletion (both default off)
+    volume_deletion_enabled: bool = False
+    volume_last_mount_days_threshold: int = 90
+    build_cache_deletion_enabled: bool = False
 
 
 class TargetSchema(BaseModel):
@@ -194,6 +198,16 @@ class EnvironmentSchema(BaseModel):
                 "docker_hygiene: contradiction — enabled=true but command_mode=disabled. "
                 "Set command_mode: wrapper to enable docker hygiene, or set enabled: false."
             )
+        if docker_hygiene_cfg and docker_hygiene_cfg.volume_deletion_enabled:
+            if not docker_hygiene_cfg.enabled:
+                raise ConfigError(
+                    "docker_hygiene: contradiction — volume_deletion_enabled=true but enabled=false. "
+                    "Set enabled: true and command_mode: wrapper to use docker hygiene."
+                )
+            if docker_hygiene_cfg.volume_last_mount_days_threshold < 1:
+                raise ConfigError(
+                    "docker_hygiene.volume_last_mount_days_threshold must be >= 1"
+                )
 
         service_restart_cfg = full_actions.get("service_restart")
         if service_restart_cfg and service_restart_cfg.enabled and not service_restart_cfg.restartable_units:

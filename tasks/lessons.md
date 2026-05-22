@@ -49,6 +49,27 @@ When `poll_hygiene_replies_once` is imported *inside* `_run_docker_hygiene` (not
 
 **How to apply:** Before writing `patch("errander.X.function_name")`, verify the import is at module level in `errander/X.py`. If the import is inside a function body, patch the source module instead: `patch("errander.source_module.function_name")`.
 
+## 2026-05-22 — Classify-time gate is the right pattern for default-off resource classes
+
+When a resource class (e.g., volumes) should be default-off with an operator opt-in flag, the gate belongs in the classifier (`_classify_volume(enabled=False)` → always `REPORT_ONLY`), not in `_EXECUTABLE_CLASSES`. This is Option A (classify-time gate):
+
+- `_EXECUTABLE_CLASSES` stays static — no dynamic filtering needed.
+- The approval surface never sees a cleanup_candidate unless the flag is on.
+- The formatter, `_select_all`, and `_parse_explicit_indices` all work correctly without modification.
+- Adding the class to `_EXECUTABLE_CLASSES` is safe as long as the classifier returns `REPORT_ONLY` by default.
+
+**Why:** Option B (dynamic `_EXECUTABLE_CLASSES`) would require threading the config flag into three approval-surface sites and making the set depend on runtime state. Option A keeps the approval surface stateless and the gate a single decision point.
+
+**How to apply:** For any new resource class with a default-off config flag, implement the gate in the classifier function with `enabled: bool = False`. Then add the class to `_EXECUTABLE_CLASSES` so the approval surface can handle it when enabled.
+
+## 2026-05-22 — build_cache identity must be a stable string, not the angle-bracket fallback
+
+`DockerHygieneFinding.identity` falls back to `f"<{resource_class.value}>"` (with angle brackets) when neither `name` nor `object_id` is set. The `errander-docker-remove-v2` wrapper outputs `id=build_cache` (no angle brackets). This caused the parser to fail to match the key → it treated the build_cache result as unapproved → dropped it (per Contract B: drop results for unapproved objects). Fix: set `name="build_cache"` explicitly in `_build_finding()` for the BUILD_CACHE branch, giving `identity == "build_cache"`.
+
+**Why:** The `identity` property is the join key between the assessment snapshot and the wrapper's removal output. Any mismatch silently drops the result or causes a lookup failure.
+
+**How to apply:** For every resource class, verify that `DockerHygieneFinding.identity` returns exactly the string the wrapper will output as `id=...`. Trace from `_build_finding()` (where the finding is constructed) → `identity` property → wrapper output. Add a test that calls `parse_remove_v2_output` with a matching wrapper line and asserts the status is not `FAILED`.
+
 ## 2026-05-22 — Mock functions that stand in for an interface must accept **kwargs when the interface gains new parameters
 
 When `dispatch_action_node` gained new keyword parameters (`hygiene_manager`, `slack_client`, etc.), test functions that mocked `_run_docker_hygiene` with plain positional signatures broke with `TypeError: fake_runner() got an unexpected keyword argument 'hygiene_manager'`. The fix is to add `**_: object` to the mock function signature so it silently absorbs any extra keyword arguments.

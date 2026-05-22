@@ -46,6 +46,15 @@
 #           #     Per-object re-validation at execution time requires the wrapper.
 #           #   disabled: Errander will not plan or execute docker_hygiene on this env.
 #           # Run `scripts/install-docker-wrappers-v2.sh` on each target to install wrappers.
+#           #
+#           # v1.5 volume + build cache deletion (all default-off):
+#           # volume_deletion_enabled: false       # Enable volume removal proposals (default: false).
+#           #                                      # Volumes are always report_only when false.
+#           # volume_last_mount_days_threshold: 90 # Days since last mount before a volume is a candidate.
+#           #                                      # Must be >= 1. Ignored when volume_deletion_enabled=false.
+#           # build_cache_deletion_enabled: false  # Enable build cache removal proposals (default: false).
+#           #                                      # Build cache is always report_only when false.
+#           # NOTE: volumes require explicit approval by index — 'approve all' never selects them.
 #         backup_verify:
 #           enabled: false              # Off by default — requires `backup:` section in settings.yaml
 #         service_restart:

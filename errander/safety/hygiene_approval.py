@@ -59,7 +59,6 @@ class HygieneReplyError(ValueError):
 _SLACK_BUDGET_CHARS = 3600
 
 #: Resource classes whose findings can be approved for removal.
-#: Volumes and build_cache are always report-only (CLAUDE.md → docker_hygiene scope).
 #: Within executable classes, only CLEANUP_CANDIDATE findings are selectable —
 #: report_only findings (e.g. image_unused younger than the age threshold) are
 #: surfaced for visibility but cannot be approved.
@@ -67,7 +66,17 @@ _EXECUTABLE_CLASSES: tuple[DockerResourceClass, ...] = (
     DockerResourceClass.IMAGE_DANGLING,
     DockerResourceClass.IMAGE_UNUSED,
     DockerResourceClass.CONTAINER_STOPPED,
+    DockerResourceClass.VOLUME_UNREFERENCED,
+    DockerResourceClass.BUILD_CACHE,
 )
+
+#: Classes requiring explicit index approval — excluded from 'approve all'.
+#: Volumes are irreversible and higher-blast-radius than images, so operators
+#: must name them by index (approve volumes 1,2) rather than batch-approve.
+#: Build cache is intentionally excluded: it is a singleton per VM and lower-stakes.
+_EXPLICIT_ONLY_CLASSES: frozenset[DockerResourceClass] = frozenset({
+    DockerResourceClass.VOLUME_UNREFERENCED,
+})
 
 
 def _human_bytes(n: int | None) -> str:
@@ -85,6 +94,7 @@ def format_hygiene_approval_message(
     *,
     web_approval_url: str | None = None,
     batch_id: str | None = None,
+    backup_verify_passed: bool | None = None,
 ) -> str:
     """Render an assessment into the Slack approval message body.
 
@@ -101,14 +111,24 @@ def format_hygiene_approval_message(
         lines.append(f"batch `{batch_id}`")
     lines.append("")
 
+    # Backup verify context — soft signal shown when volume candidates are present.
+    volume_candidates = [
+        f for f in assessment.findings
+        if f.resource_class == DockerResourceClass.VOLUME_UNREFERENCED
+        and f.classification == FindingClassification.CLEANUP_CANDIDATE
+    ]
+    if volume_candidates and backup_verify_passed is not None:
+        if backup_verify_passed:
+            lines.append(":white_check_mark: Backup status: Verified — backup ran successfully.")
+        else:
+            lines.append(":warning: Backup verify: not run or failed — volumes still await your approval.")
+        lines.append("")
+
     by_class = assessment.by_class()
     class_index = 1  # global index for use in reply syntax: approve <class> <n>
     indexed_classes: dict[str, list[DockerHygieneFinding]] = {}
 
-    for klass in _EXECUTABLE_CLASSES + (
-        DockerResourceClass.VOLUME_UNREFERENCED,
-        DockerResourceClass.BUILD_CACHE,
-    ):
+    for klass in _EXECUTABLE_CLASSES:
         items = by_class.get(klass, [])
         if not items:
             continue
@@ -122,7 +142,7 @@ def format_hygiene_approval_message(
             size = _human_bytes(f.size_bytes)
             age = _format_age(f)
             if f.classification == FindingClassification.CLEANUP_CANDIDATE and klass in _EXECUTABLE_CLASSES:
-                executable = " ✓"
+                executable = " ✓ ⚠ explicit-only" if klass in _EXPLICIT_ONLY_CLASSES else " ✓"
             elif f.classification == FindingClassification.INVESTIGATE:
                 executable = " ⚠ investigate"
             else:
@@ -301,6 +321,8 @@ def _select_all(
     selected: list[DockerHygieneFinding] = []
     by_class = assessment.by_class()
     for klass in _EXECUTABLE_CLASSES:
+        if klass in _EXPLICIT_ONLY_CLASSES:
+            continue  # volumes require explicit index — excluded from 'approve all'
         for f in by_class.get(klass, []):
             if f.classification == effective:
                 selected.append(f)

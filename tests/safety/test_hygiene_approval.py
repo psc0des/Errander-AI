@@ -78,6 +78,34 @@ def _volume(name: str) -> DockerHygieneFinding:
     )
 
 
+def _volume_candidate(name: str, last_mount_days: int = 120) -> DockerHygieneFinding:
+    return DockerHygieneFinding(
+        resource_class=DockerResourceClass.VOLUME_UNREFERENCED,
+        classification=FindingClassification.CLEANUP_CANDIDATE,
+        name=name,
+        size_bytes=1024,
+        last_mount_days=last_mount_days,
+    )
+
+
+def _build_cache_report_only() -> DockerHygieneFinding:
+    return DockerHygieneFinding(
+        resource_class=DockerResourceClass.BUILD_CACHE,
+        classification=FindingClassification.REPORT_ONLY,
+        name="build_cache",
+        reclaimable_bytes=5_000_000,
+    )
+
+
+def _build_cache_candidate(reclaimable: int = 5_000_000) -> DockerHygieneFinding:
+    return DockerHygieneFinding(
+        resource_class=DockerResourceClass.BUILD_CACHE,
+        classification=FindingClassification.CLEANUP_CANDIDATE,
+        name="build_cache",
+        reclaimable_bytes=reclaimable,
+    )
+
+
 def _assessment(findings: tuple[DockerHygieneFinding, ...]) -> DockerHygieneAssessment:
     return DockerHygieneAssessment(
         vm_id="prod/web-01",
@@ -264,10 +292,10 @@ class TestParseReply:
         with pytest.raises(HygieneReplyError, match="unknown class"):
             parse_hygiene_reply("approve gizmos 1", a, operator_id="U123")
 
-    def test_report_only_class_cannot_be_approved(self) -> None:
-        """volumes / build_cache are always report-only — explicit approval must fail."""
+    def test_report_only_volume_cannot_be_approved_by_index(self) -> None:
+        """A volume classified report_only cannot be explicitly approved by index."""
         a = _assessment((_volume("vol1"),))
-        with pytest.raises(HygieneReplyError, match="report-only"):
+        with pytest.raises(HygieneReplyError, match="report_only"):
             parse_hygiene_reply("approve volumes 1", a, operator_id="U123")
 
     def test_report_only_finding_in_executable_class_rejected(self) -> None:
@@ -417,3 +445,96 @@ class TestHygieneApprovalManager:
         pending = m.get_pending()
         assert len(pending) == 1
         assert pending[0].vm_id == "vm2"
+
+
+# ---------------------------------------------------------------------------
+# v1.5 — Volume and build cache approval surface
+# ---------------------------------------------------------------------------
+
+class TestVolumeAndBuildCacheApproval:
+    """Covers formatter markers, approve-all scope, explicit index, backup context."""
+
+    # --- Formatter markers ---
+
+    def test_volume_report_only_shows_as_report_only(self) -> None:
+        a = _assessment((_volume("vol1"),))
+        msg = format_hygiene_approval_message(a)
+        assert "(report-only)" in msg
+        assert "✓" not in msg
+
+    def test_volume_cleanup_candidate_shows_explicit_only_marker(self) -> None:
+        a = _assessment((_volume_candidate("vol1"),))
+        msg = format_hygiene_approval_message(a)
+        assert "✓ ⚠ explicit-only" in msg
+
+    def test_build_cache_cleanup_candidate_shows_checkmark_not_explicit(self) -> None:
+        a = _assessment((_build_cache_candidate(),))
+        msg = format_hygiene_approval_message(a)
+        assert " ✓" in msg
+        assert "explicit-only" not in msg
+
+    # --- approve all scope ---
+
+    def test_approve_all_excludes_volume_cleanup_candidate(self) -> None:
+        """'approve all' must NOT select volumes even when they are cleanup_candidate."""
+        a = _assessment((_dangling("sha256:a"), _volume_candidate("vol1")))
+        approval = parse_hygiene_reply("approve all", a, operator_id="U123")
+        ids = {f.object_id for f in approval.approved_findings}
+        assert "sha256:a" in ids
+        assert not any(f.name == "vol1" for f in approval.approved_findings)
+
+    def test_approve_all_includes_build_cache_cleanup_candidate(self) -> None:
+        """'approve all cleanup_candidate' selects build_cache (not explicit-only)."""
+        a = _assessment((_dangling("sha256:a"), _build_cache_candidate()))
+        approval = parse_hygiene_reply("approve all cleanup_candidate", a, operator_id="U123")
+        classes = {f.resource_class for f in approval.approved_findings}
+        assert DockerResourceClass.IMAGE_DANGLING in classes
+        assert DockerResourceClass.BUILD_CACHE in classes
+
+    # --- Explicit index approval ---
+
+    def test_explicit_approve_volume_cleanup_candidate_succeeds(self) -> None:
+        a = _assessment((_volume_candidate("pgdata_old"),))
+        approval = parse_hygiene_reply("approve volumes 1", a, operator_id="U123")
+        assert len(approval.approved_findings) == 1
+        assert approval.approved_findings[0].name == "pgdata_old"
+
+    def test_explicit_approve_volume_report_only_rejected(self) -> None:
+        a = _assessment((_volume("young_vol"),))
+        with pytest.raises(HygieneReplyError, match="report_only"):
+            parse_hygiene_reply("approve volumes 1", a, operator_id="U123")
+
+    def test_explicit_approve_build_cache_cleanup_candidate_succeeds(self) -> None:
+        a = _assessment((_build_cache_candidate(),))
+        approval = parse_hygiene_reply("approve build_cache 1", a, operator_id="U123")
+        assert len(approval.approved_findings) == 1
+        assert approval.approved_findings[0].resource_class == DockerResourceClass.BUILD_CACHE
+
+    def test_explicit_approve_build_cache_report_only_rejected(self) -> None:
+        a = _assessment((_build_cache_report_only(),))
+        with pytest.raises(HygieneReplyError, match="report_only"):
+            parse_hygiene_reply("approve build_cache 1", a, operator_id="U123")
+
+    # --- Backup verify context ---
+
+    def test_backup_context_shown_when_volumes_present_and_passed(self) -> None:
+        a = _assessment((_volume_candidate("vol1"),))
+        msg = format_hygiene_approval_message(a, backup_verify_passed=True)
+        assert "Backup status: Verified" in msg
+
+    def test_backup_context_shown_when_volumes_present_and_failed(self) -> None:
+        a = _assessment((_volume_candidate("vol1"),))
+        msg = format_hygiene_approval_message(a, backup_verify_passed=False)
+        assert "Backup verify: not run or failed" in msg
+
+    def test_backup_context_not_shown_when_no_volume_candidates(self) -> None:
+        """Backup context only appears when there are volume cleanup_candidates."""
+        a = _assessment((_dangling("sha256:a"),))
+        msg = format_hygiene_approval_message(a, backup_verify_passed=True)
+        assert "Backup" not in msg
+
+    def test_backup_context_not_shown_when_backup_verify_passed_is_none(self) -> None:
+        """When backup_verify_passed is None (no backup ran), omit context entirely."""
+        a = _assessment((_volume_candidate("vol1"),))
+        msg = format_hygiene_approval_message(a)  # default: backup_verify_passed=None
+        assert "Backup" not in msg

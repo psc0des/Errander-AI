@@ -222,3 +222,33 @@ class TestServiceRestartValidation:
         with pytest.raises((ConfigError, ValidationError, ValueError)) as exc_info:
             validate_inventory(config_file)
         assert "restartable_units" in str(exc_info.value)
+
+
+class TestDockerHygieneV15Config:
+    """v1.5 volume/build_cache config fields default and validate correctly."""
+
+    def test_volume_deletion_enabled_defaults_to_false(self) -> None:
+        cfg = ActionConfig(enabled=True)
+        assert cfg.volume_deletion_enabled is False
+
+    def test_volume_last_mount_days_threshold_defaults_to_90(self) -> None:
+        cfg = ActionConfig(enabled=True)
+        assert cfg.volume_last_mount_days_threshold == 90
+
+    def test_build_cache_deletion_enabled_defaults_to_false(self) -> None:
+        cfg = ActionConfig(enabled=True)
+        assert cfg.build_cache_deletion_enabled is False
+
+    def test_volume_deletion_enabled_with_action_disabled_raises(self, tmp_path: Path) -> None:
+        config_file = tmp_path / "inventory.yaml"
+        config_file.write_text(_inventory_yaml({
+            "prod": _env_with_actions({
+                "docker_hygiene": {
+                    "enabled": False,
+                    "volume_deletion_enabled": True,
+                },
+            }),
+        }))
+        with pytest.raises((ConfigError, ValueError)) as exc_info:
+            validate_inventory(config_file)
+        assert "volume_deletion_enabled" in str(exc_info.value) or "enabled=false" in str(exc_info.value)

@@ -15,9 +15,12 @@ from errander.agent.subgraphs.docker_hygiene import (
     INVESTIGATE_CONTAINER_EXIT_CODES,
     STOPPED_CONTAINER_CLEANUP_AGE_HOURS,
     UNUSED_IMAGE_CLEANUP_AGE_DAYS,
+    VOLUME_LAST_MOUNT_AGE_DAYS,
     DockerHygieneGraphState,
+    _classify_build_cache,
     _classify_image,
     _classify_stopped_container,
+    _classify_volume,
     assess_node,
     build_docker_hygiene_subgraph,
     parse_assess_v2_output,
@@ -1026,3 +1029,258 @@ class TestPerObjectAuditHook:
         # Each event carries the exact object_id in metadata
         ids = {e.metadata.get("object_id") for e in events}  # type: ignore[attr-defined]
         assert ids == {"sha256:a", "sha256:b", "sha256:c"}
+
+
+# ---------------------------------------------------------------------------
+# v1.5 — Volume and build cache classifiers
+# ---------------------------------------------------------------------------
+
+class TestClassifyVolume:
+    def test_below_threshold_is_report_only(self) -> None:
+        assert _classify_volume(80, enabled=True) == FindingClassification.REPORT_ONLY
+
+    def test_at_threshold_boundary_is_report_only(self) -> None:
+        # Rule is strictly greater-than — at the threshold is still report_only.
+        assert _classify_volume(VOLUME_LAST_MOUNT_AGE_DAYS, enabled=True) == FindingClassification.REPORT_ONLY
+
+    def test_above_threshold_is_cleanup_candidate(self) -> None:
+        assert _classify_volume(VOLUME_LAST_MOUNT_AGE_DAYS + 1, enabled=True) == FindingClassification.CLEANUP_CANDIDATE
+
+    def test_none_age_is_report_only(self) -> None:
+        assert _classify_volume(None, enabled=True) == FindingClassification.REPORT_ONLY
+
+    def test_disabled_always_report_only(self) -> None:
+        assert _classify_volume(365, enabled=False) == FindingClassification.REPORT_ONLY
+
+
+class TestClassifyBuildCache:
+    def test_reclaimable_is_cleanup_candidate(self) -> None:
+        assert _classify_build_cache(1_000_000, enabled=True) == FindingClassification.CLEANUP_CANDIDATE
+
+    def test_zero_bytes_is_report_only(self) -> None:
+        assert _classify_build_cache(0, enabled=True) == FindingClassification.REPORT_ONLY
+
+    def test_none_bytes_is_report_only(self) -> None:
+        assert _classify_build_cache(None, enabled=True) == FindingClassification.REPORT_ONLY
+
+    def test_disabled_always_report_only(self) -> None:
+        assert _classify_build_cache(10_000_000, enabled=False) == FindingClassification.REPORT_ONLY
+
+
+class TestParseAssessV2OutputV15:
+    """Parser correctly classifies volumes and build cache when deletion is enabled."""
+
+    def _stdout(self) -> str:
+        return (
+            "reachable=yes\n"
+            "docker_hygiene_begin\n"
+            "class=volume_unreferenced\n"
+            "  name=pgdata_old size_bytes=1073741824 last_mount_days=120\n"
+            "  name=recent_vol size_bytes=1024 last_mount_days=30\n"
+            "class=build_cache\n"
+            "  reclaimable_bytes=5000000\n"
+            "docker_hygiene_end\n"
+        )
+
+    def test_volume_above_threshold_when_enabled_is_cleanup_candidate(self) -> None:
+        result = parse_assess_v2_output(
+            self._stdout(),
+            vm_id="vm-01",
+            volume_deletion_enabled=True,
+            volume_last_mount_days_threshold=90,
+        )
+        vol = next(f for f in result.findings if f.name == "pgdata_old")
+        assert vol.classification == FindingClassification.CLEANUP_CANDIDATE
+
+    def test_volume_below_threshold_when_enabled_is_report_only(self) -> None:
+        result = parse_assess_v2_output(
+            self._stdout(),
+            vm_id="vm-01",
+            volume_deletion_enabled=True,
+            volume_last_mount_days_threshold=90,
+        )
+        vol = next(f for f in result.findings if f.name == "recent_vol")
+        assert vol.classification == FindingClassification.REPORT_ONLY
+
+    def test_volume_at_threshold_boundary_is_report_only(self) -> None:
+        stdout = (
+            "reachable=yes\n"
+            "docker_hygiene_begin\n"
+            "class=volume_unreferenced\n"
+            "  name=boundary_vol size_bytes=1024 last_mount_days=90\n"
+            "docker_hygiene_end\n"
+        )
+        result = parse_assess_v2_output(
+            stdout, vm_id="vm-01", volume_deletion_enabled=True, volume_last_mount_days_threshold=90
+        )
+        assert result.findings[0].classification == FindingClassification.REPORT_ONLY
+
+    def test_build_cache_when_enabled_is_cleanup_candidate(self) -> None:
+        result = parse_assess_v2_output(
+            self._stdout(), vm_id="vm-01", build_cache_deletion_enabled=True
+        )
+        cache = next(f for f in result.findings if f.resource_class == DockerResourceClass.BUILD_CACHE)
+        assert cache.classification == FindingClassification.CLEANUP_CANDIDATE
+
+    def test_defaults_keep_volumes_report_only(self) -> None:
+        # Without enabled flags, nothing changes from prior behaviour.
+        result = parse_assess_v2_output(self._stdout(), vm_id="vm-01")
+        for f in result.findings:
+            assert f.classification == FindingClassification.REPORT_ONLY
+
+
+class TestParseRemoveV2OutputV15:
+    """parse_remove_v2_output handles volume and build_cache result lines."""
+
+    def _volume_finding(self, name: str) -> object:
+        from errander.models.docker_hygiene import DockerHygieneFinding
+        return DockerHygieneFinding(
+            resource_class=DockerResourceClass.VOLUME_UNREFERENCED,
+            classification=FindingClassification.CLEANUP_CANDIDATE,
+            name=name,
+            size_bytes=1024,
+            last_mount_days=120,
+        )
+
+    def _build_cache_finding(self) -> object:
+        from errander.models.docker_hygiene import DockerHygieneFinding
+        return DockerHygieneFinding(
+            resource_class=DockerResourceClass.BUILD_CACHE,
+            classification=FindingClassification.CLEANUP_CANDIDATE,
+            name="build_cache",
+            reclaimable_bytes=5_000_000,
+        )
+
+    def test_volume_removed(self) -> None:
+        from errander.agent.subgraphs.docker_hygiene import parse_remove_v2_output
+        from errander.models.docker_hygiene import RemovalStatus
+        approved = (self._volume_finding("pgdata_old"),)  # type: ignore[arg-type]
+        stdout = "result class=volume_unreferenced id=pgdata_old status=removed reason=\n"
+        results = parse_remove_v2_output(stdout, approved)  # type: ignore[arg-type]
+        assert len(results) == 1
+        assert results[0].status == RemovalStatus.REMOVED
+
+    def test_volume_drift_skipped(self) -> None:
+        from errander.agent.subgraphs.docker_hygiene import parse_remove_v2_output
+        from errander.models.docker_hygiene import RemovalStatus
+        approved = (self._volume_finding("pgdata_old"),)  # type: ignore[arg-type]
+        stdout = "result class=volume_unreferenced id=pgdata_old status=drift_skipped reason=volume_now_referenced\n"
+        results = parse_remove_v2_output(stdout, approved)  # type: ignore[arg-type]
+        assert results[0].status == RemovalStatus.DRIFT_SKIPPED
+        assert results[0].drift_reason == "volume_now_referenced"
+
+    def test_build_cache_removed(self) -> None:
+        from errander.agent.subgraphs.docker_hygiene import parse_remove_v2_output
+        from errander.models.docker_hygiene import RemovalStatus
+        approved = (self._build_cache_finding(),)  # type: ignore[arg-type]
+        stdout = "result class=build_cache id=build_cache status=removed reason=\n"
+        results = parse_remove_v2_output(stdout, approved)  # type: ignore[arg-type]
+        assert len(results) == 1
+        assert results[0].status == RemovalStatus.REMOVED
+
+    def test_missing_volume_result_synthesized_failed(self) -> None:
+        from errander.agent.subgraphs.docker_hygiene import parse_remove_v2_output
+        from errander.models.docker_hygiene import RemovalStatus
+        approved = (self._volume_finding("pgdata_old"),)  # type: ignore[arg-type]
+        stdout = ""  # wrapper returned nothing
+        results = parse_remove_v2_output(stdout, approved)  # type: ignore[arg-type]
+        assert len(results) == 1
+        assert results[0].status == RemovalStatus.FAILED
+        assert results[0].error == "no_result_from_wrapper"
+
+
+class TestExecuteNodeV15:
+    """Execute node correctly handles volume and build_cache approval."""
+
+    def _approval(self, findings: tuple, snapshot_hash: str = "abc123") -> object:
+        from errander.models.docker_hygiene import ApprovalSurface, DockerHygieneApproval
+        return DockerHygieneApproval(
+            vm_id="dev/web-01",
+            approved_findings=findings,
+            snapshot_hash=snapshot_hash,
+            surface=ApprovalSurface.TEST_INJECT,
+            operator_id="test-user",
+        )
+
+    @pytest.mark.asyncio
+    async def test_volume_approved_calls_wrapper(self) -> None:
+        from errander.agent.subgraphs.docker_hygiene import execute_node
+        from errander.models.docker_hygiene import (
+            DockerHygieneFinding,
+            DockerHygieneAssessment,
+            RemovalStatus,
+            compute_assessment_hash,
+        )
+        vol = DockerHygieneFinding(
+            resource_class=DockerResourceClass.VOLUME_UNREFERENCED,
+            classification=FindingClassification.CLEANUP_CANDIDATE,
+            name="pgdata_old",
+            size_bytes=1024,
+            last_mount_days=120,
+        )
+        assessment = DockerHygieneAssessment(
+            vm_id="dev/web-01",
+            findings=(vol,),
+            raw_output="",
+            reachable=True,
+            error=None,
+        )
+        approval = self._approval(
+            findings=(vol,),
+            snapshot_hash=compute_assessment_hash(assessment),
+        )
+        captured_commands: list[str] = []
+
+        executor = _make_executor()
+
+        async def mock_execute(*args: object, **kwargs: object) -> SSHResult:
+            cmd = str(kwargs.get("command", args[4] if len(args) > 4 else ""))
+            captured_commands.append(cmd)
+            return _make_result("result class=volume_unreferenced id=pgdata_old status=removed reason=")
+
+        with patch.object(executor, "execute", side_effect=mock_execute):
+            state = _base_state(dry_run=False, assessment=assessment, approval=approval)  # type: ignore[call-arg]
+            result = await execute_node(state, executor=executor)
+
+        assert result["status"] == ActionStatus.SUCCESS.value
+        assert captured_commands, "wrapper must have been called"
+        # Allowlist is embedded in the command via printf — check it includes the volume
+        assert "class=volume_unreferenced" in captured_commands[0]
+        assert "id=pgdata_old" in captured_commands[0]
+
+    @pytest.mark.asyncio
+    async def test_build_cache_approved_calls_wrapper(self) -> None:
+        from errander.agent.subgraphs.docker_hygiene import execute_node
+        from errander.models.docker_hygiene import (
+            DockerHygieneFinding,
+            DockerHygieneAssessment,
+            compute_assessment_hash,
+        )
+        cache = DockerHygieneFinding(
+            resource_class=DockerResourceClass.BUILD_CACHE,
+            classification=FindingClassification.CLEANUP_CANDIDATE,
+            name="build_cache",
+            reclaimable_bytes=5_000_000,
+        )
+        assessment = DockerHygieneAssessment(
+            vm_id="dev/web-01",
+            findings=(cache,),
+            raw_output="",
+            reachable=True,
+            error=None,
+        )
+        approval = self._approval(
+            findings=(cache,),
+            snapshot_hash=compute_assessment_hash(assessment),
+        )
+
+        executor = _make_executor()
+
+        async def mock_execute(*args: object, **kwargs: object) -> SSHResult:
+            return _make_result("result class=build_cache id=build_cache status=removed reason=")
+
+        with patch.object(executor, "execute", side_effect=mock_execute):
+            state = _base_state(dry_run=False, assessment=assessment, approval=approval)  # type: ignore[call-arg]
+            result = await execute_node(state, executor=executor)
+
+        assert result["status"] == ActionStatus.SUCCESS.value

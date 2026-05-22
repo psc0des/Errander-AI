@@ -4,6 +4,23 @@
 2026-05-22
 
 ## Current Phase
+**docker_hygiene v1.5 — volume + build_cache deletion (2026-05-22, COMPLETE).** 2295 tests passing, ruff clean, no new mypy errors.
+
+Both `volume_unreferenced` and `build_cache` are now executable (when enabled in inventory config). Both default off (`volume_deletion_enabled: false`, `build_cache_deletion_enabled: false`). Classify-time gate: when disabled, `_classify_volume`/`_classify_build_cache` return `REPORT_ONLY` — approval surface never sees a candidate. Volumes get an extra friction gate: cannot be selected via `approve all`, must be named by index. Soft backup_verify context shown in Slack approval message when volume candidates are present.
+
+### Files changed in v1.5
+- `errander/agent/subgraphs/docker_hygiene.py` — `VOLUME_LAST_MOUNT_AGE_DAYS` constant; `_classify_volume`, `_classify_build_cache` classifiers; `DockerHygieneGraphState` extended (3 new fields); `_build_finding` and `parse_assess_v2_output` thread volume/build_cache config params; `assess_node` reads config from state
+- `errander/config/schema.py` — `ActionConfig` extended with 3 new fields (`volume_deletion_enabled`, `volume_last_mount_days_threshold`, `build_cache_deletion_enabled`); contradiction guard added
+- `errander/safety/hygiene_approval.py` — `_EXECUTABLE_CLASSES` extended; `_EXPLICIT_ONLY_CLASSES` frozenset added; `_select_all` skips explicit-only; formatter per-finding marker updated; backup context block added; `format_hygiene_approval_message` gains `backup_verify_passed` param
+- `errander/agent/vm_graph.py` — threads 3 config keys into sub_state; extracts backup_verify result, passes to formatter
+- `scripts/install-docker-wrappers-v2.sh` — `volume_unreferenced|build_cache` catch-all replaced with two separate branches (each with per-object drift re-check)
+- `tests/agent/subgraphs/test_docker_hygiene.py` — 15 new tests: TestClassifyVolume×5, TestClassifyBuildCache×4, TestParseAssessV2OutputV15×5, TestParseRemoveV2OutputV15×4, TestExecuteNodeV15×2
+- `tests/safety/test_hygiene_approval.py` — 13 new tests (TestVolumeAndBuildCacheApproval); 1 renamed test
+- `tests/config/test_schema_actions.py` — 4 new tests (TestDockerHygieneV15Config)
+- `docs/learning/47-docker-hygiene-v1.5-scope.md` (NEW)
+- `example/inventory.yaml`, `SETUP.md`, `README.md`, `STATUS.md`, `tasks/todo.md`, `tasks/lessons.md`, `docs/command-log.md` — doc sync
+
+## Previous Phase
 **decisions.py semantic debt — replace stale DOCKER_PRUNE refs with DOCKER_HYGIENE (2026-05-22, COMPLETE).** 2258 tests passing, ruff clean, no new mypy errors.
 
 v1.2 formalises unused-image (non-dangling, age > 30 days) removal. The execution wiring was already in place from v1.1; v1.2 closes the approval-surface gap: formatter now shows per-finding ✓ (not per-class), parser blocks approval of `report_only` findings in executable classes, and `approve all` defaults to cleanup_candidate only.

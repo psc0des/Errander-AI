@@ -290,10 +290,43 @@ while IFS= read -r line; do
             fi
             ;;
 
-        volume_unreferenced|build_cache)
-            # Volumes and build cache are report-only and not in execution scope.
-            # If they reach the wrapper, something is wrong upstream — refuse loudly.
-            echo "result class=$obj_class id=$obj_id status=failed reason=class_out_of_scope"
+        volume_unreferenced)
+            # INVARIANT (layered-drift-gates / per-object):
+            # Re-query whether the volume is still dangling (unreferenced by any container).
+            still_dangling=$(/usr/bin/docker volume ls --filter dangling=true -q 2>/dev/null \
+                | grep -Fx "$obj_id" || true)
+            if [ -z "$still_dangling" ]; then
+                if /usr/bin/docker volume inspect "$obj_id" >/dev/null 2>&1; then
+                    echo "result class=$obj_class id=$obj_id status=drift_skipped reason=volume_now_referenced"
+                else
+                    echo "result class=$obj_class id=$obj_id status=drift_skipped reason=already_removed"
+                fi
+                continue
+            fi
+            if /usr/bin/docker volume rm "$obj_id" >/dev/null 2>&1; then
+                echo "result class=$obj_class id=$obj_id status=removed reason="
+            else
+                err=$(/usr/bin/docker volume rm "$obj_id" 2>&1 || true)
+                echo "result class=$obj_class id=$obj_id status=failed reason=${err:0:80}"
+            fi
+            ;;
+
+        build_cache)
+            # INVARIANT (layered-drift-gates / per-object):
+            # build_cache identity is always "build_cache" (singleton per VM).
+            # Re-query current reclaimable bytes before pruning.
+            current_reclaim=$(/usr/bin/docker system df --format '{{.Type}}|{{.Reclaimable}}' 2>/dev/null \
+                | awk -F'|' '$1 == "Build Cache" { n=$2; sub(/[^0-9.].*/,"",n); print (n+0 > 0) ? "nonzero" : "zero" }')
+            if [ "$current_reclaim" != "nonzero" ]; then
+                echo "result class=$obj_class id=$obj_id status=drift_skipped reason=no_reclaimable_cache"
+                continue
+            fi
+            if /usr/bin/docker builder prune -f >/dev/null 2>&1; then
+                echo "result class=$obj_class id=$obj_id status=removed reason="
+            else
+                err=$(/usr/bin/docker builder prune -f 2>&1 || true)
+                echo "result class=$obj_class id=$obj_id status=failed reason=${err:0:80}"
+            fi
             ;;
 
         *)

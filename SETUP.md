@@ -377,10 +377,24 @@ uv run python -m errander --check-targets <env>
 | `container_stopped` (exit 0, age > 7 days) | `cleanup_candidate` | ✓ Yes |
 | `container_stopped` (exit 137/139 — OOM/SIGSEGV) | `investigate` | No — operator decides |
 | `container_stopped` (other) | `report_only` | No — shown for visibility |
-| `volume_unreferenced` | `report_only` | No — v1.5 scope |
-| `build_cache` | `report_only` | No — v1.5 scope |
+| `volume_unreferenced` (not mounted > threshold, `volume_deletion_enabled: true`) | `cleanup_candidate` | ✓ Explicit-only — must name by index; `approve all` skips volumes |
+| `volume_unreferenced` (default — `volume_deletion_enabled: false`) | `report_only` | No — shown for visibility |
+| `build_cache` (`build_cache_deletion_enabled: true`) | `cleanup_candidate` | ✓ Yes — selectable by `approve all` |
+| `build_cache` (default — `build_cache_deletion_enabled: false`) | `report_only` | No — shown for visibility |
 
-The Slack approval message shows `✓` next to each `cleanup_candidate` finding and `(report-only)` next to others. `approve all cleanup_candidate` selects only eligible objects.
+The Slack approval message shows `✓` next to each `cleanup_candidate` finding and `(report-only)` next to others. `approve all cleanup_candidate` selects only eligible objects (volumes are **explicit-only** — they are never selected by `approve all` even when classified as cleanup_candidate; name them by index instead).
+
+**v1.5 volume and build cache config fields** (all default-off; set under `actions.docker_hygiene` in `inventory.yaml`):
+
+| Field | Default | Description |
+|---|---|---|
+| `volume_deletion_enabled` | `false` | Enable volume removal proposals. When `false`, volumes are always `report_only` regardless of age. |
+| `volume_last_mount_days_threshold` | `90` | Minimum days since last mount for a volume to become a `cleanup_candidate`. Must be ≥ 1. |
+| `build_cache_deletion_enabled` | `false` | Enable build cache removal proposals. When `false`, build cache is always `report_only`. |
+
+> **Volumes require explicit approval.** Even when `volume_deletion_enabled: true`, the operator cannot use `approve all` to select volumes — they must name each one by its 1-based index in the approval message (e.g., `approve volumes 1,3`). This is intentional: volume data is permanently lost on removal.
+
+> **Wrapper reinstall required.** v1.5 replaces the `volume_unreferenced|build_cache` catch-all branch in `errander-docker-remove-v2` with two separate branches that each perform a drift re-check before removing. Re-run `scripts/install-docker-wrappers-v2.sh` on each target VM after upgrading to v1.5.
 
 **Assess wrapper output format** (parsed by `parse_assess_v2_output()` in `docker_hygiene.py`):
 

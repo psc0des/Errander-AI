@@ -778,6 +778,10 @@ async def _run_docker_hygiene(
     sub_state_with_conn["hostname"] = state.get("hostname", "")
     sub_state_with_conn["username"] = state.get("ssh_user", "")
     sub_state_with_conn["key_path"] = state.get("ssh_key_path", "")
+    # Thread v1.5 volume/build_cache config from action_params.
+    for _k in ("volume_deletion_enabled", "volume_last_mount_days_threshold", "build_cache_deletion_enabled"):
+        if _k in action_params:
+            sub_state_with_conn[_k] = action_params[_k]
 
     # Fast path: approval pre-injected (test / replay) — skip approval gate.
     pre_approval = action_params.get("approval")
@@ -885,10 +889,18 @@ async def _run_docker_hygiene(
         except Exception as exc:  # noqa: BLE001
             logger.warning("Could not build signed URL for %s: %s", vm_id, exc)
 
+    # Extract backup_verify outcome for context in the approval message.
+    backup_verify_passed: bool | None = None
+    for _past in state.get("results", []):
+        if _past.get("action_type") == ActionType.BACKUP_VERIFY.value:
+            backup_verify_passed = _past.get("status") == ActionStatus.SUCCESS.value
+            break
+
     msg_body = format_hygiene_approval_message(
         assessment,
         web_approval_url=web_approval_url,
         batch_id=batch_id,
+        backup_verify_passed=backup_verify_passed,
     )
     slack_ts: str | None = None
     if slack_client is not None:

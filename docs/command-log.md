@@ -2203,3 +2203,9 @@ uv run mypy errander/integrations/signed_url.py errander/safety/hygiene_approval
 uv run pytest tests/safety/test_hygiene_web_approve.py tests/safety/test_hygiene_reply_polling.py -x -q   # 20 passed (11 web + 9 polling)
 uv run pytest -x -q   # 2309 passed (+20 net new; resolved pytest-asyncio runner pollution from tests/ui by moving web tests under tests/safety + using manual event-loop driver)
 uv run ruff check errander/web/server.py errander/safety/hygiene_approval.py errander/integrations/slack.py tests/safety/test_hygiene_web_approve.py tests/safety/test_hygiene_reply_polling.py   # All clean on new code; pre-existing N814/UP037/no-any-return errors in unrelated lines of server.py
+
+# Docker hygiene v1.5 — volume + build_cache deletion (2026-05-22)
+uv run pytest tests/agent/subgraphs/test_docker_hygiene.py tests/safety/test_hygiene_approval.py tests/config/test_schema_actions.py -x -q   # targeted run (new test classes)
+uv run pytest -x -q   # 2295 passed (+37 net new; decisions.py semantic debt fix +5 net new committed separately)
+uv run ruff check errander/agent/subgraphs/docker_hygiene.py errander/config/schema.py errander/safety/hygiene_approval.py errander/agent/vm_graph.py scripts/install-docker-wrappers-v2.sh tests/agent/subgraphs/test_docker_hygiene.py tests/safety/test_hygiene_approval.py tests/config/test_schema_actions.py   # All checks passed!
+uv run mypy errander/agent/subgraphs/docker_hygiene.py errander/config/schema.py errander/safety/hygiene_approval.py errander/agent/vm_graph.py   # Success: no issues found in 4 source files

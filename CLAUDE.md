@@ -246,13 +246,11 @@ requires a new sub-graph + manifest + risk-tier classification + rollback strate
 
 > **v1.1 transition note (2026-05-21, updated 2026-05-22):** Both `docker_prune`
 > (legacy bulk action) and `docker_hygiene` (new object-level workflow) are
-> registered in `BUILTIN_ACTIONS` during the transition. As of Session 2b-ii,
-> `docker_hygiene` has execution (Session 2a) + both approval surfaces
-> (Slack reply parser/poller + web `/ui/docker-hygiene/approve` routes,
-> Sessions 2b-i / 2b-ii). What remains for `docker_hygiene` to be live is
-> **batch orchestration wiring** (Session 2b-iii — connecting assessment →
-> Slack message + signed URL → manager.wait → execute back into the parent
-> batch graph). `docker_prune` is then removed entirely in Session 3.
+> registered in `BUILTIN_ACTIONS` during the transition. As of Session 2b-iii,
+> `docker_hygiene` is fully live: execution (2a) + both approval surfaces
+> (Slack reply parser/poller + web `/ui/docker-hygiene/approve`, Sessions 2b-i/2b-ii)
+> + batch orchestration wiring (assess → Slack post + signed URL → manager.wait →
+> execute, Session 2b-iii). `docker_prune` is removed entirely in Session 3.
 > The 6-action count above reflects the post-transition state.
 
 - NEVER automate kernel patching — this is explicitly out of scope
@@ -303,9 +301,11 @@ ERRANDER_LLM_BASE_URL         # private vLLM endpoint
 ERRANDER_LLM_API_KEY          # if vLLM requires auth
 ERRANDER_AUDIT_DB_URL         # SQLite path for v1
 ERRANDER_SIGNING_SECRET       # HMAC secret for signed web-approval URLs
-                              # (docker_hygiene v1.1; routes shipped 2b-ii,
-                              #  enforced by orchestration when 2b-iii wires it)
                               # 32+ random bytes: head -c 32 /dev/urandom | base64
+ERRANDER_WEB_BASE_URL         # externally-reachable base URL for agent VM web UI
+                              # e.g. http://10.0.0.5:9090 — used to build signed
+                              # web-approval URLs in Slack messages (docker_hygiene)
+                              # empty = web approval URLs omitted from Slack messages
 ```
 SSH keys: referenced by file path in inventory config, never inlined.
 `.gitignore` must include: `.env`, `*.pem`, `*.key`, `*.sqlite`
@@ -408,7 +408,8 @@ ERRANDER_LLM_MODEL=...
 ERRANDER_SLACK_BOT_TOKEN=...
 ERRANDER_SLACK_CHANNEL_ID=...
 ERRANDER_AUDIT_DB_URL=errander.sqlite
-ERRANDER_SIGNING_SECRET=...   # required once docker_hygiene v1.1 Session 2b-ii ships
+ERRANDER_SIGNING_SECRET=...   # required for docker_hygiene web approval (v1.1)
+ERRANDER_WEB_BASE_URL=...     # e.g. http://10.0.0.5:9090 — optional, enables signed URL in Slack
 ```
 
 Nothing else is needed. `.venv/` and `.sqlite` are always regenerated locally.

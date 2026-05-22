@@ -214,7 +214,14 @@ The signer fails loud (`SigningSecretMissingError`) when the env var is unset
 disable signature verification. If the secret is rotated, in-flight signed
 URLs are immediately invalidated (intentional: rotation means revocation).
 
-Status as of 2026-05-22: Session 2b-ii shipped the web approval routes
-(`/ui/docker-hygiene/approve`); the env var is actively checked when operators
-navigate to those routes. Full end-to-end batch consumption (agent minting signed
-URLs during maintenance runs) lands in Session 2b-iii batch orchestration wiring.
+Status as of 2026-05-22: fully live. Session 2b-iii wired batch orchestration —
+the agent now mints signed URLs during maintenance runs and embeds them in Slack
+approval messages. The web approval routes (`/ui/docker-hygiene/approve`) verify
+the token on every GET and POST.
+
+**`ERRANDER_WEB_BASE_URL`** — externally-reachable base URL for the agent VM's
+web UI, e.g. `http://10.0.0.5:9090`. Used by `_run_docker_hygiene` to build the
+signed web-approval URL that is included in Slack messages. Optional: when empty,
+the web-approval URL is omitted from Slack messages and operators approve via
+Slack structured reply only. Does not affect the web routes themselves — those
+remain reachable regardless of this setting.

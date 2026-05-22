@@ -151,6 +151,7 @@ Per-object audit. No "batch removed N objects" shortcuts.
 
 - [x] **v1.1** — Implement `docker_hygiene` with: rich assessment (all 5 classes), object-level approval, **execution scope limited to dangling images and exited-0 stopped containers > 7 days old**. Volumes / unused-images / build cache are report-only. *(shipped 2026-05-22, Sessions 1–3)*
 - [x] **v1.2** — Extend execution scope to unused (non-dangling) images with `age_days > 30` threshold. Same approval mechanism. *(shipped 2026-05-22)* Fixes: formatter now shows per-finding ✓ (not per-class), parser blocks approval of report_only findings in executable classes, `approve all` defaults to cleanup_candidate only.
+- [x] **decisions.py semantic debt** — Replace stale `DOCKER_PRUNE` references with `DOCKER_HYGIENE` in `DEFAULT_PRIORITY` + `_is_action_applicable`; 6 stale test assertions updated across 5 test files. *(2026-05-22)*
 - [ ] **v1.5** — Volume deletion. Requires: backup verification action attached to the same approval, multi-step confirmation, `last_mount_days` configurable threshold (default 90), default-off in inventory.
 - [ ] **Never v1** — Container start/restart. Confirmed out of scope. Surfacing crashed/unhealthy containers as `investigate` findings is the closest we get; the operator decides what to do, Errander does not touch container lifecycle.
 

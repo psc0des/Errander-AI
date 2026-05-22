@@ -446,7 +446,7 @@ class TestCheckTargetsRegistryDriven:
             "environments": {
                 "dev": {
                     "targets": [{"host": "10.0.0.1", "name": "dev-01", "os_family": "ubuntu"}],
-                    "actions": {"docker_prune": {"enabled": False, "command_mode": "disabled"}},
+                    "actions": {"docker_hygiene": {"enabled": False, "command_mode": "disabled"}},
                 },
             },
         }))
@@ -508,7 +508,7 @@ class TestRunCheckTargets:
             "    ssh_key_path: /key\n"
             "    approval_policy: relaxed\n"
             "    actions:\n"
-            "      docker_prune:\n"
+            "      docker_hygiene:\n"
             "        enabled: false\n"
             "        command_mode: disabled\n"
             "    targets:\n"
@@ -540,7 +540,7 @@ class TestRunCheckTargets:
             "    ssh_key_path: /key\n"
             "    approval_policy: relaxed\n"
             "    actions:\n"
-            "      docker_prune:\n"
+            "      docker_hygiene:\n"
             "        enabled: false\n"
             "        command_mode: disabled\n"
             "    targets:\n"

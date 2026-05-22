@@ -4,9 +4,25 @@
 2026-05-22
 
 ## Current Phase
-**Docker hygiene v1.1 — Session 2b-iii shipped (2026-05-22, SESSION 2b-iii COMPLETE).** 2317 tests passing (+8 net new), ruff clean on changed code, no new mypy errors.
+**Docker hygiene v1.1 — Session 3 shipped (2026-05-22, SESSION 3 COMPLETE).** 2252 tests passing (net -65 from deleted docker_prune tests), ruff clean on changed code, no new mypy errors.
 
-Session 2b-iii wires the full assess → Slack post + signed URL → manager register → background poll → wait → execute orchestration loop into `_run_docker_hygiene` in `vm_graph.py`. Both approval surfaces (Slack reply and web form) now flow back through `HygieneApprovalManager` into the parent batch graph. Includes fast-path for pre-injected approvals (test/replay), dry-run short-circuit, no-candidates short-circuit, and no-manager fallback. 8 new end-to-end orchestration tests cover all paths. Next: Session 3 — delete `docker_prune`, schema loud-fail on legacy key, migration helper extension, learning doc.
+Session 3 removes `docker_prune` entirely — subgraph, tests, install script, BUILTIN_ACTIONS entry, vm_graph dispatch branch, rollback strategy, and target_validation probe. `ActionType.DOCKER_PRUNE` is retained in the enum for audit-log read-back only, marked by `LEGACY_ACTION_TYPES`. Schema raises `ConfigError` on `docker_prune:` key in inventory (migrate.py renames it to `docker_hygiene`). `docker_hygiene` contradiction check added. SETUP.md docker section rewritten.
+
+### Files added/changed in Session 3
+- `errander/agent/subgraphs/__init__.py` — docker_prune removed from BUILTIN_ACTIONS (now 6 entries)
+- `errander/models/actions.py` — DOCKER_PRUNE retained in enum, removed from ACTION_RISK_TIERS; LEGACY_ACTION_TYPES frozenset added
+- `errander/config/schema.py` — docker_prune key raises ConfigError; docker_hygiene contradiction check added
+- `errander/config/migrate.py` — renames actions.docker_prune → docker_hygiene; drops direct_sudo with warning
+- `errander/agent/vm_graph.py` — docker_prune dispatch branch + _run_docker_prune() removed
+- `errander/execution/privilege.py` — docker_prune_wrapper + docker_prune_direct removed from REQUIRED_BINARIES_BY_ACTION
+- `errander/execution/target_validation.py` — docker_prune probe section removed; step 4 = docker_hygiene only
+- `errander/safety/rollback.py` — _rollback_docker_prune() + dispatch entry removed
+- `SETUP.md` — docker section rewritten: "Optional: Docker hygiene"; transition note + direct_sudo shortcut removed
+- `errander/agent/graph.py`, `errander/web/server.py` — stale docker_prune references updated
+- **Deleted:** `errander/agent/subgraphs/docker_prune.py`, `scripts/install-docker-wrappers.sh`, `tests/agent/subgraphs/test_docker_prune{,_modes,_scope}.py`, `tests/scripts/test_install_docker_wrappers.py`
+- **Test updates (11 files):** test_registry.py, test_service_restart_manifest.py, test_state_serialization.py, test_sudo_preflight.py, test_actions.py, test_schema_actions.py, test_migrate.py, test_rollback.py, test_main.py, test_schema.py, test_target_validation.py
+- `docs/learning/45-docker-hygiene-session3-cutover.md` (NEW)
+- `README.md`, `STATUS.md`, `tasks/todo.md`, `tasks/lessons.md`, `docs/command-log.md` — doc sync
 
 ### Files added/changed in Session 2b-iii
 - `errander/config/settings.py` — `web_base_url: str` field + `ERRANDER_WEB_BASE_URL` env var loader

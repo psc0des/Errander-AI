@@ -1028,7 +1028,7 @@ async def _enrich_vm_plan(
                 preview = await _preview_disk_cleanup(
                     vm_id, hostname, username, key_path, ssh_manager
                 )
-            # docker_prune / log_rotation / backup_verify: no preview for MVP
+            # docker_hygiene / log_rotation / backup_verify: no preview for MVP
         except Exception as exc:  # noqa: BLE001
             logger.warning(
                 "enrich_plan: preview failed for %s/%s: %s", vm_id, action_type, exc

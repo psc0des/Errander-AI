@@ -197,7 +197,6 @@ class TestValidatePolicies:
         config = validate_policies(config_file)
         p = config.policies["minimal"]
         assert p.disk_cleanup_threshold == 80
-        assert p.docker_prune_all is False
 
 
 class TestValidateSettings:

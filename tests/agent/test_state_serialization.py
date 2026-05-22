@@ -21,7 +21,6 @@ from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from errander.agent.graph import BatchGraphState
 from errander.agent.subgraphs.backup_verify import BackupVerifyGraphState
 from errander.agent.subgraphs.disk_cleanup import DiskCleanupGraphState
-from errander.agent.subgraphs.docker_prune import DockerPruneGraphState
 from errander.agent.subgraphs.log_rotation import LogRotationGraphState
 from errander.agent.subgraphs.patching import PatchingGraphState
 from errander.agent.vm_graph import VMGraphState
@@ -248,43 +247,6 @@ def test_patching_large_output_still_round_trips():
     large_state["patch_output"] = _LARGE_PATCH_OUTPUT
     result = _round_trip(large_state)
     assert result["patch_output"] == _LARGE_PATCH_OUTPUT
-
-
-# ---------------------------------------------------------------------------
-# DockerPruneGraphState — system_df_output + prune_output are blob candidates
-# ---------------------------------------------------------------------------
-
-_DOCKER_PRUNE_STATE: DockerPruneGraphState = {  # type: ignore[typeddict-item]
-    "vm_id": "prod/web-01",
-    "os_family": "ubuntu",
-    "dry_run": False,
-    "status": "success",
-    "error": None,
-    "docker_available": True,
-    "docker_command_mode": "wrapper",
-    "docker_prune_aggressive": False,
-    "dangling_images": 3,
-    "stopped_containers": 1,
-    "reclaimable_space": "1.2GB",
-    "system_df_output": "TYPE  TOTAL  ACTIVE  SIZE  RECLAIMABLE\nImages 5 2 3.4GB 1.2GB (35%)",
-    "prune_output": "Deleted images:\nuntagged: nginx:1.18.0\nTotal reclaimed space: 1.2GB",
-    "disk_before": "Total 3.4GB",
-    "disk_after": "Total 2.2GB",
-    "nothing_to_do": False,
-}
-
-
-def test_docker_prune_state_round_trip():
-    result = _round_trip(dict(_DOCKER_PRUNE_STATE))
-    assert result["vm_id"] == "prod/web-01"
-    assert result["dangling_images"] == 3
-    assert result["prune_output"] == _DOCKER_PRUNE_STATE["prune_output"]
-
-
-def test_docker_prune_state_field_sizes_within_4kb():
-    sizes = _field_sizes(dict(_DOCKER_PRUNE_STATE))
-    over_limit = {k: v for k, v in sizes.items() if v > _4KB}
-    assert not over_limit, f"DockerPruneGraphState fields exceed 4KB: {over_limit}"
 
 
 # ---------------------------------------------------------------------------

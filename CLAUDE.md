@@ -244,14 +244,12 @@ arbitrary user-supplied commands are explicitly out of scope. Adding new actions
 requires a new sub-graph + manifest + risk-tier classification + rollback strategy
 — not a config flag.
 
-> **v1.1 transition note (2026-05-21, updated 2026-05-22):** Both `docker_prune`
-> (legacy bulk action) and `docker_hygiene` (new object-level workflow) are
-> registered in `BUILTIN_ACTIONS` during the transition. As of Session 2b-iii,
-> `docker_hygiene` is fully live: execution (2a) + both approval surfaces
-> (Slack reply parser/poller + web `/ui/docker-hygiene/approve`, Sessions 2b-i/2b-ii)
-> + batch orchestration wiring (assess → Slack post + signed URL → manager.wait →
-> execute, Session 2b-iii). `docker_prune` is removed entirely in Session 3.
-> The 6-action count above reflects the post-transition state.
+> **v1.1 transition complete (2026-05-22, Session 3 shipped):** `docker_prune`
+> is fully removed. `docker_hygiene` is the sole Docker action in BUILTIN_ACTIONS
+> (6 actions total). `ActionType.DOCKER_PRUNE` is retained in the enum for
+> audit-log read-back only, marked by `LEGACY_ACTION_TYPES` in `models/actions.py`.
+> Config loader raises `ConfigError` on `docker_prune:` inventory keys; run
+> `--migrate-inventory` to rename them to `docker_hygiene`.
 
 - NEVER automate kernel patching — this is explicitly out of scope
 - NEVER touch files/directories outside the disk cleanup whitelist without human approval

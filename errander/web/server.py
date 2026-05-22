@@ -4144,7 +4144,7 @@ const WF_NODES = {
     checks: 'Dispatches to one of 6 action sub-graphs · dry_run flag respected · Idempotency enforced · Post-cleanup disk gate runs after disk_cleanup/log_rotation before patching · Service restart requires both operator trigger and allowlist match',
     onfail: 'Exception caught → Rollback node entered → Audit event written with error detail',
     code: 'errander/agent/vm_graph.py · errander/agent/subgraphs/ · errander/execution/commands.py',
-    note: 'post_cleanup_disk_gate_node re-checks disk after cleanup. Blocks patching at ≥95%, warns at 90–94%. All 6 v1 sub-graphs: patching, log_rotation, docker_prune, disk_cleanup, backup_verify, service_restart. Service restart is operator-triggered only and always requires Slack approval.'
+    note: 'post_cleanup_disk_gate_node re-checks disk after cleanup. Blocks patching at ≥95%, warns at 90–94%. All 6 v1 sub-graphs: patching, log_rotation, docker_hygiene, disk_cleanup, backup_verify, service_restart. Service restart is operator-triggered only and always requires Slack approval.'
   },
   'rollback': {
     title: 'Rollback', badge: 'FAILURE PATH ONLY', badgeColor: '#ef4444',

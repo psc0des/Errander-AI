@@ -317,12 +317,10 @@ sudo -u errander sudo -n /usr/bin/id  # should FAIL — /usr/bin/id is not in su
 
 ---
 
-## Optional: Docker cleanup
+## Optional: Docker hygiene
 
-> **Skip this entire section if you are not enabling Docker cleanup.**
+> **Skip this entire section if you are not enabling Docker hygiene.**
 > When you create `inventory.yaml` in Step 5, leave `actions.docker_hygiene.enabled: false` (the default). Continue to the next section.
-
-> ⚠️ **v1.1 transition note (updated 2026-05-22):** `docker_prune` (legacy bulk action) is being replaced by `docker_hygiene`. As of Session 2b-ii, `docker_hygiene` has execution + both approval surfaces (Slack reply parser and web UI at `/ui/docker-hygiene/approve`). Batch orchestration wiring (Session 2b-iii) is the final remaining step — until it ships, a live maintenance batch will not dispatch `docker_hygiene` end-to-end. **New installations should configure `docker_hygiene`** (shown below). Existing `docker_prune` setups continue to work unchanged; the action is removed in Session 3.
 
 The Docker group is effectively root: a user in it can mount the host filesystem via `docker run`. Do **not** add `errander` to the docker group, and do not grant raw `sudo /usr/bin/docker` in production.
 
@@ -330,8 +328,8 @@ Errander supports two Docker modes per environment (`actions.docker_hygiene.comm
 
 | Mode | Description | Use case |
 |---|---|---|
-| `wrapper` (default) | Root-owned wrapper scripts at `/usr/local/sbin/errander-docker-*` | Production and all deployments — per-object validation requires the wrapper |
-| `disabled` | No Docker actions planned or executed | Envs without Docker |
+| `wrapper` | Root-owned wrapper scripts at `/usr/local/sbin/errander-docker-*` | Production and all deployments — per-object validation requires the wrapper |
+| `disabled` (default) | No Docker hygiene planned or executed | Envs without Docker or not yet set up |
 
 ### Part 1 — Install wrapper on each target VM *(do this now, after Step 3)*
 
@@ -349,8 +347,6 @@ scp -i ~/.ssh/errander_prod scripts/install-docker-wrappers-v2.sh errander@<targ
 ssh <admin-user>@<target>
 sudo bash /tmp/install-docker-wrappers-v2.sh
 ```
-
-> **Lab / pre-prod shortcut only:** Set `command_mode: direct_sudo` in `inventory.yaml`. You may then add `/usr/bin/docker` to the main sudoers file. The agent will log a warning every batch. Do not use `direct_sudo` in production.
 
 ### Part 2 — Configure inventory and verify *(complete this during Step 5 and Step 6)*
 

@@ -23,27 +23,28 @@ class TestDockerCommandModeMigration:
         inv.write_text(_inv({"prod": {"docker_command_mode": "wrapper", "targets": [_TARGET]}}))
         migrated = migrate_inventory(inv)
         data = yaml.safe_load(migrated.read_text())
-        docker = data["environments"]["prod"]["actions"]["docker_prune"]
+        docker = data["environments"]["prod"]["actions"]["docker_hygiene"]
         assert docker["enabled"] is True
         assert docker["command_mode"] == "wrapper"
 
-    def test_direct_sudo_mode_maps_to_enabled_true(self, tmp_path: Path) -> None:
+    def test_direct_sudo_mode_maps_to_enabled_true_wrapper_mode(self, tmp_path: Path) -> None:
         inv = tmp_path / "inventory.yaml"
         inv.write_text(_inv({"dev": {"docker_command_mode": "direct_sudo", "targets": [_TARGET]}}))
         migrated = migrate_inventory(inv)
         data = yaml.safe_load(migrated.read_text())
-        docker = data["environments"]["dev"]["actions"]["docker_prune"]
+        # direct_sudo is unsupported by docker_hygiene — migrated to wrapper mode with a warning
+        docker = data["environments"]["dev"]["actions"]["docker_hygiene"]
         assert docker["enabled"] is True
-        assert docker["command_mode"] == "direct_sudo"
+        assert docker["command_mode"] == "wrapper"
 
     def test_disabled_mode_maps_to_enabled_false(self, tmp_path: Path) -> None:
         inv = tmp_path / "inventory.yaml"
         inv.write_text(_inv({"dev": {"docker_command_mode": "disabled", "targets": [_TARGET]}}))
         migrated = migrate_inventory(inv)
         data = yaml.safe_load(migrated.read_text())
-        docker = data["environments"]["dev"]["actions"]["docker_prune"]
+        docker = data["environments"]["dev"]["actions"]["docker_hygiene"]
         assert docker["enabled"] is False
-        assert docker["command_mode"] == "disabled"
+        assert docker["command_mode"] == "wrapper"
 
     def test_legacy_field_removed_from_env(self, tmp_path: Path) -> None:
         inv = tmp_path / "inventory.yaml"
@@ -69,15 +70,15 @@ class TestFullActionsSynthesis:
         data = yaml.safe_load(migrated.read_text())
         actions = data["environments"]["dev"]["actions"]
         for name, manifest in BUILTIN_ACTIONS.items():
-            if name != "docker_prune":
+            if name != "docker_hygiene":
                 assert actions[name]["enabled"] is manifest.default_enabled
 
-    def test_no_docker_command_mode_applies_docker_prune_default(self, tmp_path: Path) -> None:
+    def test_no_docker_command_mode_applies_docker_hygiene_default(self, tmp_path: Path) -> None:
         inv = tmp_path / "inventory.yaml"
         inv.write_text(_inv({"dev": {"targets": [_TARGET]}}))
         migrated = migrate_inventory(inv)
         data = yaml.safe_load(migrated.read_text())
-        docker = data["environments"]["dev"]["actions"]["docker_prune"]
+        docker = data["environments"]["dev"]["actions"]["docker_hygiene"]
         assert docker["enabled"] is False
         assert docker["command_mode"] == "disabled"
 
@@ -115,8 +116,8 @@ class TestFieldPreservation:
         }))
         migrated = migrate_inventory(inv)
         data = yaml.safe_load(migrated.read_text())
-        assert data["environments"]["prod"]["actions"]["docker_prune"]["enabled"] is True
-        assert data["environments"]["dev"]["actions"]["docker_prune"]["enabled"] is False
+        assert data["environments"]["prod"]["actions"]["docker_hygiene"]["enabled"] is True
+        assert data["environments"]["dev"]["actions"]["docker_hygiene"]["enabled"] is False
 
 
 class TestFileHandling:
@@ -183,7 +184,8 @@ class TestIdempotency:
         }))
         migrated = migrate_inventory(inv)
         data = yaml.safe_load(migrated.read_text())
-        docker = data["environments"]["dev"]["actions"]["docker_prune"]
+        # docker_prune is renamed to docker_hygiene by the migrator
+        docker = data["environments"]["dev"]["actions"]["docker_hygiene"]
         assert docker["enabled"] is True
         assert docker["command_mode"] == "wrapper"
 

@@ -44,10 +44,12 @@ class TestRollback:
         assert "read-only" in detail.lower()
 
     @pytest.mark.asyncio
-    async def test_docker_prune_re_pull(self) -> None:
+    async def test_docker_prune_legacy_type_unknown_strategy(self) -> None:
+        # DOCKER_PRUNE is retained in the enum for audit-log read-back only.
+        # It has no rollback strategy — rollback_action must fail cleanly.
         success, detail = await rollback_action(ActionType.DOCKER_PRUNE, "vm-01", {})
-        assert success
-        assert "re-pull" in detail.lower()
+        assert not success
+        assert "docker_prune" in detail.lower() or "unknown" in detail.lower()
 
     @pytest.mark.asyncio
     async def test_patching_rollback_requires_executor(self) -> None:

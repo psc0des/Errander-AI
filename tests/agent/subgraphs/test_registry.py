@@ -6,19 +6,16 @@ from errander.agent.subgraphs import BUILTIN_ACTIONS
 
 
 class TestRegistryContents:
-    def test_has_exactly_seven_entries(self) -> None:
-        # docker_hygiene added in v1.1 Session 1; docker_prune removed in Session 3.
-        assert len(BUILTIN_ACTIONS) == 7
+    def test_has_exactly_six_entries(self) -> None:
+        # docker_prune removed in Session 3; 6 actions remain.
+        assert len(BUILTIN_ACTIONS) == 6
 
     def test_expected_action_names_present(self) -> None:
         expected = {
             "patching", "disk_cleanup", "log_rotation",
-            "docker_prune", "docker_hygiene", "backup_verify", "service_restart",
+            "docker_hygiene", "backup_verify", "service_restart",
         }
         assert set(BUILTIN_ACTIONS.keys()) == expected
-
-    def test_docker_prune_default_disabled(self) -> None:
-        assert BUILTIN_ACTIONS["docker_prune"].default_enabled is False
 
     def test_docker_hygiene_default_disabled(self) -> None:
         assert BUILTIN_ACTIONS["docker_hygiene"].default_enabled is False
@@ -50,13 +47,6 @@ class TestRegistryContents:
         for key, manifest in BUILTIN_ACTIONS.items():
             assert manifest.name == key
 
-    def test_docker_prune_has_command_modes(self) -> None:
-        modes = BUILTIN_ACTIONS["docker_prune"].command_modes
-        assert modes is not None
-        assert "disabled" in modes
-        assert "wrapper" in modes
-        assert "direct_sudo" in modes
-
     def test_patching_has_no_command_modes(self) -> None:
         assert BUILTIN_ACTIONS["patching"].command_modes is None
 
@@ -66,5 +56,3 @@ class TestRegistryContents:
     def test_patching_risk_tier_medium(self) -> None:
         assert BUILTIN_ACTIONS["patching"].risk_tier == "MEDIUM"
 
-    def test_docker_prune_risk_tier_medium(self) -> None:
-        assert BUILTIN_ACTIONS["docker_prune"].risk_tier == "MEDIUM"

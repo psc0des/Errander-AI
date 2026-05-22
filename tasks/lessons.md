@@ -1,5 +1,25 @@
 # Errander-AI — Lessons Learned
 
+## 2026-05-22 — LEGACY_ACTION_TYPES pattern: keep an enum value for read-back, skip it in active-action assertions
+
+When removing an action type from active use, do NOT delete its `ActionType` enum value if it appears in historical audit rows — that breaks deserialization of old records. Instead:
+1. Keep the enum value.
+2. Add it to a `LEGACY_ACTION_TYPES: frozenset[ActionType]` set.
+3. Update tests that iterate `ActionType` to skip `LEGACY_ACTION_TYPES` (e.g., `test_all_active_action_types_have_risk_tiers`).
+4. Do NOT add the legacy type to `ACTION_RISK_TIERS` — it must not be planned.
+
+**Why:** Audit databases are append-only. Old rows reference the value by string. If the enum value is gone, `ActionType("docker_prune")` raises `ValueError` when reading history.
+
+**How to apply:** Every time an action is retired, add it to `LEGACY_ACTION_TYPES` rather than deleting the enum value.
+
+## 2026-05-22 — Hard delete beats soft deprecation for safety-critical invariant violations
+
+When a code path violates a core invariant (e.g., bulk-approval for a destructive action), deleting it is safer than deprecating it. Soft deprecation leaves the violation path accessible and operators may inadvertently use it. A loud `ConfigError` on load + migration helper is the right pattern: fail fast, tell the operator exactly how to fix it.
+
+**Why:** Soft deprecation requires every future contributor to know "don't use X" — it's documentation. Hard delete + loud-fail is enforcement.
+
+**How to apply:** When removing a legacy config key, add a `model_validator` that raises `ConfigError` with the migration command in the message. Never silently ignore old keys.
+
 ## 2026-05-22 — Local imports inside a function body change the patch target
 
 When `poll_hygiene_replies_once` is imported *inside* `_run_docker_hygiene` (not at module level), patching `errander.agent.vm_graph.poll_hygiene_replies_once` fails — the name never exists in that module's namespace. The correct patch target is the source module: `errander.safety.hygiene_approval.poll_hygiene_replies_once`. When the local import runs at call time, Python resolves it from `errander.safety.hygiene_approval`, so patching the attribute there before the call works.

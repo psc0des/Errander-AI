@@ -40,12 +40,6 @@ REQUIRED_BINARIES_BY_ACTION: dict[str, list[str]] = {
     "patching_dnf": ["/usr/bin/dnf"],
     "disk_cleanup": ["/usr/bin/journalctl"],
     "log_rotation": ["/usr/sbin/logrotate", "/usr/bin/gzip", "/usr/bin/truncate", "/usr/bin/cp"],
-    "docker_prune_wrapper": [
-        "/usr/local/sbin/errander-docker-assess",
-        "/usr/local/sbin/errander-docker-prune-safe",
-        "/usr/local/sbin/errander-docker-prune-aggressive",
-    ],
-    "docker_prune_direct": ["/usr/bin/docker"],
 }
 
 

@@ -18,12 +18,18 @@ class ActionType(StrEnum):
     """Types of maintenance actions the agent can perform."""
 
     PATCHING = "patching"
+    # DOCKER_PRUNE is kept for audit-log read compatibility only.
+    # New rows must not use this value — docker_hygiene replaces it.
     DOCKER_PRUNE = "docker_prune"
     DOCKER_HYGIENE = "docker_hygiene"
     LOG_ROTATION = "log_rotation"
     DISK_CLEANUP = "disk_cleanup"
     BACKUP_VERIFY = "backup_verify"
     SERVICE_RESTART = "service_restart"
+
+
+#: Legacy action types retained only for audit-log reads — never schedule new work with these.
+LEGACY_ACTION_TYPES: frozenset[ActionType] = frozenset({ActionType.DOCKER_PRUNE})
 
 
 class RiskTier(StrEnum):
@@ -61,7 +67,6 @@ class ActionStatus(StrEnum):
 ACTION_RISK_TIERS: dict[ActionType, RiskTier] = {
     ActionType.DISK_CLEANUP: RiskTier.LOW,
     ActionType.LOG_ROTATION: RiskTier.LOW,
-    ActionType.DOCKER_PRUNE: RiskTier.MEDIUM,
     ActionType.DOCKER_HYGIENE: RiskTier.MEDIUM,
     ActionType.PATCHING: RiskTier.MEDIUM,
     ActionType.BACKUP_VERIFY: RiskTier.LOW,

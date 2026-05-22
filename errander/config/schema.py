@@ -170,6 +170,13 @@ class EnvironmentSchema(BaseModel):
     def _apply_action_defaults_and_validate(self) -> EnvironmentSchema:
         from errander.agent.subgraphs import BUILTIN_ACTIONS
 
+        if "docker_prune" in self.actions:
+            raise ConfigError(
+                "inventory contains legacy 'docker_prune' action key. "
+                "Run: uv run python -m errander --migrate-inventory <path> "
+                "to rename it to 'docker_hygiene'."
+            )
+
         full_actions: dict[str, ActionConfig] = {}
         for name, manifest in BUILTIN_ACTIONS.items():
             if name in self.actions:
@@ -181,11 +188,11 @@ class EnvironmentSchema(BaseModel):
                     command_mode=default_mode,
                 )
 
-        docker_cfg = full_actions.get("docker_prune")
-        if docker_cfg and docker_cfg.enabled and docker_cfg.command_mode == "disabled":
+        docker_hygiene_cfg = full_actions.get("docker_hygiene")
+        if docker_hygiene_cfg and docker_hygiene_cfg.enabled and docker_hygiene_cfg.command_mode == "disabled":
             raise ConfigError(
-                "docker_prune.enabled is true but command_mode is 'disabled' — contradiction. "
-                "Set enabled: false or change command_mode to 'wrapper' or 'direct_sudo'."
+                "docker_hygiene: contradiction — enabled=true but command_mode=disabled. "
+                "Set command_mode: wrapper to enable docker hygiene, or set enabled: false."
             )
 
         service_restart_cfg = full_actions.get("service_restart")
@@ -208,7 +215,6 @@ class PolicySchema(BaseModel):
     disk_cleanup_threshold: int = 80
     log_rotation_max_age_days: int = 7
     log_max_file_size_mb: int = 1000
-    docker_prune_all: bool = False
     tmp_cleanup_age_days: int = 7
     journal_vacuum_days: int = 7
 

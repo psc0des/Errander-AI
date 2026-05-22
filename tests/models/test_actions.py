@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
-from errander.models.actions import ACTION_RISK_TIERS, ActionType, RiskTier
+from errander.models.actions import ACTION_RISK_TIERS, ActionType, LEGACY_ACTION_TYPES, RiskTier
 
 
 class TestActionModels:
     """Tests for action type enums and risk tier mapping."""
 
-    def test_all_action_types_have_risk_tiers(self) -> None:
+    def test_all_active_action_types_have_risk_tiers(self) -> None:
         for action_type in ActionType:
+            if action_type in LEGACY_ACTION_TYPES:
+                continue  # legacy types kept for audit log read-back only
             assert action_type in ACTION_RISK_TIERS
 
     def test_kernel_never_in_action_types(self) -> None:

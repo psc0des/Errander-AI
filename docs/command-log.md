@@ -1,5 +1,20 @@
 # Errander-AI Command Log
 
+## Docker hygiene v1.1 Session 3 (2026-05-22)
+```bash
+# Delete docker_prune source files and tests
+# (done via Edit/Write tools, not shell commands)
+
+# Run tests to verify source changes compile and pass
+uv run pytest -q --tb=no --ignore=tests/ui   # 2075 passed
+
+# After test file fixes — run specific failing files
+uv run pytest tests/agent/subgraphs/test_registry.py tests/agent/subgraphs/test_service_restart_manifest.py tests/agent/test_state_serialization.py tests/agent/test_sudo_preflight.py tests/models/test_actions.py tests/config/test_schema_actions.py tests/config/test_migrate.py tests/safety/test_rollback.py tests/test_main.py tests/config/test_schema.py tests/execution/test_target_validation.py -v --tb=short
+
+# Full suite validation
+uv run pytest -q --tb=no   # 2252 passed
+```
+
 ## Docker hygiene v1.1 Session 2b-iii (2026-05-22)
 ```bash
 # Run new orchestration test suite

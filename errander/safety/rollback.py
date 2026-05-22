@@ -315,19 +315,6 @@ async def _rollback_patching_dnf(
     return True, f"Rolled back {len(downgrade_specs)} packages on {vm_id} via dnf — versions verified"
 
 
-async def _rollback_docker_prune(
-    vm_id: str,
-    pre_snapshot: dict[str, object],
-    executor: SandboxExecutor | None,
-    hostname: str,
-    username: str,
-    key_path: str,
-    os_family: str = "ubuntu",
-) -> tuple[bool, str]:
-    """Docker prune has no true rollback — pruned resources are gone."""
-    return True, "Docker prune is low-risk — re-pull images from registry if needed"
-
-
 async def _rollback_disk_cleanup(
     vm_id: str,
     pre_snapshot: dict[str, object],
@@ -369,7 +356,6 @@ async def _rollback_backup_verify(
 
 _ROLLBACK_STRATEGIES = {
     ActionType.PATCHING: _rollback_patching,
-    ActionType.DOCKER_PRUNE: _rollback_docker_prune,
     ActionType.DISK_CLEANUP: _rollback_disk_cleanup,
     ActionType.LOG_ROTATION: _rollback_log_rotation,
     ActionType.BACKUP_VERIFY: _rollback_backup_verify,

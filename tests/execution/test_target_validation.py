@@ -55,7 +55,8 @@ async def test_missing_binary_blocks() -> None:
 
 
 @pytest.mark.asyncio
-async def test_wrapper_mode_checks_wrapper_scripts() -> None:
+async def test_docker_hygiene_wrapper_probed_when_enabled() -> None:
+    """docker_hygiene wrapper scripts are probed when enabled_actions includes docker_hygiene."""
     ssh = MagicMock()
     calls: list[str] = []
 
@@ -71,31 +72,10 @@ async def test_wrapper_mode_checks_wrapper_scripts() -> None:
         vm_id="v1", hostname="h", username="u", key_path="k",
         os_family="ubuntu", docker_command_mode="wrapper",
         ssh_manager=ssh,
+        enabled_actions=["docker_hygiene"],
     )
-    assert any("errander-docker-assess --check" in c for c in calls)
-    assert any("errander-docker-prune-safe --check" in c for c in calls)
-    assert any("errander-docker-prune-aggressive --check" in c for c in calls)
-
-
-@pytest.mark.asyncio
-async def test_direct_sudo_mode_checks_raw_docker() -> None:
-    ssh = MagicMock()
-    calls: list[str] = []
-
-    def fake_exec(*args: object, **kwargs: object) -> object:
-        cmd = str(args[4] if len(args) > 4 else kwargs.get("command", ""))
-        calls.append(cmd)
-        if "command -v" in cmd:
-            return MagicMock(success=True, stdout="present\n")
-        return MagicMock(success=True, stdout="ok\n")
-
-    ssh.execute = AsyncMock(side_effect=fake_exec)
-    await check_target(
-        vm_id="v1", hostname="h", username="u", key_path="k",
-        os_family="ubuntu", docker_command_mode="direct_sudo",
-        ssh_manager=ssh,
-    )
-    assert any("sudo -n /usr/bin/docker version" in c for c in calls)
+    assert any("errander-docker-assess-v2 --check" in c for c in calls)
+    assert any("errander-docker-remove-v2 --check" in c for c in calls)
 
 
 @pytest.mark.asyncio
@@ -147,7 +127,7 @@ async def test_enabled_actions_skips_disabled_action_binaries() -> None:
 
 @pytest.mark.asyncio
 async def test_enabled_actions_docker_wrapper_not_checked_when_disabled() -> None:
-    """docker_prune not in enabled_actions + mode=wrapper must skip wrapper checks."""
+    """docker_hygiene not in enabled_actions + mode=wrapper must skip wrapper checks."""
     ssh = MagicMock()
     calls: list[str] = []
 
@@ -163,7 +143,7 @@ async def test_enabled_actions_docker_wrapper_not_checked_when_disabled() -> Non
         vm_id="v1", hostname="h", username="u", key_path="k",
         os_family="ubuntu", docker_command_mode="wrapper",
         ssh_manager=ssh,
-        enabled_actions=["disk_cleanup", "patching"],  # docker_prune absent
+        enabled_actions=["disk_cleanup", "patching"],  # docker_hygiene absent
     )
     # docker_command_mode=wrapper is irrelevant when docker_prune is not enabled —
     # the binary filtering path returns no docker entries, so no wrapper checks run.

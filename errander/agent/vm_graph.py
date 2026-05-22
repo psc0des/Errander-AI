@@ -37,10 +37,6 @@ from errander.agent.subgraphs.docker_hygiene import (
     DockerHygieneGraphState,
     build_docker_hygiene_subgraph,
 )
-from errander.agent.subgraphs.docker_prune import (
-    DockerPruneGraphState,
-    build_docker_prune_subgraph,
-)
 from errander.agent.subgraphs.log_rotation import (
     LogRotationGraphState,
     build_log_rotation_subgraph,
@@ -332,36 +328,8 @@ async def sudo_preflight_node(
         if action_type == "patching":
             key = "patching_dnf" if os_family == "rhel" else "patching_apt"
             required.extend(REQUIRED_BINARIES_BY_ACTION.get(key, []))
-        elif action_type == "docker_prune":
-            if docker_mode == "disabled":
-                continue  # no preflight needed
-            if docker_mode == "wrapper":
-                manifest = BUILTIN_ACTIONS.get("docker_prune")
-                wrappers = list(manifest.required_wrappers) if manifest else []
-                required.extend(wrappers)
-            else:
-                required.extend(REQUIRED_BINARIES_BY_ACTION.get("docker_prune_direct", []))
         else:
             required.extend(REQUIRED_BINARIES_BY_ACTION.get(str(action_type), []))
-
-    if not required:
-        return {}
-
-    # Emit a warning audit event when direct_sudo Docker mode is planned.
-    if docker_mode == "direct_sudo" and any(a.get("action_type") == "docker_prune" for a in planned):
-        logger.warning(
-            "VM %s using direct_sudo Docker mode — not production hardened",
-            vm_id,
-        )
-        if audit_store is not None:
-            await audit_store.log_event(AuditEvent(
-                event_type=EventType.SUDO_PREFLIGHT_FAILED,
-                batch_id=batch_id,
-                vm_id=vm_id,
-                action_type="docker_prune",
-                detail="WARNING: direct_sudo Docker mode is not production hardened",
-                metadata={"docker_command_mode": "direct_sudo"},
-            ), dry_run=False)
 
     # Deduplicate while preserving order.
     seen: set[str] = set()
@@ -448,7 +416,6 @@ async def dispatch_action_node(
     executor: SandboxExecutor,
     disk_cleanup_compiled: Any = None,
     log_rotation_compiled: Any = None,
-    docker_prune_compiled: Any = None,
     docker_hygiene_compiled: Any = None,
     patching_compiled: Any = None,
     backup_verify_compiled: Any = None,
@@ -519,8 +486,6 @@ async def dispatch_action_node(
         result_dict = await _run_disk_cleanup(state, disk_cleanup_compiled)
     elif action_type == ActionType.LOG_ROTATION.value:
         result_dict = await _run_log_rotation(state, log_rotation_compiled)
-    elif action_type == ActionType.DOCKER_PRUNE.value:
-        result_dict = await _run_docker_prune(state, docker_prune_compiled)
     elif action_type == ActionType.DOCKER_HYGIENE.value:
         result_dict = await _run_docker_hygiene(
             state, docker_hygiene_compiled,
@@ -719,82 +684,6 @@ async def _run_log_rotation(
 
     return {
         "action_type": ActionType.LOG_ROTATION.value,
-        "status": status,
-        "vm_id": vm_id,
-        "started_at": now.isoformat(),
-        "completed_at": datetime.now(tz=UTC).isoformat(),
-        "detail": "; ".join(detail_parts),
-        "error": final_state.get("error"),
-    }
-
-
-async def _run_docker_prune(
-    state: VMGraphState,
-    compiled: Any,
-) -> dict[str, object]:
-    """Run the Docker prune sub-graph and return a serialised result dict."""
-    vm_id = state["vm_id"]
-    now = datetime.now(tz=UTC)
-    vm_info = state.get("vm_info", {})
-
-    # Read approved action params from the plan (P1-1)
-    planned = state.get("planned_actions", [])
-    index = state.get("current_action_index", 0)
-    action_params: dict[str, object] = {}
-    if index < len(planned):
-        _raw = planned[index].get("params")
-        action_params = dict(_raw) if isinstance(_raw, dict) else {}
-
-    sub_state: DockerPruneGraphState = {
-        "vm_id": vm_id,
-        "os_family": state.get("os_family", "ubuntu"),
-        "dry_run": state.get("dry_run", True),
-        "docker_available": bool(vm_info.get("docker_available", True)),
-        "docker_prune_aggressive": bool(action_params.get("aggressive", False)),
-        "docker_command_mode": str(state.get("docker_command_mode", "wrapper")),
-        "hostname": state.get("hostname", ""),  # type: ignore[typeddict-unknown-key]
-        "username": state.get("ssh_user", ""),
-        "key_path": state.get("ssh_key_path", ""),
-    }
-
-    try:
-        final_state = await compiled.ainvoke(sub_state)
-    except (ConnectionError, OSError, TimeoutError) as exc:
-        logger.error("Sub-graph docker_prune failed for %s: %s", vm_id, exc)
-        return {
-            "action_type": ActionType.DOCKER_PRUNE.value,
-            "status": ActionStatus.FAILED.value,
-            "vm_id": vm_id,
-            "started_at": now.isoformat(),
-            "completed_at": datetime.now(tz=UTC).isoformat(),
-            "detail": "sub-graph raised exception",
-            "error": str(exc),
-        }
-    except Exception as exc:  # noqa: BLE001
-        logger.exception("Unexpected error in docker_prune for %s", vm_id)
-        return {
-            "action_type": ActionType.DOCKER_PRUNE.value,
-            "status": ActionStatus.FAILED.value,
-            "vm_id": vm_id,
-            "started_at": now.isoformat(),
-            "completed_at": datetime.now(tz=UTC).isoformat(),
-            "detail": "sub-graph raised exception",
-            "error": str(exc),
-        }
-
-    status = final_state.get("status", ActionStatus.FAILED.value)
-    detail_parts: list[str] = []
-    if final_state.get("dangling_images") is not None:
-        detail_parts.append(f"dangling images: {final_state['dangling_images']}")
-    if final_state.get("stopped_containers") is not None:
-        detail_parts.append(f"stopped containers: {final_state['stopped_containers']}")
-    if final_state.get("nothing_to_do"):
-        detail_parts.append("nothing to do — already clean")
-    if final_state.get("prune_output"):
-        detail_parts.append("pruned")
-
-    return {
-        "action_type": ActionType.DOCKER_PRUNE.value,
         "status": status,
         "vm_id": vm_id,
         "started_at": now.isoformat(),
@@ -1821,7 +1710,6 @@ def build_vm_graph(
     # Compile sub-graphs once — reused across all dispatches
     disk_cleanup_compiled = build_disk_cleanup_subgraph(executor).compile()
     log_rotation_compiled = build_log_rotation_subgraph(executor).compile()
-    docker_prune_compiled = build_docker_prune_subgraph(executor).compile()
     docker_hygiene_compiled = build_docker_hygiene_subgraph(executor).compile()
     patching_compiled = build_patching_subgraph(
         executor,
@@ -1842,7 +1730,6 @@ def build_vm_graph(
             executor=executor,
             disk_cleanup_compiled=disk_cleanup_compiled,
             log_rotation_compiled=log_rotation_compiled,
-            docker_prune_compiled=docker_prune_compiled,
             docker_hygiene_compiled=docker_hygiene_compiled,
             patching_compiled=patching_compiled,
             backup_verify_compiled=backup_verify_compiled,

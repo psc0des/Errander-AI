@@ -57,13 +57,15 @@
 - [x] Doc sync: README test count, STATUS, todo, lessons, command-log
 
 ### Session 3 — Removal of docker_prune + final docs
-**Status:** Not started.
-- Delete `docker_prune.py`, `test_docker_prune.py`, `test_docker_prune_modes.py`, the docker_prune branch from `vm_graph.py`, the legacy wrapper install script
-- `schema.py` loader fails loud on legacy `docker_prune` inventory key with migration command
-- `migrate.py` extension for `docker_prune` → `docker_hygiene` rename + drop unsupported `direct_sudo` mode
-- SETUP.md rewrite (Docker hygiene replaces "Optional: Docker cleanup" section)
-- `docs/learning/XX-docker-hygiene.md` (new feature learning doc)
-- README test count, CLAUDE.md "(6 actions)" cleanup (post-transition)
+**Status:** COMPLETE (2026-05-22).
+- [x] Delete `docker_prune.py`, `test_docker_prune.py`, `test_docker_prune_modes.py`, `test_docker_prune_scope.py`, docker_prune branch from `vm_graph.py`, legacy wrapper install script + its tests
+- [x] `schema.py` loader fails loud on legacy `docker_prune` inventory key with migration command; docker_hygiene contradiction check added
+- [x] `migrate.py` extension for `docker_prune` → `docker_hygiene` rename + drop unsupported `direct_sudo` mode
+- [x] SETUP.md rewrite: "Optional: Docker hygiene"; transition note + direct_sudo shortcut removed
+- [x] `docs/learning/45-docker-hygiene-session3-cutover.md` (NEW)
+- [x] README test count updated (2317 → 2252); CLAUDE.md v1.1 transition note updated (6 actions confirmed)
+- [x] 11 test files updated to reflect docker_prune removal
+- [x] Green tree: 2252 passing tests
 **Trigger:** SRE feedback (Docker prune scope review, 2026-05-21) — current `docker_prune` is too blunt for serious SRE use. Verdict: split into a richer assessment surface with object-level approval.
 **Driving invariant:** New exact-object approval rule in CLAUDE.md (Layer B → AI Safety Invariant → Exact-Object Approval section, added 2026-05-21). Applies to all destructive actions from day one of v1.1.
 

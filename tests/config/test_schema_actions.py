@@ -42,19 +42,19 @@ class TestNewNestedSchemaAccepted:
                 "patching": ActionConfig(enabled=True),
                 "disk_cleanup": ActionConfig(enabled=True),
                 "log_rotation": ActionConfig(enabled=True),
-                "docker_prune": ActionConfig(enabled=False, command_mode="disabled"),
+                "docker_hygiene": ActionConfig(enabled=False, command_mode="disabled"),
                 "backup_verify": ActionConfig(enabled=False),
             },
         )
         assert env.actions["patching"].enabled is True
-        assert env.actions["docker_prune"].command_mode == "disabled"
+        assert env.actions["docker_hygiene"].command_mode == "disabled"
 
     def test_partial_actions_block_accepted(self) -> None:
         env = EnvironmentSchema(
             targets=[TargetSchema(**_TARGET)],  # type: ignore[arg-type]
-            actions={"docker_prune": ActionConfig(enabled=True, command_mode="wrapper")},
+            actions={"docker_hygiene": ActionConfig(enabled=True, command_mode="wrapper")},
         )
-        assert env.actions["docker_prune"].enabled is True
+        assert env.actions["docker_hygiene"].enabled is True
 
     def test_no_actions_block_accepted(self) -> None:
         env = EnvironmentSchema(targets=[TargetSchema(**_TARGET)])  # type: ignore[arg-type]
@@ -104,9 +104,9 @@ class TestDefaultsApplied:
             assert name in env.actions
             assert env.actions[name].enabled is manifest.default_enabled
 
-    def test_docker_prune_default_disabled_and_command_mode_disabled(self) -> None:
+    def test_docker_hygiene_default_disabled_and_command_mode_disabled(self) -> None:
         env = EnvironmentSchema(targets=[TargetSchema(**_TARGET)])  # type: ignore[arg-type]
-        docker_cfg = env.actions["docker_prune"]
+        docker_cfg = env.actions["docker_hygiene"]
         assert docker_cfg.enabled is False
         assert docker_cfg.command_mode == "disabled"
 
@@ -117,7 +117,7 @@ class TestDefaultsApplied:
     def test_partial_actions_fills_missing_with_defaults(self) -> None:
         env = EnvironmentSchema(
             targets=[TargetSchema(**_TARGET)],  # type: ignore[arg-type]
-            actions={"docker_prune": ActionConfig(enabled=True, command_mode="wrapper")},
+            actions={"docker_hygiene": ActionConfig(enabled=True, command_mode="wrapper")},
         )
         # Other actions should have defaults applied
         assert env.actions["patching"].enabled is True
@@ -139,30 +139,32 @@ class TestDefaultsApplied:
 
 
 class TestContradictionRejected:
-    def test_docker_prune_enabled_true_disabled_mode_raises(self) -> None:
+    def test_docker_hygiene_enabled_true_disabled_mode_raises(self) -> None:
         with pytest.raises((ConfigError, ValidationError, ValueError)) as exc_info:
             EnvironmentSchema(
                 targets=[TargetSchema(**_TARGET)],  # type: ignore[arg-type]
                 actions={
-                    "docker_prune": ActionConfig(enabled=True, command_mode="disabled"),
+                    "docker_hygiene": ActionConfig(enabled=True, command_mode="disabled"),
                 },
             )
         assert "contradiction" in str(exc_info.value).lower() or "disabled" in str(exc_info.value)
 
-    def test_docker_prune_enabled_wrapper_mode_accepted(self) -> None:
+    def test_docker_hygiene_enabled_wrapper_mode_accepted(self) -> None:
         env = EnvironmentSchema(
             targets=[TargetSchema(**_TARGET)],  # type: ignore[arg-type]
-            actions={"docker_prune": ActionConfig(enabled=True, command_mode="wrapper")},
+            actions={"docker_hygiene": ActionConfig(enabled=True, command_mode="wrapper")},
         )
-        assert env.actions["docker_prune"].enabled is True
-        assert env.actions["docker_prune"].command_mode == "wrapper"
+        assert env.actions["docker_hygiene"].enabled is True
+        assert env.actions["docker_hygiene"].command_mode == "wrapper"
 
-    def test_docker_prune_enabled_direct_sudo_mode_accepted(self) -> None:
-        env = EnvironmentSchema(
-            targets=[TargetSchema(**_TARGET)],  # type: ignore[arg-type]
-            actions={"docker_prune": ActionConfig(enabled=True, command_mode="direct_sudo")},
-        )
-        assert env.actions["docker_prune"].command_mode == "direct_sudo"
+    def test_legacy_docker_prune_key_raises_config_error(self) -> None:
+        with pytest.raises((ConfigError, ValidationError, ValueError)) as exc_info:
+            EnvironmentSchema(
+                targets=[TargetSchema(**_TARGET)],  # type: ignore[arg-type]
+                actions={"docker_prune": ActionConfig(enabled=False, command_mode="disabled")},
+            )
+        assert "docker_prune" in str(exc_info.value)
+        assert "migrate" in str(exc_info.value).lower()
 
 
 class TestServiceRestartValidation:

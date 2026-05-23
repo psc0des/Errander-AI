@@ -174,7 +174,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--unit",
         default=None,
-        help="Unit name for --restart-service (e.g. nginx, gunicorn)",
+        help="Unit name for --restart-service (e.g. nginx.service, gunicorn.service)",
     )
     parser.add_argument(
         "--vm",
@@ -1651,6 +1651,7 @@ async def _window_opener(
     approval_manager: ApprovalManager,
     slack_client: SlackClient | None,
     overrides_store: OverridesStore,
+    hygiene_manager: HygieneApprovalManager | None = None,
     llm_client: LLMClient | None = None,
     disk_history_store: object = None,
     baseline_store: object = None,
@@ -1707,6 +1708,7 @@ async def _window_opener(
                     ),
                     approval_manager=approval_manager,
                     slack_client=slack_client,
+                    hygiene_manager=hygiene_manager,
                     overrides_store=overrides_store,
                     deferred_store=deferred_store,
                     llm_client=llm_client,
@@ -1739,6 +1741,7 @@ async def _window_opener(
                     ),
                     approval_manager=approval_manager,
                     slack_client=slack_client,
+                    hygiene_manager=hygiene_manager,
                     overrides_store=overrides_store,
                     deferred_store=deferred_store,
                     llm_client=llm_client,
@@ -2081,6 +2084,7 @@ async def async_main(args: argparse.Namespace) -> int:
                         approval_manager=approval_manager,
                         slack_client=slack,
                         overrides_store=overrides_store,
+                        hygiene_manager=hygiene_manager,
                         llm_client=llm,
                         disk_history_store=disk_history_store,
                         baseline_store=baseline_store,

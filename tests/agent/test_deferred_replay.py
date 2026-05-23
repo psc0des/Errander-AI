@@ -408,3 +408,69 @@ async def test_window_opener_legacy_fallback() -> None:
     call = run_batch_calls[0]
     assert call.get("is_deferred_reapproval") is True
     assert call.get("preloaded_plan_json") is None
+
+
+@pytest.mark.asyncio
+async def test_window_opener_passes_hygiene_manager() -> None:
+    """_window_opener must forward hygiene_manager to run_env_batch.
+
+    Without this, deferred docker_hygiene batches see hygiene_manager=None
+    and silently skip object-level approval — a silent correctness failure.
+    """
+    from errander.safety.deferred import DeferredExecution, DeferredExecutionStore
+    from errander.safety.hygiene_approval import HygieneApprovalManager
+
+    plan_json = json.dumps({"plan_id": "p2", "vm_plans": _VM_PLANS})
+    plan_hash = _make_hash("batch-hygiene", "dev", _VM_PLANS)
+
+    record = DeferredExecution(
+        batch_id="batch-hygiene",
+        env_name="dev",
+        approved_at=datetime.now(tz=UTC),
+        approved_by="alice",
+        window_start=datetime.now(tz=UTC),
+        expiry_at=datetime.now(tz=UTC) + timedelta(days=7),
+        status="pending",
+        created_at=datetime.now(tz=UTC),
+        executed_at=None,
+        plan_json=plan_json,
+        plan_hash=plan_hash,
+    )
+
+    deferred_store = AsyncMock(spec=DeferredExecutionStore)
+    deferred_store.get_pending = AsyncMock(return_value=[record])
+    deferred_store.expire_old = AsyncMock()
+    deferred_store.mark_executing = AsyncMock()
+    deferred_store.mark_done = AsyncMock()
+
+    from errander.safety.audit import AuditStore
+
+    audit_store = AsyncMock(spec=AuditStore)
+    audit_store.log_event = AsyncMock()
+
+    hygiene_manager = HygieneApprovalManager()
+    run_batch_calls: list[dict] = []
+
+    async def _mock_run_batch(**kwargs: object) -> None:
+        run_batch_calls.append(dict(kwargs))
+
+    with patch("errander.main.run_env_batch", side_effect=_mock_run_batch):
+        from errander.main import _window_opener
+
+        await _window_opener(
+            env_name="dev",
+            env_schema=MagicMock(targets=[]),
+            settings=MagicMock(),
+            executor=MagicMock(),
+            locker=MagicMock(),
+            ssh_manager=MagicMock(),
+            audit_store=audit_store,
+            deferred_store=deferred_store,
+            approval_manager=MagicMock(),
+            slack_client=None,
+            overrides_store=MagicMock(),
+            hygiene_manager=hygiene_manager,
+        )
+
+    assert len(run_batch_calls) == 1
+    assert run_batch_calls[0]["hygiene_manager"] is hygiene_manager

@@ -1,5 +1,15 @@
 # Errander-AI Command Log
 
+## Post-Residual Fixes — deferred hygiene wiring + doc P2 (2026-05-23)
+
+```bash
+# Deferred replay regression test after _window_opener hygiene_manager fix
+uv run pytest tests/agent/test_deferred_replay.py -x -q  # 17 passed
+
+# Full agent + main suite — no regressions
+uv run pytest tests/test_main.py tests/agent/ -x -q  # 846 passed
+```
+
 ## SRE Residual Fixes — 5 issues from Opus 4.7 validation (2026-05-23)
 
 ```bash

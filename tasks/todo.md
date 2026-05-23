@@ -1,3 +1,14 @@
+## Post-Residual Fixes — deferred hygiene wiring + doc P2 (2026-05-23, COMPLETE)
+
+**Status:** All 3 findings resolved. 846 agent/main tests passing.
+
+- [x] P1: `_window_opener` missing `hygiene_manager` param — added to signature + both `run_env_batch` calls + call site in scheduler
+- [x] P1 test: `test_window_opener_passes_hygiene_manager` in `test_deferred_replay.py` (17 tests passing)
+- [x] P2: SETUP.md sample + CLI `--unit` help updated to `.service` suffix
+- [x] Doc sync: STATUS.md, todo.md, lessons.md
+
+---
+
 ## SRE Residual Fixes — 5 issues from Opus 4.7 validation (2026-05-23, COMPLETE)
 
 **Status:** All 5 residual findings resolved. 2366 tests passing, ruff clean.

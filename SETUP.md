@@ -963,8 +963,8 @@ actions:
   service_restart:
     enabled: true
     restartable_units:
-      - nginx        # replace with your actual units
-      - gunicorn
+      - nginx.service        # replace with your actual units
+      - gunicorn.service
 ```
 
 ```bash

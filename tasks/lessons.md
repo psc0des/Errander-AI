@@ -8,6 +8,14 @@ A `from datetime import UTC, datetime` import placed inside a function body will
 
 **How to apply:** Move datetime (and any other stdlib) imports to module level. Only use local imports inside functions when there is an explicit circular-import reason — and even then, order them correctly within the local block.
 
+## 2026-05-23 — `_window_opener` must forward every manager arg that `run_env_batch` accepts
+
+When a new manager is added to `run_env_batch` (e.g. `hygiene_manager`, `disk_history_store`), every call site must be updated — including `_window_opener`. It has its own signature that does not inherit from `async_main`, so omitting a parameter silently passes `None` (the default), causing the deferred code path to behave differently from the scheduled and `--run-now` paths.
+
+**Why:** `_window_opener` is a standalone async function, not a closure over `async_main`. New parameters added to `run_env_batch` are invisible to it unless explicitly threaded through.
+
+**How to apply:** After adding any parameter to `run_env_batch`, grep for all `run_env_batch(` call sites and confirm each one passes the new parameter. The three sites are: `async_main --run-now`, `_run` closure in scheduler, and both branches in `_window_opener`.
+
 ## 2026-05-23 — Docker wrapper emits short 12-char IDs by default; remove wrapper uses full 64-char SHA256
 
 `docker images --format '{{.ID}}'` emits 12-character short IDs. `docker images -q --no-trunc` and `docker image inspect` accept both formats. But the `errander-docker-remove-v2` wrapper's revalidation loop uses `grep -Fx "$obj_id"` against the assess output, requiring an exact string match — short vs full always fails.

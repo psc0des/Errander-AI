@@ -4,6 +4,16 @@
 2026-05-23
 
 ## Current Phase
+**Post-Residual Fixes — deferred docker_hygiene wiring + doc P2 (2026-05-23, COMPLETE).** 846 agent/main tests passing.
+
+`_window_opener` was missing `hygiene_manager` in its signature and both `run_env_batch` call sites, so deferred docker_hygiene batches silently skipped object-level approval. Fixed + regression test added. SETUP.md and CLI help also updated to show `.service` suffix on unit names.
+
+### Files changed in Post-Residual Fixes (2026-05-23)
+- `errander/main.py` — add `hygiene_manager` param to `_window_opener` + pass through to both `run_env_batch` calls + scheduler call site; fix `--unit` help text to say `nginx.service, gunicorn.service`
+- `SETUP.md` — sample `restartable_units` updated to `nginx.service`, `gunicorn.service`
+- `tests/agent/test_deferred_replay.py` — `test_window_opener_passes_hygiene_manager` regression test
+
+## Previous Phase
 **SRE Residual Fixes — 5 issues from Opus 4.7 validation (2026-05-23, COMPLETE).** 2366 tests passing, ruff clean.
 
 After the previous gap-fix pass, Opus 4.7 found 5 residual issues. All are now resolved: docker wrapper full-ID format, service_restart VM lock + window, docs unit name suffix, orphaned-deps exact preview + drift gate, categorical decision documented.

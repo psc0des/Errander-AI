@@ -91,6 +91,8 @@ The agent serves a web UI on port 9090 while running.
 | `http://localhost:9090/ui/batches` | Full batch history |
 | `http://localhost:9090/ui/batches/<batch-id>` | All events for a specific batch |
 | `http://localhost:9090/ui/approvals` | Pending approvals + decision history |
+| `http://localhost:9090/ui/ai-decisions` | AI decision audit log — every LLM call that influenced a plan |
+| `http://localhost:9090/ui/ai-decisions/<id>` | Full detail for one LLM decision: prompt, response, context snapshot |
 | `http://localhost:9090/metrics` | Raw Prometheus metrics |
 | `http://localhost:9090/health` | Liveness check — `{"status":"ok"}` |
 
@@ -427,6 +429,9 @@ The agent will not interrupt a running SSH command mid-flight — it finishes th
 | `--vm-facts <vm_id>` | Print action outcome, reboot pattern, and rejection facts for a VM |
 | `--vm-facts-action <type>` | Filter `--vm-facts` to one action type, or use alone for cross-fleet view |
 | `--plan-show <plan-id>` | Print the full package/object list for a saved plan snapshot (use when Slack message is truncated) |
+| `--ai-decisions` | Query the AI decision audit log and exit |
+| `--ai-decision-show <id>` | Show full detail for a single AI decision by numeric ID, then exit |
+| `--decision-type <type>` | Filter `--ai-decisions` by decision type (e.g. `prioritize_actions`) |
 
 ---
 

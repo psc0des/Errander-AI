@@ -4,6 +4,20 @@
 2026-05-24
 
 ## Current Phase
+**AI Trust Layer — Phase 2: Prompt Versioning & Replay Evals (2026-05-24, COMPLETE).** 2462 tests passing.
+
+`EvalStore` persists replay run summaries and per-decision results in new SQLite tables (`ai_eval_runs`, `ai_eval_results`, migration 9). `run_replay()` queries stored `ai_decisions`, re-sends each `prompt_full` to a candidate model, runs deterministic assertions (`check_assertions`), and saves the `EvalRun`. CLI: `--ai-eval-replay [--eval-model <id>]`. 28 tests covering all assertion types, store roundtrip, and replay integration scenarios.
+
+### Files changed in AI Trust Layer Phase 2 (2026-05-24)
+- `errander/safety/migrations.py` — migration 9: `ai_eval_runs` + `ai_eval_results` tables
+- `errander/evals/__init__.py` (NEW) — package init
+- `errander/evals/replay.py` (NEW) — `check_assertions`, `EvalStore`, `EvalResult`, `EvalRun`, `run_replay`
+- `errander/main.py` — `--ai-eval-replay`, `--eval-model` CLI flags + `run_ai_eval_replay()`
+- `tests/ai_evals/test_replay.py` (NEW) — 28 tests
+- `tests/safety/test_migrations.py` — updated migration count (9→10) and expected tables
+- `docs/learning/45-replay-evals.md` (NEW)
+
+## Previous Phase
 **AI Trust Layer — Phase 3: Context Budget & Redaction Policy (2026-05-24, COMPLETE).** 2434 tests passing.
 
 `ContextRedactor` strips 5 secret pattern families (OpenAI keys, AWS keys, passwords, bearer tokens, PEM blocks) from the prompt string before it reaches the LLM. `ContextBudgeter` caps VM count, log entry lists, and text field lengths on `FleetContext`. Both are wired into `OperatorAssistant.investigate()`. IP redaction is opt-in (default off).

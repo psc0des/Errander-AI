@@ -1,5 +1,13 @@
 # Errander-AI — Lessons Learned
 
+## 2026-05-24 — Migration tests need updating when a new migration is added
+
+When adding a new database migration, the existing migration tests check exact version counts and table lists. They will fail with `AssertionError: assert N+1 == N`. Always update `tests/safety/test_migrations.py` when adding a migration: (1) update `versions == [0, ..., N]` to include the new version, (2) update `count == N` to `N+1`, (3) add new table names to the expected tables set.
+
+**Why:** The tests are designed to be brittle — they lock in the exact migration count and schema so regressions are caught immediately. The cost is that adding a migration requires a matching test update.
+
+**How to apply:** After adding any migration entry to `_MIGRATIONS`, immediately grep `test_migrations.py` for the old count and update it.
+
 ## 2026-05-24 — ruff TC001: local imports inside methods should be moved to TYPE_CHECKING when only used as annotations
 
 When an import is used only as a type annotation (e.g., `capped_vms: list[VMSignalSummary] = []`), ruff's `TC001` rule flags it as "should be in TYPE_CHECKING block" to avoid the runtime import cost. With `from __future__ import annotations`, variable annotations are strings and the class doesn't need to be importable at runtime. The fix: add to `if TYPE_CHECKING:` at the module level and remove the local import.

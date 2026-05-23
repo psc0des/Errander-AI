@@ -212,6 +212,47 @@ _MIGRATIONS: list[tuple[int, str]] = [
             ON plan_snapshots (batch_id)
         """,
     ),
+    # 0009 — replay eval tables (AI Trust Layer Phase 2)
+    #
+    # ai_eval_runs: one row per --ai-eval-replay CLI invocation.
+    # ai_eval_results: one row per replayed ai_decisions entry.
+    # original_id references ai_decisions.id (soft FK — no enforced constraint
+    # so the eval DB can be separate from the audit DB if needed).
+    (
+        9,
+        """
+        CREATE TABLE IF NOT EXISTS ai_eval_runs (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            run_id       TEXT    NOT NULL UNIQUE,
+            model        TEXT    NOT NULL,
+            decision_type TEXT,
+            source_count INTEGER NOT NULL DEFAULT 0,
+            pass_count   INTEGER NOT NULL DEFAULT 0,
+            fail_count   INTEGER NOT NULL DEFAULT 0,
+            error_count  INTEGER NOT NULL DEFAULT 0,
+            timestamp    TEXT    NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_eval_runs_ts
+            ON ai_eval_runs (timestamp DESC);
+        CREATE TABLE IF NOT EXISTS ai_eval_results (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            run_id        TEXT    NOT NULL,
+            original_id   INTEGER,
+            decision_type TEXT    NOT NULL,
+            model         TEXT    NOT NULL,
+            prompt_hash   TEXT    NOT NULL,
+            response_raw  TEXT,
+            outcome       TEXT    NOT NULL,
+            violations    TEXT,
+            latency_ms    REAL,
+            timestamp     TEXT    NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_eval_results_run
+            ON ai_eval_results (run_id);
+        CREATE INDEX IF NOT EXISTS idx_eval_results_ts
+            ON ai_eval_results (timestamp DESC)
+        """,
+    ),
 ]
 
 

@@ -1,3 +1,18 @@
+## AI Trust Layer — Phase 2: Prompt Versioning & Replay Evals (2026-05-24, COMPLETE)
+
+**Status:** All items complete. 2462 tests passing, ruff + mypy clean on changed files.
+
+- [x] `errander/safety/migrations.py` — migration 9: `ai_eval_runs` + `ai_eval_results` tables
+- [x] `errander/evals/__init__.py` (NEW) — package init
+- [x] `errander/evals/replay.py` (NEW) — `check_assertions`, `EvalStore`, `EvalResult`, `EvalRun`, `run_replay`
+- [x] `errander/main.py` — `--ai-eval-replay`, `--eval-model` flags + `run_ai_eval_replay()`
+- [x] `tests/ai_evals/test_replay.py` (NEW) — 28 tests
+- [x] `tests/safety/test_migrations.py` — migration count 9→10, expected tables updated
+- [x] Doc sync: STATUS.md, todo.md, lessons.md, command-log.md, README.md, learning/45
+- [x] Green tree: 2462 tests passing
+
+---
+
 ## AI Trust Layer — Phase 3: Context Budget & Redaction Policy (2026-05-24, COMPLETE)
 
 **Status:** All items complete. 2434 tests passing, ruff + mypy clean on changed files.

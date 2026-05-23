@@ -16,7 +16,8 @@ Run with: uv run pytest tests/ai_evals/ -v
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from datetime import UTC
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from pydantic import BaseModel
@@ -29,7 +30,6 @@ from errander.agent.decisions import (
 )
 from errander.models.actions import ACTION_RISK_TIERS, ActionType, RiskTier
 from errander.models.vm import OSFamily, VMInfo
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -337,8 +337,9 @@ class TestAIDecisionAudit:
 
     @pytest.mark.asyncio
     async def test_ai_decision_store_crud(self) -> None:
+        from datetime import datetime
+
         from errander.safety.ai_audit import AIDecision, AIDecisionStore
-        from datetime import datetime, timezone
 
         async with AIDecisionStore(":memory:") as store:
             d = AIDecision(
@@ -353,7 +354,7 @@ class TestAIDecisionAudit:
                 latency_ms=142.5,
                 prompt_tokens=200,
                 completion_tokens=50,
-                timestamp=datetime.now(tz=timezone.utc),
+                timestamp=datetime.now(tz=UTC),
             )
             await store.log(d)
             results = await store.get_decisions(batch_id="b-001")

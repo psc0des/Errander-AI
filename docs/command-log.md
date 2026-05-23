@@ -1,5 +1,18 @@
 # Errander-AI Command Log
 
+## AI Trust Layer Phase 2 — Prompt Versioning & Replay Evals (2026-05-24)
+
+```bash
+# Phase 2 specific tests
+uv run pytest tests/ai_evals/test_replay.py tests/safety/test_migrations.py -v  # 41 passed
+
+# Lint on Phase 2 files
+uv run ruff check errander/evals/ tests/ai_evals/test_replay.py errander/main.py  # clean
+
+# Full suite
+uv run pytest --tb=no -q  # 2462 passed
+```
+
 ## AI Trust Layer Phase 3 — Context Budget & Redaction Policy (2026-05-24)
 
 ```bash

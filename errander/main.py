@@ -291,6 +291,23 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Filter AI decisions by type, e.g. prioritize_actions (use with --ai-decisions)",
     )
 
+    # Replay eval (AI Trust Layer Phase 2)
+    parser.add_argument(
+        "--ai-eval-replay",
+        action="store_true",
+        dest="ai_eval_replay",
+        help=(
+            "Replay stored LLM decisions against a candidate model and exit. "
+            "Use with --eval-model, --decision-type, --last, --batch-id."
+        ),
+    )
+    parser.add_argument(
+        "--eval-model",
+        default=None,
+        dest="eval_model",
+        help="Candidate model ID to use for replay eval (use with --ai-eval-replay)",
+    )
+
     # Durability measurement
     parser.add_argument(
         "--measure-durability",
@@ -1458,6 +1475,64 @@ async def run_ai_decisions_query(args: argparse.Namespace, settings: Settings) -
         return 1
 
 
+async def run_ai_eval_replay(args: argparse.Namespace, settings: Settings) -> int:
+    """Replay stored LLM decisions against a candidate model and print a summary."""
+    from errander.evals.replay import EvalStore, run_replay
+    from errander.integrations.llm import LLMClient
+    from errander.safety.ai_audit import AIDecisionStore
+
+    candidate_model = args.eval_model or settings.llm_model
+    print(f"Replay eval — candidate model: {candidate_model}")
+    print(f"Source: {settings.audit_db_url}")
+
+    try:
+        candidate_client = LLMClient(
+            base_url=settings.llm_base_url,
+            model=candidate_model,
+            api_key=settings.llm_api_key or "not-needed",
+        )
+        async with (
+            AIDecisionStore(settings.audit_db_url) as ai_store,
+            EvalStore(settings.audit_db_url) as eval_store,
+        ):
+            run = await run_replay(
+                ai_store=ai_store,
+                eval_store=eval_store,
+                candidate_client=candidate_client,
+                decision_type=args.decision_type,
+                batch_id=getattr(args, "batch_id", None),
+                limit=getattr(args, "last", 20),
+            )
+
+        if run.source_count == 0:
+            print("No decisions with stored prompts found matching the filters.")
+            return 0
+
+        print(f"\nResults for run {run.run_id}:")
+        print(f"  source_count : {run.source_count}")
+        print(f"  pass         : {run.pass_count}")
+        print(f"  fail         : {run.fail_count}")
+        print(f"  error        : {run.error_count}")
+        skipped = run.source_count - run.pass_count - run.fail_count - run.error_count
+        if skipped:
+            print(f"  skipped      : {skipped}")
+
+        violations_found = [r for r in run.results if r.violations]
+        if violations_found:
+            print(f"\nViolations ({len(violations_found)} decision(s)):")
+            for r in violations_found:
+                print(f"  [{r.original_id}] {r.decision_type}: {'; '.join(r.violations)}")
+
+        if run.fail_count > 0 or run.error_count > 0:
+            print(f"\nEval FAILED: {run.fail_count} violation(s), {run.error_count} error(s).")
+            return 1
+        print("\nEval PASSED.")
+        return 0
+    except Exception as exc:  # noqa: BLE001
+        print(f"Error running replay eval: {exc}")
+        return 1
+
+
 async def run_audit_query(args: argparse.Namespace, settings: Settings) -> int:
     """Run an audit query and print results to stdout."""
     audit_store = AuditStore(settings.audit_db_url, strict_mode=False)
@@ -1994,6 +2069,10 @@ async def async_main(args: argparse.Namespace) -> int:
     # --- AI decision audit: query and exit ---
     if args.ai_decisions or args.ai_decision_show is not None:
         return await run_ai_decisions_query(args, settings)
+
+    # --- Replay eval: replay stored decisions against candidate model and exit ---
+    if args.ai_eval_replay:
+        return await run_ai_eval_replay(args, settings)
 
     # --- Durability measurement: query and exit ---
     if args.measure_durability:

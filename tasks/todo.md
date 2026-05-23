@@ -1,3 +1,16 @@
+## AI Trust Layer — Phase 3: Context Budget & Redaction Policy (2026-05-24, COMPLETE)
+
+**Status:** All items complete. 2434 tests passing, ruff + mypy clean on changed files.
+
+- [x] `errander/safety/context_redactor.py` (NEW) — `ContextRedactor`: OpenAI key, AWS key, password, bearer token, PEM block; IP opt-in
+- [x] `errander/safety/context_budget.py` (NEW) — `ContextBudgeter`: max_vms, max_log_entries_per_vm, max_chars_per_field
+- [x] `errander/agent/operator_assistant.py` — wire both into `investigate()` with log warnings
+- [x] `tests/safety/test_context_redactor.py` (NEW) — 24 tests
+- [x] `tests/safety/test_context_budget.py` (NEW) — 13 tests
+- [x] Doc sync: STATUS.md, todo.md, lessons.md, command-log.md, README.md, learning/44
+
+---
+
 ## AI Trust Layer — Phase 1: Decision Explainability + Adversarial Tests (2026-05-23, COMPLETE)
 
 **Status:** All items complete. 2397 tests passing, ruff clean on changed files.

@@ -1,5 +1,19 @@
 # Errander-AI Command Log
 
+## AI Trust Layer Phase 3 — Context Budget & Redaction Policy (2026-05-24)
+
+```bash
+# New Phase 3 tests
+uv run pytest tests/safety/test_context_redactor.py tests/safety/test_context_budget.py -v  # 37 passed
+
+# Lint + type check on Phase 3 files
+uv run ruff check errander/safety/context_redactor.py errander/safety/context_budget.py errander/agent/operator_assistant.py tests/safety/test_context_redactor.py tests/safety/test_context_budget.py
+uv run mypy errander/safety/context_redactor.py errander/safety/context_budget.py errander/agent/operator_assistant.py
+
+# Full suite
+uv run pytest --tb=no -q  # 2434 passed
+```
+
 ## AI Trust Layer Phase 1 — Decision Explainability + Adversarial Tests (2026-05-23)
 
 ```bash

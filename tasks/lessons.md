@@ -1,5 +1,15 @@
 # Errander-AI — Lessons Learned
 
+## 2026-05-24 — ruff TC001: local imports inside methods should be moved to TYPE_CHECKING when only used as annotations
+
+When an import is used only as a type annotation (e.g., `capped_vms: list[VMSignalSummary] = []`), ruff's `TC001` rule flags it as "should be in TYPE_CHECKING block" to avoid the runtime import cost. With `from __future__ import annotations`, variable annotations are strings and the class doesn't need to be importable at runtime. The fix: add to `if TYPE_CHECKING:` at the module level and remove the local import.
+
+**Why:** `from __future__ import annotations` makes ALL annotations (including variable annotations) lazy strings. No runtime type object needed. A local runtime import for a pure annotation is dead weight that ruff correctly flags.
+
+**How to apply:** If you see TC001 on a local import, check whether the imported name is used only in annotations. If yes, move to TYPE_CHECKING. Only keep the local import if the name is used at runtime (isinstance checks, class instantiation, dataclasses.replace with the type, etc.).
+
+
+
 ## 2026-05-23 — `_INJECTION_RE` catches shell metacharacters; unknown commands are caught by the action-type filter
 
 When writing adversarial tests for the prompt injection layer, the regex `_INJECTION_RE` only catches strings containing shell metacharacters (`;&|`, backtick, `$()`, `{}`, `\n`, `../`). Strings like `kubectl delete pod --all` or `docker exec -it bash` don't contain these characters — they are rejected instead by `_parse_action_types()` as unknown action types. Separate the two test cases accordingly: one for `_INJECTION_RE.search()`, one for `_parse_action_types()`.

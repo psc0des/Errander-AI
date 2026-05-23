@@ -1,9 +1,21 @@
 # Errander-AI — Project Status
 
 ## Last Updated
-2026-05-23
+2026-05-24
 
 ## Current Phase
+**AI Trust Layer — Phase 3: Context Budget & Redaction Policy (2026-05-24, COMPLETE).** 2434 tests passing.
+
+`ContextRedactor` strips 5 secret pattern families (OpenAI keys, AWS keys, passwords, bearer tokens, PEM blocks) from the prompt string before it reaches the LLM. `ContextBudgeter` caps VM count, log entry lists, and text field lengths on `FleetContext`. Both are wired into `OperatorAssistant.investigate()`. IP redaction is opt-in (default off).
+
+### Files changed in AI Trust Layer Phase 3 (2026-05-24)
+- `errander/safety/context_redactor.py` (NEW) — `ContextRedactor` + `RedactionStats`
+- `errander/safety/context_budget.py` (NEW) — `ContextBudgeter` + `BudgetStats`
+- `errander/agent/operator_assistant.py` — wire budget + redactor into `investigate()`
+- `tests/safety/test_context_redactor.py` (NEW) — 24 tests
+- `tests/safety/test_context_budget.py` (NEW) — 13 tests
+
+## Previous Phase
 **AI Trust Layer — Phase 1: Decision Explainability + Adversarial Tests (2026-05-23, COMPLETE).** 2397 tests passing.
 
 Every LLM call that influences a maintenance decision is now surfaced to operators: CLI query flags (`--ai-decisions`, `--ai-decision-show`, `--decision-type`), Web UI at `/ui/ai-decisions` and `/ui/ai-decisions/{id}`, and 30 new adversarial safety tests proving shell injection cannot reach the execution layer.

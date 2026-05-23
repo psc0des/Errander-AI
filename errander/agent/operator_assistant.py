@@ -20,6 +20,8 @@ import logging
 from typing import TYPE_CHECKING
 
 from errander.models.analysis import AssistantResponse, FleetContext, VMSignalSummary
+from errander.safety.context_budget import ContextBudgeter
+from errander.safety.context_redactor import ContextRedactor
 
 if TYPE_CHECKING:
     from errander.config.schema import InventoryConfig
@@ -39,6 +41,8 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _DRIFT_KINDS = ("sudoers", "authorized_keys", "listening_ports", "scheduled_jobs")
+_BUDGETER = ContextBudgeter()
+_REDACTOR = ContextRedactor()
 _DISK_WINDOW_DAYS = 7
 _EVENTS_LIMIT = 100
 
@@ -80,11 +84,23 @@ class OperatorAssistant:
             vm_facts_store=vm_facts_store,
         )
 
-        if llm_client is not None:
-            result = await llm_client.complete(
-                _format_prompt(question, context),
-                AssistantResponse,
+        context, budget_stats = _BUDGETER.apply(context)
+        if budget_stats.vms_dropped:
+            logger.info(
+                "Context budget: dropped %d VM(s) from prompt (%d included)",
+                budget_stats.vms_dropped,
+                budget_stats.vms_included,
             )
+
+        if llm_client is not None:
+            prompt = _format_prompt(question, context)
+            prompt, redaction_stats = _REDACTOR.redact_prompt(prompt)
+            if redaction_stats.total_redactions:
+                logger.warning(
+                    "Redacted %d secret pattern(s) from LLM prompt",
+                    redaction_stats.total_redactions,
+                )
+            result = await llm_client.complete(prompt, AssistantResponse)
             if result is not None:
                 result.data_sources = context.sources_used
                 return result

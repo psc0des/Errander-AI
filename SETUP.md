@@ -438,7 +438,7 @@ scp -i ~/.ssh/errander_prod scripts/install-systemctl-restart-wrapper.sh errande
 
 ```bash
 ssh <admin-user>@<target>
-sudo bash /tmp/install-systemctl-restart-wrapper.sh nginx gunicorn redis-server
+sudo bash /tmp/install-systemctl-restart-wrapper.sh nginx.service gunicorn.service redis-server.service
 ```
 
 Replace `nginx gunicorn redis-server` with the units this VM is allowed to restart. The allowlist is written to `/etc/errander/restart-allowlist` (one unit per line, mode 644).
@@ -452,9 +452,9 @@ actions:
   service_restart:
     enabled: true
     restartable_units:
-      - nginx
-      - gunicorn
-      - redis-server
+      - nginx.service
+      - gunicorn.service
+      - redis-server.service
 ```
 
 Then verify from the **controller VM** (where Errander is installed — not on the targets):
@@ -470,9 +470,9 @@ This verifies the wrapper exists on each VM, the sudoers entry is correct, and t
 ### Trigger a restart *(once Step 5 and Step 6 are complete)*
 
 ```bash
-uv run python -m errander --restart-service production --unit nginx --vm prod-web-01 --dry-run
+uv run python -m errander --restart-service production --unit nginx.service --vm prod-web-01 --dry-run
 # Review plan, then live:
-uv run python -m errander --restart-service production --unit nginx --vm prod-web-01
+uv run python -m errander --restart-service production --unit nginx.service --vm prod-web-01
 ```
 
 Approve the plan in `#errander-approvals` with ✅. The wrapper captures pre/post status + journal; a verify step confirms the unit reached `active` state. If verification fails, a `SERVICE_RESTART_VERIFY_FAILED` event is logged and Slack is notified — no automatic re-restart attempt.

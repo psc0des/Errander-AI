@@ -21,6 +21,7 @@ import contextlib
 import logging
 import signal
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
 
 import structlog
@@ -40,7 +41,12 @@ from errander.safety.hygiene_approval import HygieneApprovalManager
 from errander.safety.locking import FileLocker
 from errander.safety.overrides import OverridesStore
 from errander.scheduling.scheduler import MaintenanceScheduler
-from errander.scheduling.windows import MaintenanceWindow, window_start_cron
+from errander.scheduling.windows import (
+    MaintenanceWindow,
+    check_window_from_config,
+    next_window_open,
+    window_start_cron,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -179,6 +185,18 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--vms",
         default=None,
         help="Comma-separated VM names for --restart-service (e.g. web-01,web-02)",
+    )
+    parser.add_argument(
+        "--restart-force",
+        action="store_true",
+        default=False,
+        help="Bypass maintenance window check for --restart-service (requires --restart-force-reason)",
+    )
+    parser.add_argument(
+        "--restart-force-reason",
+        default=None,
+        metavar="REASON",
+        help="Mandatory reason when --restart-force is used (logged to audit trail)",
     )
 
     # SSH known-hosts bootstrap (finding #9)
@@ -1029,12 +1047,16 @@ async def run_restart_service(
     vm_ids: list[str],
     dry_run: bool,
     inventory_path: Path,
+    force: bool = False,
+    force_reason: str | None = None,
 ) -> int:
     """Operator-triggered service restart — validates inputs, then either prints a plan
     (dry-run) or goes through the Slack approval gate and executes (live).
 
     Layer B: deterministic validation + audit log. No LLM in this path.
     HIGH risk tier — always requires Slack approval before live execution.
+    Enforces maintenance window (override with --restart-force + --restart-force-reason).
+    Acquires a per-VM lock before execution to prevent concurrent maintenance.
     """
     import uuid
 
@@ -1082,6 +1104,31 @@ async def run_restart_service(
     except Exception as exc:  # noqa: BLE001
         print(f"Error loading settings: {exc}")
         return 1
+
+    # --- Maintenance window check ---
+    window = _build_maintenance_window(env)
+    if window is not None:
+        now = datetime.now(tz=UTC)
+        if not check_window_from_config(now, window):
+            if force:
+                if not force_reason:
+                    print(
+                        "Error: --restart-force requires --restart-force-reason <reason>"
+                    )
+                    return 1
+                logger.warning(
+                    "Maintenance window bypassed for service_restart (force=True): %s",
+                    force_reason,
+                )
+            else:
+                next_open = next_window_open(now, window)
+                print(
+                    f"Error: outside maintenance window "
+                    f"(days={window.days}, {window.start_hour:02d}:00-{window.end_hour:02d}:00 "
+                    f"{window.timezone}). Next window opens at {next_open.strftime('%Y-%m-%d %H:%M UTC')}.\n"
+                    "Use --restart-force --restart-force-reason <reason> to override."
+                )
+                return 1
 
     batch_id = str(uuid.uuid4())
     vm_list = ", ".join(vm_ids)
@@ -1179,12 +1226,20 @@ async def run_restart_service(
     subgraph_compiled = build_service_restart_subgraph(
         executor, audit_store=audit_store, batch_id=batch_id,
     ).compile()
+    locker = FileLocker(lock_dir=Path(".errander-locks"))
 
     overall_success = True
     for vm_id in vm_ids:
         target = targets_by_name[vm_id]
         username = target.ssh_user or env.ssh_user
         key_path = str(Path(target.ssh_key_path or env.ssh_key_path).expanduser())
+
+        # Acquire VM lock — skip if already locked by another batch.
+        acquired = await locker.acquire(vm_id, batch_id, ttl_seconds=300)
+        if not acquired:
+            print(f"  [{vm_id}] SKIPPED — VM is locked by another maintenance batch")
+            overall_success = False
+            continue
 
         sub_state: ServiceRestartState = {
             "vm_id": vm_id,
@@ -1201,6 +1256,8 @@ async def run_restart_service(
         except Exception as exc:  # noqa: BLE001
             logger.error("service_restart subgraph raised for %s: %s", vm_id, exc)
             final = {"status": "failed", "error": str(exc)}
+        finally:
+            await locker.release(vm_id, batch_id)
 
         status = final.get("status", "failed")
         if status not in ("success", "dry_run_ok"):
@@ -1794,6 +1851,8 @@ async def async_main(args: argparse.Namespace) -> int:
             vm_ids=vm_ids,
             dry_run=dry_run,
             inventory_path=args.inventory,
+            force=args.restart_force,
+            force_reason=args.restart_force_reason,
         )
 
     # --- Configuration (first pass: no DB overrides yet) ---

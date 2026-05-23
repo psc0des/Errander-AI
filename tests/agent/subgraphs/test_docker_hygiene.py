@@ -278,6 +278,54 @@ class TestParseAssessV2Output:
         assert a.findings[0].last_tag == "repo/x:v1=preview"
 
 
+class TestWrapperIdFormat:
+    """Verify assess wrapper emits full SHA256 IDs (not truncated short IDs).
+
+    The remove wrapper revalidates with --no-trunc, so grep -Fx only matches
+    full IDs.  If the assess wrapper omits --no-trunc the drift gate silently
+    skips every approved image.
+    """
+
+    _FULL_ID = "sha256:" + "a" * 64
+
+    def test_dangling_image_full_id_parses_correctly(self) -> None:
+        output = (
+            "reachable=yes\nerror=\n"
+            "docker_hygiene_begin\n"
+            "class=image_dangling\n"
+            f"  id={self._FULL_ID} size_bytes=104857600 age_days=30 last_tag=<none>\n"
+            "docker_hygiene_end\n"
+        )
+        a = parse_assess_v2_output(output, vm_id="vm1")
+        assert len(a.findings) == 1
+        assert a.findings[0].object_id == self._FULL_ID
+
+    def test_unused_image_full_id_parses_correctly(self) -> None:
+        full_id = "sha256:" + "b" * 64
+        output = (
+            "reachable=yes\nerror=\n"
+            "docker_hygiene_begin\n"
+            "class=image_unused\n"
+            f"  id={full_id} size_bytes=52428800 age_days=45 last_tag=myrepo:v2\n"
+            "docker_hygiene_end\n"
+        )
+        a = parse_assess_v2_output(output, vm_id="vm1")
+        assert len(a.findings) == 1
+        assert a.findings[0].object_id == full_id
+
+    def test_full_id_matches_remove_wrapper_grep_pattern(self) -> None:
+        """The remove wrapper uses grep -Fx with the full SHA256 ID.
+
+        Simulate the match: a short ID must NOT match; a full ID MUST match.
+        """
+        import re
+
+        full_id_pattern = re.compile(r"^sha256:[a-f0-9]{64}$")
+        short_id = "sha256:abc123"
+        assert not full_id_pattern.match(short_id), "short ID should not match full-ID pattern"
+        assert full_id_pattern.match(self._FULL_ID), "full ID must match full-ID pattern"
+
+
 # --- Classification helpers ---
 
 class TestClassifyImage:

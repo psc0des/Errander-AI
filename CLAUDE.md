@@ -162,6 +162,8 @@ deploy/
 
 **Service restart is operator-triggered only in v1.** Auto-detection from probe output (detect-and-propose) is deferred to v1.1. Adding a unit to the `restartable_units` allowlist in inventory + on-target `/etc/errander/restart-allowlist` is required before Errander will restart it.
 
+**v1 approval coverage decision (2026-05-23):** Categorical approval is acceptable for LOW-risk, whitelist-bounded, non-destructive actions (`/tmp`, `apt-cache`, `journal`, `log_rotation`). These actions cannot permanently destroy data (files are either temp-only or compressed/rotated, not deleted), and their scope is hardcoded — never LLM-decided. They are honestly labeled `[CATEGORICAL]` in the Slack approval message. `orphaned-deps` is the exception: it removes installed packages (destructive), so it receives exact-object treatment — exact package names appear in the approval message and a drift gate re-checks candidates at execution time.
+
 ## Rollback Tiers
 
 | Tier | Actions | Strategy |

@@ -91,6 +91,9 @@ class DiskCleanupGraphState(TypedDict, total=False):
     journal_vacuum_days: int
     # Assessment results
     space_by_path: dict[str, str]  # path → human-readable size
+    # Exact package list for orphaned-deps (populated at assess time).
+    # Used for exact-object approval display and drift detection at execute time.
+    orphaned_candidates: list[str]
     # Execution results
     cleanup_output: dict[str, str]  # path → command output
     # Verification
@@ -115,6 +118,46 @@ def _journal_vacuum_cmd(days: int) -> str:
 def _journal_size_cmd() -> str:
     # --disk-usage is read-only — no sudo needed on most distros.
     return "journalctl --disk-usage 2>/dev/null || echo '0'"
+
+
+# --- Orphaned-deps helpers ---
+
+def _parse_autoremove_candidates(output: str, os_family: str) -> list[str]:
+    """Extract package names from autoremove simulate output.
+
+    apt-get --simulate emits lines like:
+        Remv libfoo1 [1.2.3-1]
+
+    dnf --assumeno emits lines like:
+        Removing:
+         libfoo1   x86_64   1.2.3   @System   1.2 M
+
+    Returns a sorted, deduplicated list of package names.
+    """
+    import re
+
+    candidates: list[str] = []
+    if os_family in ("ubuntu", "debian"):
+        for line in output.splitlines():
+            m = re.match(r"^Remv\s+(\S+)", line)
+            if m:
+                candidates.append(m.group(1))
+    else:
+        # dnf: packages appear as indented lines after "Removing:" header
+        in_removing = False
+        for line in output.splitlines():
+            if re.match(r"^\s*Removing\s*:", line, re.IGNORECASE):
+                in_removing = True
+                continue
+            if in_removing:
+                # Package lines are indented; a non-indented line ends the block
+                if line and not line[0].isspace():
+                    in_removing = False
+                    continue
+                pkg = line.split()[0] if line.split() else ""
+                if pkg:
+                    candidates.append(pkg)
+    return sorted(set(candidates))
 
 
 # --- Node functions ---
@@ -206,11 +249,11 @@ async def assess_node(
             space["journal"] = result.stdout.strip() if result.success else "unknown"
 
         elif path == "orphaned-deps":
-            # Can't easily assess size of orphaned deps without running autoremove --simulate
+            # Full simulate output — no tail -1 — so we can extract exact package names.
             if os_family in ("ubuntu", "debian"):
-                sim_cmd = "apt-get autoremove --simulate 2>/dev/null | tail -1"
+                sim_cmd = "apt-get autoremove --simulate 2>/dev/null"
             else:
-                sim_cmd = "dnf autoremove --assumeno 2>/dev/null | tail -3"
+                sim_cmd = "dnf autoremove --assumeno 2>/dev/null"
             result = await executor.execute(
                 vm_id, target["hostname"], target["username"], target["key_path"],
                 command=sim_cmd,
@@ -218,9 +261,17 @@ async def assess_node(
             )
             space["orphaned-deps"] = result.stdout.strip() if result.success else "unknown"
 
+    # Extract exact package list from orphaned-deps simulate output.
+    orphaned_candidates: list[str] = []
+    if "orphaned-deps" in paths and space.get("orphaned-deps") not in ("unknown", ""):
+        orphaned_candidates = _parse_autoremove_candidates(
+            space.get("orphaned-deps", ""), os_family
+        )
+
     return {
         "space_by_path": space,
         "disk_before": disk_before,
+        "orphaned_candidates": orphaned_candidates,
     }
 
 
@@ -295,6 +346,27 @@ async def execute_node(
                 sim_cmd = "apt-get autoremove --simulate 2>/dev/null"
             else:
                 sim_cmd = "dnf autoremove --assumeno 2>/dev/null"
+
+            # Drift gate: re-run simulate and compare against assessed candidates.
+            if not dry_run:
+                drift_result = await executor.execute(
+                    vm_id, target["hostname"], target["username"], target["key_path"],
+                    command=sim_cmd,
+                    dry_run=False,
+                )
+                current_candidates = _parse_autoremove_candidates(
+                    drift_result.stdout, os_family
+                ) if drift_result.success else []
+                assessed_candidates = state.get("orphaned_candidates") or []
+                if set(current_candidates) != set(assessed_candidates):
+                    logger.warning(
+                        "orphaned-deps candidate list drifted on %s "
+                        "(assessed=%s, current=%s) — skipping",
+                        vm_id, sorted(assessed_candidates), sorted(current_candidates),
+                    )
+                    output["orphaned-deps"] = "[SKIPPED — candidate list drifted since assessment]"
+                    continue
+
             result = await executor.execute(
                 vm_id, target["hostname"], target["username"], target["key_path"],
                 command=pkg_mgr.autoremove(),

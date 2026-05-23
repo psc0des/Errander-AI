@@ -1260,6 +1260,15 @@ def _format_plan_for_approval(
                     detail_parts.append(f"~{cache_mb}MB apt cache")
                 detail = f": {', '.join(detail_parts)}" if detail_parts else ""
                 lines.append(f"    - disk_cleanup{detail}")
+                candidates = preview.get("orphaned_candidates")
+                if candidates and isinstance(candidates, list):
+                    lines.append(
+                        f"      orphaned-deps: {len(candidates)} package(s) to autoremove"
+                    )
+                    for pkg in candidates[:10]:
+                        lines.append(f"        • {pkg}")
+                    if len(candidates) > 10:
+                        lines.append(f"        … and {len(candidates) - 10} more")
 
             else:
                 params = a.get("params") or {}
@@ -1285,7 +1294,16 @@ def _format_plan_for_approval(
                 tag = "[EXACT]" if pkgs and isinstance(pkgs, list) else "[CATEGORICAL]"
                 coverage_lines.append(f"  • patching         {tag}")
             elif at == "disk_cleanup":
-                coverage_lines.append("  • disk_cleanup     [CATEGORICAL]  cleanup classes: bounded by whitelist_paths")
+                candidates = preview.get("orphaned_candidates")
+                if candidates and isinstance(candidates, list):
+                    coverage_lines.append(
+                        "  • disk_cleanup     [MIXED]        whitelist paths: [CATEGORICAL]; "
+                        f"orphaned-deps: [EXACT] ({len(candidates)} pkg(s))"
+                    )
+                else:
+                    coverage_lines.append(
+                        "  • disk_cleanup     [CATEGORICAL]  cleanup classes: bounded by whitelist_paths"
+                    )
             elif at == "log_rotation":
                 coverage_lines.append("  • log_rotation     [CATEGORICAL]  files exceeding size threshold at exec time")
             elif at == "backup_verify":

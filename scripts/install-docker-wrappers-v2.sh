@@ -41,7 +41,8 @@ now_epoch=$(date +%s)
 # --- class=image_dangling ---
 echo "class=image_dangling"
 # Format: ID|CreatedAt|Size  (CreatedAt is RFC3339-ish)
-/usr/bin/docker images --filter dangling=true \
+# --no-trunc emits full SHA256 IDs so remove wrapper grep -Fx matches correctly.
+/usr/bin/docker images --filter dangling=true --no-trunc \
     --format '{{.ID}}|{{.CreatedAt}}|{{.Size}}' 2>/dev/null \
     | while IFS='|' read -r img_id created_at size_human; do
         [ -z "$img_id" ] && continue
@@ -60,7 +61,8 @@ echo "class=image_dangling"
 # enumerate via image ls + cross-check against `docker ps -a --format '{{.Image}}'`.
 echo "class=image_unused"
 referenced_images=$(/usr/bin/docker ps -a --format '{{.Image}}' 2>/dev/null | sort -u || true)
-/usr/bin/docker images --filter dangling=false \
+# --no-trunc for ID consistency with image_dangling and the remove wrapper.
+/usr/bin/docker images --filter dangling=false --no-trunc \
     --format '{{.ID}}|{{.Repository}}:{{.Tag}}|{{.CreatedAt}}' 2>/dev/null \
     | while IFS='|' read -r img_id repo_tag created_at; do
         [ -z "$img_id" ] && continue

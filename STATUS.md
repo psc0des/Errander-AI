@@ -4,6 +4,21 @@
 2026-05-23
 
 ## Current Phase
+**SRE Residual Fixes — 5 issues from Opus 4.7 validation (2026-05-23, COMPLETE).** 2366 tests passing, ruff clean.
+
+After the previous gap-fix pass, Opus 4.7 found 5 residual issues. All are now resolved: docker wrapper full-ID format, service_restart VM lock + window, docs unit name suffix, orphaned-deps exact preview + drift gate, categorical decision documented.
+
+### Files changed in SRE Residual Fixes (2026-05-23)
+- `scripts/install-docker-wrappers-v2.sh` — Finding 1: add `--no-trunc` to assess wrapper's `docker images` calls
+- `errander/main.py` — Finding 2: `run_restart_service()` + maintenance window check + VM locking + `--restart-force`/`--restart-force-reason` args; move `datetime` import to top level
+- `errander/agent/subgraphs/disk_cleanup.py` — Finding 4: `_parse_autoremove_candidates()`, `orphaned_candidates` state, drift gate in execute_node
+- `errander/agent/graph.py` — Finding 4: orphaned-deps package list + [MIXED] coverage label in approval message
+- `CLAUDE.md` — Finding 5: document categorical-is-acceptable decision for whitelist-bounded LOW-risk actions
+- README.md, SETUP.md, RUN.md, example/inventory.yaml, docs/learning/40-service-restart-module.md — Finding 3: all unit name examples updated to include .service suffix
+- **New/updated tests:** `tests/agent/test_service_restart_cli.py` (+4 tests), `tests/agent/subgraphs/test_docker_hygiene.py` (+3), `tests/agent/subgraphs/test_disk_cleanup.py` (+5)
+- `docs/learning/49-sre-residual-fixes.md` (NEW)
+
+## Previous Phase
 **AI SRE Gap Fix — 7 safety/quality fixes validated by Opus 4.7 (2026-05-23, COMPLETE).** 2354 tests passing, ruff clean, no new mypy errors.
 
 All 7 of 8 gap findings validated by Opus 4.7 against current `main` were addressed (P1-1 was already fixed in v1.1). Fixes span safety (live-mode wiring, shell-injection hardening), honesty (approval message blast-radius claims, risk-tier docstring), and usability (full plan inspectable via signed URL).

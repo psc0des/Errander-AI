@@ -26,7 +26,7 @@ Service restart intentionally breaks this pattern:
   hide a real incident."
 - **Unexpected restarts are high-impact events.** Even a brief nginx restart drops in-flight
   connections. Operators need to decide when the moment is right.
-- **The CLI is the interface.** `--restart-service prod --unit nginx --vm prod-web-01`
+- **The CLI is the interface.** `--restart-service prod --unit nginx.service --vm prod-web-01`
   is explicit, auditable, and integrates with CI/CD pipelines.
 
 ### Risk Tier: HIGH

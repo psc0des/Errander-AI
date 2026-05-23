@@ -11,6 +11,7 @@ from errander.agent.subgraphs.disk_cleanup import (
     DEFAULT_CLEANUP_PATHS,
     EXPLICIT_OPT_IN_PATHS,
     DiskCleanupGraphState,
+    _parse_autoremove_candidates,
     assess_node,
     build_disk_cleanup_subgraph,
     execute_node,
@@ -464,3 +465,108 @@ class TestOrphanedDepsOptIn:
         assert any("autoremove" in c for c in commands_seen), (
             "apt autoremove must run when orphaned-deps is explicitly in whitelist_paths"
         )
+
+
+# --- P2 (SRE residual): orphaned-deps exact preview + drift detection ---
+
+class TestOrphanedDepsExactPreview:
+    """orphaned-deps must surface exact package names and abort on drift."""
+
+    def test_candidates_extracted_from_apt_simulate_output(self) -> None:
+        from errander.agent.subgraphs.disk_cleanup import _parse_autoremove_candidates
+
+        output = (
+            "Reading package lists...\n"
+            "Building dependency tree...\n"
+            "The following packages will be REMOVED:\n"
+            "  libfoo1 libbar2\n"
+            "Remv libfoo1 [1.2.3-1ubuntu0.1]\n"
+            "Remv libbar2 [4.5.6-2]\n"
+            "0 upgraded, 0 newly installed, 2 to remove and 0 not upgraded.\n"
+        )
+        result = _parse_autoremove_candidates(output, "ubuntu")
+        assert result == ["libbar2", "libfoo1"]  # sorted
+
+    def test_candidates_extracted_from_dnf_simulate_output(self) -> None:
+        from errander.agent.subgraphs.disk_cleanup import _parse_autoremove_candidates
+
+        output = (
+            "Last metadata expiration check: 0:01:23 ago.\n"
+            "Removing:\n"
+            " libfoo1  x86_64  1.2.3-1.fc38  @System  1.2 MB\n"
+            " libbar2  x86_64  4.5.6-2.fc38  @System  800 kB\n"
+            "\n"
+            "Transaction Summary\n"
+            "Remove  2 Packages\n"
+        )
+        result = _parse_autoremove_candidates(output, "rhel")
+        assert "libfoo1" in result
+        assert "libbar2" in result
+
+    def test_empty_simulate_output_returns_empty_list(self) -> None:
+        from errander.agent.subgraphs.disk_cleanup import _parse_autoremove_candidates
+
+        result = _parse_autoremove_candidates("", "ubuntu")
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_drift_causes_skip(self) -> None:
+        """If the candidate list changes between assess and execute, skip autoremove."""
+        executor = _make_executor(dry_run=False)
+
+        call_count = 0
+
+        async def fake_execute(*args: object, **kwargs: object) -> SSHResult:
+            nonlocal call_count
+            call_count += 1
+            cmd = str(kwargs.get("command", ""))
+            # First simulate call (drift check): returns DIFFERENT packages than assessed
+            if "autoremove" in cmd or "assumeno" in cmd:
+                return _make_result("Remv libNEWPACKAGE [1.0]\n")
+            return _make_result("ok")
+
+        with patch.object(executor, "execute", side_effect=fake_execute):
+            state: DiskCleanupGraphState = {
+                "vm_id": "dev/web-01",
+                "os_family": "ubuntu",
+                "dry_run": False,
+                "whitelist_paths": ["orphaned-deps"],
+                "orphaned_candidates": ["libfoo1", "libbar2"],  # assessed packages
+                "hostname": "10.0.1.1",  # type: ignore[typeddict-unknown-key]
+                "username": "errander-ai",  # type: ignore[typeddict-unknown-key]
+                "key_path": "/key",  # type: ignore[typeddict-unknown-key]
+            }
+            result = await execute_node(state, executor=executor)
+
+        assert "[SKIPPED — candidate list drifted" in result["cleanup_output"].get(
+            "orphaned-deps", ""
+        )
+
+    @pytest.mark.asyncio
+    async def test_no_drift_proceeds_to_removal(self) -> None:
+        """When candidate list is unchanged, autoremove must be executed."""
+        executor = _make_executor(dry_run=False)
+        commands_run: list[str] = []
+
+        async def fake_execute(*args: object, **kwargs: object) -> SSHResult:
+            cmd = str(kwargs.get("command", ""))
+            commands_run.append(cmd)
+            return _make_result("ok")
+
+        with patch.object(executor, "execute", side_effect=fake_execute):
+            state: DiskCleanupGraphState = {
+                "vm_id": "dev/web-01",
+                "os_family": "ubuntu",
+                "dry_run": False,
+                "whitelist_paths": ["orphaned-deps"],
+                # Empty candidates == simulate returns nothing (no packages to remove)
+                "orphaned_candidates": [],
+                "hostname": "10.0.1.1",  # type: ignore[typeddict-unknown-key]
+                "username": "errander-ai",  # type: ignore[typeddict-unknown-key]
+                "key_path": "/key",  # type: ignore[typeddict-unknown-key]
+            }
+            result = await execute_node(state, executor=executor)
+
+        # The real autoremove command (not simulate) must have been called
+        assert any("autoremove" in c for c in commands_run)
+        assert "[SKIPPED" not in result["cleanup_output"].get("orphaned-deps", "")

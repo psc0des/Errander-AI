@@ -1,5 +1,24 @@
 # Errander-AI Command Log
 
+## SRE Residual Fixes — 5 issues from Opus 4.7 validation (2026-05-23)
+
+```bash
+# Targeted test run: docker hygiene after Finding 1 (--no-trunc wrapper fix + TestWrapperIdFormat)
+uv run pytest tests/agent/subgraphs/test_docker_hygiene.py -x -q  # passed
+
+# Targeted test run: service_restart after Finding 2 (window check + VM locking)
+uv run pytest tests/agent/test_service_restart_cli.py -x -q  # passed
+
+# Targeted test run: disk_cleanup after Finding 4 (orphaned-deps exact preview + drift gate)
+uv run pytest tests/agent/subgraphs/test_disk_cleanup.py -x -q  # passed
+
+# Ruff lint on changed Python files (shell file skipped — ruff does not lint .sh)
+uv run ruff check errander/main.py errander/agent/subgraphs/disk_cleanup.py errander/agent/graph.py tests/agent/test_service_restart_cli.py tests/agent/subgraphs/test_docker_hygiene.py tests/agent/subgraphs/test_disk_cleanup.py  # All checks passed
+
+# Full suite validation
+uv run pytest -x -q  # 2366 passed (+12 new tests from Findings 1, 2, 4)
+```
+
 ## AI SRE Gap Fix — 7 safety/quality fixes (2026-05-23)
 
 ```bash

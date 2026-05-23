@@ -1,3 +1,19 @@
+## SRE Residual Fixes — 5 issues from Opus 4.7 validation (2026-05-23, COMPLETE)
+
+**Status:** All 5 residual findings resolved. 2366 tests passing, ruff clean.
+
+- [x] Finding 1 (P1): Docker assess wrapper — add `--no-trunc` to `docker images` calls so full SHA256 IDs are emitted; `grep -Fx` in remove wrapper now matches correctly
+- [x] Finding 1 tests: `TestWrapperIdFormat` (3 tests) in `test_docker_hygiene.py`
+- [x] Finding 2 (P1): `run_restart_service()` — add maintenance window check (hard block; `--restart-force --restart-force-reason` to override) + per-VM `FileLocker` acquire/release (TTL=300s)
+- [x] Finding 2 CLI args: `--restart-force`, `--restart-force-reason` added to `_parse_args()`
+- [x] Finding 2 tests: `TestRestartServiceWindowAndLock` (4 tests) in `test_service_restart_cli.py`
+- [x] Finding 3 (P1/P2): All bare unit names in docs/examples updated to `.service` suffix (18 locations across 5 files)
+- [x] Finding 4 (P2): orphaned-deps exact preview — `_parse_autoremove_candidates()` helper, `orphaned_candidates` state field, drift gate in execute_node, package list in Slack approval
+- [x] Finding 4 tests: `TestOrphanedDepsExactPreview` (5 tests) in `test_disk_cleanup.py`
+- [x] Finding 5 (Decision): CLAUDE.md updated — categorical acceptable for LOW-risk whitelist-bounded actions; orphaned-deps is the exception
+- [x] Doc sync: STATUS.md, todo.md, lessons.md, command-log.md, learning/49-sre-residual-fixes.md, README.md
+- [x] Green tree: 2366 tests passing
+
 ## AI SRE Gap Fix — 7 safety/quality fixes (2026-05-23, COMPLETE)
 
 **Status:** All 7 valid findings addressed. 2354 tests passing.

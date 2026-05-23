@@ -45,6 +45,13 @@ def _mock_audit() -> MagicMock:
     return m
 
 
+def _mock_locker(*, acquired: bool = True) -> MagicMock:
+    m = MagicMock()
+    m.acquire = AsyncMock(return_value=acquired)
+    m.release = AsyncMock(return_value=True)
+    return m
+
+
 def _mock_settings(*, has_slack: bool = True) -> MagicMock:
     s = MagicMock()
     s.audit_db_url = ":memory:"
@@ -140,6 +147,7 @@ class TestRestartServiceLiveMode:
             patch("errander.safety.approval.request_approval", new_callable=AsyncMock, return_value="ts-123"),
             patch("errander.safety.approval.poll_approval", new_callable=AsyncMock, return_value=(True, "operator")),
             patch("errander.main.SandboxExecutor"),
+            patch("errander.main.FileLocker", return_value=_mock_locker()),
             patch("errander.agent.subgraphs.service_restart.build_service_restart_subgraph", return_value=mock_subgraph),
         ):
             result = await run_restart_service(
@@ -173,6 +181,7 @@ class TestRestartServiceLiveMode:
             patch("errander.safety.approval.request_approval", new_callable=AsyncMock, return_value="ts-123"),
             patch("errander.safety.approval.poll_approval", new_callable=AsyncMock, return_value=(True, "operator")),
             patch("errander.main.SandboxExecutor"),
+            patch("errander.main.FileLocker", return_value=_mock_locker()),
             patch("errander.agent.subgraphs.service_restart.build_service_restart_subgraph", return_value=mock_subgraph),
         ):
             result = await run_restart_service(
@@ -205,3 +214,135 @@ class TestRestartServiceLiveMode:
         assert result == 0
         mock_req.assert_not_called()
         mock_poll.assert_not_called()
+
+
+class TestRestartServiceWindowAndLock:
+    """Maintenance window enforcement and VM locking in run_restart_service()."""
+
+    @pytest.mark.asyncio
+    async def test_outside_window_returns_1(self, tmp_path: Path) -> None:
+        """Outside maintenance window with no --force must abort before Slack."""
+        from errander.scheduling.windows import MaintenanceWindow
+
+        window = MaintenanceWindow(
+            days=["saturday", "sunday"],
+            start_hour=2,
+            end_hour=6,
+            timezone="UTC",
+        )
+        inv = _write_inv(tmp_path)
+        audit = _mock_audit()
+        with (
+            patch("errander.main.load_settings", return_value=_mock_settings()),
+            patch("errander.main.AuditStore", return_value=audit),
+            patch("errander.main._build_maintenance_window", return_value=window),
+            patch("errander.main.check_window_from_config", return_value=False),
+            patch("errander.safety.approval.request_approval", new_callable=AsyncMock) as mock_req,
+        ):
+            result = await run_restart_service(
+                env_name="production",
+                unit_name="nginx.service",
+                vm_ids=["web-01"],
+                dry_run=False,
+                inventory_path=inv,
+                force=False,
+            )
+        assert result == 1
+        mock_req.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_force_bypasses_window(self, tmp_path: Path) -> None:
+        """--restart-force with a reason proceeds despite being outside window."""
+        from errander.scheduling.windows import MaintenanceWindow
+
+        window = MaintenanceWindow(
+            days=["saturday", "sunday"],
+            start_hour=2,
+            end_hour=6,
+            timezone="UTC",
+        )
+        inv = _write_inv(tmp_path)
+        audit = _mock_audit()
+        with (
+            patch("errander.main.load_settings", return_value=_mock_settings()),
+            patch("errander.main.AuditStore", return_value=audit),
+            patch("errander.main._build_maintenance_window", return_value=window),
+            patch("errander.main.check_window_from_config", return_value=False),
+            patch("errander.main.SlackClient"),
+            patch("errander.safety.approval.request_approval", new_callable=AsyncMock, return_value="ts-123"),
+            patch("errander.safety.approval.poll_approval", new_callable=AsyncMock, return_value=(False, "timeout")),
+        ):
+            result = await run_restart_service(
+                env_name="production",
+                unit_name="nginx.service",
+                vm_ids=["web-01"],
+                dry_run=False,
+                inventory_path=inv,
+                force=True,
+                force_reason="emergency: nginx OOM loop",
+            )
+        # Rejected at Slack (poll returns False), but window was NOT the blocker.
+        assert result == 1  # rejected, not blocked by window
+
+    @pytest.mark.asyncio
+    async def test_force_without_reason_returns_1(self, tmp_path: Path) -> None:
+        """--restart-force without --restart-force-reason must be rejected."""
+        from errander.scheduling.windows import MaintenanceWindow
+
+        window = MaintenanceWindow(
+            days=["saturday", "sunday"],
+            start_hour=2,
+            end_hour=6,
+            timezone="UTC",
+        )
+        inv = _write_inv(tmp_path)
+        audit = _mock_audit()
+        with (
+            patch("errander.main.load_settings", return_value=_mock_settings()),
+            patch("errander.main.AuditStore", return_value=audit),
+            patch("errander.main._build_maintenance_window", return_value=window),
+            patch("errander.main.check_window_from_config", return_value=False),
+            patch("errander.safety.approval.request_approval", new_callable=AsyncMock) as mock_req,
+        ):
+            result = await run_restart_service(
+                env_name="production",
+                unit_name="nginx.service",
+                vm_ids=["web-01"],
+                dry_run=False,
+                inventory_path=inv,
+                force=True,
+                force_reason=None,
+            )
+        assert result == 1
+        mock_req.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_locked_vm_skips_execution(self, tmp_path: Path) -> None:
+        """If the VM lock cannot be acquired, execution is skipped and result is nonzero."""
+        inv = _write_inv(tmp_path)
+        audit = _mock_audit()
+
+        mock_compiled = AsyncMock()
+        mock_compiled.ainvoke = AsyncMock(return_value={"status": "success"})
+        mock_subgraph = MagicMock()
+        mock_subgraph.compile.return_value = mock_compiled
+
+        with (
+            patch("errander.main.load_settings", return_value=_mock_settings()),
+            patch("errander.main.AuditStore", return_value=audit),
+            patch("errander.main.SlackClient"),
+            patch("errander.safety.approval.request_approval", new_callable=AsyncMock, return_value="ts-123"),
+            patch("errander.safety.approval.poll_approval", new_callable=AsyncMock, return_value=(True, "operator")),
+            patch("errander.main.SandboxExecutor"),
+            patch("errander.main.FileLocker", return_value=_mock_locker(acquired=False)),
+            patch("errander.agent.subgraphs.service_restart.build_service_restart_subgraph", return_value=mock_subgraph),
+        ):
+            result = await run_restart_service(
+                env_name="production",
+                unit_name="nginx.service",
+                vm_ids=["web-01"],
+                dry_run=False,
+                inventory_path=inv,
+            )
+        assert result == 1
+        mock_compiled.ainvoke.assert_not_called()

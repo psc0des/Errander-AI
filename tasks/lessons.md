@@ -1,5 +1,23 @@
 # Errander-AI — Lessons Learned
 
+## 2026-05-23 — Local imports inside async functions cause ruff I001 (import sort) errors
+
+A `from datetime import UTC, datetime` import placed inside a function body will be flagged by ruff as `I001 [*] Import block is un-sorted or un-formatted`. ruff treats intra-function imports independently and applies isort rules to them.
+
+**Why:** ruff/isort applies to every import block it finds, including those inside function bodies. The sort ordering inside a function body can differ from what ruff expects (stdlib first, then third-party).
+
+**How to apply:** Move datetime (and any other stdlib) imports to module level. Only use local imports inside functions when there is an explicit circular-import reason — and even then, order them correctly within the local block.
+
+## 2026-05-23 — Docker wrapper emits short 12-char IDs by default; remove wrapper uses full 64-char SHA256
+
+`docker images --format '{{.ID}}'` emits 12-character short IDs. `docker images -q --no-trunc` and `docker image inspect` accept both formats. But the `errander-docker-remove-v2` wrapper's revalidation loop uses `grep -Fx "$obj_id"` against the assess output, requiring an exact string match — short vs full always fails.
+
+**Why:** `grep -Fx` is "fixed string, exact line match." A full 64-char SHA256 will never match a 12-char short ID, so every dangling image would always return `drift_skipped reason=image_re_tagged`.
+
+**How to apply:** Always add `--no-trunc` to `docker images` calls in assess wrappers. Tests for ID format should assert the full `sha256:[a-f0-9]{64}` pattern, not just that the string starts with `sha256:`.
+
+
+
 ## 2026-05-23 — snapshot_node returning empty strings on validation error is not a FAILED status
 
 When `snapshot_node` catches a `CommandBuildError` (invalid unit name), it logs the error and returns `{"pre_status": "", "pre_journal": ""}` — no `status` key. The `execute_node` DOES return `{"status": "failed"}`. Tests for `snapshot_node` safety must assert that `.execute` was NOT called (no SSH), not that `status == FAILED` in the returned dict.

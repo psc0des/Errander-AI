@@ -317,14 +317,14 @@ Prerequisites: wrapper installed on each target VM, `restartable_units` configur
 
 ```bash
 # Dry-run (default) — prints plan, no SSH
-uv run python -m errander --restart-service production --unit nginx --vm prod-web-01
+uv run python -m errander --restart-service production --unit nginx.service --vm prod-web-01
 
 # Target multiple VMs
-uv run python -m errander --restart-service production --unit nginx \
+uv run python -m errander --restart-service production --unit nginx.service \
   --vms prod-web-01,prod-web-02
 
 # Live execution — routes to Slack for approval before SSH
-uv run python -m errander --restart-service production --unit nginx \
+uv run python -m errander --restart-service production --unit nginx.service \
   --vm prod-web-01 --live
 
 # Verify allowlist sync before triggering
@@ -476,10 +476,10 @@ Reload the agent (restart the process) for the change to take effect.
 
 ```bash
 # 1. Dry-run first — confirms the unit is in the allowlist and the VM is reachable
-uv run python -m errander --restart-service production --unit nginx --vm prod-web-01
+uv run python -m errander --restart-service production --unit nginx.service --vm prod-web-01
 
 # 2. Run live — posts to #errander-approvals and waits for your ✅ reaction
-uv run python -m errander --restart-service production --unit nginx \
+uv run python -m errander --restart-service production --unit nginx.service \
   --vm prod-web-01 --live
 ```
 

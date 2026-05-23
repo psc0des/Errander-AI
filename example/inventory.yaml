@@ -60,7 +60,7 @@
 #         service_restart:
 #           enabled: false              # Off by default — operator-triggered only (see SETUP.md#optional-service-restart)
 #           restartable_units: []       # List exact systemd unit names allowed to be restarted
-#           #   Example: [nginx, gunicorn, redis-server]
+#           #   Example: [nginx.service, gunicorn.service, redis-server.service]
 #           #   Must be non-empty when enabled: true. Install wrapper first — see SETUP.md#optional-service-restart.
 #
 # Per-environment Prometheus/ELK URL overrides (all optional):
@@ -110,7 +110,7 @@ environments:
         # Leave enabled: false and continue to the next environment.
         # To enable: install wrapper first — see SETUP.md#optional-service-restart
         enabled: false
-        restartable_units: []   # Example: [nginx, gunicorn, redis-server]
+        restartable_units: []   # Example: [nginx.service, gunicorn.service, redis-server.service]
     # Environment-wide Node Exporter default — applies to all hosts unless overridden.
     # Run configure.sh to set this automatically after checking each VM.
     node_exporter: false   # set to true after running configure.sh
@@ -178,7 +178,7 @@ environments:
         enabled: false
       service_restart:
         enabled: false
-        restartable_units: []   # Example: [nginx, gunicorn, redis-server]
+        restartable_units: []   # Example: [nginx.service, gunicorn.service, redis-server.service]
     targets:
       - host: 10.0.10.10
         name: staging-web-01
@@ -218,7 +218,7 @@ environments:
         enabled: false
       service_restart:
         enabled: false
-        restartable_units: []   # Example: [nginx, gunicorn, redis-server]
+        restartable_units: []   # Example: [nginx.service, gunicorn.service, redis-server.service]
     targets:
       - host: 10.0.20.10
         name: dev-all-in-one

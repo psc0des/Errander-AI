@@ -426,6 +426,7 @@ The agent will not interrupt a running SSH command mid-flight — it finishes th
 | `--window-days <n>` | Look-back window for `--measure-durability` in days (default: 14) |
 | `--vm-facts <vm_id>` | Print action outcome, reboot pattern, and rejection facts for a VM |
 | `--vm-facts-action <type>` | Filter `--vm-facts` to one action type, or use alone for cross-fleet view |
+| `--plan-show <plan-id>` | Print the full package/object list for a saved plan snapshot (use when Slack message is truncated) |
 
 ---
 

@@ -28,6 +28,7 @@ A supervised agentic AI SRE platform that eliminates operational toil while keep
 - `uv run python -m errander --check-llm` — verify vLLM endpoint connectivity and latency
 - `uv run python -m errander --audit --batches` — view recent batch history
 - `uv run python -m errander --audit --batch-id <id>` — view all events for a batch
+- `uv run python -m errander --plan-show <plan-id>` — print full plan snapshot (fallback when Slack message is truncated)
 - `uv run ruff check .` — lint
 - `uv run mypy .` — typecheck
 

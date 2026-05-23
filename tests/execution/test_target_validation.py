@@ -122,7 +122,7 @@ async def test_enabled_actions_skips_disabled_action_binaries() -> None:
     assert r.verdict == "ready"
     assert not any("apt-get" in c for c in calls), "apt-get must not be checked when patching is disabled"
     assert not any("apt-mark" in c for c in calls)
-    assert any("logrotate" in c for c in calls)
+    assert any("gzip" in c for c in calls), "log_rotation required binaries (gzip/truncate) must be checked"
 
 
 @pytest.mark.asyncio

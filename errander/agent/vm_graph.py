@@ -45,6 +45,10 @@ from errander.agent.subgraphs.patching import (
     PatchingGraphState,
     build_patching_subgraph,
 )
+from errander.agent.subgraphs.service_restart import (
+    ServiceRestartState,
+    build_service_restart_subgraph,
+)
 from errander.execution.os_detection import detect_os
 from errander.execution.privilege import (
     REQUIRED_BINARIES_BY_ACTION,
@@ -419,6 +423,7 @@ async def dispatch_action_node(
     docker_hygiene_compiled: Any = None,
     patching_compiled: Any = None,
     backup_verify_compiled: Any = None,
+    service_restart_compiled: Any = None,
     hygiene_manager: HygieneApprovalManager | None = None,
     slack_client: SlackClient | None = None,
     web_base_url: str = "",
@@ -499,6 +504,8 @@ async def dispatch_action_node(
         result_dict = await _run_patching(state, patching_compiled)
     elif action_type == ActionType.BACKUP_VERIFY.value:
         result_dict = await _run_backup_verify(state, backup_verify_compiled)
+    elif action_type == ActionType.SERVICE_RESTART.value:
+        result_dict = await _run_service_restart(state, service_restart_compiled)
     else:
         logger.warning("Unknown action type %s for %s — skipping", action_type, vm_id)
         result_dict = {
@@ -1152,6 +1159,80 @@ async def _run_backup_verify(
     }
 
 
+async def _run_service_restart(
+    state: VMGraphState,
+    compiled: Any,
+) -> dict[str, object]:
+    """Run the service_restart sub-graph and return a serialised result dict."""
+    vm_id = state["vm_id"]
+    now = datetime.now(tz=UTC)
+
+    planned = state.get("planned_actions", [])
+    index = state.get("current_action_index", 0)
+    unit_name: str = ""
+    restartable_units: list[str] = []
+    if index < len(planned):
+        params_raw = planned[index].get("params")
+        params: dict[str, object] = params_raw if isinstance(params_raw, dict) else {}
+        unit_raw = params.get("unit_name")
+        unit_name = str(unit_raw) if unit_raw else ""
+        ru_raw = params.get("restartable_units")
+        restartable_units = [str(u) for u in ru_raw] if isinstance(ru_raw, list) else []
+
+    sub_state: ServiceRestartState = {
+        "vm_id": vm_id,
+        "os_family": state.get("os_family", "ubuntu"),
+        "dry_run": state.get("dry_run", True),
+        "unit_name": unit_name,
+        "restartable_units": restartable_units,
+        "hostname": state.get("hostname", ""),  # type: ignore[typeddict-unknown-key]
+        "username": state.get("ssh_user", ""),
+        "key_path": state.get("ssh_key_path", ""),
+    }
+
+    try:
+        final_state = await compiled.ainvoke(sub_state)
+    except (ConnectionError, OSError, TimeoutError) as exc:
+        logger.error("Sub-graph service_restart failed for %s: %s", vm_id, exc)
+        return {
+            "action_type": ActionType.SERVICE_RESTART.value,
+            "status": ActionStatus.FAILED.value,
+            "vm_id": vm_id,
+            "started_at": now.isoformat(),
+            "completed_at": datetime.now(tz=UTC).isoformat(),
+            "detail": "sub-graph raised exception",
+            "error": str(exc),
+        }
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Unexpected error in service_restart for %s", vm_id)
+        return {
+            "action_type": ActionType.SERVICE_RESTART.value,
+            "status": ActionStatus.FAILED.value,
+            "vm_id": vm_id,
+            "started_at": now.isoformat(),
+            "completed_at": datetime.now(tz=UTC).isoformat(),
+            "detail": "sub-graph raised exception",
+            "error": str(exc),
+        }
+
+    status = final_state.get("status", ActionStatus.FAILED.value)
+    detail_parts: list[str] = []
+    if unit_name:
+        detail_parts.append(f"unit={unit_name}")
+    if final_state.get("post_active"):
+        detail_parts.append(f"post_active={final_state['post_active'].strip()[:40]!r}")
+
+    return {
+        "action_type": ActionType.SERVICE_RESTART.value,
+        "status": status,
+        "vm_id": vm_id,
+        "started_at": now.isoformat(),
+        "completed_at": datetime.now(tz=UTC).isoformat(),
+        "detail": "; ".join(detail_parts),
+        "error": final_state.get("error"),
+    }
+
+
 async def _write_docker_hygiene_per_object_audit(
     audit_store: AuditStore,
     batch_id: str,
@@ -1729,6 +1810,7 @@ def build_vm_graph(
         vm_state_store=vm_state_store,  # type: ignore[arg-type]
     ).compile()
     backup_verify_compiled = build_backup_verify_subgraph(executor).compile()
+    service_restart_compiled = build_service_restart_subgraph(executor).compile()
 
     async def _acquire(state: VMGraphState) -> dict[str, Any]:
         return await acquire_lock_node(state, locker=locker)
@@ -1745,6 +1827,7 @@ def build_vm_graph(
             docker_hygiene_compiled=docker_hygiene_compiled,
             patching_compiled=patching_compiled,
             backup_verify_compiled=backup_verify_compiled,
+            service_restart_compiled=service_restart_compiled,
             hygiene_manager=hygiene_manager,
             slack_client=slack_client,
             web_base_url=web_base_url,

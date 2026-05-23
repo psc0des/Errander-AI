@@ -83,6 +83,35 @@ def pkg_version_spec(pkg: str, ver: str) -> str:
     return f"{safe_pkg(pkg)}={safe_ver(ver)}"
 
 
+# systemd unit names: alphanumeric, @, :, _, ., - plus a mandatory type suffix.
+# See `man systemd.unit` for the authoritative grammar.
+_SAFE_UNIT_RE = re.compile(
+    r"^[a-zA-Z0-9@:_.\-]+"
+    r"\.(service|socket|timer|target|mount|path|slice|scope|swap|automount|device)$"
+)
+
+
+def safe_systemd_unit_name(unit_name: str) -> str:
+    """Validate a systemd unit name.
+
+    Raises:
+        CommandBuildError: If the name contains shell metacharacters or
+            does not match the systemd unit naming grammar.
+    """
+    if not unit_name:
+        raise CommandBuildError("unit_name must not be empty")
+    if _PATH_METACHAR_RE.search(unit_name):
+        raise CommandBuildError(
+            f"unit_name contains shell metacharacter: {unit_name!r}"
+        )
+    if not _SAFE_UNIT_RE.match(unit_name):
+        raise CommandBuildError(
+            f"unit_name does not match systemd unit grammar: {unit_name!r}. "
+            "Expected format: name.type (e.g. nginx.service, cron.timer)"
+        )
+    return unit_name
+
+
 def build_cmd(parts: list[str]) -> str:
     """Shell-quote and join a list of command parts into a single string.
 

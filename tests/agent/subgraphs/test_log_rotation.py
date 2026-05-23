@@ -145,23 +145,32 @@ class TestExecuteNode:
 
         assert result["status"] == ActionStatus.SUCCESS.value
 
-    async def test_fallback_to_manual_rotation(self) -> None:
+    async def test_per_file_failure_returns_failed(self) -> None:
+        """Per-file SSH failure is recorded as FAILED (no global logrotate fallback)."""
         executor = _make_executor(dry_run=False)
-        call_count = 0
+        execute_mock = AsyncMock(return_value=_make_result("", exit_code=1))
 
-        async def mock_execute(*args: object, **kwargs: object) -> SSHResult:
-            nonlocal call_count
-            call_count += 1
-            if call_count == 1:
-                return _make_result("", exit_code=1)
-            return _make_result("done")
-
-        with patch.object(executor, "execute", side_effect=mock_execute):
+        with patch.object(executor, "execute", side_effect=execute_mock):
             state = _base_state(large_files=["/var/log/syslog"], dry_run=False)
             result = await execute_node(state, executor=executor)
 
-        assert result["status"] == ActionStatus.SUCCESS.value
+        assert result["status"] == ActionStatus.FAILED.value
         assert "/var/log/syslog" in result["rotation_output"]
+
+    async def test_does_not_call_global_logrotate(self) -> None:
+        """Execute node must never call logrotate --force /etc/logrotate.conf."""
+        executor = _make_executor(dry_run=False)
+        commands_seen: list[str] = []
+
+        async def capture(*args: object, **kwargs: object) -> SSHResult:
+            commands_seen.append(str(kwargs.get("command", "")))
+            return _make_result("done")
+
+        with patch.object(executor, "execute", side_effect=capture):
+            state = _base_state(large_files=["/var/log/syslog"], dry_run=False)
+            await execute_node(state, executor=executor)
+
+        assert not any("logrotate --force /etc/logrotate.conf" in c for c in commands_seen)
 
 
 # --- Verify node tests ---

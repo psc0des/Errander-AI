@@ -1,3 +1,19 @@
+## AI SRE Gap Fix — 7 safety/quality fixes (2026-05-23, COMPLETE)
+
+**Status:** All 7 valid findings addressed. 2354 tests passing.
+
+- [x] P0-1: Wire `service_restart` live mode in `main.py` + `vm_graph.py` (Slack approval gate + subgraph execution)
+- [x] P1-1: Already fixed in v1.1 (docker_prune removed, docker_hygiene is sole Docker action)
+- [x] P1-2: Remove global `logrotate --force` from log_rotation execute_node; per-file only
+- [x] P1-3: Remove `orphaned-deps` from DEFAULT_CLEANUP_PATHS; require explicit opt-in
+- [x] P1-4: Per-action coverage table [EXACT]/[CATEGORICAL]/[ADVISORY] in approval message
+- [x] P2-1: Full plan inspectable: signed web URL + `--plan-show` CLI + `plan_snapshots` DB table
+- [x] P2-2: Fix `backup_verify.py` docstring risk tier ("High" → "Low")
+- [x] P2-3: `safe_systemd_unit_name()` validator in command_builder + service_restart nodes + config schema
+- [x] New tests: test_service_restart_cli.py, test_plan_inspection_p21.py, adversarial unit name tests, orphaned-deps opt-in tests, backup_verify manifest test, coverage table tests
+- [x] Doc sync: STATUS.md, todo.md, lessons.md, command-log.md, learning/48-ai-sre-gap-fix.md
+- [x] Green tree: 2354 tests passing
+
 ## Docker hygiene — v1.1 implementation (2026-05-21, SESSION 1 COMPLETE)
 
 **Status:** Session 1 (assessment foundation) shipped 2026-05-21. Session 2 (execution + dual approval surface) pending.

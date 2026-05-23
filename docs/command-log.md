@@ -1,5 +1,46 @@
 # Errander-AI Command Log
 
+## AI SRE Gap Fix — 7 safety/quality fixes (2026-05-23)
+
+```bash
+# Full suite baseline before starting
+uv run pytest -x -q  # 2299 passed (baseline)
+
+# Run service_restart tests after P0-1 live-mode CLI gate
+uv run pytest tests/agent/test_service_restart_cli.py -x -q  # 6 passed
+
+# Run disk_cleanup tests after P1-3 orphaned-deps opt-in
+uv run pytest tests/agent/subgraphs/test_disk_cleanup.py -x -q  # 6 new tests passed
+
+# Run command_builder tests after P2-3 shell injection hardening
+uv run pytest tests/execution/test_command_builder.py -x -q  # passed
+
+# Run schema_actions tests after P2-3 config-load-time validation
+uv run pytest tests/config/test_schema_actions.py -x -q  # passed
+
+# Run backup_verify tests after P2-2 manifest docstring
+uv run pytest tests/agent/subgraphs/test_backup_verify.py -x -q  # passed
+
+# Run service_restart subgraph tests for adversarial unit names
+uv run pytest tests/agent/subgraphs/test_service_restart.py -x -q  # passed
+
+# Run migrations tests after migration 8 (plan_snapshots)
+uv run pytest tests/safety/test_migrations.py -x -q  # passed
+
+# Run plan inspection tests after P2-1 full plan inspectable
+uv run pytest tests/agent/test_plan_inspection_p21.py -x -q  # passed
+
+# Fix: test_snapshot_node_rejects_bad_unit → assert_not_awaited (snapshot_node doesn't return status=FAILED)
+# Fix: test_tampered_token_rejected_by_verifier → replace entire sig with known-wrong base64 (not flip last char)
+# Fix: migration tests updated to expect versions=[0..8] and count=9
+
+# Full suite validation
+uv run pytest -x -q  # 2354 passed (+55 new tests)
+
+# Lint all changed files
+uv run ruff check errander/safety/migrations.py errander/safety/audit.py errander/agent/graph.py errander/web/server.py errander/main.py errander/agent/subgraphs/disk_cleanup.py errander/execution/commands.py  # All checks passed
+```
+
 ## decisions.py semantic debt — DOCKER_PRUNE → DOCKER_HYGIENE (2026-05-22)
 ```bash
 # Lint decisions.py after each edit

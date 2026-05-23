@@ -8,7 +8,7 @@ Lifecycle:
 This is a read-only verification action — no execute step, no state changes.
 Inherently idempotent.
 
-Risk tier: High (human approval required).
+Risk tier: Low (read-only freshness check, no state changes).
 Rollback strategy: N/A — no state changes made.
 """
 

@@ -215,6 +215,15 @@ class EnvironmentSchema(BaseModel):
                 "service_restart.enabled is true for this environment, but restartable_units is empty. "
                 "Add restartable_units: [unit1, unit2, ...] under actions.service_restart, or set enabled: false."
             )
+        if service_restart_cfg and service_restart_cfg.restartable_units:
+            from errander.execution.command_builder import CommandBuildError, safe_systemd_unit_name
+            for unit in service_restart_cfg.restartable_units:
+                try:
+                    safe_systemd_unit_name(unit)
+                except CommandBuildError as exc:
+                    raise ConfigError(
+                        f"Invalid unit name in restartable_units: {exc}"
+                    ) from exc
 
         self.actions = full_actions
         return self

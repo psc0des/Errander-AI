@@ -34,8 +34,8 @@ def _base_state(**overrides: object) -> dict:  # type: ignore[type-arg]
         "hostname": "10.0.0.1",
         "username": "errander",
         "key_path": "/home/errander/.ssh/id_ed25519",
-        "unit_name": "nginx",
-        "restartable_units": ["nginx", "gunicorn"],
+        "unit_name": "nginx.service",
+        "restartable_units": ["nginx.service", "gunicorn.service"],
     }
     state.update(overrides)
     return state
@@ -227,7 +227,7 @@ class TestVerifyNode:
         executor = _make_executor()
         state = _base_state(
             status=ActionStatus.SUCCESS.value,
-            unit_name="nginx",
+            unit_name="nginx.service",
             post_active="active",
         )
         result = await verify_node(state, executor=executor)
@@ -238,12 +238,12 @@ class TestVerifyNode:
         executor = _make_executor()
         state = _base_state(
             status=ActionStatus.SUCCESS.value,
-            unit_name="nginx",
+            unit_name="nginx.service",
             post_active="inactive",
         )
         result = await verify_node(state, executor=executor)
         assert result["status"] == ActionStatus.FAILED.value
-        assert "nginx" in result["error"]
+        assert "nginx.service" in result["error"]
 
     @pytest.mark.asyncio
     async def test_inactive_emits_verify_failed_event(self) -> None:
@@ -252,7 +252,7 @@ class TestVerifyNode:
         audit_store.log_event = AsyncMock()
         state = _base_state(
             status=ActionStatus.SUCCESS.value,
-            unit_name="nginx",
+            unit_name="nginx.service",
             post_active="inactive",
         )
         await verify_node(state, executor=executor, audit_store=audit_store, batch_id="b1")
@@ -267,7 +267,7 @@ class TestVerifyNode:
         audit_store.log_event = AsyncMock()
         state = _base_state(
             status=ActionStatus.SUCCESS.value,
-            unit_name="nginx",
+            unit_name="nginx.service",
             post_active="active",
         )
         await verify_node(state, executor=executor, audit_store=audit_store, batch_id="b1")
@@ -280,8 +280,53 @@ class TestVerifyNode:
         executor = _make_executor()
         state = _base_state(
             status=ActionStatus.SUCCESS.value,
-            unit_name="redis",
+            unit_name="redis.service",
             post_active="",
         )
         result = await verify_node(state, executor=executor)
         assert result["status"] == ActionStatus.FAILED.value
+
+
+# --- P2-3: adversarial unit name injection tests ---
+
+class TestAdversarialUnitNames:
+    """P2-3: snapshot_node and execute_node must reject shell-injectable unit names.
+
+    snapshot_node logs the error and returns empty strings (not a terminal node —
+    the graph continues). execute_node returns FAILED, terminating the graph.
+    The key safety property for both: no SSH call is made with an invalid unit name.
+    """
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("bad_unit", [
+        "nginx.service; rm -rf /",
+        "$(id).service",
+        "`whoami`.service",
+        "nginx.service && cat /etc/shadow",
+        "nginx",        # no type suffix
+        "",             # empty
+    ])
+    async def test_snapshot_node_does_not_ssh_for_bad_unit(self, bad_unit: str) -> None:
+        """snapshot_node must not make an SSH call for invalid unit names."""
+        executor = _make_executor()
+        executor.execute = AsyncMock()  # type: ignore[method-assign]
+        state = _base_state(unit_name=bad_unit, restartable_units=[bad_unit])
+        await snapshot_node(state, executor=executor)
+        executor.execute.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("bad_unit", [
+        "nginx.service; rm -rf /",
+        "$(id).service",
+        "nginx",        # no type suffix
+    ])
+    async def test_execute_node_rejects_bad_unit_name(self, bad_unit: str) -> None:
+        """execute_node must return FAILED for invalid unit names without SSHing."""
+        executor = _make_executor()
+        executor.execute = AsyncMock()  # type: ignore[method-assign]
+        state = _base_state(unit_name=bad_unit, restartable_units=[bad_unit], dry_run=False)
+        result = await execute_node(state, executor=executor)
+        assert result.get("status") == ActionStatus.FAILED.value, (
+            f"Expected FAILED for bad unit {bad_unit!r}, got {result.get('status')!r}"
+        )
+        executor.execute.assert_not_awaited()

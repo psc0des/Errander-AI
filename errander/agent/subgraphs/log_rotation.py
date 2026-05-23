@@ -33,7 +33,7 @@ MANIFEST = ActionManifest(
     default_enabled=True,
     risk_tier="LOW",
     command_modes=None,
-    required_binaries=("/usr/sbin/logrotate", "/usr/bin/gzip", "/usr/bin/truncate"),
+    required_binaries=("/usr/bin/gzip", "/usr/bin/truncate"),
     required_wrappers=(),
     setup_doc="SETUP.md#step-3--target-vm-setup",
 )
@@ -173,10 +173,12 @@ async def execute_node(
     *,
     executor: SandboxExecutor,
 ) -> dict[str, Any]:
-    """Rotate oversized log files.
+    """Rotate oversized log files using per-file gzip + truncate.
 
-    Strategy: try logrotate --force first. If unavailable, fall back to
-    manual gzip + truncate per file.
+    Exact-file execution: only files surfaced by assess_node (and included
+    in the approved artifact) are touched. Global logrotate --force is not
+    used — its blast radius spans the entire system logrotate config, not
+    just the oversized files the operator reviewed.
 
     In dry-run mode, uses ls -lh (show what would be rotated).
     """
@@ -189,66 +191,47 @@ async def execute_node(
     output: dict[str, str] = {}
     failed_items: list[str] = []
 
-    # Try system logrotate first
-    logrotate_cmd = privileged("/usr/sbin/logrotate --force /etc/logrotate.conf 2>&1")
-    logrotate_sim = privileged("/usr/sbin/logrotate --debug /etc/logrotate.conf 2>&1 | head -20")
-
-    result = await executor.execute(
-        vm_id, target["hostname"], target["username"], target["key_path"],
-        command=logrotate_cmd,
-        simulate_command=logrotate_sim,
-        dry_run=dry_run,
-    )
-
-    if result.success:
-        output["logrotate"] = result.stdout.strip()
-    else:
-        # Logrotate not available or failed — attempt per-file fallback.
-        # In live mode, track logrotate failure; only clear it if all per-file
-        # fallbacks succeed (meaning logrotate was unavailable but files were rotated).
-        logger.info("logrotate unavailable on %s, falling back to manual rotation", vm_id)
-        logrotate_failed = not dry_run
-
-        for filepath in large_files:
-            try:
-                qp = safe_path(filepath)
-                qp1 = safe_path(filepath + ".1")
-            except CommandBuildError as exc:
-                logger.error("Skipping log file with unsafe path on %s: %s", vm_id, exc)
-                output[filepath] = "[SKIPPED — unsafe path]"
-                if not dry_run:
-                    failed_items.append(filepath)
-                continue
-            if compress:
-                live_cmd = (
-                    f"sudo -n /usr/bin/cp {qp} {qp1} && "
-                    f"sudo -n /usr/bin/gzip {qp1} && "
-                    f"sudo -n /usr/bin/truncate -s 0 {qp}"
-                )
-            else:
-                live_cmd = (
-                    f"sudo -n /usr/bin/cp {qp} {qp1} && "
-                    f"sudo -n /usr/bin/truncate -s 0 {qp}"
-                )
-            sim_cmd = f"ls -lh {qp}"
-
-            file_result = await executor.execute(
-                vm_id, target["hostname"], target["username"], target["key_path"],
-                command=live_cmd,
-                simulate_command=sim_cmd,
-                dry_run=dry_run,
-            )
-            output[filepath] = file_result.stdout.strip()
-            if not file_result.success and not dry_run:
+    for filepath in large_files:
+        # Per-file drift gate: re-check that the file is still under /var/log.
+        if not is_valid_log_path(filepath):
+            logger.error("Skipping log file outside /var/log on %s: %s", vm_id, filepath)
+            output[filepath] = "[SKIPPED — path outside /var/log]"
+            if not dry_run:
                 failed_items.append(filepath)
+            continue
 
-        # If the fallback handled all large_files successfully, logrotate being
-        # absent is acceptable — rotation was achieved via the per-file path.
-        if logrotate_failed and not failed_items and large_files:
-            logrotate_failed = False
+        try:
+            qp = safe_path(filepath)
+            qp1 = safe_path(filepath + ".1")
+        except CommandBuildError as exc:
+            logger.error("Skipping log file with unsafe path on %s: %s", vm_id, exc)
+            output[filepath] = "[SKIPPED — unsafe path]"
+            if not dry_run:
+                failed_items.append(filepath)
+            continue
 
-        if logrotate_failed and not dry_run:
-            failed_items.append("logrotate")
+        if compress:
+            live_cmd = (
+                f"sudo -n /usr/bin/cp {qp} {qp1} && "
+                f"sudo -n /usr/bin/gzip {qp1} && "
+                f"sudo -n /usr/bin/truncate -s 0 {qp}"
+            )
+        else:
+            live_cmd = (
+                f"sudo -n /usr/bin/cp {qp} {qp1} && "
+                f"sudo -n /usr/bin/truncate -s 0 {qp}"
+            )
+        sim_cmd = f"ls -lh {qp}"
+
+        file_result = await executor.execute(
+            vm_id, target["hostname"], target["username"], target["key_path"],
+            command=live_cmd,
+            simulate_command=sim_cmd,
+            dry_run=dry_run,
+        )
+        output[filepath] = file_result.stdout.strip()
+        if not file_result.success and not dry_run:
+            failed_items.append(filepath)
 
     if dry_run:
         status = ActionStatus.DRY_RUN_OK

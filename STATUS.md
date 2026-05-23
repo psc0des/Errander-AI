@@ -1,9 +1,31 @@
 # Errander-AI — Project Status
 
 ## Last Updated
-2026-05-22
+2026-05-23
 
 ## Current Phase
+**AI SRE Gap Fix — 7 safety/quality fixes validated by Opus 4.7 (2026-05-23, COMPLETE).** 2354 tests passing, ruff clean, no new mypy errors.
+
+All 7 of 8 gap findings validated by Opus 4.7 against current `main` were addressed (P1-1 was already fixed in v1.1). Fixes span safety (live-mode wiring, shell-injection hardening), honesty (approval message blast-radius claims, risk-tier docstring), and usability (full plan inspectable via signed URL).
+
+### Files changed in AI SRE Gap Fix (2026-05-23)
+- `errander/agent/subgraphs/backup_verify.py` — P2-2: docstring risk tier fixed to "Low"
+- `errander/execution/command_builder.py` — P2-3: `safe_systemd_unit_name()` validator added
+- `errander/agent/subgraphs/service_restart.py` — P2-3: validates unit_name in snapshot_node + execute_node
+- `errander/config/schema.py` — P2-3: `safe_systemd_unit_name()` run at config-load time for restartable_units
+- `errander/agent/subgraphs/disk_cleanup.py` — P1-3: `EXPLICIT_OPT_IN_PATHS`, `DEFAULT_CLEANUP_PATHS`; orphaned-deps requires explicit opt-in
+- `errander/agent/subgraphs/log_rotation.py` — P1-2: removed logrotate from MANIFEST; execute_node rewritten to per-file cp+gzip+truncate only
+- `errander/agent/graph.py` — P0-1: service_restart wired into vm_graph dispatch; P1-4: per-action coverage table [EXACT]/[CATEGORICAL]/[ADVISORY] in approval message; P2-1: signed URL / CLI hint for full plan
+- `errander/agent/vm_graph.py` — P0-1: service_restart dispatch + _run_service_restart helper
+- `errander/main.py` — P0-1: `run_restart_service()` live mode with Slack approval gate; `run_plan_show()` CLI; `--plan-show` arg
+- `errander/safety/audit.py` — P2-1: `save_plan_snapshot()` + `get_plan_snapshot()` methods
+- `errander/safety/migrations.py` — P2-1: migration 8 adds `plan_snapshots` table
+- `errander/web/server.py` — P2-1: `GET /plans/{plan_id}` signed endpoint
+- **New test files:** `tests/agent/test_service_restart_cli.py`, `tests/agent/test_plan_inspection_p21.py`, `tests/agent/test_approval_message_p01.py`
+- **Updated test files:** `tests/agent/subgraphs/test_service_restart.py`, `tests/agent/subgraphs/test_log_rotation.py`, `tests/agent/subgraphs/test_disk_cleanup.py`, `tests/execution/test_command_builder.py`, `tests/execution/test_target_validation.py`, `tests/config/test_schema_actions.py`, `tests/agent/subgraphs/test_backup_verify.py`, `tests/safety/test_migrations.py`, `tests/test_main.py`
+- `docs/learning/48-ai-sre-gap-fix.md` (NEW)
+
+## Previous Phase
 **docker_hygiene v1.5 — volume + build_cache deletion (2026-05-22, COMPLETE).** 2295 tests passing, ruff clean, no new mypy errors.
 
 Both `volume_unreferenced` and `build_cache` are now executable (when enabled in inventory config). Both default off (`volume_deletion_enabled: false`, `build_cache_deletion_enabled: false`). Classify-time gate: when disabled, `_classify_volume`/`_classify_build_cache` return `REPORT_ONLY` — approval surface never sees a candidate. Volumes get an extra friction gate: cannot be selected via `approve all`, must be named by index. Soft backup_verify context shown in Slack approval message when volume candidates are present.

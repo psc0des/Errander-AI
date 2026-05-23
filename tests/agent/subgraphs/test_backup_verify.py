@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from errander.agent.subgraphs.backup_verify import (
+    MANIFEST,
     BackupVerifyGraphState,
     assess_node,
     build_backup_verify_subgraph,
@@ -214,3 +215,18 @@ class TestBuildSubgraph:
 
         assert result["status"] == ActionStatus.SUCCESS.value
         assert result["issues"] == []
+
+
+# --- P2-2: manifest risk_tier consistency ---
+
+class TestBackupVerifyManifest:
+    """P2-2: MANIFEST risk_tier must match the docstring — both must say LOW."""
+
+    def test_manifest_risk_tier_is_low(self) -> None:
+        assert MANIFEST.risk_tier == "LOW", (
+            "backup_verify is a read-only freshness check — risk_tier must be LOW, "
+            "matching the docstring. A prior version incorrectly said 'High'."
+        )
+
+    def test_manifest_name_matches_action_type(self) -> None:
+        assert MANIFEST.name == "backup_verify"

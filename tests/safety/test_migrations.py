@@ -41,6 +41,7 @@ class TestRunMigrations:
             "batches",
             "artifacts",
             "agent_lease",
+            "plan_snapshots",
         }
         assert expected <= tables
         await db.close()
@@ -50,7 +51,7 @@ class TestRunMigrations:
         await run_migrations(db)
         cursor = await db.execute("SELECT version FROM schema_migrations ORDER BY version")
         versions = [int(str(row[0])) for row in await cursor.fetchall()]
-        assert versions == [0, 1, 2, 3, 4, 5, 6, 7]
+        assert versions == [0, 1, 2, 3, 4, 5, 6, 7, 8]
         await db.close()
 
     async def test_idempotent_on_second_run(self) -> None:
@@ -60,7 +61,7 @@ class TestRunMigrations:
         await run_migrations(db)
         cursor = await db.execute("SELECT COUNT(*) FROM schema_migrations")
         row = await cursor.fetchone()
-        assert int(str(row[0])) == 8  # exactly 8 migrations (0–7)
+        assert int(str(row[0])) == 9  # exactly 9 migrations (0–8)
         await db.close()
 
     async def test_audit_events_schema_correct(self) -> None:

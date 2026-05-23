@@ -5033,6 +5033,114 @@ async def handle_placeholder(request: web.Request) -> web.Response:
     return web.Response(text=html, content_type="text/html")
 
 
+# ── plan inspection endpoint (P2-1) ──────────────────────────────────────────
+
+async def handle_plan_view(request: web.Request) -> web.Response:
+    """GET /plans/{plan_id}?token=<signed_token>
+
+    Returns the full plan JSON for a plan_id so operators can inspect
+    every package/version before reacting to a Slack approval request.
+    The signed token prevents enumeration — only the agent (which holds
+    ERRANDER_SIGNING_SECRET) can issue valid tokens.
+    """
+    from errander.integrations.signed_url import (
+        InvalidSignedTokenError,
+        SigningSecretMissingError,
+        verify_signed_token,
+    )
+    from errander.safety.audit import AuditStore
+
+    plan_id = request.match_info.get("plan_id", "")
+    token = request.query.get("token", "")
+
+    if not token:
+        return web.Response(status=400, text="Missing token")
+
+    try:
+        payload = verify_signed_token(token)
+    except (InvalidSignedTokenError, SigningSecretMissingError) as exc:
+        return web.Response(status=403, text=f"Invalid or expired token: {exc}")
+
+    if payload.get("plan_id") != plan_id:
+        return web.Response(status=403, text="Token plan_id mismatch")
+
+    db_path = os.environ.get("ERRANDER_AUDIT_DB_URL", "errander.sqlite")
+    try:
+        async with AuditStore(db_path, strict_mode=False) as store:
+            snapshot = await store.get_plan_snapshot(plan_id)
+    except Exception as exc:  # noqa: BLE001
+        return web.Response(status=500, text=f"DB error: {exc}")
+
+    if snapshot is None:
+        return web.Response(status=404, text=f"Plan {plan_id!r} not found")
+
+    import json as _json
+    try:
+        plan_data = _json.loads(str(snapshot["plan_json"]))
+    except Exception:  # noqa: BLE001
+        return web.Response(status=500, text="Stored plan is not valid JSON")
+
+    accept = request.headers.get("Accept", "")
+    if "application/json" in accept:
+        return web.Response(
+            content_type="application/json",
+            text=_json.dumps(plan_data, indent=2, default=str),
+        )
+
+    # HTML rendering — minimal, no auth required (token is the auth).
+    batch_id = str(snapshot.get("batch_id", ""))
+    env_name = str(snapshot.get("env_name", ""))
+    plan_hash = str(snapshot.get("plan_hash", ""))[:16]
+    created_at = str(snapshot.get("created_at", ""))
+
+    vm_sections: list[str] = []
+    for vm in plan_data.get("vm_plans", []):
+        vm_id = str(vm.get("vm_id", "?"))
+        pkg_lines: list[str] = []
+        for action in (vm.get("planned_actions") or []):
+            atype = str(action.get("action_type", ""))
+            preview = action.get("preview") if isinstance(action.get("preview"), dict) else {}
+            assert isinstance(preview, dict)
+            if atype == "patching":
+                pkgs = preview.get("packages") or []
+                for pkg in pkgs:
+                    if not isinstance(pkg, dict):
+                        continue
+                    name = str(pkg.get("name", "?"))
+                    cur = str(pkg.get("current", ""))
+                    tgt = str(pkg.get("target", ""))
+                    pkg_lines.append(
+                        f"<tr><td>{name}</td><td>{cur}</td><td>&rarr;</td><td>{tgt}</td></tr>"
+                    )
+        pkg_table = (
+            f"<table><thead><tr><th>Package</th><th>Current</th><th></th><th>Target</th></tr></thead>"
+            f"<tbody>{''.join(pkg_lines)}</tbody></table>"
+            if pkg_lines else ""
+        )
+        vm_sections.append(
+            f"<h3>{vm_id}</h3>{pkg_table}"
+        )
+
+    html = f"""<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<title>Plan {plan_id}</title>
+<style>
+  body{{font-family:monospace;max-width:900px;margin:2rem auto;padding:0 1rem}}
+  h1{{font-size:1.2rem}}
+  table{{border-collapse:collapse;width:100%}}
+  td,th{{border:1px solid #ccc;padding:4px 8px;text-align:left}}
+  .meta{{color:#666;font-size:.9rem}}
+</style>
+</head><body>
+<h1>Plan: {plan_id}</h1>
+<p class="meta">Batch: {batch_id} &nbsp;|&nbsp; Env: {env_name} &nbsp;|&nbsp;
+  Hash: {plan_hash} &nbsp;|&nbsp; Created: {created_at}</p>
+{''.join(vm_sections)}
+</body></html>"""
+
+    return web.Response(content_type="text/html", text=html)
+
+
 # ── docker_hygiene approval surface (v1.1 Session 2b-ii) ─────────────────────
 
 def page_hygiene_approve(
@@ -5577,6 +5685,8 @@ def create_app() -> web.Application:
     # docker_hygiene approval surface (v1.1 Session 2b-ii)
     app.router.add_get("/ui/docker-hygiene/approve",     handle_hygiene_approve_get)
     app.router.add_post("/ui/docker-hygiene/approve",    handle_hygiene_approve_post)
+    # plan inspection (P2-1) — signed token, no login required
+    app.router.add_get("/plans/{plan_id}",               handle_plan_view)
     app.on_startup.append(_on_startup)
     app.on_cleanup.append(_on_cleanup)
     return app

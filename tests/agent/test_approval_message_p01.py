@@ -75,7 +75,29 @@ def test_approval_message_no_categories_disclaimer() -> None:
 def test_approval_message_shows_hash_commitment_line() -> None:
     plan = _make_vm_plan(preview=_patching_preview())
     msg = _format_plan_for_approval([plan], "b1", "plan-abc", "a" * 64)
-    assert "commits to the exact packages" in msg
+    assert "commits to the plan" in msg
+    assert "[EXACT]" in msg  # patching with preview → EXACT coverage
+
+
+def test_approval_message_coverage_table_marks_patching_exact() -> None:
+    plan = _make_vm_plan(preview=_patching_preview())
+    msg = _format_plan_for_approval([plan], "b1", "plan-abc", "a" * 64)
+    assert "patching" in msg
+    assert "[EXACT]" in msg
+
+
+def test_approval_message_coverage_table_marks_disk_cleanup_categorical() -> None:
+    plan = _make_vm_plan(action_type="disk_cleanup", preview={})
+    msg = _format_plan_for_approval([plan], "b1", "plan-abc", "a" * 64)
+    assert "disk_cleanup" in msg
+    assert "[CATEGORICAL]" in msg
+
+
+def test_approval_message_coverage_table_marks_backup_verify_advisory() -> None:
+    plan = _make_vm_plan(action_type="backup_verify", preview={})
+    msg = _format_plan_for_approval([plan], "b1", "plan-abc", "a" * 64)
+    assert "backup_verify" in msg
+    assert "[ADVISORY]" in msg
 
 
 # ---------------------------------------------------------------------------

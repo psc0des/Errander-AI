@@ -1174,6 +1174,7 @@ def _format_plan_for_approval(
     plan_id: str,
     plan_hash: str,
     is_deferred_reapproval: bool = False,
+    web_base_url: str | None = None,
 ) -> str:
     """Format a batch plan for the Slack approval message.
 
@@ -1215,6 +1216,27 @@ def _format_plan_for_approval(
                             lines.append(f"      `{name}`")
                     if len(packages) > 10:
                         lines.append(f"      ... and {len(packages) - 10} more")
+                        if web_base_url:
+                            try:
+                                from errander.integrations.signed_url import (
+                                    SigningSecretMissingError,
+                                    make_signed_token,
+                                )
+                                _token = make_signed_token(
+                                    {"plan_id": plan_id, "batch_id": batch_id},
+                                    ttl_seconds=3600,
+                                )
+                                lines.append(
+                                    f"      Full plan: {web_base_url}/plans/{plan_id}?token={_token}"
+                                )
+                            except SigningSecretMissingError:
+                                lines.append(
+                                    f"      Full plan: errander --plan-show {plan_id}"
+                                )
+                        else:
+                            lines.append(
+                                f"      Full plan: errander --plan-show {plan_id}"
+                            )
                 elif "error" in preview:
                     lines.append(
                         f"    - patching (preview unavailable: {str(preview['error'])[:80]})"
@@ -1247,9 +1269,40 @@ def _format_plan_for_approval(
                     label = f"{action_type}({param_str})"
                 lines.append(f"    - {label}")
 
+    # Per-action coverage table — honest about blast radius per action type.
+    # [EXACT] = every object the operator sees is exactly what will be touched.
+    # [CATEGORICAL] = scope is bounded by params but exact objects determined at exec time.
+    # [ADVISORY] = read-only, no state change.
+    coverage_lines: list[str] = []
+    for plan in vm_plans:
+        raw_actions = plan.get("planned_actions")
+        for a in (raw_actions if isinstance(raw_actions, list) else []):
+            at = str(a.get("action_type", ""))
+            preview = a.get("preview") if isinstance(a.get("preview"), dict) else {}
+            assert isinstance(preview, dict)
+            if at == "patching":
+                pkgs = preview.get("packages")
+                tag = "[EXACT]" if pkgs and isinstance(pkgs, list) else "[CATEGORICAL]"
+                coverage_lines.append(f"  • patching         {tag}")
+            elif at == "disk_cleanup":
+                coverage_lines.append("  • disk_cleanup     [CATEGORICAL]  cleanup classes: bounded by whitelist_paths")
+            elif at == "log_rotation":
+                coverage_lines.append("  • log_rotation     [CATEGORICAL]  files exceeding size threshold at exec time")
+            elif at == "backup_verify":
+                coverage_lines.append("  • backup_verify    [ADVISORY]     read-only freshness check, no state change")
+            elif at == "service_restart":
+                params = a.get("params") or {}
+                unit = params.get("unit_name", "?") if isinstance(params, dict) else "?"
+                coverage_lines.append(f"  • service_restart  [EXACT]        unit={unit}")
+            elif at == "docker_hygiene":
+                coverage_lines.append("  • docker_hygiene   [EXACT]        see HygieneApproval message for object list")
+    coverage_block = (
+        ("\nApproval scope per action:\n" + "\n".join(coverage_lines))
+        if coverage_lines else ""
+    )
     lines.extend([
         "",
-        f"Hash `{plan_hash[:16]}` commits to the exact packages and actions listed above.",
+        f"Hash `{plan_hash[:16]}` commits to the plan listed above.{coverage_block}",
         "",
         "Reply :white_check_mark: to approve or :x: to reject (timeout -> auto-REJECT)",
     ])
@@ -1268,6 +1321,7 @@ async def approval_gate_node(
     approval_poll_interval_seconds: int = 30,
     require_live_approval: bool = True,
     autonomous_live_apply_enabled: bool = False,
+    web_base_url: str | None = None,
 ) -> dict[str, Any]:
     """Gate live execution behind Slack approval of the ImmutableBatchPlan.
 
@@ -1360,9 +1414,27 @@ async def approval_gate_node(
         return {"approved": False, "error": "live approval required but no approval manager configured"}
     elif max_tier in _approval_tiers and approval_manager is not None:
         is_deferred = bool(state.get("is_deferred_reapproval", False))
+
+        # P2-1: persist full plan JSON so operators can inspect the complete
+        # package list before approving (via signed URL or --plan-show CLI).
+        if audit_store is not None:
+            import json as _json
+            _snapshot_json = _json.dumps(
+                {"plan_id": plan_id, "batch_id": batch_id, "vm_plans": vm_plans},
+                default=str,
+            )
+            await audit_store.save_plan_snapshot(
+                plan_id=plan_id,
+                batch_id=batch_id,
+                env_name=env_name,
+                plan_hash=plan_hash,
+                plan_json=_snapshot_json,
+            )
+
         plan_summary = _format_plan_for_approval(
             vm_plans, batch_id, plan_id, plan_hash,
             is_deferred_reapproval=is_deferred,
+            web_base_url=web_base_url or None,
         )
         logger.info(
             "Batch %s requires live approval before execution (policy=%s, max risk tier: %s%s)",
@@ -1960,6 +2032,7 @@ def build_batch_graph(
             approval_poll_interval_seconds=_settings.approval_poll_interval_seconds,
             require_live_approval=_settings.require_live_approval,
             autonomous_live_apply_enabled=_settings.autonomous_live_apply_enabled,
+            web_base_url=_settings.web_base_url or None,
         )
 
     async def _check_fleet(state: BatchGraphState) -> dict[str, Any]:

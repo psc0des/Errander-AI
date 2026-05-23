@@ -53,8 +53,17 @@ ALLOWED_CLEANUP_PATHS: frozenset[str] = frozenset({
     "apt-cache",
     "yum-cache",
     "journal",
+    "orphaned-deps",  # allowed, but requires explicit opt-in — not in DEFAULT_CLEANUP_PATHS
+})
+
+# Paths that are valid but must be explicitly specified in inventory.
+# They are NOT included in the default cleanup set.
+EXPLICIT_OPT_IN_PATHS: frozenset[str] = frozenset({
     "orphaned-deps",
 })
+
+# Default set used when no whitelist_paths are specified in state.
+DEFAULT_CLEANUP_PATHS: frozenset[str] = ALLOWED_CLEANUP_PATHS - EXPLICIT_OPT_IN_PATHS
 
 
 def is_whitelisted(path: str) -> bool:
@@ -114,8 +123,9 @@ def validate_node(state: DiskCleanupGraphState) -> dict[str, Any]:
     """Validate that all requested cleanup paths are on the whitelist.
 
     HARDCODED CHECK — this is NEVER an LLM decision.
+    orphaned-deps requires explicit opt-in; it is NOT included by default.
     """
-    paths = state.get("whitelist_paths", list(ALLOWED_CLEANUP_PATHS))
+    paths = state.get("whitelist_paths", list(DEFAULT_CLEANUP_PATHS))
     rejected = validate_whitelist(paths)
 
     if rejected:
@@ -150,7 +160,7 @@ async def assess_node(
     pkg_mgr = get_package_manager_by_name(os_family)
 
     space: dict[str, str] = {}
-    paths = state.get("whitelist_paths", list(ALLOWED_CLEANUP_PATHS))
+    paths = state.get("whitelist_paths", list(DEFAULT_CLEANUP_PATHS))
     age_days = state.get("tmp_age_days", 7)
 
     # Get disk usage before cleanup — dry_run=False: always read real VM state.
@@ -229,7 +239,7 @@ async def execute_node(
     target = _get_connection_params(state)
     pkg_mgr = get_package_manager_by_name(os_family)
 
-    paths = state.get("whitelist_paths", list(ALLOWED_CLEANUP_PATHS))
+    paths = state.get("whitelist_paths", list(DEFAULT_CLEANUP_PATHS))
     age_days = state.get("tmp_age_days", 7)
     journal_days = state.get("journal_vacuum_days", 7)
     dry_run = state.get("dry_run", True)
@@ -272,6 +282,15 @@ async def execute_node(
                 failed_paths.append("journal")
 
         elif path == "orphaned-deps":
+            # orphaned-deps requires explicit opt-in in whitelist_paths.
+            # Double-check: refuse silently if it somehow ended up here without opt-in.
+            if "orphaned-deps" not in (state.get("whitelist_paths") or []):
+                logger.warning(
+                    "orphaned-deps reached execute_node without explicit opt-in on %s — skipping",
+                    vm_id,
+                )
+                output["orphaned-deps"] = "[SKIPPED — requires explicit opt-in in whitelist_paths]"
+                continue
             if os_family in ("ubuntu", "debian"):
                 sim_cmd = "apt-get autoremove --simulate 2>/dev/null"
             else:

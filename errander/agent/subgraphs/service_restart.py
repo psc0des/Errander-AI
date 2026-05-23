@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING, Any
 
 from langgraph.graph import END, StateGraph
 
+from errander.execution.command_builder import CommandBuildError, safe_systemd_unit_name
 from errander.execution.privilege import privileged
 from errander.models.actions import ActionStatus
 from errander.models.manifest import ActionManifest
@@ -179,9 +180,16 @@ async def snapshot_node(
     unit_name = state.get("unit_name", "")
     target = _get_connection_params(state)
 
+    try:
+        safe_systemd_unit_name(unit_name)
+    except CommandBuildError as exc:
+        logger.error("Unsafe unit_name rejected in snapshot_node on %s: %s", vm_id, exc)
+        return {"pre_status": "", "pre_journal": ""}
+
+    import shlex
     result = await executor.execute(
         vm_id, target["hostname"], target["username"], target["key_path"],
-        command=privileged(f"{_WRAPPER} --snapshot-only {unit_name}"),
+        command=privileged(f"{_WRAPPER} --snapshot-only {shlex.quote(unit_name)}"),
         dry_run=False,
     )
     if not result.success:
@@ -210,13 +218,21 @@ async def execute_node(
     dry_run = state.get("dry_run", True)
     target = _get_connection_params(state)
 
+    try:
+        safe_systemd_unit_name(unit_name)
+    except CommandBuildError as exc:
+        detail = f"Unsafe unit_name rejected in execute_node on {vm_id}: {exc}"
+        logger.error("%s", detail)
+        return {"status": ActionStatus.FAILED.value, "error": detail}
+
+    import shlex
     if dry_run:
         logger.info("DRY RUN: would restart %s on %s", unit_name, vm_id)
         return {"status": ActionStatus.DRY_RUN_OK.value}
 
     result = await executor.execute(
         vm_id, target["hostname"], target["username"], target["key_path"],
-        command=privileged(f"{_WRAPPER} {unit_name}"),
+        command=privileged(f"{_WRAPPER} {shlex.quote(unit_name)}"),
         dry_run=False,
     )
 

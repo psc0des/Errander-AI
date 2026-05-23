@@ -181,10 +181,10 @@ class TestServiceRestartValidation:
     def test_service_restart_enabled_with_units_accepted(self) -> None:
         env = EnvironmentSchema(
             targets=[TargetSchema(**_TARGET)],  # type: ignore[arg-type]
-            actions={"service_restart": ActionConfig(enabled=True, restartable_units=["nginx"])},
+            actions={"service_restart": ActionConfig(enabled=True, restartable_units=["nginx.service"])},
         )
         assert env.actions["service_restart"].enabled is True
-        assert "nginx" in env.actions["service_restart"].restartable_units
+        assert "nginx.service" in env.actions["service_restart"].restartable_units
 
     def test_service_restart_disabled_with_empty_units_accepted(self) -> None:
         env = EnvironmentSchema(
@@ -203,14 +203,14 @@ class TestServiceRestartValidation:
         config_file = tmp_path / "inventory.yaml"
         config_file.write_text(_inventory_yaml({
             "prod": _env_with_actions({
-                "service_restart": {"enabled": True, "restartable_units": ["nginx", "gunicorn"]},
+                "service_restart": {"enabled": True, "restartable_units": ["nginx.service", "gunicorn.service"]},
             }),
         }))
         inv = validate_inventory(config_file)
         cfg = inv.environments["prod"].actions["service_restart"]
         assert cfg.enabled is True
-        assert "nginx" in cfg.restartable_units
-        assert "gunicorn" in cfg.restartable_units
+        assert "nginx.service" in cfg.restartable_units
+        assert "gunicorn.service" in cfg.restartable_units
 
     def test_service_restart_enabled_via_yaml_empty_units_raises(self, tmp_path: Path) -> None:
         config_file = tmp_path / "inventory.yaml"
@@ -252,3 +252,52 @@ class TestDockerHygieneV15Config:
         with pytest.raises((ConfigError, ValueError)) as exc_info:
             validate_inventory(config_file)
         assert "volume_deletion_enabled" in str(exc_info.value) or "enabled=false" in str(exc_info.value)
+
+
+class TestServiceRestartUnitNameValidationAtConfigLoad:
+    """P2-3: restartable_units entries are validated at config load time."""
+
+    def test_valid_unit_names_accepted_at_load(self, tmp_path: Path) -> None:
+        config_file = tmp_path / "inventory.yaml"
+        config_file.write_text(_inventory_yaml({
+            "prod": _env_with_actions({
+                "service_restart": {
+                    "enabled": True,
+                    "restartable_units": ["nginx.service", "gunicorn.service"],
+                },
+            }),
+        }))
+        inv = validate_inventory(config_file)
+        units = inv.environments["prod"].actions["service_restart"].restartable_units
+        assert "nginx.service" in units
+
+    def test_unit_name_without_type_suffix_rejected_at_load(self, tmp_path: Path) -> None:
+        """Unit names lacking a systemd type suffix must fail at config load."""
+        config_file = tmp_path / "inventory.yaml"
+        config_file.write_text(_inventory_yaml({
+            "prod": _env_with_actions({
+                "service_restart": {
+                    "enabled": True,
+                    "restartable_units": ["nginx"],  # missing .service suffix
+                },
+            }),
+        }))
+        with pytest.raises((ConfigError, ValidationError, ValueError)) as exc_info:
+            validate_inventory(config_file)
+        assert "nginx" in str(exc_info.value) or "grammar" in str(exc_info.value) or "unit" in str(exc_info.value).lower()
+
+    def test_unit_name_with_shell_metachar_rejected_at_load(self, tmp_path: Path) -> None:
+        """Unit names containing shell metacharacters must fail at config load."""
+        config_file = tmp_path / "inventory.yaml"
+        config_file.write_text(_inventory_yaml({
+            "prod": _env_with_actions({
+                "service_restart": {
+                    "enabled": True,
+                    "restartable_units": ["nginx.service; rm -rf /"],
+                },
+            }),
+        }))
+        with pytest.raises((ConfigError, ValidationError, ValueError)) as exc_info:
+            validate_inventory(config_file)
+        msg = str(exc_info.value)
+        assert "metacharacter" in msg or "unit" in msg.lower() or "grammar" in msg

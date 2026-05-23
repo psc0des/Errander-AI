@@ -193,6 +193,25 @@ _MIGRATIONS: list[tuple[int, str]] = [
         )
         """,
     ),
+    # 0008 — plan_snapshots: persists full plan JSON for each approval gate
+    # invocation so operators can inspect the complete package list before
+    # approving (P2-1). TTL-expired rows are not auto-deleted but are treated
+    # as stale by the web endpoint (read-only, safe to leave).
+    (
+        8,
+        """
+        CREATE TABLE IF NOT EXISTS plan_snapshots (
+            plan_id    TEXT    PRIMARY KEY,
+            batch_id   TEXT    NOT NULL,
+            env_name   TEXT    NOT NULL DEFAULT '',
+            plan_hash  TEXT    NOT NULL,
+            plan_json  TEXT    NOT NULL,
+            created_at TEXT    NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_plan_snapshots_batch
+            ON plan_snapshots (batch_id)
+        """,
+    ),
 ]
 
 

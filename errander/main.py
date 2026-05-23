@@ -205,6 +205,14 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Encrypt VALUE with ERRANDER_SECRETS_KEY and print the enc:v1: blob, then exit",
     )
 
+    # Plan inspection (P2-1)
+    parser.add_argument(
+        "--plan-show",
+        metavar="PLAN_ID",
+        default=None,
+        help="Pretty-print the full plan artifact for PLAN_ID from the audit DB, then exit",
+    )
+
     # Audit query mode
     parser.add_argument(
         "--audit",
@@ -1022,11 +1030,11 @@ async def run_restart_service(
     dry_run: bool,
     inventory_path: Path,
 ) -> int:
-    """Operator-triggered service restart — validates inputs, audits request, prints plan.
+    """Operator-triggered service restart — validates inputs, then either prints a plan
+    (dry-run) or goes through the Slack approval gate and executes (live).
 
     Layer B: deterministic validation + audit log. No LLM in this path.
-    Execution (live mode) goes through the approval-gated batch graph.
-    HIGH risk tier — always requires Slack approval before execution.
+    HIGH risk tier — always requires Slack approval before live execution.
     """
     import uuid
 
@@ -1060,6 +1068,7 @@ async def run_restart_service(
         return 1
 
     all_vm_names = {t.name for t in env.targets}
+    targets_by_name = {t.name: t for t in env.targets}
     for vm_id in vm_ids:
         if vm_id not in all_vm_names:
             print(
@@ -1075,6 +1084,16 @@ async def run_restart_service(
         return 1
 
     batch_id = str(uuid.uuid4())
+    vm_list = ", ".join(vm_ids)
+
+    # Print plan regardless of dry-run / live mode.
+    print(f"Service Restart Plan — {env_name}")
+    print(f"  Unit      : {unit_name}")
+    print(f"  VMs       : {vm_list}")
+    print(f"  Allowlist : inventory ✓ ({', '.join(restartable_units)})")
+    print("  Risk      : HIGH — Slack approval required before execution")
+    print(f"  Mode      : {'DRY RUN' if dry_run else 'LIVE'}")
+
     audit_store = AuditStore(settings.audit_db_url, strict_mode=False)
     async with audit_store:
         await audit_store.log_event(AuditEvent(
@@ -1083,15 +1102,123 @@ async def run_restart_service(
             detail=f"unit={unit_name} vms={vm_ids} env={env_name} dry_run={dry_run}",
         ))
 
-    vm_list = ", ".join(vm_ids)
-    print(f"Service Restart Plan — {env_name}")
-    print(f"  Unit : {unit_name}")
-    print(f"  VMs  : {vm_list}")
-    print("  Risk : HIGH — Slack approval required before execution")
-    print(f"  Mode : {'DRY RUN' if dry_run else 'LIVE'}")
     if dry_run:
         print("\nDRY RUN — plan generated, no execution.")
-    return 0
+        return 0
+
+    # --- Live mode: Slack approval gate + per-VM subgraph execution ---
+    from errander.agent.subgraphs.service_restart import (
+        ServiceRestartState,
+        build_service_restart_subgraph,
+    )
+    from errander.models.events import AuditEvent as _AuditEvent
+    from errander.models.events import EventType as _EventType
+    from errander.safety.approval import poll_approval, request_approval
+
+    slack_client: SlackClient | None = None
+    if settings.slack_bot_token and settings.slack_channel_id:
+        slack_client = SlackClient(
+            bot_token=settings.slack_bot_token,
+            channel_id=settings.slack_channel_id,
+        )
+
+    if slack_client is None:
+        print(
+            "Error: ERRANDER_SLACK_BOT_TOKEN and ERRANDER_SLACK_CHANNEL_ID must be "
+            "set for live service_restart execution (Slack approval required)."
+        )
+        return 1
+
+    approval_report = (
+        f"*Service Restart — Live Execution Approval*\n"
+        f"  Env     : {env_name}\n"
+        f"  Unit    : {unit_name}\n"
+        f"  VMs     : {vm_list}\n"
+        f"  Allowlist : inventory ✓  on-target /etc/errander/restart-allowlist enforced by wrapper\n"
+        f"  Batch   : {batch_id}\n"
+        f"  Risk    : HIGH — this will restart the unit on the listed VMs\n\n"
+        "React :white_check_mark: to approve or :x: to reject (30 min timeout → auto-REJECT)."
+    )
+
+    print("\nPosting approval request to Slack…")
+    try:
+        slack_ts = await request_approval(slack_client, batch_id, approval_report)
+    except Exception as exc:  # noqa: BLE001
+        print(f"Error posting to Slack: {exc}")
+        return 1
+
+    print(f"Waiting for Slack approval (ts={slack_ts})…")
+    approved, approver = await poll_approval(
+        slack_client,
+        slack_ts,
+        timeout_seconds=settings.approval_timeout_seconds,
+        poll_interval_seconds=settings.approval_poll_interval_seconds,
+    )
+
+    async with audit_store:
+        if approved:
+            await audit_store.log_event(_AuditEvent(
+                event_type=_EventType.SERVICE_RESTART_APPROVED,
+                batch_id=batch_id,
+                detail=f"unit={unit_name} vms={vm_ids} approver={approver}",
+            ))
+        else:
+            await audit_store.log_event(_AuditEvent(
+                event_type=_EventType.SERVICE_RESTART_REJECTED,
+                batch_id=batch_id,
+                detail=f"unit={unit_name} vms={vm_ids} approver={approver}",
+            ))
+
+    if not approved:
+        print(f"Restart REJECTED (approver={approver}). No action taken.")
+        return 1
+
+    print(f"Restart APPROVED by {approver}. Executing on {len(vm_ids)} VM(s)…")
+
+    executor = SandboxExecutor(dry_run=False)
+    subgraph_compiled = build_service_restart_subgraph(
+        executor, audit_store=audit_store, batch_id=batch_id,
+    ).compile()
+
+    overall_success = True
+    for vm_id in vm_ids:
+        target = targets_by_name[vm_id]
+        username = target.ssh_user or env.ssh_user
+        key_path = str(Path(target.ssh_key_path or env.ssh_key_path).expanduser())
+
+        sub_state: ServiceRestartState = {
+            "vm_id": vm_id,
+            "os_family": target.os_family,
+            "dry_run": False,
+            "unit_name": unit_name,
+            "restartable_units": restartable_units,
+            "hostname": target.host,  # type: ignore[typeddict-unknown-key]
+            "username": username,
+            "key_path": key_path,
+        }
+        try:
+            final = await subgraph_compiled.ainvoke(sub_state)
+        except Exception as exc:  # noqa: BLE001
+            logger.error("service_restart subgraph raised for %s: %s", vm_id, exc)
+            final = {"status": "failed", "error": str(exc)}
+
+        status = final.get("status", "failed")
+        if status not in ("success", "dry_run_ok"):
+            overall_success = False
+            print(f"  [{vm_id}] FAILED: {final.get('error', 'unknown error')}")
+        else:
+            print(f"  [{vm_id}] OK — {unit_name} is active")
+
+        async with audit_store:
+            await audit_store.log_event(_AuditEvent(
+                event_type=_EventType.SERVICE_RESTART_EXECUTED,
+                batch_id=batch_id,
+                vm_id=vm_id,
+                action_type="service_restart",
+                detail=f"unit={unit_name} status={status}",
+            ))
+
+    return 0 if overall_success else 1
 
 
 # ---------------------------------------------------------------------------
@@ -1114,6 +1241,54 @@ def _print_audit_table(rows: list[tuple[str, str, str, str, str, str]]) -> None:
     for row in rows:
         line = "  ".join(_truncate(v, w).ljust(w) for v, w in zip(row, _COL_WIDTHS, strict=False))
         print(line)
+
+
+async def run_plan_show(plan_id: str, audit_db_url: str) -> int:
+    """Pretty-print the full plan artifact for plan_id (P2-1)."""
+    import json as _json
+
+    audit_store = AuditStore(audit_db_url, strict_mode=False)
+    async with audit_store:
+        snapshot = await audit_store.get_plan_snapshot(plan_id)
+
+    if snapshot is None:
+        print(f"Plan '{plan_id}' not found in audit DB.")
+        return 1
+
+    print(f"Plan ID  : {snapshot['plan_id']}")
+    print(f"Batch ID : {snapshot['batch_id']}")
+    print(f"Env      : {snapshot['env_name']}")
+    print(f"Hash     : {snapshot['plan_hash']}")
+    print(f"Created  : {snapshot['created_at']}")
+    print()
+
+    try:
+        plan_data = _json.loads(str(snapshot["plan_json"]))
+    except Exception:  # noqa: BLE001
+        print("(stored plan JSON is malformed)")
+        return 1
+
+    for vm in plan_data.get("vm_plans", []):
+        vm_id = vm.get("vm_id", "?")
+        print(f"VM: {vm_id}")
+        for action in (vm.get("planned_actions") or []):
+            atype = action.get("action_type", "?")
+            preview = action.get("preview") if isinstance(action.get("preview"), dict) else {}
+            assert isinstance(preview, dict)
+            if atype == "patching":
+                pkgs = preview.get("packages") or []
+                print(f"  patching: {len(pkgs)} package(s)")
+                for pkg in pkgs:
+                    if not isinstance(pkg, dict):
+                        continue
+                    name = pkg.get("name", "?")
+                    cur = pkg.get("current", "")
+                    tgt = pkg.get("target", "")
+                    print(f"    {name}  {cur} -> {tgt}")
+            else:
+                print(f"  {atype}")
+        print()
+    return 0
 
 
 async def run_audit_query(args: argparse.Namespace, settings: Settings) -> int:
@@ -1639,6 +1814,10 @@ async def async_main(args: argparse.Namespace) -> int:
     # --- Audit mode: query and exit, no scheduler or metrics needed ---
     if args.audit:
         return await run_audit_query(args, settings)
+
+    # --- Plan inspection: query and exit (P2-1) ---
+    if args.plan_show:
+        return await run_plan_show(args.plan_show, settings.audit_db_url)
 
     # --- Durability measurement: query and exit ---
     if args.measure_durability:

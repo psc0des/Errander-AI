@@ -8,6 +8,8 @@ import pytest
 
 from errander.agent.subgraphs.disk_cleanup import (
     ALLOWED_CLEANUP_PATHS,
+    DEFAULT_CLEANUP_PATHS,
+    EXPLICIT_OPT_IN_PATHS,
     DiskCleanupGraphState,
     assess_node,
     build_disk_cleanup_subgraph,
@@ -391,3 +393,74 @@ class TestAssessNodeEmptyOutput:
 
         assert result["status"] == ActionStatus.FAILED.value
         assert "empty output" in result["error"]
+
+
+# --- P1-3: orphaned-deps explicit opt-in tests ---
+
+class TestOrphanedDepsOptIn:
+    """orphaned-deps must NOT run unless the operator explicitly opts in.
+
+    P1-3: `apt autoremove` on a misconfigured system can remove dependencies
+    that hand-compiled software relies on. Default cleanup must exclude it.
+    """
+
+    def test_orphaned_deps_not_in_default_cleanup_paths(self) -> None:
+        assert "orphaned-deps" not in DEFAULT_CLEANUP_PATHS, (
+            "orphaned-deps must require explicit opt-in and must not appear in DEFAULT_CLEANUP_PATHS"
+        )
+
+    def test_orphaned_deps_is_in_explicit_opt_in_paths(self) -> None:
+        assert "orphaned-deps" in EXPLICIT_OPT_IN_PATHS
+
+    def test_orphaned_deps_still_allowed_when_explicitly_specified(self) -> None:
+        assert is_whitelisted("orphaned-deps"), (
+            "orphaned-deps is a valid whitelist entry when explicitly opted in"
+        )
+
+    def test_default_paths_does_not_include_orphaned_deps(self) -> None:
+        assert DEFAULT_CLEANUP_PATHS == ALLOWED_CLEANUP_PATHS - EXPLICIT_OPT_IN_PATHS
+
+    async def test_orphaned_deps_skipped_when_not_in_whitelist_paths(self) -> None:
+        """execute_node must not run autoremove when orphaned-deps is absent from whitelist_paths."""
+        executor = _make_executor(dry_run=False)
+        commands_seen: list[str] = []
+
+        async def capture(*args: object, **kwargs: object) -> SSHResult:
+            commands_seen.append(str(kwargs.get("command", args[4] if len(args) > 4 else "")))
+            return _make_result("ok")
+
+        with patch.object(executor, "execute", side_effect=capture):
+            # whitelist_paths explicitly excludes orphaned-deps
+            state = _base_state(
+                whitelist_paths=["/tmp", "journal"],
+                dry_run=False,
+                reclaimable={"journal": 500},
+                status=ActionStatus.PENDING.value,
+            )
+            await execute_node(state, executor=executor)
+
+        assert not any("autoremove" in c for c in commands_seen), (
+            "apt autoremove must not run when orphaned-deps is absent from whitelist_paths"
+        )
+
+    async def test_orphaned_deps_runs_when_explicitly_opted_in(self) -> None:
+        """execute_node must run autoremove only when orphaned-deps is in whitelist_paths."""
+        executor = _make_executor(dry_run=False)
+        commands_seen: list[str] = []
+
+        async def capture(*args: object, **kwargs: object) -> SSHResult:
+            commands_seen.append(str(kwargs.get("command", args[4] if len(args) > 4 else "")))
+            return _make_result("ok")
+
+        with patch.object(executor, "execute", side_effect=capture):
+            state = _base_state(
+                whitelist_paths=["/tmp", "journal", "orphaned-deps"],
+                dry_run=False,
+                reclaimable={"journal": 500},
+                status=ActionStatus.PENDING.value,
+            )
+            await execute_node(state, executor=executor)
+
+        assert any("autoremove" in c for c in commands_seen), (
+            "apt autoremove must run when orphaned-deps is explicitly in whitelist_paths"
+        )

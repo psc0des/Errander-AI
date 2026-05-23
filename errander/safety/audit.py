@@ -15,7 +15,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 import aiosqlite
@@ -278,6 +278,58 @@ class AuditStore:
         cursor = await db.execute(query, params)
         row = await cursor.fetchone()
         return int(row[0]) if row else 0
+
+
+    async def save_plan_snapshot(
+        self,
+        plan_id: str,
+        batch_id: str,
+        env_name: str,
+        plan_hash: str,
+        plan_json: str,
+    ) -> None:
+        """Persist the full plan JSON for later inspection (P2-1).
+
+        Idempotent — duplicate plan_id is silently ignored (plan is immutable
+        once generated). Caller must have already called initialize().
+        """
+        db = self._ensure_connected()
+        now_ts = datetime.now(UTC).isoformat()
+        try:
+            await db.execute(
+                """
+                INSERT OR IGNORE INTO plan_snapshots
+                    (plan_id, batch_id, env_name, plan_hash, plan_json, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (plan_id, batch_id, env_name, plan_hash, plan_json, now_ts),
+            )
+            await db.commit()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Failed to save plan snapshot %s: %s", plan_id, exc)
+
+    async def get_plan_snapshot(self, plan_id: str) -> dict[str, object] | None:
+        """Retrieve a stored plan snapshot by plan_id (P2-1).
+
+        Returns None when the plan_id is not found.
+        """
+        db = self._ensure_connected()
+        cursor = await db.execute(
+            "SELECT plan_id, batch_id, env_name, plan_hash, plan_json, created_at "
+            "FROM plan_snapshots WHERE plan_id = ?",
+            (plan_id,),
+        )
+        row = await cursor.fetchone()
+        if row is None:
+            return None
+        return {
+            "plan_id": str(row[0]),
+            "batch_id": str(row[1]),
+            "env_name": str(row[2]),
+            "plan_hash": str(row[3]),
+            "plan_json": str(row[4]),
+            "created_at": str(row[5]),
+        }
 
 
 def _row_to_event(row: aiosqlite.Row) -> AuditEvent:

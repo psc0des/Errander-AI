@@ -1,5 +1,30 @@
 # Errander-AI — Lessons Learned
 
+## 2026-05-23 — snapshot_node returning empty strings on validation error is not a FAILED status
+
+When `snapshot_node` catches a `CommandBuildError` (invalid unit name), it logs the error and returns `{"pre_status": "", "pre_journal": ""}` — no `status` key. The `execute_node` DOES return `{"status": "failed"}`. Tests for `snapshot_node` safety must assert that `.execute` was NOT called (no SSH), not that `status == FAILED` in the returned dict.
+
+**Why:** The snapshot node is not a terminal node — it's a pre-execution read step. LangGraph merges its return dict into state without requiring a `status` field. The execute_node is the one that terminates the graph on failure.
+
+**How to apply:** When writing adversarial tests for a node that guards via early return (not via explicit FAILED status), assert the side effect was prevented (no SSH call, no mutation) rather than asserting on the status field.
+
+## 2026-05-23 — Base64 last-character tamper tests are unreliable; use full signature replacement
+
+Flipping the last character of a base64url-encoded HMAC signature is not guaranteed to change the decoded bytes in a detectably different way (the last char may encode only padding bits). Instead, replace the entire signature with a known-wrong value (e.g., all-zeros HMAC).
+
+**Why:** base64url encoding of 32 bytes (HMAC-SHA256) produces 43 chars. The last char encodes 4 real bits + 2 zero padding bits. Flipping it might or might not produce a different decoded value depending on the specific character.
+
+**How to apply:** For tamper-resistance tests, construct the fake signature explicitly: `base64.urlsafe_b64encode(bytes(32)).rstrip(b"=").decode()`.
+
+## 2026-05-23 — Add migration test updates when adding a new DB migration
+
+The migration test `test_records_applied_versions` asserts an exact version list, and `test_idempotent_on_second_run` asserts the exact count. Adding migration 8 requires updating both:
+- `versions == [0, 1, ..., 7]` → `[0, 1, ..., 8]`
+- `count == 8` → `count == 9`
+- `expected` table set must include the new table
+
+**How to apply:** Search `tests/safety/test_migrations.py` after adding any migration and update all three assertions.
+
 ## 2026-05-22 — When replacing an action type in source, grep tests too
 
 Replacing `ActionType.DOCKER_PRUNE` with `DOCKER_HYGIENE` in `decisions.py` required matching fixes in 6 test files. `uv run pytest -x` surfaced them one by one; the final count was 6 stale references across `test_decisions.py`, `test_enabled_actions_planning.py`, `test_vm_graph.py`, `test_golden_plans.py`, and `test_metrics.py`.

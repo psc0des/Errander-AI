@@ -590,7 +590,7 @@ _SR_INVENTORY = {
     "environments": {
         "production": {
             "targets": [{"host": "10.0.1.1", "name": "web-01", "os_family": "ubuntu"}],
-            "actions": {"service_restart": {"enabled": True, "restartable_units": ["nginx", "gunicorn"]}},
+            "actions": {"service_restart": {"enabled": True, "restartable_units": ["nginx.service", "gunicorn.service"]}},
         }
     }
 }
@@ -638,7 +638,7 @@ class TestRestartServiceCLI:
             mock_settings.return_value = MagicMock(audit_db_url=":memory:")
             result = await run_restart_service(
                 env_name="production",
-                unit_name="nginx",
+                unit_name="nginx.service",
                 vm_ids=["web-01"],
                 dry_run=True,
                 inventory_path=inv,
@@ -674,7 +674,7 @@ class TestRestartServiceCLI:
         inv = self._write_inventory(tmp_path)
         result = await run_restart_service(
             env_name="production",
-            unit_name="nginx",
+            unit_name="nginx.service",
             vm_ids=["nonexistent-vm"],
             dry_run=True,
             inventory_path=inv,
@@ -748,7 +748,7 @@ class TestCheckTargetsAllowlistDrift:
                     "actions": {
                         "service_restart": {
                             "enabled": True,
-                            "restartable_units": ["nginx", "gunicorn"],
+                            "restartable_units": ["nginx.service", "gunicorn.service"],
                         },
                     },
                 }
@@ -756,10 +756,10 @@ class TestCheckTargetsAllowlistDrift:
         }))
 
         ready = TargetReadiness(vm_id="web-01", hostname="10.0.1.1", verdict="ready")
-        # On-target allowlist: has "nginx" and "redis" but NOT "gunicorn"
+        # On-target allowlist: has "nginx.service" and "redis.service" but NOT "gunicorn.service"
         allowlist_result = SSHResult(
             exit_code=0,
-            stdout="nginx\nredis\n",
+            stdout="nginx.service\nredis.service\n",
             stderr="",
             command="cat /etc/errander/restart-allowlist 2>/dev/null || echo '__not_found__'",
         )
@@ -796,7 +796,7 @@ class TestCheckTargetsAllowlistDrift:
                     "actions": {
                         "service_restart": {
                             "enabled": True,
-                            "restartable_units": ["nginx", "gunicorn"],
+                            "restartable_units": ["nginx.service", "gunicorn.service"],
                         },
                     },
                 }
@@ -806,7 +806,7 @@ class TestCheckTargetsAllowlistDrift:
         ready = TargetReadiness(vm_id="web-01", hostname="10.0.1.1", verdict="ready")
         allowlist_result = SSHResult(
             exit_code=0,
-            stdout="nginx\ngunicorn\n",
+            stdout="nginx.service\ngunicorn.service\n",
             stderr="",
             command="cat /etc/errander/restart-allowlist 2>/dev/null || echo '__not_found__'",
         )

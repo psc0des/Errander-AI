@@ -1,5 +1,21 @@
 # Errander-AI Command Log
 
+## AI Trust Layer Phase 1 — Decision Explainability + Adversarial Tests (2026-05-23)
+
+```bash
+# New test files — all passing
+uv run pytest tests/safety/test_ai_decisions_store.py tests/ai_evals/test_adversarial.py -v  # 30 passed
+
+# Ruff on modified files — check new code is clean
+uv run ruff check errander/observability/metrics.py tests/ai_evals/test_adversarial.py tests/safety/test_ai_decisions_store.py errander/safety/ai_audit.py errander/main.py  # clean on new code
+
+# Mypy on modified source files — only pre-existing errors remain
+uv run mypy errander/safety/ai_audit.py errander/observability/metrics.py  # 1 pre-existing error in metrics.py
+
+# Full suite — 2397 passing
+uv run pytest --tb=no -q  # 2397 passed
+```
+
 ## Post-Residual Fixes — deferred hygiene wiring + doc P2 (2026-05-23)
 
 ```bash

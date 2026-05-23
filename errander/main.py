@@ -269,6 +269,28 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Show recent batch summaries instead of individual events (use with --audit)",
     )
 
+    # AI decision audit query mode
+    parser.add_argument(
+        "--ai-decisions",
+        action="store_true",
+        dest="ai_decisions",
+        help="Query the AI decision audit log and exit",
+    )
+    parser.add_argument(
+        "--ai-decision-show",
+        type=int,
+        metavar="ID",
+        default=None,
+        dest="ai_decision_show",
+        help="Show full detail for a single AI decision by numeric ID, then exit",
+    )
+    parser.add_argument(
+        "--decision-type",
+        default=None,
+        dest="decision_type",
+        help="Filter AI decisions by type, e.g. prioritize_actions (use with --ai-decisions)",
+    )
+
     # Durability measurement
     parser.add_argument(
         "--measure-durability",
@@ -1348,6 +1370,94 @@ async def run_plan_show(plan_id: str, audit_db_url: str) -> int:
     return 0
 
 
+async def run_ai_decisions_query(args: argparse.Namespace, settings: Settings) -> int:
+    """Query the AI decision audit log and print results to stdout."""
+    import json as _json
+    from urllib.parse import urlparse as _urlparse
+
+    from errander.safety.ai_audit import AIDecisionStore
+
+    def _redact_url(url: str) -> str:
+        """Return host:port only from a URL (omits path, credentials)."""
+        try:
+            return _urlparse(url).netloc or url
+        except Exception:  # noqa: BLE001
+            return url
+
+    try:
+        async with AIDecisionStore(settings.audit_db_url) as store:
+            if args.ai_decision_show is not None:
+                decision = await store.get_decision_by_id(args.ai_decision_show)
+                if decision is None:
+                    print(f"AI decision ID {args.ai_decision_show} not found.")
+                    return 1
+                print(f"ID            : {decision.decision_id}")
+                print(f"Batch ID      : {decision.batch_id}")
+                print(f"VM ID         : {decision.vm_id or '(batch-level)'}")
+                print(f"Decision type : {decision.decision_type}")
+                print(f"Model         : {decision.model}")
+                print(f"LLM endpoint  : {_redact_url(decision.base_url)}")
+                print(f"Template ID   : {decision.prompt_template_id}")
+                print(f"Prompt hash   : {decision.prompt_hash}")
+                print(f"Outcome       : {decision.outcome}")
+                if decision.latency_ms is not None:
+                    print(f"Latency       : {decision.latency_ms:.0f} ms")
+                if decision.prompt_tokens is not None:
+                    print(f"Tokens        : {decision.prompt_tokens} prompt / {decision.completion_tokens} completion")
+                print(f"Timestamp     : {decision.timestamp.isoformat()}")
+                if decision.model_params:
+                    try:
+                        mp = _json.loads(decision.model_params)
+                        print(f"Model params  : {_json.dumps(mp)}")
+                    except Exception:  # noqa: BLE001
+                        print(f"Model params  : {decision.model_params}")
+                if decision.context_snapshot:
+                    print()
+                    print("--- Context snapshot ---")
+                    try:
+                        ctx = _json.loads(decision.context_snapshot)
+                        print(_json.dumps(ctx, indent=2))
+                    except Exception:  # noqa: BLE001
+                        print(decision.context_snapshot)
+                if decision.prompt_full:
+                    print()
+                    print("--- Full prompt ---")
+                    print(decision.prompt_full)
+                if decision.response_raw:
+                    print()
+                    print("--- LLM response ---")
+                    print(decision.response_raw)
+                return 0
+
+            # List mode
+            decisions = await store.get_decisions(
+                batch_id=args.batch_id,
+                vm_id=args.vm_id,
+                decision_type=args.decision_type,
+                limit=args.last,
+            )
+            if not decisions:
+                print("No AI decisions found matching the given filters.")
+                return 0
+
+            header = f"{'ID':>6}  {'batch_id':<36}  {'vm_id':<20}  {'type':<20}  {'outcome':<10}  {'ms':>6}  timestamp"
+            print(header)
+            print("-" * len(header))
+            for d in decisions:
+                bid = (d.batch_id or "")[:36]
+                vid = (d.vm_id or "")[:20]
+                dtype = (d.decision_type or "")[:20]
+                outcome = (d.outcome or "")[:10]
+                ms = f"{d.latency_ms:.0f}" if d.latency_ms is not None else "—"
+                ts = d.timestamp.strftime("%Y-%m-%d %H:%M:%S UTC")
+                print(f"{d.decision_id or 0:>6}  {bid:<36}  {vid:<20}  {dtype:<20}  {outcome:<10}  {ms:>6}  {ts}")
+            print(f"\n{len(decisions)} decision(s) shown.")
+            return 0
+    except Exception as exc:  # noqa: BLE001
+        print(f"Error reading AI decision store '{settings.audit_db_url}': {exc}")
+        return 1
+
+
 async def run_audit_query(args: argparse.Namespace, settings: Settings) -> int:
     """Run an audit query and print results to stdout."""
     audit_store = AuditStore(settings.audit_db_url, strict_mode=False)
@@ -1881,6 +1991,10 @@ async def async_main(args: argparse.Namespace) -> int:
     if args.plan_show:
         return await run_plan_show(args.plan_show, settings.audit_db_url)
 
+    # --- AI decision audit: query and exit ---
+    if args.ai_decisions or args.ai_decision_show is not None:
+        return await run_ai_decisions_query(args, settings)
+
     # --- Durability measurement: query and exit ---
     if args.measure_durability:
         return await run_measure_durability(settings.audit_db_url, args.window_days)
@@ -1984,6 +2098,11 @@ async def async_main(args: argparse.Namespace) -> int:
     approval_manager = ApprovalManager()
     hygiene_manager = HygieneApprovalManager()
 
+    # --- AI decision store for Web UI (read-only, separate connection from batch store) ---
+    from errander.safety.ai_audit import AIDecisionStore as _AIDecisionStore
+    ai_decision_store_ui = _AIDecisionStore(settings.audit_db_url)
+    await ai_decision_store_ui.initialize()
+
     try:
         # --- Metrics server ---
         metrics_runner = await start_metrics_server(
@@ -1996,6 +2115,7 @@ async def async_main(args: argparse.Namespace) -> int:
             ui_user=settings.ui_user,
             ui_password=settings.ui_password,
             bind_address=settings.ui_bind_address,
+            ai_decision_store=ai_decision_store_ui,
         )
 
         # --- --run-now mode: run once and exit ---
@@ -2193,6 +2313,7 @@ async def async_main(args: argparse.Namespace) -> int:
     finally:
         if slack is not None:
             await slack.close()
+        await ai_decision_store_ui.close()
         await vm_state_store.close()
         await baseline_store.close()
         await disk_history_store.close()

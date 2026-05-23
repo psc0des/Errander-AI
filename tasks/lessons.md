@@ -1,5 +1,31 @@
 # Errander-AI — Lessons Learned
 
+## 2026-05-23 — `_INJECTION_RE` catches shell metacharacters; unknown commands are caught by the action-type filter
+
+When writing adversarial tests for the prompt injection layer, the regex `_INJECTION_RE` only catches strings containing shell metacharacters (`;&|`, backtick, `$()`, `{}`, `\n`, `../`). Strings like `kubectl delete pod --all` or `docker exec -it bash` don't contain these characters — they are rejected instead by `_parse_action_types()` as unknown action types. Separate the two test cases accordingly: one for `_INJECTION_RE.search()`, one for `_parse_action_types()`.
+
+**Why:** The two-layer defence is complementary, not redundant. The regex handles smuggled shell payloads; the allowlist handles out-of-scope commands. Both must be tested — but testing the wrong one gives a false pass.
+
+**How to apply:** For any new action-type adversarial test, ask "does this payload contain a shell metacharacter?" If yes → `_INJECTION_RE`. If no (arbitrary free-text command) → `_parse_action_types()`.
+
+## 2026-05-23 — `aiosqlite.execute_fetchall()` returns `Iterable[Row]`, not `list[Row]`
+
+Indexing the return value of `execute_fetchall()` with `rows[0]` raises a mypy error: `Value of type "Iterable[Row]" is not indexable`. The fix is to wrap with `list()` before indexing: `rows = list(await db.execute_fetchall(...))`.
+
+**Why:** `aiosqlite` types `execute_fetchall` as returning `Iterable` (the underlying `sqlite3.fetchall()` returns a list at runtime, but the stub is conservative). Mypy strict mode catches this.
+
+**How to apply:** Any new query method that needs to index a result row: wrap with `list()`. Iteration (list comprehension) works fine without wrapping.
+
+## 2026-05-23 — `APIConnectionError` constructor takes `message` keyword arg, not `body`
+
+`openai.APIConnectionError(message="...", request=MagicMock())` is the correct constructor. Passing `body=None` raises `TypeError: __init__() got an unexpected keyword argument 'body'`.
+
+**Why:** The openai SDK's `APIConnectionError.__init__` signature does not accept `body`; that kwarg belongs to `APIStatusError`.
+
+**How to apply:** When mocking openai exceptions: `APITimeoutError(request=mock)`, `APIConnectionError(message="...", request=mock)`, `APIStatusError(message="...", response=mock, body=None)`.
+
+
+
 ## 2026-05-23 — Local imports inside async functions cause ruff I001 (import sort) errors
 
 A `from datetime import UTC, datetime` import placed inside a function body will be flagged by ruff as `I001 [*] Import block is un-sorted or un-formatted`. ruff treats intra-function imports independently and applies isort rules to them.

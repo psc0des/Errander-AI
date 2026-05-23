@@ -63,7 +63,7 @@ _SELECT_SQL = """
 SELECT batch_id, vm_id, decision_type, model, base_url,
        prompt_template_id, prompt_hash, response_raw, outcome,
        latency_ms, prompt_tokens, completion_tokens, timestamp,
-       prompt_full, context_snapshot, model_params
+       prompt_full, context_snapshot, model_params, id
 FROM ai_decisions
 """
 
@@ -104,6 +104,7 @@ class AIDecision:
     prompt_full: str | None = None
     context_snapshot: str | None = None
     model_params: str | None = None
+    decision_id: int | None = None
 
     @staticmethod
     def hash_prompt(prompt: str) -> str:
@@ -230,6 +231,14 @@ class AIDecisionStore:
         rows = await db.execute_fetchall(query, params)
         return [_row_to_decision(row) for row in rows]
 
+    async def get_decision_by_id(self, decision_id: int) -> AIDecision | None:
+        """Return a single AI decision by its primary key, or None if not found."""
+        db = self._ensure_connected()
+        rows = list(await db.execute_fetchall(
+            f"{_SELECT_SQL} WHERE id = ? LIMIT 1", (decision_id,)
+        ))
+        return _row_to_decision(rows[0]) if rows else None
+
 
 def _row_to_decision(row: aiosqlite.Row) -> AIDecision:
     return AIDecision(
@@ -249,4 +258,5 @@ def _row_to_decision(row: aiosqlite.Row) -> AIDecision:
         prompt_full=str(row[13]) if row[13] is not None else None,
         context_snapshot=str(row[14]) if row[14] is not None else None,
         model_params=str(row[15]) if row[15] is not None else None,
+        decision_id=int(str(row[16])) if row[16] is not None else None,
     )

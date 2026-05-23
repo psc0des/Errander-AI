@@ -1,3 +1,17 @@
+## AI Trust Layer — Phase 1: Decision Explainability + Adversarial Tests (2026-05-23, COMPLETE)
+
+**Status:** All items complete. 2397 tests passing, ruff clean on changed files.
+
+- [x] `ai_audit.py` — expose `id` PK in `_SELECT_SQL`, add `decision_id` field + `get_decision_by_id()`
+- [x] `main.py` — `--ai-decisions`, `--ai-decision-show`, `--decision-type` CLI flags + `run_ai_decisions_query()` + long-lived web UI store
+- [x] `metrics.py` — `_AI_DECISION_STORE_KEY`, `_ui_ai_decisions()`, `_ui_ai_decision_detail()`, nav link, routes
+- [x] `tests/safety/test_ai_decisions_store.py` (NEW) — 5 tests
+- [x] `tests/ai_evals/test_adversarial.py` (NEW) — 25 adversarial tests
+- [x] Doc sync: STATUS.md, todo.md, lessons.md, learning/43-ai-decision-explainability.md, README.md test count
+- [x] Green tree: 2397 tests passing
+
+---
+
 ## Post-Residual Fixes — deferred hygiene wiring + doc P2 (2026-05-23, COMPLETE)
 
 **Status:** All 3 findings resolved. 846 agent/main tests passing.

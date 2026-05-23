@@ -4,6 +4,21 @@
 2026-05-23
 
 ## Current Phase
+**AI Trust Layer — Phase 1: Decision Explainability + Adversarial Tests (2026-05-23, COMPLETE).** 2397 tests passing.
+
+Every LLM call that influences a maintenance decision is now surfaced to operators: CLI query flags (`--ai-decisions`, `--ai-decision-show`, `--decision-type`), Web UI at `/ui/ai-decisions` and `/ui/ai-decisions/{id}`, and 30 new adversarial safety tests proving shell injection cannot reach the execution layer.
+
+### Files changed in AI Trust Layer Phase 1 (2026-05-23)
+- `errander/safety/ai_audit.py` — expose `id` PK in `_SELECT_SQL`; add `decision_id` field to `AIDecision`; add `get_decision_by_id()` method
+- `errander/main.py` — `--ai-decisions`, `--ai-decision-show`, `--decision-type` CLI flags; `run_ai_decisions_query()`; long-lived `ai_decision_store_ui` for web UI
+- `errander/observability/metrics.py` — `_AI_DECISION_STORE_KEY`, `_outcome_badge()`, `_redact_base_url()`, `_ui_ai_decisions()`, `_ui_ai_decision_detail()`, nav link, route registration
+- `tests/safety/test_ai_decisions_store.py` (NEW) — 5 tests for `get_decision_by_id()` and `decision_id` roundtrip
+- `tests/ai_evals/test_adversarial.py` (NEW) — 25 adversarial tests: SRE-context injection payloads, LLM exception fallback, audit outcome recording
+- `README.md` — test count updated to 2397; added "What Errander-AI Is — and Is Not" section
+- `tasks/ai-trust-layer-implementation-plan.md` (NEW) — 7-phase implementation plan
+- `docs/learning/43-ai-decision-explainability.md` (NEW)
+
+## Previous Phase
 **Post-Residual Fixes — deferred docker_hygiene wiring + doc P2 (2026-05-23, COMPLETE).** 846 agent/main tests passing.
 
 `_window_opener` was missing `hygiene_manager` in its signature and both `run_env_batch` call sites, so deferred docker_hygiene batches silently skipped object-level approval. Fixed + regression test added. SETUP.md and CLI help also updated to show `.service` suffix on unit names.

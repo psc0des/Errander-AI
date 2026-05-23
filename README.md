@@ -31,18 +31,29 @@ The AI layer prioritizes, explains, correlates, and summarizes maintenance work 
 >
 > **MCP belongs in the operator brain, not in the execution hands.**
 
-## Non-goals
+## What Errander-AI Is — and Is Not
 
-Errander-AI is intentionally narrow. It is **not**:
+Errander-AI is intentionally narrow. Knowing what it deliberately excludes is as important as knowing what it does.
 
-- A monitoring system replacement — pair it with Prometheus, ELK, or your existing stack
-- An application manager — does not deploy, restart, or manage Tomcat, Nginx, Kubernetes, or app services
-- An Ansible / Salt / Puppet replacement — does not run arbitrary playbooks
-- A fully autonomous SRE — every live change requires human approval (HITL)
-- A kernel patching tool — kernel operations are explicitly excluded
-- A configuration management tool — does not enforce desired-state across files
+**What it is:** a safety-gated, supervised execution layer for the recurring Linux fleet maintenance toil you'd otherwise handle with cron, manual SSH, or a fragile playbook. It inspects each host's actual state, proposes a prioritized plan, and executes only after human approval — through deterministic Python, with rollback and full per-action audit.
 
-What it **is**: a safety-gated supervised execution layer for recurring Linux fleet maintenance toil that you'd otherwise do with cron, manual SSH, or a fragile playbook.
+Errander-AI **is**:
+
+- A supervised maintenance agent for small-to-medium Linux fleets (Ubuntu / Debian / RHEL family)
+- A deterministic executor of a fixed action set — non-kernel patching, disk cleanup, log rotation, Docker hygiene, backup verification, and operator-triggered service restart
+- Human-in-the-loop by design — every live change is approved via Slack or Web UI against an **exact-object** plan, never a vague action category
+- LLM-enhanced but never LLM-dependent — the AI prioritizes, explains, and summarizes; hardcoded fallbacks keep it running when the LLM is down
+- Fully private — no public IP, no inbound webhooks; outbound HTTPS to Slack only
+- Auditable — every action is logged before and after execution, one row per object
+
+Errander-AI is **not**:
+
+- A monitoring system — pair it with Prometheus, ELK, or your existing stack. It *reads* from them; it does not replace them
+- An application / runtime manager — it does not deploy or manage Tomcat, Nginx config, Kubernetes, Java GC, or databases
+- An Ansible / Salt / Puppet replacement — it runs no arbitrary playbooks and enforces no desired-state configuration
+- A fully autonomous SRE — it never self-approves; HITL is mandatory for every live change
+- A kernel patching tool — kernel operations are hardcoded out of scope
+- An arbitrary-command runner — the action set is fixed and audited; the LLM never generates shell commands and never touches a terminal
 
 ---
 
@@ -233,7 +244,7 @@ All Slack communication is outbound HTTPS. No webhooks, no inbound traffic.
 | Audit Trail | SQLite (v1) | PostgreSQL planned for v2 |
 | Observability | Prometheus + Web UI | `/metrics`, `/health`, `/ui` on port 9090 |
 | VM Locking | File-based (v1) | Valkey (Redis fork) planned for v2 |
-| Testing | pytest + pytest-asyncio + Playwright | 2366 tests |
+| Testing | pytest + pytest-asyncio + Playwright | 2397 tests |
 | Linting | ruff | |
 | Type Checking | mypy (strict mode) | |
 | Package Manager | uv | |
@@ -284,7 +295,7 @@ errander/
     scheduler.py            # APScheduler setup
     windows.py              # Maintenance window enforcement
   main.py                   # Entry point
-tests/                      # Mirrors src structure (2366 tests)
+tests/                      # Mirrors src structure (2397 tests)
 deploy/
   vllm/
     docker-compose.yml      # vLLM container (GPU passthrough)
@@ -375,7 +386,7 @@ After starting, visit `http://localhost:9090/ui`:
 ## Key Commands
 
 ```bash
-uv run pytest                                          # Run all 2366 tests
+uv run pytest                                          # Run all 2397 tests
 uv run ruff check .                                    # Lint
 uv run mypy .                                          # Type check
 uv run python -m errander --run-now --env dev --dry-run # Dry-run a batch

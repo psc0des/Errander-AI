@@ -35,6 +35,7 @@ from errander.models.events import EventType
 
 if TYPE_CHECKING:
     from errander.models.vm import VMTarget
+    from errander.safety.ai_audit import AIDecisionStore
     from errander.safety.approval import ApprovalManager
     from errander.safety.audit import AuditStore
     from errander.safety.hygiene_approval import HygieneApprovalManager
@@ -52,6 +53,7 @@ _APPROVAL_MANAGER_KEY: web.AppKey[ApprovalManager | None] = web.AppKey("approval
 _HYGIENE_MANAGER_KEY: web.AppKey[HygieneApprovalManager | None] = web.AppKey("hygiene_manager")
 _OVERRIDES_STORE_KEY: web.AppKey[OverridesStore | None] = web.AppKey("overrides_store")
 _BASE_INVENTORY_KEY: web.AppKey[list[VMTarget]] = web.AppKey("base_inventory")
+_AI_DECISION_STORE_KEY: web.AppKey[AIDecisionStore | None] = web.AppKey("ai_decision_store")
 _UI_USER_KEY: web.AppKey[str] = web.AppKey("ui_user")
 _UI_PASSWORD_KEY: web.AppKey[str] = web.AppKey("ui_password")
 
@@ -523,6 +525,8 @@ def _page(
         nav["inventory"] = " on"
     elif t == "glossary & workflow":
         nav["glossary"] = " on"
+    elif t.startswith("ai decision"):
+        nav["ai-decisions"] = " on"
 
     refresh_tag = f'<meta http-equiv="refresh" content="{refresh}">' if refresh else ""
     badge = (
@@ -566,6 +570,9 @@ def _page(
     </a>
     <a href="/ui/glossary" class="sb-a{nav.get('glossary','')}">
       <span class="sb-ico" aria-hidden="true">&#9635;</span>Glossary
+    </a>
+    <a href="/ui/ai-decisions" class="sb-a{nav.get('ai-decisions','')}">
+      <span class="sb-ico" aria-hidden="true">&#9670;</span>AI Decisions
     </a>
     <div class="sb-divider"></div>
     <a href="/metrics" target="_blank" class="sb-a sb-ext">
@@ -1790,6 +1797,180 @@ async def _ui_hygiene_approve_post(request: web.Request) -> web.Response:
 
 
 # ---------------------------------------------------------------------------
+# AI Decisions UI
+# ---------------------------------------------------------------------------
+
+def _outcome_badge(outcome: str) -> str:
+    """Return a coloured badge span for an AI decision outcome."""
+    cls = "bk-ok" if outcome == "success" else ("bk-err" if outcome in ("error", "timeout") else "bk-neu")
+    return f'<span class="badge {cls}">{_esc(outcome)}</span>'
+
+
+def _redact_base_url(url: str) -> str:
+    """Return host:port only — strip path, credentials, scheme."""
+    from urllib.parse import urlparse as _up
+    try:
+        return _up(url).netloc or url
+    except Exception:  # noqa: BLE001
+        return url
+
+
+async def _ui_ai_decisions(request: web.Request) -> web.Response:
+    store: AIDecisionStore | None = request.app.get(_AI_DECISION_STORE_KEY)
+    manager: ApprovalManager | None = request.app.get(_APPROVAL_MANAGER_KEY)
+    pending_count = len(manager.get_pending()) if manager is not None else 0
+
+    if store is None:
+        return _page(
+            "AI Decisions",
+            '<div class="nc">AI decision store not connected.</div>',
+            pending_count=pending_count,
+        )
+
+    decisions = await store.get_decisions(limit=100)
+    rows = [
+        [
+            f'<a class="id-a" href="/ui/ai-decisions/{d.decision_id}">{d.decision_id}</a>'
+            if d.decision_id is not None else "—",
+            f'<a class="id-a" href="/ui/batches/{_uq(d.batch_id)}">{_esc(d.batch_id)}</a>',
+            (
+                f'<a class="id-a" href="/ui/vms/{_uq(d.vm_id)}">{_esc(d.vm_id)}</a>'
+                if d.vm_id
+                else '<span style="color:var(--t3)">—</span>'
+            ),
+            f'<span class="mono">{_esc(d.decision_type)}</span>',
+            _esc(d.model),
+            _esc(_redact_base_url(d.base_url)),
+            _outcome_badge(d.outcome),
+            (
+                f'{d.latency_ms:.0f} ms'
+                if d.latency_ms is not None
+                else '<span style="color:var(--t3)">—</span>'
+            ),
+            f'<span class="mono">{d.timestamp.strftime("%Y-%m-%d %H:%M:%S")}</span>',
+        ]
+        for d in decisions
+    ]
+    body = (
+        _section("AI Decisions", len(decisions))
+        + _table(
+            ["ID", "Batch", "VM", "Type", "Model", "Endpoint", "Outcome", "Latency", "Timestamp (UTC)"],
+            rows,
+        )
+    )
+    return _page("AI Decisions", body, pending_count=pending_count)
+
+
+async def _ui_ai_decision_detail(request: web.Request) -> web.Response:
+    import json as _json
+    store: AIDecisionStore | None = request.app.get(_AI_DECISION_STORE_KEY)
+    manager: ApprovalManager | None = request.app.get(_APPROVAL_MANAGER_KEY)
+    pending_count = len(manager.get_pending()) if manager is not None else 0
+    back = '<a class="back-a" href="/ui/ai-decisions">← All AI decisions</a>'
+
+    try:
+        decision_id = int(request.match_info["decision_id"])
+    except (KeyError, ValueError):
+        return _page(
+            "AI Decision",
+            back + '<div class="nc">Invalid decision ID.</div>',
+            pending_count=pending_count,
+        )
+
+    if store is None:
+        return _page(
+            f"AI Decision {decision_id}",
+            back + '<div class="nc">AI decision store not connected.</div>',
+            pending_count=pending_count,
+        )
+
+    d = await store.get_decision_by_id(decision_id)
+    if d is None:
+        return _page(
+            f"AI Decision {decision_id}",
+            back + '<div class="tbl"><div class="empty">Decision not found.</div></div>',
+            pending_count=pending_count,
+        )
+
+    # Parse model_params for temperature display
+    temperature: str = "—"
+    if d.model_params:
+        try:
+            mp = _json.loads(d.model_params)
+            if isinstance(mp, dict) and "temperature" in mp:
+                temperature = str(mp["temperature"])
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _kv(label: str, value: str) -> str:
+        td = f"<td style='font-weight:600;white-space:nowrap;padding-right:1rem'>{_esc(label)}</td>"
+        return f"<tr>{td}<td>{value}</td></tr>"
+
+    metadata_rows = (
+        _kv("Decision ID", str(d.decision_id))
+        + _kv(
+            "Batch ID",
+            f'<a class="id-a" href="/ui/batches/{_uq(d.batch_id)}">{_esc(d.batch_id)}</a>',
+        )
+        + _kv(
+            "VM ID",
+            f'<a class="id-a" href="/ui/vms/{_uq(d.vm_id)}">{_esc(d.vm_id)}</a>' if d.vm_id else "—",
+        )
+        + _kv("Decision type", f'<span class="mono">{_esc(d.decision_type)}</span>')
+        + _kv("Model", _esc(d.model))
+        + _kv("LLM endpoint", _esc(_redact_base_url(d.base_url)))
+        + _kv("Temperature", _esc(temperature))
+        + _kv("Template ID", f'<span class="mono">{_esc(d.prompt_template_id)}</span>')
+        + _kv("Prompt hash", f'<span class="mono">{_esc(d.prompt_hash)}</span>')
+        + _kv("Outcome", _outcome_badge(d.outcome))
+        + _kv("Latency", f"{d.latency_ms:.0f} ms" if d.latency_ms is not None else "—")
+        + _kv(
+            "Tokens",
+            f"{d.prompt_tokens} prompt / {d.completion_tokens} completion"
+            if d.prompt_tokens is not None
+            else "—",
+        )
+        + _kv("Timestamp", _esc(d.timestamp.isoformat()))
+    )
+
+    body = (
+        back
+        + f'<div class="det-hdr">'
+        f'<div class="det-id">AI Decision #{d.decision_id}</div>'
+        f'<div class="det-sub">{_esc(d.decision_type)} &nbsp;&middot;&nbsp; {_outcome_badge(d.outcome)}</div>'
+        f'</div>'
+        + _section("Metadata")
+        + f'<div class="tbl"><table><tbody>{metadata_rows}</tbody></table></div>'
+    )
+
+    _pre_css = "overflow:auto;background:var(--surface-hi);padding:1rem;border-radius:6px;font-size:.78rem"
+
+    if d.context_snapshot:
+        try:
+            ctx_pretty = _json.dumps(_json.loads(d.context_snapshot), indent=2)
+        except Exception:  # noqa: BLE001
+            ctx_pretty = d.context_snapshot
+        body += (
+            _section("Context snapshot")
+            + f'<pre style="{_pre_css};max-height:24rem">{_esc(ctx_pretty)}</pre>'
+        )
+
+    if d.prompt_full:
+        body += (
+            _section("Full prompt")
+            + f'<pre style="{_pre_css};max-height:32rem">{_esc(d.prompt_full)}</pre>'
+        )
+
+    if d.response_raw:
+        body += (
+            _section("LLM response")
+            + f'<pre style="{_pre_css};max-height:16rem">{_esc(d.response_raw)}</pre>'
+        )
+
+    return _page(f"AI Decision {decision_id}", body, pending_count=pending_count)
+
+
+# ---------------------------------------------------------------------------
 # Server lifecycle
 # ---------------------------------------------------------------------------
 
@@ -1803,6 +1984,7 @@ async def start_metrics_server(
     ui_user: str = "",
     ui_password: str = "",
     bind_address: str = "127.0.0.1",
+    ai_decision_store: AIDecisionStore | None = None,
 ) -> web.AppRunner:
     """Start the Prometheus metrics, health, and web UI HTTP server.
 
@@ -1826,6 +2008,8 @@ async def start_metrics_server(
     - POST /ui/inventory/delete/{env}/{vm}       — Delete an ad-hoc VM
     - GET  /ui/docker-hygiene/approve            — Docker hygiene approval form (signed-URL entry)
     - POST /ui/docker-hygiene/approve            — Submit approval / rejection
+    - GET  /ui/ai-decisions                      — AI decision audit list
+    - GET  /ui/ai-decisions/{id}                 — Full detail for one AI decision
 
     Args:
         port: Port to listen on (default 9090).
@@ -1836,6 +2020,7 @@ async def start_metrics_server(
         base_inventory: Flat list of VMTarget from inventory.yaml — shown as the base fleet on /ui/inventory.
         ui_user: HTTP Basic Auth username for /ui/* (empty = auth disabled).
         ui_password: HTTP Basic Auth password for /ui/*.
+        ai_decision_store: AIDecisionStore for the AI decisions UI pages.
 
     Returns:
         Running AppRunner — call runner.cleanup() on shutdown.
@@ -1866,6 +2051,7 @@ async def start_metrics_server(
     app[_HYGIENE_MANAGER_KEY] = hygiene_manager
     app[_OVERRIDES_STORE_KEY] = overrides_store
     app[_BASE_INVENTORY_KEY] = base_inventory or []
+    app[_AI_DECISION_STORE_KEY] = ai_decision_store
     app[_UI_USER_KEY] = ui_user
     app[_UI_PASSWORD_KEY] = ui_password
     app[_CSRF_SECRET_KEY] = csrf_secret
@@ -1892,6 +2078,8 @@ async def start_metrics_server(
     app.router.add_get("/ui/glossary", _ui_glossary)
     app.router.add_get("/ui/docker-hygiene/approve", _ui_hygiene_approve_get)
     app.router.add_post("/ui/docker-hygiene/approve", _ui_hygiene_approve_post)
+    app.router.add_get("/ui/ai-decisions", _ui_ai_decisions)
+    app.router.add_get(r"/ui/ai-decisions/{decision_id:\d+}", _ui_ai_decision_detail)
 
     runner = web.AppRunner(app, access_log=None)
     await runner.setup()

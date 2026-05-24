@@ -488,7 +488,7 @@ Once you have your LLM endpoint URL, model name, and API key ready, run the inte
 bash scripts/configure.sh
 ```
 
-It will prompt you for LLM credentials, target VMs, verify your SSH key path (create it first in Step 2 if you haven't), and optional Slack — then write `.env` and `inventory.yaml` and verify the LLM connection. Skip to [Step 6 — Verify everything](#step-6--verify-everything) when done.
+It will prompt you for LLM credentials, target VMs, verify your SSH key path (create it first in Step 2 if you haven't), optional Slack — then write `.env` and `inventory.yaml`, verify the LLM connection, and optionally pin SSH host keys (recommended). Skip to [Step 6 — Verify everything](#step-6--verify-everything) when done.
 
 > **Windows note:** `configure.sh` runs in Git Bash (installed with Git for Windows). Open **Git Bash** (not PowerShell) and run the command above from inside the `errander\` folder.
 >
@@ -713,6 +713,11 @@ ERRANDER_UI_DATA_MODE=fixture
 # Base URL for agent VM web UI — used to build signed web-approval URLs
 # in Slack messages (docker_hygiene). Empty = web URL omitted from Slack.
 # ERRANDER_WEB_BASE_URL=http://10.0.0.5:9090
+
+# SSH host key verification
+# Run --bootstrap-known-hosts <env> to pin host keys, then set this to true
+ERRANDER_SSH_STRICT_HOST_KEYS=false
+# ERRANDER_SSH_KNOWN_HOSTS=~/.ssh/errander_known_hosts  # set automatically by --bootstrap-known-hosts
 EOF
 ```
 
@@ -1145,6 +1150,8 @@ Point the Task Scheduler action at this `.bat` file instead.
 | `ERRANDER_UI_SECRET` | No | dev default | HMAC key for 8-hour session cookie — **change before any network exposure** |
 | `ERRANDER_UI_DATA_MODE` | No | `fixture` | UI data source: `fixture` (demo) or `live` (real stores) |
 | `ERRANDER_INVENTORY_PATH` | No | `inventory.yaml` | Path to inventory file — used by the web UI in live mode to read VM identity |
+| `ERRANDER_SSH_STRICT_HOST_KEYS` | No | `true` | SSH host key policy. `false` = TOFU mode (WARNING logged per connection). Set `true` after running `--bootstrap-known-hosts` to enable strict verification. |
+| `ERRANDER_SSH_KNOWN_HOSTS` | No | — | Path to known_hosts file for SSH host key pinning. Set automatically by `--bootstrap-known-hosts` (default: `~/.ssh/errander_known_hosts`). Required when `ERRANDER_SSH_STRICT_HOST_KEYS=true`. |
 
 ---
 

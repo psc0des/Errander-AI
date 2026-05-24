@@ -1,5 +1,13 @@
 # Errander-AI — Lessons Learned
 
+## 2026-05-24 — configure.sh must always write SSH host key vars to .env
+
+`configure.sh` wrote `.env` but included no SSH vars. The SSH module defaults to `strict_host_keys=True` with no `known_hosts_path`, which raises a hard `ConnectionError` on every connection attempt — no warning, no fallback.
+
+**Why:** `ERRANDER_SSH_STRICT_HOST_KEYS` and `ERRANDER_SSH_KNOWN_HOSTS` were late additions (finding #9) and the configure.sh `.env` write block was never updated to include them.
+
+**How to apply:** Any new env var that has a non-permissive default must be included in configure.sh's `.env` write block with a safe default (or a prompt). A setup script is the contract between the code's defaults and a fresh user — if the defaults are strict, the script must bridge the gap. Always add the var to SETUP.md's env var reference table and `.env` template too.
+
 ## 2026-05-24 — `ServiceRestartState` belongs in TYPE_CHECKING at module level, `# noqa: TC001` for local imports
 
 When a TypedDict is used only in type annotations (variable annotations like `x: T = {...}`), move it to `TYPE_CHECKING` to avoid the TC001 lint error. With `from __future__ import annotations`, all annotations are lazy — no runtime import needed. For local imports inside function bodies that can't move to TYPE_CHECKING, add `# noqa: TC001` to suppress.

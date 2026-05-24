@@ -4,11 +4,20 @@
 2026-05-24
 
 ## Current Phase
+**configure.sh SSH host key fix (2026-05-24, COMPLETE).** Working tree clean.
+
+Fixed a setup gap: `configure.sh` wrote `.env` without any SSH host key setting. Since `ERRANDER_SSH_STRICT_HOST_KEYS` defaults to `true` in code, every `--check-targets` run failed with a `ConnectionError` unless the user manually set the var. Fix: (1) always write `ERRANDER_SSH_STRICT_HOST_KEYS=false` to `.env` (TOFU mode — works immediately); (2) new bootstrap prompt after LLM verify — if accepted, runs `--bootstrap-known-hosts <env>` and flips strict to `true`; (3) Done banner now shows `--check-targets <env>` in Step 6. SETUP.md updated: configure.sh description, `.env` template (SSH section), env var table (SSH vars).
+
+### Files changed (2026-05-24 — SSH host key fix)
+- `scripts/configure.sh` — SSH section in `.env` write; bootstrap prompt + sed flip; `--check-targets` in Done banner
+- `SETUP.md` — configure.sh description; SSH section in `.env` template; SSH vars in env var table
+
+## Previous Phase
 **Workspace hygiene — gitignore cleanup (2026-05-24, COMPLETE).** Working tree clean.
 
 Removed 10 untracked artifact files (UI screenshots, SQLite journals, Playwright MCP session dir, temp inventory). Added `.gitignore` patterns for `*.sqlite-journal`, `*.sqlite-wal`, `*.sqlite-shm`, `.playwright-mcp/`, `errander-*.png`, `tmp_*.yaml`, `approvals_text.txt`.
 
-### Files changed (2026-05-24)
+### Files changed (gitignore cleanup, 2026-05-24)
 - `.gitignore` — 3 new ignore sections for SQLite journals, Playwright artifacts, UI QA screenshots
 
 ## Previous Phase

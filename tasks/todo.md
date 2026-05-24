@@ -1,3 +1,13 @@
+## configure.sh SSH host key fix (2026-05-24, COMPLETE)
+
+- [x] Add `ERRANDER_SSH_STRICT_HOST_KEYS=false` to `.env` write in configure.sh (TOFU mode by default)
+- [x] Add SSH bootstrap prompt after LLM verify — runs `--bootstrap-known-hosts <env>`, flips to strict on success
+- [x] Add `--check-targets <env>` to Done banner Step 6
+- [x] SETUP.md: update configure.sh description, add SSH section to `.env` template, add SSH vars to env var table
+- [x] STATUS.md, todo.md, lessons.md, command-log.md doc sync
+
+---
+
 ## Workspace hygiene — gitignore cleanup (2026-05-24, COMPLETE)
 
 - [x] Add `.gitignore` patterns: `*.sqlite-journal/wal/shm`, `.playwright-mcp/`, `errander-*.png`, `tmp_*.yaml`, `approvals_text.txt`

@@ -1,5 +1,30 @@
 # Errander-AI Command Log
 
+## configure.sh SSH host key fix (2026-05-24)
+
+```bash
+# Verified the bug: ERRANDER_SSH_STRICT_HOST_KEYS missing from .env write in configure.sh
+# → agent raised ConnectionError on every SSH attempt after configure.sh completed
+
+# Read ssh.py to understand the strict/TOFU/known_hosts logic
+# Read configure.sh to find the .env write block
+# Read main.py to verify bootstrap_known_hosts runs before load_settings()
+
+# Applied 3 edits to scripts/configure.sh:
+# 1. Added SSH section to .env write block (ERRANDER_SSH_STRICT_HOST_KEYS=false default)
+# 2. Added SSH bootstrap step after LLM verify (prompt + sed flip to true on success)
+# 3. Added --check-targets <env> to Done banner Step 6
+
+# Applied 3 edits to SETUP.md:
+# 1. Updated configure.sh quick-path description to mention SSH host key pinning
+# 2. Added SSH section to manual .env template in Step 5
+# 3. Added ERRANDER_SSH_STRICT_HOST_KEYS + ERRANDER_SSH_KNOWN_HOSTS to env var table
+
+# Verified git status — changes not yet committed (user decides when to commit)
+git status --short
+git diff --stat
+```
+
 ## Workspace hygiene — gitignore cleanup (2026-05-24)
 
 ```bash

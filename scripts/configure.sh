@@ -513,6 +513,10 @@ _env_slack_token=""
         echo "# ERRANDER_ELK_API_KEY=your-api-key"
         echo "# ERRANDER_ELK_INDEX_PATTERN=filebeat-*,logstash-*"
     fi
+    echo ""
+    echo "# SSH host key verification"
+    echo "# Run --bootstrap-known-hosts <env> to pin host keys, then set this to true"
+    echo "ERRANDER_SSH_STRICT_HOST_KEYS=false"
 } > .env
 
 chmod 600 .env
@@ -557,6 +561,31 @@ else
     warn "Edit .env and re-run:  uv run python -m errander --check-llm"
 fi
 
+# ── SSH host key bootstrap ─────────────────────────────────────────────────────
+if [ "$VM_COUNT" -gt 0 ] && [ -f "$SSH_KEY_EXPANDED" ]; then
+    echo ""
+    warn "SSH host key bootstrap (recommended)"
+    echo "  Pins each VM's host key so Errander verifies identity on every connection."
+    echo "  Without this, TOFU mode is active (WARNING logged per connection)."
+    echo ""
+    printf "  Pin host keys now? (Y/n): "
+    read -r _pin || true
+    echo ""
+    case "${_pin,,}" in
+      n|no)
+        ok "Skipping — TOFU mode active (ERRANDER_SSH_STRICT_HOST_KEYS=false in .env)"
+        ;;
+      *)
+        if uv run python -m errander --bootstrap-known-hosts "$ENV_NAME" --inventory inventory.yaml; then
+            sed -i 's/^ERRANDER_SSH_STRICT_HOST_KEYS=false/ERRANDER_SSH_STRICT_HOST_KEYS=true/' .env
+            ok "Host keys pinned — strict mode enabled (ERRANDER_SSH_STRICT_HOST_KEYS=true)"
+        else
+            warn "Bootstrap failed — TOFU mode remains active (ERRANDER_SSH_STRICT_HOST_KEYS=false)"
+        fi
+        ;;
+    esac
+fi
+
 # ── Done ──────────────────────────────────────────────────────────────────────
 echo ""
 echo -e "${BOLD}═══════════════════════════════════════════${NC}"
@@ -592,6 +621,7 @@ echo "  Next steps (continue from SETUP.md Step 6):"
 echo ""
 echo "  Step 6 — Verify:"
 echo "    uv run python -m errander --check-inventory"
+echo "    uv run python -m errander --check-targets ${ENV_NAME}"
 echo "    (LLM connection already verified above)"
 echo ""
 echo "  Step 7 — Dry-run:"

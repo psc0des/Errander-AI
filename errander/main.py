@@ -1032,7 +1032,13 @@ async def run_ask_query(
         if _ask_elk_url else None
     )
 
-    async with audit_store:
+    from errander.safety.ai_audit import AIDecisionStore as _AIDecisionStoreAsk
+    ai_decision_store_ask = _AIDecisionStoreAsk(settings.audit_db_url)
+
+    async with (
+        audit_store,
+        ai_decision_store_ask,
+    ):
         await disk_history_store.initialize()
         await baseline_store.initialize()
 
@@ -1048,6 +1054,7 @@ async def run_ask_query(
                 llm_client=llm,
                 prometheus_client=prom,
                 elk_client=elk_ask,
+                ai_decision_store=ai_decision_store_ask,
             )
         finally:
             if prom is not None:
@@ -1058,7 +1065,7 @@ async def run_ask_query(
     print(f"\n[{response.risk_level.upper()} RISK] {response.summary}\n")
     print("Findings:")
     for finding in response.findings:
-        print(f"  - {finding}")
+        print(f"  - {finding.text}")
     if response.recommendations:
         print("\nRecommendations:")
         for rec in response.recommendations:

@@ -4,13 +4,18 @@
 2026-05-24
 
 ## Current Phase
-**AI Trust Layer — Phase 6a: Provider Prefix/Input Caching (2026-05-24, COMPLETE).** 2496 tests passing.
+**AI Trust Layer — SRE Trust Gap Fixes (2026-05-24, COMPLETE).** 2505 tests passing.
 
-`LLMClient` now auto-detects Anthropic endpoints (`"anthropic.com"` in `base_url`) and attaches `cache_control: {"type": "ephemeral"}` breakpoints to the stable system-prompt content block, enabling Anthropic's prompt prefix caching. For OpenAI/vLLM endpoints, prefix caching is automatic when the prompt prefix is byte-stable — `_SYSTEM_PROMPT` is a plain constant with no volatile interpolation. New `_build_messages()` method isolates the message-building logic. 11 new tests covering detection, message format, and prompt stability.
+Addressed four SRE findings: (1) centralized LLM redaction — `ContextRedactor` now applied belt-and-suspenders inside `LLMClient.complete()` and at each of the three LLM paths in `decisions.py` (prioritize, analyze_failure, generate_report); (2) `OperatorAssistant.investigate()` now accepts optional `AIDecisionStore` and logs every LLM call as `decision_type="operator_assistant"` with timing and outcome; (3) LLM-returned `finding.evidence` IDs are validated against `context.sources_used` — unknown IDs are stripped with a warning; (4) pre-existing ruff/mypy errors documented as tracked debt in todo.md. 9 new targeted tests. All changed files ruff-clean.
 
-### Files changed in AI Trust Layer Phase 6a (2026-05-24)
-- `errander/integrations/llm.py` — `_prefix_cache` flag (auto from base_url); `_build_messages()`; `complete()` uses `_build_messages()`
-- `tests/integrations/test_llm.py` — `TestPrefixCaching` (11 tests)
+### Files changed in SRE Trust Gap Fixes (2026-05-24)
+- `errander/integrations/llm.py` — `ContextRedactor` belt-and-suspenders redaction in `complete()`
+- `errander/agent/decisions.py` — `_REDACTOR` at module level; redact in `prioritize_actions`, `analyze_failure`, `generate_report`
+- `errander/agent/operator_assistant.py` — `ai_decision_store` param; timing + audit log; evidence validation
+- `errander/main.py` — open `AIDecisionStore` for `--ask` queries; pass to `investigate()`; fix `finding.text` print
+- `tests/agent/test_decisions.py` — `TestRedactionInDecisionPaths` (4 tests)
+- `tests/agent/test_operator_assistant.py` — 5 audit + evidence validation tests
+- `docs/learning/49-sre-trust-gap-fixes.md` (NEW)
 
 ## Previous Phase
 **AI Trust Layer — Phase 5: Source Citation for AI Answers (2026-05-24, COMPLETE).** 2485 tests passing.

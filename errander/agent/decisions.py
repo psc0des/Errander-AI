@@ -36,10 +36,13 @@ if TYPE_CHECKING:
     from errander.models.vm import VMInfo
     from errander.safety.ai_audit import AIDecisionStore
 
+from errander.safety.context_redactor import ContextRedactor
+
 logger = logging.getLogger(__name__)
 
 # Reject LLM output strings that contain shell-like injection patterns (finding #3.2).
 _INJECTION_RE = re.compile(r"[;&|`$(){}\\\n]|\.\./")
+_REDACTOR = ContextRedactor()
 
 
 def _as_float(val: object) -> float | None:
@@ -165,6 +168,9 @@ async def prioritize_actions(
 
     if llm_client is not None:
         prompt = _build_prioritize_prompt(vm_info, available_actions, stored_signals)
+        prompt, _rc = _REDACTOR.redact(prompt)
+        if _rc:
+            logger.warning("Redacted %d secret(s) from prioritize_actions prompt", _rc)
         prompt_hash = AIDecision.hash_prompt(prompt)
         t0 = time.monotonic()
         outcome = "fallback"
@@ -307,6 +313,9 @@ async def analyze_failure(
     """
     if llm_client is not None:
         prompt = _build_failure_prompt(action_type, error, context)
+        prompt, _rc = _REDACTOR.redact(prompt)
+        if _rc:
+            logger.warning("Redacted %d secret(s) from analyze_failure prompt", _rc)
         result = await llm_client.complete(prompt, _FailureAnalysis)
         if result is not None:
             rec = result.recommendation.lower().strip()
@@ -346,6 +355,9 @@ async def generate_report(
     """
     if llm_client is not None:
         prompt = _build_report_prompt(results, batch_id)
+        prompt, _rc = _REDACTOR.redact(prompt)
+        if _rc:
+            logger.warning("Redacted %d secret(s) from generate_report prompt", _rc)
         result = await llm_client.complete(prompt, _Report)
         if result is not None and result.report.strip():
             logger.info("LLM-generated report for batch %s", batch_id)

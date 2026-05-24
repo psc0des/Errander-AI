@@ -1,5 +1,29 @@
 # Errander-AI — Lessons Learned
 
+## 2026-05-24 — Belt-and-suspenders redaction: centralize at the LLM client AND at each call site
+
+When adding a redaction layer, don't assume callers will always redact before calling `LLMClient.complete()`. Apply redaction inside `complete()` as a final safety net. Callers should still redact before storing `prompt_full` in the audit log (since `complete()` only sees the prompt string, not the audit record). Two distinct risks: (1) secret leaks to the model, (2) secret leaks to the audit DB. Both need independent guards.
+
+**Why:** SRE review found that `decisions.py` had three LLM call paths, none of which applied the `ContextRedactor` that was added in Phase 3 for `operator_assistant`. The new pattern is `_REDACTOR` at module level + redact at each call site in `decisions.py`, plus `_REDACTOR` inside `LLMClient.complete()` as the backstop.
+
+**How to apply:** When adding any new LLM call path, always: (1) apply `_REDACTOR.redact(prompt)` before calling `complete()`, (2) store the redacted prompt as `prompt_full`, (3) log a warning if `_redaction_count > 0`.
+
+## 2026-05-24 — Audit LLM calls via AIDecisionStore at every LLM entry point
+
+`AIDecisionStore` logs every LLM call for explainability. When adding a new LLM entry point (like `OperatorAssistant.investigate()`), wire in an optional `ai_decision_store: AIDecisionStore | None = None` parameter and log the call with timing, outcome, and redacted prompt. Do not require the store — keep it optional so the function works in tests and CLIs that don't open a DB.
+
+**Why:** The `investigate()` function was the only LLM path with no audit trail. SRE flagged this as a gap — operators can see batch decisions but not ask-query decisions.
+
+**How to apply:** Pattern: `t0 = time.monotonic()` → call LLM → `latency_ms = round((time.monotonic() - t0) * 1000, 1)` → `outcome = "success" | "fallback" | "error"` → `await store.log(AIDecision(...))` if store is not None.
+
+## 2026-05-24 — Validate LLM-returned source IDs against known sources
+
+When the LLM returns `finding.evidence` (a list of source IDs), validate each ID against `context.sources_used`. Unknown IDs indicate the model hallucinated a source. Strip them and log a warning rather than raising — the finding is still useful, just with fewer citations.
+
+**Why:** Without validation, a model could return arbitrary strings in `evidence` that mislead operators about what data the finding is based on.
+
+**How to apply:** After parsing the LLM response, compute `valid_sources = set(context.sources_used)`. If non-empty, filter each finding's evidence with `[e for e in finding.evidence if e in valid_sources]`.
+
 ## 2026-05-24 — Use `@computed_field` for model properties that must always be derived
 
 When adding a field that is always derived from other fields (e.g., `confidence` from `sample_size`), use Pydantic v2's `@computed_field` + `@property` instead of a regular field with a default. This avoids callers ever passing an inconsistent value, keeps the single source of truth in the model, and doesn't break existing instantiations.

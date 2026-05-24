@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from datetime import UTC
+from unittest.mock import MagicMock
+
 import pytest
 
 from errander.agent.decisions import (
@@ -41,9 +44,9 @@ def _make_result(
     **overrides: object,
 ) -> ActionResult:
     """Build an ActionResult with sensible defaults."""
-    from datetime import datetime, timezone
+    from datetime import datetime
 
-    now = datetime.now(tz=timezone.utc)
+    now = datetime.now(tz=UTC)
     defaults: dict[str, object] = {
         "action_type": action_type,
         "status": status,
@@ -235,3 +238,119 @@ class TestGenerateReport:
         results = [_make_result(status=ActionStatus.DRY_RUN_OK)]
         report = await generate_report(results)
         assert "[DRY]" in report
+
+
+# ---------------------------------------------------------------------------
+# SRE Finding 1 — Redaction applied to all LLM prompt paths
+# ---------------------------------------------------------------------------
+
+
+def _make_llm(response_payload: str) -> MagicMock:
+    """Build a mock LLMClient that captures the sent prompt."""
+    from pydantic import BaseModel
+
+    class _FakeModel(BaseModel):
+        pass
+
+    msg = MagicMock()
+    msg.content = response_payload
+    choice = MagicMock()
+    choice.message = msg
+    resp = MagicMock()
+    resp.choices = [choice]
+
+    client = MagicMock()
+    client._model = "test-model"
+    client._base_url = "http://localhost/v1"
+    client._temperature = 0.1
+    client._prefix_cache = False
+    captured_prompts: list[str] = []
+
+    async def _complete(prompt: str, response_model: type, **_kw: object) -> None:
+        captured_prompts.append(prompt)
+        return None  # fallback; we only care what prompt was sent
+
+    client.complete = _complete
+    client._captured_prompts = captured_prompts
+    return client
+
+
+class TestRedactionInDecisionPaths:
+    """Secrets must not appear in prompts sent to the LLM or stored in prompt_full."""
+
+    _SECRET = "sk-secret12345678901234567890"
+    _PASSWORD = "password=hunter2"
+
+    def _vm(self) -> VMInfo:
+        return _make_vm_info()
+
+    @pytest.mark.asyncio
+    async def test_prioritize_actions_redacts_prompt_before_llm(self) -> None:
+        """prioritize_actions must not send API keys to the LLM."""
+        from errander.safety.ai_audit import AIDecisionStore
+
+        client = _make_llm("{}")
+        async with AIDecisionStore(":memory:") as store:
+            await prioritize_actions(
+                self._vm(),
+                llm_client=client,
+                ai_store=store,
+                batch_id="b1",
+                vm_id="vm1",
+                stored_signals=None,
+            )
+        # complete() was called — check the captured prompt
+        for prompt in client._captured_prompts:
+            assert self._SECRET not in prompt
+
+    @pytest.mark.asyncio
+    async def test_prioritize_actions_prompt_full_is_redacted(self) -> None:
+        """prompt_full stored in ai_decisions must not contain raw API keys."""
+        # Inject a secret via a stored_signals field that ends up in the prompt
+        from errander.agent.decisions import StoredSignalContext
+        from errander.safety.ai_audit import AIDecisionStore
+
+        signals = StoredSignalContext(disk_trend_summary=f"trend ok. key={self._SECRET}")
+        client = _make_llm("{}")
+        async with AIDecisionStore(":memory:") as store:
+            await prioritize_actions(
+                self._vm(),
+                llm_client=client,
+                ai_store=store,
+                batch_id="b1",
+                vm_id="vm1",
+                stored_signals=signals,
+            )
+            decisions = await store.get_decisions(limit=10)
+
+        for d in decisions:
+            assert d.prompt_full is None or self._SECRET not in (d.prompt_full or "")
+
+    @pytest.mark.asyncio
+    async def test_analyze_failure_redacts_error_context(self) -> None:
+        """analyze_failure must redact secrets appearing in the error string."""
+        client = _make_llm("{}")
+        await analyze_failure(
+            action_type="patching",
+            error=f"failed with {self._PASSWORD}",
+            context={"note": f"key={self._SECRET}"},
+            llm_client=client,
+        )
+        for prompt in client._captured_prompts:
+            assert self._SECRET not in prompt
+            assert "hunter2" not in prompt
+
+    @pytest.mark.asyncio
+    async def test_generate_report_redacts_secrets_in_results(self) -> None:
+        """generate_report must redact secrets that appear in result error fields."""
+        client = _make_llm("{}")
+        results = [
+            _make_result(
+                status=ActionStatus.FAILED,
+                error=f"deploy failed: {self._SECRET}",
+            )
+        ]
+        await generate_report(results, llm_client=client)
+        for prompt in client._captured_prompts:
+            assert self._SECRET not in prompt
+

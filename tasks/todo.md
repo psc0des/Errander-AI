@@ -1,3 +1,20 @@
+## SRE Trust Gap Fixes (2026-05-24, COMPLETE)
+
+**Status:** All items complete. 2505 tests passing, ruff clean on changed files.
+
+- [x] Finding 1: centralize LLM redaction — `_REDACTOR` in `decisions.py`; belt-and-suspenders in `LLMClient.complete()`
+- [x] Finding 2: `OperatorAssistant.investigate()` accepts `ai_decision_store`; logs `AIDecision(decision_type="operator_assistant")`
+- [x] Finding 3: validate `finding.evidence` IDs against `context.sources_used`; strip unknowns
+- [x] Finding 4 (debt): pre-existing ruff/mypy errors documented below — not introduced by AI Trust Layer work
+- [x] 9 new targeted tests: `TestRedactionInDecisionPaths` (4) + 5 audit/evidence tests
+- [x] Doc sync: STATUS.md, todo.md, lessons.md, command-log.md, README.md, learning/49-sre-trust-gap-fixes.md
+
+### Pre-existing ruff/mypy debt (tracked, not from AI Trust Layer)
+- `mypy errander/main.py` has 4 pre-existing errors: `attr-defined` for `ServiceRestartState`, `call-arg` for `SandboxExecutor`, `unused-ignore`, `arg-type` for `AsyncSqliteSaver` checkpointer
+- `ruff check .` pre-existing errors (not from AI Trust Layer changes) — tracked for cleanup in a future chore commit
+
+---
+
 ## AI Trust Layer — Phase 6a: Provider Prefix/Input Caching (2026-05-24, COMPLETE)
 
 **Status:** All items complete. 2496 tests passing, ruff + mypy clean on changed files.

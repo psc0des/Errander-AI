@@ -24,6 +24,9 @@ from openai import APIConnectionError, APIStatusError, APITimeoutError, AsyncOpe
 from pydantic import BaseModel, ValidationError
 
 from errander.observability.metrics import LLM_REQUESTS_TOTAL
+from errander.safety.context_redactor import ContextRedactor
+
+_REDACTOR = ContextRedactor()
 
 logger = logging.getLogger(__name__)
 
@@ -125,6 +128,15 @@ class LLMClient:
             is unreachable, times out, or returns unparseable output.
         """
         effective_timeout = timeout_seconds or self._timeout_seconds
+        # Belt-and-suspenders: redact secrets from every prompt before it leaves the agent.
+        # Callers that already redact (e.g. OperatorAssistant) produce a no-op second pass.
+        prompt, _redaction_count = _REDACTOR.redact(prompt)
+        if _redaction_count:
+            logger.warning(
+                "LLMClient.complete(): redacted %d secret(s) from prompt — "
+                "caller should redact before storing prompt_full",
+                _redaction_count,
+            )
 
         for attempt in range(self._max_retries + 1):
             try:

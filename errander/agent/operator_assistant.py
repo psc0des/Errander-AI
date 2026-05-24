@@ -16,7 +16,9 @@ built directly from the FleetContext. The agent never blocks on LLM.
 
 from __future__ import annotations
 
+import json
 import logging
+import time
 from typing import TYPE_CHECKING
 
 from errander.models.analysis import AssistantResponse, Finding, FleetContext, VMSignalSummary
@@ -28,6 +30,7 @@ if TYPE_CHECKING:
     from errander.integrations.elk import ElkClient
     from errander.integrations.llm import LLMClient
     from errander.integrations.prometheus import PrometheusClient
+    from errander.safety.ai_audit import AIDecisionStore
     from errander.safety.audit import AuditStore
     from errander.safety.baselines import BaselineStore
     from errander.safety.disk_history import VMDiskHistoryStore
@@ -68,10 +71,12 @@ class OperatorAssistant:
         prometheus_client: PrometheusClient | None = None,
         elk_client: ElkClient | None = None,
         vm_facts_store: VMFactsStore | None = None,
+        ai_decision_store: AIDecisionStore | None = None,
     ) -> AssistantResponse:
         """Build fleet context, call LLM, return structured findings.
 
         Falls back to deterministic summary if LLM is unavailable or fails.
+        All LLM calls are logged to ai_decision_store when provided.
         """
         context = await self._build_context(
             audit_store=audit_store,
@@ -100,9 +105,53 @@ class OperatorAssistant:
                     "Redacted %d secret pattern(s) from LLM prompt",
                     redaction_stats.total_redactions,
                 )
+
+            t0 = time.monotonic()
             result = await llm_client.complete(prompt, AssistantResponse)
+            latency_ms = round((time.monotonic() - t0) * 1000, 1)
+            outcome = "success" if result is not None else "fallback"
+
             if result is not None:
+                # Validate citation evidence against known source IDs.
+                valid_sources = set(context.sources_used)
+                if valid_sources:
+                    for finding in result.findings:
+                        invalid = [e for e in finding.evidence if e not in valid_sources]
+                        if invalid:
+                            logger.warning(
+                                "LLM cited unknown source(s) %s — removing from evidence",
+                                invalid,
+                            )
+                            finding.evidence = [
+                                e for e in finding.evidence if e in valid_sources
+                            ]
                 result.data_sources = context.sources_used
+
+            if ai_decision_store is not None:
+                from errander.safety.ai_audit import AIDecision
+                await ai_decision_store.log(AIDecision(
+                    batch_id="ask",
+                    vm_id=None,
+                    decision_type="operator_assistant",
+                    model=getattr(llm_client, "_model", "unknown"),
+                    base_url=getattr(llm_client, "_base_url", ""),
+                    prompt_template_id="operator_assistant_v1",
+                    prompt_hash=AIDecision.hash_prompt(prompt),
+                    response_raw=result.model_dump_json() if result is not None else None,
+                    outcome=outcome,
+                    latency_ms=latency_ms,
+                    prompt_full=prompt,
+                    context_snapshot=json.dumps({
+                        "sources_used": context.sources_used,
+                        "vm_count": len(context.vm_summaries),
+                        "env_name": context.env_name,
+                    }),
+                    model_params=json.dumps({
+                        "temperature": getattr(llm_client, "_temperature", None),
+                    }),
+                ))
+
+            if result is not None:
                 return result
             logger.warning("LLM unavailable or response unparseable -- using fallback")
 

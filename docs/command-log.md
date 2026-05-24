@@ -1,5 +1,24 @@
 # Errander-AI Command Log
 
+## SRE Trust Gap Fixes (2026-05-24)
+
+```bash
+# Targeted tests for SRE findings 1-3
+uv run pytest tests/agent/test_decisions.py tests/agent/test_operator_assistant.py tests/integrations/test_llm.py -q  # 91 passed
+
+# Ruff auto-fix on changed files
+uv run ruff check --fix errander/agent/operator_assistant.py tests/agent/test_decisions.py  # 8 fixed, 0 remaining
+
+# Verify ruff clean
+uv run ruff check errander/integrations/llm.py errander/agent/decisions.py errander/agent/operator_assistant.py errander/main.py tests/agent/test_decisions.py tests/agent/test_operator_assistant.py  # All checks passed
+
+# Mypy on changed files (pre-existing errors in main.py, not from our changes)
+uv run mypy errander/integrations/llm.py errander/agent/decisions.py errander/agent/operator_assistant.py errander/main.py  # 4 pre-existing errors in main.py
+
+# Full suite
+uv run pytest --tb=short -q  # 2505 passed
+```
+
 ## AI Trust Layer Phase 4 — Operational Memory Confidence (2026-05-24)
 
 ```bash

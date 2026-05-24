@@ -494,6 +494,10 @@ bash scripts/configure.sh
 
 It will prompt you for LLM credentials, target VMs, verify your SSH key path (create it first in Step 2 if you haven't), optional Slack — then write `.env` and `inventory.yaml`, verify the LLM connection, and optionally pin SSH host keys (recommended). Skip to [Step 6 — Verify everything](#step-6--verify-everything) when done.
 
+> **Want Docker hygiene or service restart?** These require wrapper scripts installed on each target VM before `configure.sh` runs. Follow the optional sections first, then come back here:
+> - [Optional: Docker hygiene](#optional-docker-hygiene) — install `errander-docker-assess-v2` and `errander-docker-remove-v2` wrappers
+> - [Optional: Service restart](#optional-service-restart) — install `errander-systemctl-restart` wrapper and configure the allowlist
+
 > **Windows note:** `configure.sh` runs in Git Bash (installed with Git for Windows). Open **Git Bash** (not PowerShell) and run the command above from inside the `errander\` folder.
 >
 > **Prefer to configure manually?** Follow Steps 4–6 below instead.

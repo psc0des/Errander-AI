@@ -18,7 +18,7 @@ from __future__ import annotations
 import json
 import logging
 import time
-from typing import TypeVar
+from typing import Any, TypeVar
 
 from openai import APIConnectionError, APIStatusError, APITimeoutError, AsyncOpenAI
 from pydantic import BaseModel, ValidationError
@@ -84,7 +84,7 @@ class LLMClient:
             max_retries=0,  # we handle retries ourselves
         )
 
-    def _build_messages(self, prompt: str) -> list[dict[str, object]]:
+    def _build_messages(self, prompt: str) -> list[Any]:
         """Build the messages list for a completion request.
 
         For Anthropic endpoints, wraps the system prompt in a content block with
@@ -93,7 +93,7 @@ class LLMClient:
         automatic and requires no extra fields).
         """
         if self._prefix_cache:
-            system_content: str | list[dict[str, object]] = [
+            system_content: Any = [
                 {
                     "type": "text",
                     "text": _SYSTEM_PROMPT,

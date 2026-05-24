@@ -899,20 +899,17 @@ Run these in order:
 uv run python -m errander --check-inventory
 ```
 
-**2. Load env vars** *(required for all remaining commands)*
+**2. Load env vars**
 
-```bash
-# Linux / Git Bash
-set -a; source .env; set +a
-```
+The agent loads `.env` automatically at startup — no manual sourcing needed. The only exception is `--check-inventory`, which runs before the app initialises (step 1 above, already covered).
 
-```powershell
-# Windows PowerShell
-Get-Content .env | Where-Object { $_ -notmatch "^#" -and $_ -ne "" } | ForEach-Object {
-    $parts = $_ -split "=", 2
-    [System.Environment]::SetEnvironmentVariable($parts[0], $parts[1], "Process")
-}
-```
+> **Windows PowerShell only** — PowerShell's environment isolation means `.env` values set inside a `uv run` subprocess are not visible to the parent shell for *subsequent* commands. If you chain commands in a single PowerShell session and need vars visible to PowerShell itself (not just errander), load them once:
+> ```powershell
+> Get-Content .env | Where-Object { $_ -notmatch "^#" -and $_ -ne "" } | ForEach-Object {
+>     $parts = $_ -split "=", 2
+>     [System.Environment]::SetEnvironmentVariable($parts[0], $parts[1], "Process")
+> }
+> ```
 
 **3. Verify LLM connectivity**
 
@@ -929,11 +926,7 @@ uv run python -m errander --check-llm
 uv run python -m errander --bootstrap-known-hosts <your-env-name>
 ```
 
-This pins the host keys and automatically adds `ERRANDER_SSH_KNOWN_HOSTS` to your `.env`. **Reload env vars now** — without this step, `--check-targets` will still report the key as missing:
-
-```bash
-set -a; source .env; set +a
-```
+This pins the host keys and automatically adds `ERRANDER_SSH_KNOWN_HOSTS` to your `.env`. The next errander command picks it up automatically.
 
 **5. Verify target VM readiness**
 
@@ -998,11 +991,10 @@ Skip this step to use SSH-probe fallback for all VMs (slightly higher SSH auth-l
 
 Replace `<your-env-name>` with the environment name from your `inventory.yaml` (e.g. `dev`, `dr`, `production`).
 
-The agent reads credentials from environment variables — load `.env` first, then run.
+The agent loads `.env` automatically.
 
 **Linux / Git Bash:**
 ```bash
-set -a; source .env; set +a
 uv run python -m errander --run-now --env <your-env-name> --inventory inventory.yaml --dry-run --force --force-reason "initial dry-run validation"
 ```
 
@@ -1031,7 +1023,6 @@ Once dry-run looks correct (replace `<your-env-name>` as above):
 
 **Linux / Git Bash:**
 ```bash
-set -a; source .env; set +a
 uv run python -m errander --run-now --env <your-env-name> --inventory inventory.yaml --live
 ```
 

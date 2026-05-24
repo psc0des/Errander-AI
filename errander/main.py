@@ -2417,6 +2417,8 @@ async def async_main(args: argparse.Namespace) -> int:
 
 def main(argv: list[str] | None = None) -> None:
     """Synchronous entry point — parses args and runs the async main."""
+    from dotenv import load_dotenv
+    load_dotenv()  # no-op if .env absent; never overrides vars already in the environment
     args = _parse_args(argv)
 
     logging.basicConfig(

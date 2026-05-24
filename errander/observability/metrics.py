@@ -876,29 +876,29 @@ async def _ui_login_get(request: web.Request) -> web.Response:
     <div class="l-feat">
       <div class="l-feat-icon">&#9632;</div>
       <div class="l-feat-body">
-        <div class="l-feat-title">Supervised patch management</div>
-        <div class="l-feat-desc">Non-kernel OS patching with full rollback on failure.</div>
+        <div class="l-feat-title">Autonomous fleet maintenance</div>
+        <div class="l-feat-desc">OS patching, log rotation, Docker hygiene, disk cleanup — scheduled and supervised.</div>
       </div>
     </div>
     <div class="l-feat">
       <div class="l-feat-icon">&#10003;</div>
       <div class="l-feat-body">
-        <div class="l-feat-title">Slack-gated approvals</div>
-        <div class="l-feat-desc">Every live change requires a human ✅ reaction before execution.</div>
+        <div class="l-feat-title">Human-in-the-loop approvals</div>
+        <div class="l-feat-desc">Every live change requires a Slack ✅ before anything touches your VMs.</div>
       </div>
     </div>
     <div class="l-feat">
       <div class="l-feat-icon">&#9670;</div>
       <div class="l-feat-body">
-        <div class="l-feat-title">Exact-object safety</div>
-        <div class="l-feat-desc">Operators approve exact object IDs — never vague action categories.</div>
+        <div class="l-feat-title">Safe by design</div>
+        <div class="l-feat-desc">Exact-object approvals, drift detection, rollback on failure — no surprises.</div>
       </div>
     </div>
     <div class="l-feat">
       <div class="l-feat-icon">&#9776;</div>
       <div class="l-feat-body">
         <div class="l-feat-title">Full audit trail</div>
-        <div class="l-feat-desc">Every action logged before and after execution, with drift detection.</div>
+        <div class="l-feat-desc">Every action on every VM logged before and after, queryable from this UI.</div>
       </div>
     </div>
   </div>

@@ -432,6 +432,8 @@ The agent will not interrupt a running SSH command mid-flight — it finishes th
 | `--ai-decisions` | Query the AI decision audit log and exit |
 | `--ai-decision-show <id>` | Show full detail for a single AI decision by numeric ID, then exit |
 | `--decision-type <type>` | Filter `--ai-decisions` by decision type (e.g. `prioritize_actions`) |
+| `--ai-eval-replay` | Replay stored LLM decisions against a candidate model and print pass/fail/error summary |
+| `--eval-model <id>` | Model ID to use as the candidate in `--ai-eval-replay` (default: current `ERRANDER_LLM_MODEL`) |
 
 ---
 

@@ -115,6 +115,8 @@ llm:
 
 Use `claude-sonnet-4-6` for higher quality at higher cost.
 
+**Prefix caching:** Errander-AI automatically attaches `cache_control` breakpoints to the stable system-prompt content block when `ERRANDER_LLM_BASE_URL` contains `anthropic.com`. This enables Anthropic's prompt prefix caching — no extra configuration needed.
+
 ---
 
 ## Option E: Groq

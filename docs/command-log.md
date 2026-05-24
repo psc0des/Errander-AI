@@ -1,5 +1,19 @@
 # Errander-AI Command Log
 
+## AI Trust Layer Phase 4 — Operational Memory Confidence (2026-05-24)
+
+```bash
+# Phase 4 targeted tests
+uv run pytest tests/safety/test_vm_facts.py tests/agent/test_operator_assistant_facts.py -q  # 41 passed
+
+# Ruff + mypy on changed files
+uv run ruff check errander/safety/vm_facts.py errander/agent/operator_assistant.py  # clean
+uv run mypy errander/safety/vm_facts.py errander/agent/operator_assistant.py  # clean
+
+# Full suite
+uv run pytest --tb=short -q  # 2475 passed
+```
+
 ## AI Trust Layer Phase 2 — Prompt Versioning & Replay Evals (2026-05-24)
 
 ```bash

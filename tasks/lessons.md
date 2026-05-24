@@ -1,5 +1,13 @@
 # Errander-AI — Lessons Learned
 
+## 2026-05-24 — Use `@computed_field` for model properties that must always be derived
+
+When adding a field that is always derived from other fields (e.g., `confidence` from `sample_size`), use Pydantic v2's `@computed_field` + `@property` instead of a regular field with a default. This avoids callers ever passing an inconsistent value, keeps the single source of truth in the model, and doesn't break existing instantiations.
+
+**Why:** A regular required field breaks all existing instantiation sites. A field with a default (e.g., `confidence: str = "low"`) silently passes the wrong value at those sites. `@computed_field` is the correct Pydantic v2 primitive for derived read-only model properties.
+
+**How to apply:** `from pydantic import computed_field` → decorate with `@computed_field  # type: ignore[prop-decorator]` then `@property`. The suppression is needed because mypy strict mode flags the double-decorator as `prop-decorator`.
+
 ## 2026-05-24 — Migration tests need updating when a new migration is added
 
 When adding a new database migration, the existing migration tests check exact version counts and table lists. They will fail with `AssertionError: assert N+1 == N`. Always update `tests/safety/test_migrations.py` when adding a migration: (1) update `versions == [0, ..., N]` to include the new version, (2) update `count == N` to `N+1`, (3) add new table names to the expected tables set.

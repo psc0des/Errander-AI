@@ -19,12 +19,30 @@ from datetime import UTC, datetime, timedelta
 from typing import TypedDict
 
 import aiosqlite
-from pydantic import BaseModel
+from pydantic import BaseModel, computed_field
 
 logger = logging.getLogger(__name__)
 
 _SAMPLE_SIZE = 20
 _REJECTION_WINDOW_DAYS = 90
+
+
+def _sample_confidence(sample_size: int) -> str:
+    """Confidence tier derived from sample size: high ≥10, medium ≥5, else low."""
+    if sample_size >= 10:
+        return "high"
+    if sample_size >= 5:
+        return "medium"
+    return "low"
+
+
+def _rejection_confidence(rejections: int) -> str:
+    """Confidence tier derived from rejection count: high ≥5, medium ≥2, else low."""
+    if rejections >= 5:
+        return "high"
+    if rejections >= 2:
+        return "medium"
+    return "low"
 
 
 class ActionOutcomeFact(BaseModel):
@@ -37,6 +55,12 @@ class ActionOutcomeFact(BaseModel):
     last_failure_reason: str | None
     last_success_at: datetime | None
 
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def confidence(self) -> str:
+        """Confidence tier derived from sample_size: high ≥10, medium ≥5, else low."""
+        return _sample_confidence(self.sample_size)
+
 
 class VMRebootPatternFact(BaseModel):
     """How often a VM required a reboot following patching."""
@@ -45,6 +69,12 @@ class VMRebootPatternFact(BaseModel):
     reboots_required_after_patching: int
     sample_size: int
 
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def confidence(self) -> str:
+        """Confidence tier derived from sample_size: high ≥10, medium ≥5, else low."""
+        return _sample_confidence(self.sample_size)
+
 
 class ActionRejectionFact(BaseModel):
     """Approval rejection history for an action type (last 90 days)."""
@@ -52,6 +82,12 @@ class ActionRejectionFact(BaseModel):
     action_type: str
     rejections_last_90d: int
     rejection_reasons: list[str]
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def confidence(self) -> str:
+        """Confidence tier derived from rejections_last_90d: high ≥5, medium ≥2, else low."""
+        return _rejection_confidence(self.rejections_last_90d)
 
 
 class VMFactsStore:

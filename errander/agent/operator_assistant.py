@@ -303,7 +303,10 @@ def _format_prompt(question: str, context: FleetContext) -> str:
             lines.append("Action outcomes (last 20 attempts per VM/action):")
             for fact in context.action_outcomes:
                 pct = f"{fact.success_rate * 100:.0f}%"
-                base = f"  {fact.vm_id} {fact.action_type}: {pct} success ({fact.sample_size} samples)"
+                base = (
+                    f"  {fact.vm_id} {fact.action_type}: {pct} success"
+                    f" ({fact.sample_size} samples, confidence: {fact.confidence})"
+                )
                 if fact.last_failure_reason:
                     base += f" — last failure: {fact.last_failure_reason[:80]}"
                 lines.append(base)
@@ -313,7 +316,7 @@ def _format_prompt(question: str, context: FleetContext) -> str:
             for rp in context.reboot_patterns:
                 lines.append(
                     f"  {rp.vm_id}: {rp.reboots_required_after_patching} reboots required"
-                    f" ({rp.sample_size} patching runs)"
+                    f" ({rp.sample_size} patching runs, confidence: {rp.confidence})"
                 )
 
         if context.frequently_rejected_actions:
@@ -322,6 +325,7 @@ def _format_prompt(question: str, context: FleetContext) -> str:
                 reasons = "; ".join(rf.rejection_reasons[:3])
                 lines.append(
                     f"  {rf.action_type}: {rf.rejections_last_90d} rejection(s)"
+                    f" [confidence: {rf.confidence}]"
                     + (f" — {reasons[:120]}" if reasons else "")
                 )
 

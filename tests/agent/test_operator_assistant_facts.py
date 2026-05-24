@@ -225,6 +225,37 @@ class TestFormatPromptWithFacts:
         prompt = _format_prompt("What's happening?", ctx)
         assert "Operational history facts" not in prompt
 
+    def test_prompt_includes_confidence_label_for_outcomes(self) -> None:
+        fact = ActionOutcomeFact(
+            vm_id="vm1",
+            action_type="patching",
+            success_rate=1.0,
+            sample_size=12,
+            last_failure_reason=None,
+            last_success_at=None,
+        )
+        ctx = _context_with_facts(outcomes=[fact])
+        prompt = _format_prompt("Fleet status?", ctx)
+        assert "confidence: high" in prompt
+
+    def test_prompt_includes_confidence_label_for_reboot_patterns(self) -> None:
+        rp = VMRebootPatternFact(
+            vm_id="vm1", reboots_required_after_patching=1, sample_size=3,
+        )
+        ctx = _context_with_facts(reboot_patterns=[rp])
+        prompt = _format_prompt("Fleet status?", ctx)
+        assert "confidence: low" in prompt
+
+    def test_prompt_includes_confidence_label_for_rejections(self) -> None:
+        rf = ActionRejectionFact(
+            action_type="patching",
+            rejections_last_90d=6,
+            rejection_reasons=["policy change"],
+        )
+        ctx = _context_with_facts(rejections=[rf])
+        prompt = _format_prompt("Fleet status?", ctx)
+        assert "confidence: high" in prompt
+
 
 # ---------------------------------------------------------------------------
 # Tests: _fallback_response surfaces facts

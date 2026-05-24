@@ -1,3 +1,15 @@
+## AI Trust Layer — Phase 4: Operational Memory Confidence (2026-05-24, COMPLETE)
+
+**Status:** All items complete. 2475 tests passing, ruff + mypy clean on changed files.
+
+- [x] `errander/safety/vm_facts.py` — `_sample_confidence()`, `_rejection_confidence()` helpers; `@computed_field confidence` on `ActionOutcomeFact`, `VMRebootPatternFact`, `ActionRejectionFact`
+- [x] `errander/agent/operator_assistant.py` — include `confidence:` label in `_format_prompt()` fact lines
+- [x] `tests/safety/test_vm_facts.py` — `TestConfidenceLabels` (10 tests covering all tiers + boundaries)
+- [x] `tests/agent/test_operator_assistant_facts.py` — 3 new prompt confidence label tests
+- [x] Doc sync: STATUS.md, todo.md, lessons.md, command-log.md, README.md, learning/46
+
+---
+
 ## AI Trust Layer — Phase 2: Prompt Versioning & Replay Evals (2026-05-24, COMPLETE)
 
 **Status:** All items complete. 2462 tests passing, ruff + mypy clean on changed files.

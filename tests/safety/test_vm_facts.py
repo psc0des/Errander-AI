@@ -356,3 +356,185 @@ class TestRejectionFacts:
         result = await facts.rejection_facts()
         assert all(r.action_type != "patching" for r in result)
         await audit.close()
+
+
+# ---------------------------------------------------------------------------
+# Confidence label tests (Phase 4)
+# ---------------------------------------------------------------------------
+
+
+class TestConfidenceLabels:
+    async def test_action_outcome_low_confidence_small_sample(self) -> None:
+        audit = AuditStore(":memory:", strict_mode=False)
+        await audit.initialize()
+        facts = VMFactsStore.__new__(VMFactsStore)
+        facts._db = audit._db
+
+        for _ in range(3):
+            await _insert_event(
+                audit, event_type="action_completed", vm_id="vm1", action_type="patching",
+            )
+
+        results = await facts.action_outcomes("vm1")
+        assert results[0].confidence == "low"
+        await audit.close()
+
+    async def test_action_outcome_medium_confidence(self) -> None:
+        audit = AuditStore(":memory:", strict_mode=False)
+        await audit.initialize()
+        facts = VMFactsStore.__new__(VMFactsStore)
+        facts._db = audit._db
+
+        for _ in range(7):
+            await _insert_event(
+                audit, event_type="action_completed", vm_id="vm1", action_type="patching",
+            )
+
+        results = await facts.action_outcomes("vm1")
+        assert results[0].confidence == "medium"
+        await audit.close()
+
+    async def test_action_outcome_high_confidence_large_sample(self) -> None:
+        audit = AuditStore(":memory:", strict_mode=False)
+        await audit.initialize()
+        facts = VMFactsStore.__new__(VMFactsStore)
+        facts._db = audit._db
+
+        for _ in range(12):
+            await _insert_event(
+                audit, event_type="action_completed", vm_id="vm1", action_type="patching",
+            )
+
+        results = await facts.action_outcomes("vm1")
+        assert results[0].confidence == "high"
+        await audit.close()
+
+    async def test_reboot_pattern_confidence_low(self) -> None:
+        audit = AuditStore(":memory:", strict_mode=False)
+        await audit.initialize()
+        facts = VMFactsStore.__new__(VMFactsStore)
+        facts._db = audit._db
+
+        for _ in range(2):
+            await _insert_event(
+                audit, event_type="action_completed", vm_id="vm1", action_type="patching",
+            )
+        await _insert_event(
+            audit, event_type="reboot_required_detected", vm_id="vm1",
+        )
+
+        result = await facts.reboot_pattern("vm1")
+        assert result is not None
+        assert result.confidence == "low"
+        await audit.close()
+
+    async def test_reboot_pattern_confidence_high(self) -> None:
+        audit = AuditStore(":memory:", strict_mode=False)
+        await audit.initialize()
+        facts = VMFactsStore.__new__(VMFactsStore)
+        facts._db = audit._db
+
+        for _ in range(15):
+            await _insert_event(
+                audit, event_type="action_completed", vm_id="vm1", action_type="patching",
+            )
+        for _ in range(5):
+            await _insert_event(
+                audit, event_type="reboot_required_detected", vm_id="vm1",
+            )
+
+        result = await facts.reboot_pattern("vm1")
+        assert result is not None
+        assert result.confidence == "high"
+        await audit.close()
+
+    async def test_rejection_fact_confidence_low_one_rejection(self) -> None:
+        audit = AuditStore(":memory:", strict_mode=False)
+        await audit.initialize()
+        facts = VMFactsStore.__new__(VMFactsStore)
+        facts._db = audit._db
+
+        await _insert_event(audit, event_type="batch_started", batch_id="b-rej1")
+        await _insert_event(
+            audit, event_type="action_planned", batch_id="b-rej1", action_type="patching",
+        )
+        await _insert_event(
+            audit, event_type="approval_rejected", batch_id="b-rej1", detail="reason",
+        )
+
+        result = await facts.rejection_facts()
+        patching = next(r for r in result if r.action_type == "patching")
+        assert patching.confidence == "low"
+        await audit.close()
+
+    async def test_rejection_fact_confidence_medium(self) -> None:
+        audit = AuditStore(":memory:", strict_mode=False)
+        await audit.initialize()
+        facts = VMFactsStore.__new__(VMFactsStore)
+        facts._db = audit._db
+
+        for i in range(3):
+            bid = f"b-med-{i}"
+            await _insert_event(audit, event_type="batch_started", batch_id=bid)
+            await _insert_event(
+                audit, event_type="action_planned", batch_id=bid, action_type="disk_cleanup",
+            )
+            await _insert_event(
+                audit, event_type="approval_rejected", batch_id=bid, detail="reason",
+            )
+
+        result = await facts.rejection_facts()
+        fact = next(r for r in result if r.action_type == "disk_cleanup")
+        assert fact.confidence == "medium"
+        await audit.close()
+
+    async def test_rejection_fact_confidence_high(self) -> None:
+        audit = AuditStore(":memory:", strict_mode=False)
+        await audit.initialize()
+        facts = VMFactsStore.__new__(VMFactsStore)
+        facts._db = audit._db
+
+        for i in range(6):
+            bid = f"b-high-{i}"
+            await _insert_event(audit, event_type="batch_started", batch_id=bid)
+            await _insert_event(
+                audit, event_type="action_planned", batch_id=bid, action_type="log_rotation",
+            )
+            await _insert_event(
+                audit, event_type="approval_rejected", batch_id=bid, detail="reason",
+            )
+
+        result = await facts.rejection_facts()
+        fact = next(r for r in result if r.action_type == "log_rotation")
+        assert fact.confidence == "high"
+        await audit.close()
+
+    async def test_confidence_boundary_exactly_5_is_medium(self) -> None:
+        audit = AuditStore(":memory:", strict_mode=False)
+        await audit.initialize()
+        facts = VMFactsStore.__new__(VMFactsStore)
+        facts._db = audit._db
+
+        for _ in range(5):
+            await _insert_event(
+                audit, event_type="action_completed", vm_id="vm1", action_type="backup_verify",
+            )
+
+        results = await facts.action_outcomes("vm1")
+        assert results[0].confidence == "medium"
+        await audit.close()
+
+    async def test_confidence_boundary_exactly_10_is_high(self) -> None:
+        audit = AuditStore(":memory:", strict_mode=False)
+        await audit.initialize()
+        facts = VMFactsStore.__new__(VMFactsStore)
+        facts._db = audit._db
+
+        for _ in range(10):
+            await _insert_event(
+                audit, event_type="action_completed", vm_id="vm1", action_type="backup_verify",
+            )
+
+        results = await facts.action_outcomes("vm1")
+        assert results[0].confidence == "high"
+        await audit.close()

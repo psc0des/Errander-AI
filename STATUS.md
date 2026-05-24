@@ -4,6 +4,17 @@
 2026-05-24
 
 ## Current Phase
+**AI Trust Layer — Phase 4: Operational Memory Confidence (2026-05-24, COMPLETE).** 2475 tests passing.
+
+`confidence` field added to `ActionOutcomeFact`, `VMRebootPatternFact`, and `ActionRejectionFact` as a Pydantic `@computed_field` — always auto-derived, never manually passed. Thresholds: `high` ≥10 samples (or ≥5 rejections), `medium` ≥5 samples (or ≥2 rejections), else `low`. Confidence labels are now surfaced inline in the LLM prompt so the model can calibrate its findings. 13 new confidence tests + 3 new prompt tests.
+
+### Files changed in AI Trust Layer Phase 4 (2026-05-24)
+- `errander/safety/vm_facts.py` — `_sample_confidence()`, `_rejection_confidence()` helpers; `@computed_field confidence` on all three fact models
+- `errander/agent/operator_assistant.py` — `_format_prompt()` includes `confidence:` label for every fact line
+- `tests/safety/test_vm_facts.py` — `TestConfidenceLabels` (10 tests)
+- `tests/agent/test_operator_assistant_facts.py` — 3 new prompt confidence tests
+
+## Previous Phase
 **AI Trust Layer — Phase 2: Prompt Versioning & Replay Evals (2026-05-24, COMPLETE).** 2462 tests passing.
 
 `EvalStore` persists replay run summaries and per-decision results in new SQLite tables (`ai_eval_runs`, `ai_eval_results`, migration 9). `run_replay()` queries stored `ai_decisions`, re-sends each `prompt_full` to a candidate model, runs deterministic assertions (`check_assertions`), and saves the `EvalRun`. CLI: `--ai-eval-replay [--eval-model <id>]`. 28 tests covering all assertion types, store roundtrip, and replay integration scenarios.

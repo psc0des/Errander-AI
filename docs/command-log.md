@@ -1,5 +1,80 @@
 # Errander-AI Command Log
 
+## Doc sync — README stale sections + login + UI bind (2026-05-25)
+
+```bash
+# README.md: fix Docker Prune → docker_hygiene in Action Types + Safety Gates tables
+# README.md: add login page + ERRANDER_UI_BIND to Web UI / configure sections
+# STATUS.md, todo.md, lessons.md, command-log.md: sync all session phases
+git add README.md STATUS.md tasks/todo.md tasks/lessons.md docs/command-log.md
+git commit -m "docs: sync README docker_hygiene, login page, UI bind, session-cookie auth notes"
+git push origin main
+```
+
+## Login page — feature bullet wording fix (2026-05-25)
+
+```bash
+# Changed 4 feature bullets in _ui_login_get to reflect full platform scope
+git add errander/observability/metrics.py
+git commit -m "fix: update login page feature bullets to reflect full platform scope"
+git push origin main
+```
+
+## Session-cookie login page — Stitch redesign (2026-05-25)
+
+```bash
+# Redesigned login page using Sovereign Architect Stitch design system
+# Split layout: left indigo shell + LED + bullets; right white card + gradient button
+# Playwright tests rewritten for session-cookie auth (302, .lc-err, correct creds)
+uv run pytest tests/ui/ -q --tb=short    # all UI tests pass
+git add errander/observability/metrics.py tests/ui/test_ui_auth_playwright.py
+git commit -m "feat: redesign login page with Sovereign Architect split layout"
+git push origin main
+```
+
+## Session-cookie auth — replace Basic Auth popup (2026-05-25)
+
+```bash
+# Replaced HTTP Basic Auth with HTML login form + in-memory session store
+# _session_auth_middleware, _ui_login_get, _ui_login_post, _ui_logout added
+uv run pytest tests/ui/ -q --tb=short    # all UI tests pass
+git add errander/observability/metrics.py tests/ui/test_ui_auth_playwright.py
+git commit -m "feat: replace Basic Auth popup with session-cookie HTML login page"
+git push origin main
+```
+
+## ERRANDER_UI_BIND fix — network-accessible Web UI (2026-05-25)
+
+```bash
+# Added ERRANDER_UI_BIND=0.0.0.0 to configure.sh .env write block
+# Also added manually to controller .env and restarted service
+sudo systemctl restart errander
+sudo systemctl status errander
+```
+
+## Systemd EnvironmentFile fix — optional key loading (2026-05-25)
+
+```bash
+# Service crashed: ERRANDER_SECRETS_KEY not set
+# Diagnosed: ~/.errander.key not listed in systemd EnvironmentFile directives
+journalctl -u errander -n 50 --no-pager
+# Fixed SETUP.md unit template; applied fix on VM:
+sudo sed -i '/EnvironmentFile=.*\.env/a EnvironmentFile=-/root/.errander.key' /etc/systemd/system/errander.service
+sudo systemctl daemon-reload
+sudo systemctl restart errander
+sudo systemctl status errander   # active (running)
+```
+
+## SETUP.md Step 8/9 clarifications (2026-05-25)
+
+```bash
+# Step 8: rewrote per-env dry-run section (multiple env examples)
+# Step 9: added intro (service mode = all envs automatic) + web UI access instructions
+git add SETUP.md
+git commit -m "docs: clarify SETUP.md step 8 multi-env and step 9 service mode + web UI access"
+git push origin main
+```
+
 ## docker_available: wire enabled_actions into run_vm Send payloads (2026-05-25)
 
 ```bash

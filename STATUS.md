@@ -4,6 +4,62 @@
 2026-05-25
 
 ## Current Phase
+**Doc sync — README stale sections + login page + UI bind + systemd key fix (2026-05-25, COMPLETE).** Working tree clean.
+
+### Files changed (2026-05-25 — doc sync)
+- `README.md` — replace Docker Prune with docker_hygiene in Action Types + Safety Gates tables; add login page to Web UI section; add `ERRANDER_UI_BIND` to configure section
+- `STATUS.md`, `tasks/todo.md`, `tasks/lessons.md`, `docs/command-log.md` — this session's phases
+
+## Previous Phase
+**Login page — feature bullet wording fix (2026-05-25, COMPLETE).** Working tree clean.
+
+Login page bullets updated from patch-focused wording to reflect the full platform scope: "Autonomous fleet maintenance", "Human-in-the-loop approvals", "Safe by design", "Full audit trail".
+
+### Files changed (2026-05-25 — bullet wording)
+- `errander/observability/metrics.py` — 4 feature bullet texts in `_ui_login_get`
+
+## Previous Phase
+**Session-cookie login page — Stitch redesign (2026-05-25, COMPLETE).** Working tree clean.
+
+Login page redesigned using the "Sovereign Architect" Stitch design system: split layout — left indigo shell (#1e1b4b) with pulsing LED and 4 feature bullets; right white card on #f6f2ff with gradient "Sign in →" button. Space Grotesk headings, JetBrains Mono for mono, Inter for body. Playwright tests updated to match `.lc-err` selector and new session-cookie auth flow.
+
+### Files changed (2026-05-25 — login redesign)
+- `errander/observability/metrics.py` — `_LOGIN_CSS`, `_ui_login_get` HTML; split-layout login page
+- `tests/ui/test_ui_auth_playwright.py` — fully rewritten for session-cookie auth (302 redirects, `.lc-err`, correct credentials grant access)
+
+## Previous Phase
+**Session-cookie auth — replace Basic Auth popup (2026-05-25, COMPLETE).** Working tree clean.
+
+Replaced HTTP Basic Auth (browser native popup) with an HTML login form backed by an in-memory session store. Added `_session_auth_middleware`, `_ui_login_get`, `_ui_login_post`, `_ui_logout` handlers. Sessions use HMAC-signed cookies with 8-hour TTL. `/metrics` and `/health` remain open. "Sign out" link added to sidebar.
+
+### Files changed (2026-05-25 — session auth)
+- `errander/observability/metrics.py` — `_session_auth_middleware`, session store, login/logout handlers, route registration
+
+## Previous Phase
+**ERRANDER_UI_BIND — network-accessible Web UI (2026-05-25, COMPLETE).** Working tree clean.
+
+Service was binding to `127.0.0.1` (only reachable via SSH tunnel). Added `ERRANDER_UI_BIND=0.0.0.0` to `configure.sh`'s `.env` write block so newly configured installs default to network-accessible. Users with existing `.env` must add the var manually or re-run configure.
+
+### Files changed (2026-05-25 — UI bind)
+- `scripts/configure.sh` — `ERRANDER_UI_BIND=0.0.0.0` in `.env` write block
+
+## Previous Phase
+**Systemd EnvironmentFile — optional key file loading (2026-05-25, COMPLETE).** Working tree clean.
+
+Systemd service was crashing with `ERRANDER_SECRETS_KEY not set` because the encryption key file (`~/.errander.key`) wasn't loaded by the unit. Fixed SETUP.md's systemd unit template to include `EnvironmentFile=-${KEY_PATH}` (with `-` prefix for optional loading, preventing unit failure when the file is absent).
+
+### Files changed (2026-05-25 — systemd key)
+- `SETUP.md` — systemd unit template: added `KEY_PATH=$(echo ~/.errander.key)` and `EnvironmentFile=-${KEY_PATH}`
+
+## Previous Phase
+**SETUP.md — Step 8/9 multi-env and service-mode clarifications (2026-05-25, COMPLETE).** Working tree clean.
+
+Step 8 previously implied `--env` accepts only a single value. Rewrote to show the per-environment dry-run pattern with examples for multiple envs. Step 9 previously gave no context for why `--env` is absent from the systemctl service — added an intro paragraph explaining that service mode runs all environments on schedule automatically.
+
+### Files changed (2026-05-25 — SETUP step clarifications)
+- `SETUP.md` — Step 8 rewrite (per-env examples); Step 9 intro + web UI access section after systemctl start
+
+## Previous Phase
 **docker_available: enabled_actions wired into run_vm Send payloads (2026-05-25, COMPLETE).** Working tree clean.
 
 `enabled_actions` was set in `BatchGraphState` but never forwarded into the `VMGraphState` constructions for `run_vm` in `route_after_validate` and `dispatch_current_wave`. So `discover_node`'s `state.get("enabled_actions")` always returned `None`, short-circuiting the wrapper fallback check before it could run. Fix: pass `enabled_actions=list(_enabled_raw) if _enabled_raw is not None else []` in both `run_vm` Send constructions in `graph.py`. All 2507 tests pass.

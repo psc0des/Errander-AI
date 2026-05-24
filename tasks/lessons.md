@@ -1,5 +1,29 @@
 # Errander-AI — Lessons Learned
 
+## 2026-05-25 — ERRANDER_UI_BIND must be in configure.sh from day one
+
+The web server bound to `127.0.0.1` by default, which is only reachable via SSH tunnel. This surprised the user who expected to access the UI over the network after starting the service. The fix was a one-liner in configure.sh, but it only helps new installs — existing `.env` files needed a manual edit.
+
+**Why:** `ERRANDER_UI_BIND` defaulted to `127.0.0.1` in code as the "safe" default, but for a SRE platform running on a dedicated controller VM, the default expectation is network accessibility. The configure.sh script is the user's first contact — if it doesn't set this, the user's first experience is a service that appears broken.
+
+**How to apply:** Any env var that controls network-facing behavior (bind address, port, TLS mode) must be included in configure.sh with a comment explaining the trade-off. The "safe" code default doesn't have to match the "expected for most users" configure.sh default.
+
+## 2026-05-25 — Systemd EnvironmentFile needs `-` prefix for optional files; add ALL key sources
+
+The systemd unit was crashing because `~/.errander.key` wasn't in an `EnvironmentFile` directive. Two sub-lessons: (1) use `EnvironmentFile=-/path/to/file` (note the leading `-`) so systemd treats the file as optional and doesn't fail the unit when the file doesn't exist; (2) every source of secrets the agent reads at startup must be listed as an `EnvironmentFile` in the unit, not just the primary `.env`.
+
+**Why:** The encryption key file is separate from `.env` by design (different permission model). The unit was only loading `.env`, leaving the key file unlisted.
+
+**How to apply:** When adding a new runtime secret source (a key file, a vault token file, etc.), immediately add it to the SETUP.md systemd unit template as `EnvironmentFile=-${PATH}`. The `-` prefix is the correct form for optional files — use it by default.
+
+## 2026-05-25 — Session-cookie auth requires rewriting all test assertions that expected HTTP Basic Auth
+
+Switching from HTTP Basic Auth to session-cookie auth changes the protocol from `401 + WWW-Authenticate` to `302 → /ui/login`. Every test that checked `status == 401` or `WWW-Authenticate` headers broke. The correct replacement assertions are: unauthenticated requests get 302 with `Location: /ui/login`; wrong credentials show `.lc-err` on the login page; correct credentials get a session cookie and redirect to `/ui`.
+
+**Why:** Basic Auth and session-cookie auth have completely different response signatures. Tests must be written against the specific auth mechanism in use — they can't be abstracted away.
+
+**How to apply:** When replacing an auth scheme, update test files immediately — don't leave old auth tests commented out or mixed with new ones. Check the CSS class names in the HTML response match what the tests query (in this case `.lc-err`, not `.login-err`).
+
 ## 2026-05-25 — Store parsed sizes, not raw command output, in assessment state
 
 `space_by_path` stored raw SSH stdout: `"130M\t/var/cache/apt"` for `du -sh`, `"Archived and active journals take up 16.0M in the file system."` for `journalctl --disk-usage`. Both bled straight into the batch report as garbled text.

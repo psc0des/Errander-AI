@@ -187,18 +187,18 @@ Level 3: Action Sub-Graphs
 | Action | Risk Tier | What It Does | Idempotency | Rollback |
 |--------|-----------|-------------|-------------|----------|
 | **Disk Cleanup** | Low | Clean `/tmp`, package cache, journal logs, orphaned deps | Skips if nothing reclaimable | None needed (safe paths only) |
-| **Log Rotation** | Low | Find oversized logs, `logrotate --force` or manual gzip+truncate | Skips if no large files found | None needed (data compressed, not deleted) |
-| **Docker Prune** | Low | Remove dangling images, stopped containers | Skips if nothing to prune | Re-pull images if needed |
+| **Log Rotation** | Low | Find oversized logs, manual gzip+truncate (logrotate not used) | Skips if no large files found | None needed (data compressed, not deleted) |
+| **Docker Hygiene** | Medium | Rich assessment: dangling images, stopped containers, unused images, volumes, build cache — exact-object Slack/web approval before removal | Skips classes with nothing to do | Re-pull images if needed (prune is destructive by nature) |
 | **Patching** | Medium | Non-kernel `apt upgrade` / `dnf upgrade` with kernel exclusion | Skips if already up-to-date | Full — version snapshot before, batch rollback on failure |
-| **Backup Verify** | High | Read-only check: backups exist, are recent, non-zero size | Inherently idempotent (read-only) | N/A |
+| **Backup Verify** | Low | Read-only check: backups exist, are recent, non-zero size | Inherently idempotent (read-only) | N/A |
 
 ### Safety Gates
 
 | Tier | Approval | Example |
 |------|----------|---------|
-| **Low** | Automatic | Disk cleanup, log rotation, Docker prune |
-| **Medium** | Log + notify | Non-kernel patching |
-| **High** | Human approval required (Slack + Web UI) | Backup verification |
+| **Low** | Automatic (categorical) | Disk cleanup, log rotation, backup verify |
+| **Medium** | Exact-object Slack/web approval | Non-kernel patching, Docker hygiene |
+| **High** | Human Slack approval — always required | Service restart (operator-triggered only) |
 | **Critical** | **Blocked — never automated** | Kernel operations, data deletion |
 
 Kernel packages (`linux-*`, `linux-image-*`, `kernel-*`) are **always excluded** from patching. This is a hardcoded check, never an LLM decision.
@@ -346,6 +346,11 @@ export ERRANDER_LLM_MODEL="<deployment-name>"
 export ERRANDER_LLM_API_KEY="<key>"
 export ERRANDER_AUDIT_DB_URL="errander.sqlite"
 
+# Optional — Web UI auth (omit to disable login)
+export ERRANDER_UI_USER="admin"
+export ERRANDER_UI_PASSWORD="<password>"
+export ERRANDER_UI_BIND="0.0.0.0"   # set to 127.0.0.1 for SSH-tunnel-only
+
 # Optional — Slack notifications
 export ERRANDER_SLACK_BOT_TOKEN="xoxb-..."
 export ERRANDER_SLACK_CHANNEL_ID="C0..."
@@ -371,8 +376,11 @@ uv run python -m errander
 
 ### Web UI
 
-After starting, visit `http://localhost:9090/ui`:
+After starting, visit `http://<controller-ip>:9090/ui` (or `http://localhost:9090/ui` locally):
 
+> **Auth:** When `ERRANDER_UI_USER` / `ERRANDER_UI_PASSWORD` are set in `.env`, the UI requires a login. Visit `/ui/login`, enter your credentials, and the agent issues a session cookie (8-hour TTL). `/metrics` and `/health` remain open regardless.
+
+- `/ui/login` — Sign in (session-cookie auth)
 - `/ui` — Dashboard (status, event count, recent batches)
 - `/ui/batches` — Batch history
 - `/ui/batches/{id}` — Batch detail with all events
@@ -380,6 +388,8 @@ After starting, visit `http://localhost:9090/ui`:
 - `/ui/approvals` — Pending approvals with Approve/Reject buttons
 - `/metrics` — Prometheus metrics
 - `/health` — Health check
+
+> **Binding:** By default (`ERRANDER_UI_BIND=0.0.0.0`) the UI is reachable on all interfaces. Set `ERRANDER_UI_BIND=127.0.0.1` to restrict to SSH-tunnel-only access.
 
 ---
 

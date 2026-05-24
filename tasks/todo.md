@@ -1,3 +1,58 @@
+## Doc sync — README stale sections + login + UI bind (2026-05-25, COMPLETE)
+
+- [x] README.md: replace Docker Prune with docker_hygiene in Action Types table
+- [x] README.md: fix Safety Gates table (docker prune → docker hygiene, correct tiers)
+- [x] README.md: add login page section to Web UI
+- [x] README.md: add ERRANDER_UI_BIND to configure section
+- [x] STATUS.md, todo.md, lessons.md, command-log.md: sync all session phases
+
+---
+
+## Login page — feature bullet wording (2026-05-25, COMPLETE)
+
+- [x] Replace patch-focused bullets with platform-scope bullets: "Autonomous fleet maintenance", "Human-in-the-loop approvals", "Safe by design", "Full audit trail"
+
+---
+
+## Session-cookie login page — Stitch redesign (2026-05-25, COMPLETE)
+
+- [x] Split layout: left indigo shell (#1e1b4b) with LED + bullets; right white card on #f6f2ff
+- [x] Gradient "Sign in →" button; Space Grotesk/JetBrains Mono/Inter fonts
+- [x] Playwright tests rewritten: 302 redirect, `.lc-err` selector, correct creds grant access
+
+---
+
+## Session-cookie auth — replace Basic Auth popup (2026-05-25, COMPLETE)
+
+- [x] `_session_auth_middleware` — protects /ui/* routes, redirects to /ui/login on miss
+- [x] `_ui_login_get` / `_ui_login_post` — HTML form, HMAC-signed session cookie, 8-hour TTL
+- [x] `_ui_logout` — clears session cookie
+- [x] `/metrics` and `/health` remain open regardless of auth config
+- [x] "Sign out" link added to sidebar
+
+---
+
+## ERRANDER_UI_BIND — network-accessible Web UI (2026-05-25, COMPLETE)
+
+- [x] Add `ERRANDER_UI_BIND=0.0.0.0` to configure.sh `.env` write block
+- [x] SETUP.md and README.md updated to document the var
+
+---
+
+## Systemd EnvironmentFile — optional key file loading (2026-05-25, COMPLETE)
+
+- [x] SETUP.md unit template: add `KEY_PATH=$(echo ~/.errander.key)` + `EnvironmentFile=-${KEY_PATH}`
+- [x] `-` prefix makes it optional — unit doesn't fail when no encrypted install
+
+---
+
+## SETUP.md — Step 8/9 multi-env and service-mode clarifications (2026-05-25, COMPLETE)
+
+- [x] Step 8: per-env dry-run examples (multiple envs); clarify `--env` is per environment
+- [x] Step 9: intro paragraph explaining service mode runs all envs on schedule; web UI access section
+
+---
+
 ## docker_available: wire enabled_actions into run_vm Send payloads (2026-05-25, COMPLETE)
 
 - [x] Read both VMGraphState constructions for run_vm in graph.py

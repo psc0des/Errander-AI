@@ -1,5 +1,21 @@
 # Errander-AI Command Log
 
+## docker_hygiene wrapper-mode docker_available fallback (2026-05-25)
+
+```bash
+# Diagnosed: docker_hygiene missing from dry-run plan even though enabled: true in inventory
+# Root cause: detect_os() probes "docker info" without sudo → fails for errander user
+# → docker_available=False → _is_action_applicable() filters out docker_hygiene
+# Fix: plan_vm_node probes sudo -n errander-docker-assess-v2 --check as fallback
+
+uv run pytest tests/ -q --tb=short  # 2507 passed
+uv run ruff check .                  # All checks passed
+uv run mypy errander/ --no-error-summary  # 0 errors
+git add errander/agent/graph.py STATUS.md tasks/todo.md tasks/lessons.md docs/command-log.md
+git commit -m "fix: docker_available fallback via wrapper --check in plan_vm_node"
+git push origin main
+```
+
 ## service_restart automated-batch exclusion (2026-05-24)
 
 ```bash

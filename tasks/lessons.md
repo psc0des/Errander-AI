@@ -1,5 +1,13 @@
 # Errander-AI — Lessons Learned
 
+## 2026-05-25 — `docker info` without sudo is wrong for wrapper-mode docker_hygiene
+
+The OS detection probe `docker info >/dev/null 2>&1` fails for the `errander` SSH user because they're not in the docker group. This sets `docker_available=False`, which causes `_is_action_applicable()` to silently filter out `docker_hygiene` in the planning phase — even when it's enabled in inventory and the wrapper is installed.
+
+**Why:** The docker group membership and the sudo-wrapper path are independent. The wrapper (which runs as root via sudoers) works fine, but the raw `docker info` probe doesn't reflect that.
+
+**How to apply:** When docker_hygiene is enabled in wrapper mode, the planning probe should use the assess wrapper's `--check` flag (`sudo -n errander-docker-assess-v2 --check`) rather than raw `docker info`. The fallback probe is now in `plan_vm_node` in `graph.py`. For any future docker-related availability check, remember that wrapper mode == no docker group membership needed.
+
 ## 2026-05-24 — `enabled: true` in inventory ≠ "include in automated batch"
 
 `service_restart` was dispatched by the automated LLM planner because `enabled: true` was included in `_enabled_actions`. But `enabled: true` for `service_restart` means "this action is configured and available via CLI" — it does NOT mean "schedule it automatically." The planner had no way to know the distinction.

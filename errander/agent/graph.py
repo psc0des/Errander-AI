@@ -912,16 +912,48 @@ async def plan_vm_node(
         logger.warning("Planning SSH failed for %s: %s — VM excluded from plan", vm_id, exc)
         return {"vm_plans": []}
 
+    # Build available_actions from the inventory-enabled list. None falls back to
+    # DEFAULT_PRIORITY (used only when state predates this field — tests, replays).
+    _enabled_names: list[str] | None = state.get("enabled_actions")
+
+    # Wrapper-mode docker fallback: the errander user is typically not in the
+    # docker group, so raw `docker info` fails → docker_available=False → planner
+    # skips docker_hygiene. When docker_hygiene is enabled in wrapper mode, probe
+    # the assess wrapper's --check instead (which IS in sudoers).
+    if (
+        not vm_info.docker_available
+        and _enabled_names is not None
+        and "docker_hygiene" in _enabled_names
+    ):
+        from errander.agent.subgraphs import BUILTIN_ACTIONS as _BA
+        from errander.models.vm import VMInfo as _VMInfo
+        _hygiene = _BA.get("docker_hygiene")
+        if _hygiene and _hygiene.required_wrappers:
+            _assess = _hygiene.required_wrappers[0]
+            _chk = await ssh_manager.execute(
+                vm_id, hostname, ssh_user, key_path,
+                f"sudo -n {_assess} --check 2>/dev/null && echo yes || echo no",
+            )
+            if _chk.success and "yes" in _chk.stdout:
+                vm_info = _VMInfo(
+                    os_family=vm_info.os_family,
+                    os_version=vm_info.os_version,
+                    disk_usage=vm_info.disk_usage,
+                    docker_available=True,
+                    pending_packages=vm_info.pending_packages,
+                    uptime_seconds=vm_info.uptime_seconds,
+                )
+                logger.info(
+                    "docker_available=True for %s via wrapper check (raw docker info denied)",
+                    vm_id,
+                )
+
     stored_signals = await _load_stored_signals(
         vm_id=vm_id,
         audit_store=audit_store,
         disk_history_store=disk_history_store,
         baseline_store=baseline_store,
     )
-
-    # Build available_actions from the inventory-enabled list. None falls back to
-    # DEFAULT_PRIORITY (used only when state predates this field — tests, replays).
-    _enabled_names: list[str] | None = state.get("enabled_actions")
     _valid_action_values = {m.value for m in ActionType}
     available_for_planning: list[ActionType] | None = (
         [ActionType(n) for n in _enabled_names if n in _valid_action_values]

@@ -1,3 +1,11 @@
+## docker_hygiene wrapper-mode docker_available fallback (2026-05-25, COMPLETE)
+
+- [x] Diagnose: `docker info` without sudo fails for errander user → `docker_available=False` → planner skips docker_hygiene
+- [x] Fix: in `plan_vm_node`, probe `sudo -n errander-docker-assess-v2 --check` as fallback when `docker_available=False` and docker_hygiene is in `enabled_actions`
+- [x] All 2507 tests pass, ruff + mypy clean
+
+---
+
 ## service_restart excluded from automated batch planning (2026-05-24, COMPLETE)
 
 - [x] Add `operator_triggered: bool = False` to `ActionManifest` in `models/manifest.py`

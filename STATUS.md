@@ -4,6 +4,14 @@
 2026-05-24
 
 ## Current Phase
+**docker_hygiene wrapper-mode docker_available fallback (2026-05-25, COMPLETE).** Working tree clean.
+
+`docker_hygiene` was silently excluded from every dry-run plan even when `enabled: true` in inventory. Root cause: `detect_os()` probes `docker info` without sudo — the `errander` SSH user isn't in the docker group on target VMs, so `docker_available=False`, and `_is_action_applicable()` filters out docker_hygiene before it reaches the planner. Fix: in `plan_vm_node`, after OS detection, if `docker_available=False` and `docker_hygiene` is in `enabled_actions`, probe the assess wrapper's `--check` (which IS in sudoers). If that passes, override `docker_available=True` for planning. Stopped containers (e.g. exited-0 `setup` container) will now be assessed and presented for approval. All 2507 tests pass.
+
+### Files changed (2026-05-25 — docker_available wrapper fallback)
+- `errander/agent/graph.py` — wrapper-mode `docker_available` fallback probe in `plan_vm_node`
+
+## Previous Phase
 **service_restart excluded from automated batch planning (2026-05-24, COMPLETE).** Working tree clean.
 
 `service_restart` was being included in the automated LLM batch plan when `enabled: true` in inventory, causing `SERVICE_RESTART blocked: Unit ''` errors in every dry-run. Root cause: `_enabled_actions` in `main.py` was built from all `cfg.enabled` keys, passing `service_restart` to `prioritize_actions()`. Fix: added `operator_triggered: bool = False` to `ActionManifest`; set `operator_triggered=True` in `service_restart.MANIFEST`; filtered operator-triggered actions out of `_enabled_actions` before batch init. `service_restart` remains reachable via `--restart-service` CLI only. All 2507 tests pass.

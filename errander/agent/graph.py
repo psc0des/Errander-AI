@@ -102,8 +102,8 @@ def _effective_vm_plans(state: BatchGraphState) -> list[dict[str, object]]:
     enrich_plan_node writes to enriched_vm_plans (not vm_plans) to avoid
     double-appending via the append-only reducer on vm_plans.
     """
-    enriched = state.get("enriched_vm_plans")  # type: ignore[attr-defined]
-    return list(enriched) if enriched else list(state.get("vm_plans", []))  # type: ignore[attr-defined]
+    enriched = state.get("enriched_vm_plans")
+    return list(enriched) if enriched else list(state.get("vm_plans", []))
 
 
 # --- State ---

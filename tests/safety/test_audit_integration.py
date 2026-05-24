@@ -6,8 +6,7 @@ to assert that the audit trail is correctly written end-to-end.
 
 from __future__ import annotations
 
-import tempfile
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -15,7 +14,6 @@ import pytest
 
 from errander.models.events import AuditEvent, EventType
 from errander.safety.audit import AuditStore
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -34,7 +32,7 @@ def _make_event(
         vm_id=vm_id,
         action_type=action_type,
         detail=detail,
-        timestamp=datetime.now(tz=timezone.utc),
+        timestamp=datetime.now(tz=UTC),
     )
 
 
@@ -132,14 +130,14 @@ class TestGetRecentBatches:
                 event_type=EventType.BATCH_STARTED,
                 batch_id="batch-A",
                 detail="start",
-                timestamp=datetime(2026, 1, 1, tzinfo=timezone.utc),
+                timestamp=datetime(2026, 1, 1, tzinfo=UTC),
             ))
             # Batch B: newer
             await store.log_event(AuditEvent(
                 event_type=EventType.BATCH_STARTED,
                 batch_id="batch-B",
                 detail="start",
-                timestamp=datetime(2026, 6, 1, tzinfo=timezone.utc),
+                timestamp=datetime(2026, 6, 1, tzinfo=UTC),
             ))
 
             batches = await store.get_recent_batches(limit=10)
@@ -190,7 +188,7 @@ class TestGetRecentBatches:
                 batch_id="batch-A",
                 vm_id=None,
                 detail="batch start",
-                timestamp=datetime.now(tz=timezone.utc),
+                timestamp=datetime.now(tz=UTC),
             ))
 
             batches = await store.get_recent_batches()
@@ -199,8 +197,8 @@ class TestGetRecentBatches:
 
     async def test_started_at_is_earliest_event(self) -> None:
         async with AuditStore(":memory:") as store:
-            early = datetime(2026, 3, 1, 10, 0, 0, tzinfo=timezone.utc)
-            late = datetime(2026, 3, 1, 12, 0, 0, tzinfo=timezone.utc)
+            early = datetime(2026, 3, 1, 10, 0, 0, tzinfo=UTC)
+            late = datetime(2026, 3, 1, 12, 0, 0, tzinfo=UTC)
 
             # Insert late first, then early
             await store.log_event(AuditEvent(
@@ -271,8 +269,8 @@ class TestVMGraphAuditTrail:
                 "action_type": "disk_cleanup",
                 "status": ActionStatus.DRY_RUN_OK.value,
                 "vm_id": "test/vm-01",
-                "started_at": datetime.now(tz=timezone.utc).isoformat(),
-                "completed_at": datetime.now(tz=timezone.utc).isoformat(),
+                "started_at": datetime.now(tz=UTC).isoformat(),
+                "completed_at": datetime.now(tz=UTC).isoformat(),
                 "detail": "dry-run complete",
                 "error": None,
             }
@@ -289,8 +287,8 @@ class TestVMGraphAuditTrail:
                     "action_type": action_type,
                     "status": ActionStatus.DRY_RUN_OK.value,
                     "vm_id": "test/vm-01",
-                    "started_at": datetime.now(tz=timezone.utc).isoformat(),
-                    "completed_at": datetime.now(tz=timezone.utc).isoformat(),
+                    "started_at": datetime.now(tz=UTC).isoformat(),
+                    "completed_at": datetime.now(tz=UTC).isoformat(),
                     "detail": "dry-run complete",
                     "error": None,
                 }
@@ -410,8 +408,8 @@ class TestVMGraphAuditTrail:
                 "action_type": "disk_cleanup",
                 "status": ActionStatus.DRY_RUN_OK.value,
                 "vm_id": "test/vm-01",
-                "started_at": datetime.now(tz=timezone.utc).isoformat(),
-                "completed_at": datetime.now(tz=timezone.utc).isoformat(),
+                "started_at": datetime.now(tz=UTC).isoformat(),
+                "completed_at": datetime.now(tz=UTC).isoformat(),
                 "detail": "dry-run ok",
                 "error": None,
             }
@@ -429,8 +427,8 @@ class TestVMGraphAuditTrail:
                     "action_type": action_type,
                     "status": ActionStatus.DRY_RUN_OK.value,
                     "vm_id": "test/vm-01",
-                    "started_at": datetime.now(tz=timezone.utc).isoformat(),
-                    "completed_at": datetime.now(tz=timezone.utc).isoformat(),
+                    "started_at": datetime.now(tz=UTC).isoformat(),
+                    "completed_at": datetime.now(tz=UTC).isoformat(),
                     "detail": "dry-run ok",
                     "error": None,
                 }

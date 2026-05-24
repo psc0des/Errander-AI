@@ -16,7 +16,6 @@ from errander.agent.graph import (
 )
 from errander.agent.subgraphs.patching import _parse_upgradable_with_versions
 
-
 # ---------------------------------------------------------------------------
 # _parse_upgradable_with_versions
 # ---------------------------------------------------------------------------

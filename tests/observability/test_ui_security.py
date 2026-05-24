@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-import pytest
 from unittest.mock import patch
+
+import pytest
 
 
 class TestBindAddressSecurity:
@@ -24,8 +25,9 @@ class TestBindAddressSecurity:
     @pytest.mark.asyncio
     async def test_nonloopback_with_auth_allowed(self) -> None:
         """Binding to 0.0.0.0 WITH credentials must NOT raise RuntimeError."""
-        from errander.observability.metrics import start_metrics_server
         from unittest.mock import AsyncMock
+
+        from errander.observability.metrics import start_metrics_server
 
         with patch("aiohttp.web.TCPSite") as mock_site_cls, \
              patch("aiohttp.web.AppRunner") as mock_runner_cls:
@@ -44,8 +46,9 @@ class TestBindAddressSecurity:
     @pytest.mark.asyncio
     async def test_loopback_without_auth_allowed(self) -> None:
         """127.0.0.1 without credentials must NOT raise RuntimeError."""
-        from errander.observability.metrics import start_metrics_server
         from unittest.mock import AsyncMock
+
+        from errander.observability.metrics import start_metrics_server
 
         with patch("aiohttp.web.TCPSite") as mock_site_cls, \
              patch("aiohttp.web.AppRunner") as mock_runner_cls:
@@ -68,6 +71,7 @@ class TestCSRFMiddleware:
     async def test_missing_csrf_token_returns_403(self) -> None:
         """POST /ui/approvals/X/approve without CSRF token → 403 Forbidden."""
         from aiohttp import web
+
         from errander.observability.metrics import _csrf_middleware
 
         async def dummy_handler(request: web.Request) -> web.Response:
@@ -87,8 +91,9 @@ class TestCSRFMiddleware:
     async def test_get_request_passes_without_csrf(self) -> None:
         """GET requests are not CSRF-checked."""
         from aiohttp import web
-        from errander.observability.metrics import _csrf_middleware
         from aiohttp.test_utils import make_mocked_request
+
+        from errander.observability.metrics import _csrf_middleware
 
         async def dummy_handler(request: web.Request) -> web.Response:
             return web.Response(text="ok")
@@ -102,8 +107,9 @@ class TestCSRFMiddleware:
     async def test_non_ui_post_passes_without_csrf(self) -> None:
         """POST to /metrics is not CSRF-checked."""
         from aiohttp import web
-        from errander.observability.metrics import _csrf_middleware
         from aiohttp.test_utils import make_mocked_request
+
+        from errander.observability.metrics import _csrf_middleware
 
         async def dummy_handler(request: web.Request) -> web.Response:
             return web.Response(text="ok")

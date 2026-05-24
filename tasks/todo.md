@@ -1,3 +1,15 @@
+## Repo-wide quality gate cleanup (2026-05-24, COMPLETE)
+
+**Status:** All items complete. 2507 tests passing. `ruff check .` → 0 errors. `mypy errander/` → 0 errors.
+
+- [x] `uv run ruff check --fix .` — auto-fixed 237 violations
+- [x] Manual ruff fixes: SIM117, SIM102, B905, B007, N806, N814, E741, E402, E701, E702, F841, E501, TC001/TC003
+- [x] mypy: `ServiceRestartState` import, `SandboxExecutor` missing arg, checkpointer `Any` annotation, unused-ignore cleanup, aiosqlite Row cast
+- [x] Full test suite: 2507 passed, 0 failures
+- [x] Doc sync
+
+---
+
 ## SRE P2 Fixes (2026-05-24, COMPLETE)
 
 **Status:** All items complete. 2507 tests passing, ruff clean on changed files.

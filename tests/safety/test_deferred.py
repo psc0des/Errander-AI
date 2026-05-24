@@ -2,19 +2,19 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from errander.safety.deferred import DeferredExecution, DeferredExecutionStore
+from errander.safety.deferred import DeferredExecutionStore
 
 
 def _utc(*args: int) -> datetime:
-    return datetime(*args, tzinfo=timezone.utc)
+    return datetime(*args, tzinfo=UTC)
 
 
 # Always 30 days in the future so expiry_at (window_start + 7d) never passes
-WINDOW_START = datetime.now(tz=timezone.utc).replace(
+WINDOW_START = datetime.now(tz=UTC).replace(
     hour=23, minute=0, second=0, microsecond=0
 ) + timedelta(days=30)
 

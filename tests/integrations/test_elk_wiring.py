@@ -11,7 +11,6 @@ import pytest
 from errander.integrations.elk import ElkClient
 from errander.models.reports import DigestReport, ProbeVMResult
 
-
 # ---------------------------------------------------------------------------
 # probe_vm tests
 # ---------------------------------------------------------------------------

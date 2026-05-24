@@ -11,20 +11,18 @@ Covers:
 from __future__ import annotations
 
 import time
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import aiosqlite
 import pytest
 
 from errander.observability.vm_metrics import (
     MetricsCollector,
-    _NOISY_FSTYPES,
     _parse_prom_text,
     parse_probe_output,
     query_metrics,
 )
 from errander.safety.migrations import run_migrations
-
 
 # ---------------------------------------------------------------------------
 # Helpers

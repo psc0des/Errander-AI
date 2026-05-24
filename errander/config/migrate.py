@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import difflib
 import sys
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 import yaml
 
@@ -72,14 +74,13 @@ def migrate_inventory(path: Path) -> Path:
                 full_actions[name] = existing_actions[name]
             elif name == "docker_hygiene" and legacy_mode is not None:
                 # Translate top-level docker_command_mode legacy field.
-                if legacy_mode == "direct_sudo":
-                    if not warned_direct_sudo:
-                        print(
-                            "WARNING: docker_command_mode=direct_sudo is not supported by docker_hygiene "
-                            "(wrapper-only). Resetting to command_mode=wrapper.",
-                            file=sys.stderr,
-                        )
-                        warned_direct_sudo = True
+                if legacy_mode == "direct_sudo" and not warned_direct_sudo:
+                    print(
+                        "WARNING: docker_command_mode=direct_sudo is not supported by docker_hygiene "
+                        "(wrapper-only). Resetting to command_mode=wrapper.",
+                        file=sys.stderr,
+                    )
+                    warned_direct_sudo = True
                 enabled = legacy_mode != "disabled"
                 full_actions[name] = {"enabled": enabled, "command_mode": "wrapper"}
             else:

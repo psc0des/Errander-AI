@@ -25,9 +25,7 @@ from errander.agent.graph import (
     route_after_hash_verify,
     verify_plan_hash_node,
 )
-from errander.models.actions import RiskTier
 from errander.safety.approval import ApprovalManager
-
 
 # --- Helpers ---
 
@@ -40,6 +38,7 @@ def _make_vm_plans(
         for at, rt in zip(
             action_types or ["disk_cleanup"],
             risk_tiers or ["low"],
+            strict=False,
         )
     ]
     return [{"vm_id": "dev/web-01", "planned_actions": actions, "os_family": "ubuntu"}]
@@ -260,7 +259,7 @@ class TestApprovalGatePolicies:
 
         with patch("errander.agent.graph.await_dual_approval", new_callable=AsyncMock) as mock_approval:
             mock_approval.return_value = (True, "ops-team")
-            result = await approval_gate_node(state, approval_manager=mgr)
+            await approval_gate_node(state, approval_manager=mgr)
 
         mock_approval.assert_awaited_once()
 

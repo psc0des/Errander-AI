@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
+from datetime import UTC
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from errander.main import _parse_args, run_env_probe_main
-
 
 # ---------------------------------------------------------------------------
 # CLI flag parsing
@@ -68,13 +68,14 @@ async def test_run_env_probe_main_calls_probe_runner(tmp_path: Path) -> None:
         "        os_family: ubuntu\n"
     )
 
-    from datetime import datetime, timezone
+    from datetime import datetime
+
     from errander.models.reports import DigestReport
 
     fake_report = DigestReport(
         probe_id="probe-dev-20260515T060000",
         env_name="dev",
-        generated_at=datetime(2026, 5, 15, 6, 0, tzinfo=timezone.utc),
+        generated_at=datetime(2026, 5, 15, 6, 0, tzinfo=UTC),
     )
 
     # Patch at the source modules (deferred imports inside run_env_probe_main)
@@ -125,13 +126,14 @@ async def test_run_env_probe_main_posts_to_slack_when_configured(tmp_path: Path)
         "        os_family: ubuntu\n"
     )
 
-    from datetime import datetime, timezone
+    from datetime import datetime
+
     from errander.models.reports import DigestReport
 
     fake_report = DigestReport(
         probe_id="probe-dev-20260515T060000",
         env_name="dev",
-        generated_at=datetime(2026, 5, 15, 6, 0, tzinfo=timezone.utc),
+        generated_at=datetime(2026, 5, 15, 6, 0, tzinfo=UTC),
     )
 
     mock_slack = MagicMock()

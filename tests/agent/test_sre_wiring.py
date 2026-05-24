@@ -8,19 +8,14 @@ SRE recommendations validation audit (2026-05-14).
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, call, patch
-
-import pytest
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from errander.config.settings import (
-    DiskGrowthSettings,
-    DriftSettings,
     FailedSSHLoginsSettings,
     SRESignalSettings,
 )
 from errander.execution.sandbox import SandboxExecutor
 from errander.execution.ssh import SSHConnectionManager, SSHResult
-from errander.models.events import EventType
 from errander.safety.audit import AuditStore
 from errander.safety.baselines import BaselineStore
 from errander.safety.disk_history import VMDiskHistoryStore

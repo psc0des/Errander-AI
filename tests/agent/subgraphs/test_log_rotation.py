@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, patch
 
-import pytest
-
 from errander.agent.subgraphs.log_rotation import (
     LogRotationGraphState,
     assess_node,
@@ -21,7 +19,6 @@ from errander.agent.subgraphs.log_rotation import (
 from errander.execution.sandbox import SandboxExecutor
 from errander.execution.ssh import SSHConnectionManager, SSHResult
 from errander.models.actions import ActionStatus
-
 
 # --- Helpers ---
 

@@ -113,9 +113,11 @@ async def _check_ne(hostname: str, port: int, timeout: float = 3.0) -> bool:
     """Return True if Node Exporter is responding on host:port."""
     url = f"http://{hostname}:{port}/metrics"
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, timeout=aiohttp.ClientTimeout(total=timeout)) as resp:
-                return resp.status == 200
+        async with (
+            aiohttp.ClientSession() as session,
+            session.get(url, timeout=aiohttp.ClientTimeout(total=timeout)) as resp,
+        ):
+            return resp.status == 200
     except Exception:
         return False
 
@@ -175,11 +177,13 @@ async def _install_ne(
         ) as conn:
             result = await conn.run(_INSTALL_SCRIPT, check=False)
             if result.stdout:
-                for line in result.stdout.strip().splitlines():
+                stdout = result.stdout if isinstance(result.stdout, str) else result.stdout.decode()
+                for line in stdout.strip().splitlines():
                     print(f"      {line}")
             if result.exit_status != 0:
                 if result.stderr:
-                    _err(result.stderr.strip())
+                    stderr = result.stderr if isinstance(result.stderr, str) else result.stderr.decode()
+                    _err(stderr.strip())
                 return False
     except Exception as exc:
         _err(f"Install failed: {exc}")

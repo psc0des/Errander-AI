@@ -8,7 +8,6 @@ import pytest
 
 from errander.integrations.elk import ElkClient
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -124,11 +123,10 @@ async def test_fetch_vm_errors_unreachable() -> None:
 
 @pytest.mark.asyncio
 async def test_fetch_vm_errors_timeout() -> None:
-    import asyncio
 
     session = MagicMock()
     session.closed = False
-    session.post = MagicMock(side_effect=asyncio.TimeoutError())
+    session.post = MagicMock(side_effect=TimeoutError())
     client = ElkClient("http://elk:9200")
 
     with patch.object(client, "_get_session", return_value=session):

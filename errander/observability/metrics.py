@@ -456,7 +456,8 @@ input:disabled,select:disabled{opacity:.45;cursor:not-allowed}
 .flash-ok {background:var(--green-bg);color:var(--green)}
 .flash-err{background:var(--red-bg);  color:var(--red)}
 .inv-row{display:flex;align-items:center;gap:.65rem;margin-bottom:.55rem;flex-wrap:wrap}
-.inv-badge{font-family:var(--mono);font-size:.6rem;padding:2px 8px;border-radius:20px;background:var(--blue-bg);color:var(--primary)}
+.inv-badge{font-family:var(--mono);font-size:.6rem;padding:2px 8px;border-radius:20px;
+background:var(--blue-bg);color:var(--primary)}
 .inv-dis{opacity:.4;text-decoration:line-through}
 """
 
@@ -1261,7 +1262,7 @@ async def _ui_inventory_delete(request: web.Request) -> web.Response:
 
 async def _ui_glossary(request: web.Request) -> web.Response:
     """GET /ui/glossary — render Glossary & Workflow page."""
-    from errander.web.server import page_glossary, GLOSS_CSS
+    from errander.web.server import GLOSS_CSS, page_glossary
     manager: ApprovalManager | None = request.app.get(_APPROVAL_MANAGER_KEY)
     pending_count = len(manager.get_pending()) if manager is not None else 0
     body = f"<style>{GLOSS_CSS}</style>" + page_glossary()
@@ -1676,18 +1677,27 @@ async def _ui_hygiene_approve_get(request: web.Request) -> web.Response:
 
     token = request.query.get("token", "")
     if not token:
-        return web.Response(text=_hygiene_error_html("Missing token in approval URL."), content_type="text/html", status=400)
+        return web.Response(
+            text=_hygiene_error_html("Missing token in approval URL."),
+            content_type="text/html", status=400,
+        )
     try:
         payload = verify_signed_token(token)
     except InvalidSignedTokenError as exc:
-        return web.Response(text=_hygiene_error_html(f"Invalid or expired approval URL: {exc}"), content_type="text/html", status=400)
+        return web.Response(
+            text=_hygiene_error_html(f"Invalid or expired approval URL: {exc}"),
+            content_type="text/html", status=400,
+        )
 
     batch_id = str(payload.get("batch_id", ""))
     vm_id = str(payload.get("vm_id", ""))
 
     manager: HygieneApprovalManager | None = request.app.get(_HYGIENE_MANAGER_KEY)
     if manager is None:
-        return web.Response(text=_hygiene_error_html("Approval manager not available."), content_type="text/html", status=503)
+        return web.Response(
+            text=_hygiene_error_html("Approval manager not available."),
+            content_type="text/html", status=503,
+        )
 
     pending = next((p for p in manager.get_pending() if p.key == (batch_id, vm_id)), None)
     if pending is None:
@@ -1720,19 +1730,28 @@ async def _ui_hygiene_approve_post(request: web.Request) -> web.Response:
     decision = str(data.get("decision", "")).lower()
 
     if decision not in ("approve", "reject"):
-        return web.Response(text=_hygiene_error_html("Missing or invalid decision."), content_type="text/html", status=400)
+        return web.Response(
+            text=_hygiene_error_html("Missing or invalid decision."),
+            content_type="text/html", status=400,
+        )
 
     try:
         payload = verify_signed_token(token)
     except InvalidSignedTokenError as exc:
-        return web.Response(text=_hygiene_error_html(f"Invalid or expired approval URL: {exc}"), content_type="text/html", status=400)
+        return web.Response(
+            text=_hygiene_error_html(f"Invalid or expired approval URL: {exc}"),
+            content_type="text/html", status=400,
+        )
 
     batch_id = str(payload.get("batch_id", ""))
     vm_id = str(payload.get("vm_id", ""))
 
     manager: HygieneApprovalManager | None = request.app.get(_HYGIENE_MANAGER_KEY)
     if manager is None:
-        return web.Response(text=_hygiene_error_html("Approval manager not available."), content_type="text/html", status=503)
+        return web.Response(
+            text=_hygiene_error_html("Approval manager not available."),
+            content_type="text/html", status=503,
+        )
 
     pending = next((p for p in manager.get_pending() if p.key == (batch_id, vm_id)), None)
     if pending is None:
@@ -1743,7 +1762,7 @@ async def _ui_hygiene_approve_post(request: web.Request) -> web.Response:
         )
 
     assessment = pending.assessment
-    operator_id = str(request.app.get(_UI_USER_KEY) or "web")
+    operator_id = str(request.app.get(_UI_USER_KEY) or "web")  # type: ignore[arg-type]
 
     if decision == "reject":
         approval = DockerHygieneApproval(
@@ -1761,7 +1780,11 @@ async def _ui_hygiene_approve_post(request: web.Request) -> web.Response:
         )
 
     # decision == "approve" — collect checked findings
-    _executable = (DockerResourceClass.IMAGE_DANGLING, DockerResourceClass.IMAGE_UNUSED, DockerResourceClass.CONTAINER_STOPPED)
+    _executable = (
+        DockerResourceClass.IMAGE_DANGLING,
+        DockerResourceClass.IMAGE_UNUSED,
+        DockerResourceClass.CONTAINER_STOPPED,
+    )
     by_class = assessment.by_class()
     approved = []
     seen: set[tuple[str, str]] = set()

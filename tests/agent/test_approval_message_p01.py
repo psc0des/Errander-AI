@@ -128,7 +128,7 @@ def test_approval_message_caps_packages_at_10() -> None:
     msg = _format_plan_for_approval([plan], "b1", "plan-abc", "a" * 64)
     assert "and 5 more" in msg
     # Only 10 package lines rendered
-    rendered_pkg_lines = [l for l in msg.splitlines() if "`pkg-" in l]
+    rendered_pkg_lines = [ln for ln in msg.splitlines() if "`pkg-" in ln]
     assert len(rendered_pkg_lines) == 10
 
 

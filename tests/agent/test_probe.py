@@ -11,7 +11,6 @@ from errander.config.settings import SRESignalSettings
 from errander.models.events import EventType
 from errander.models.reports import DigestReport, ProbeVMResult
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------

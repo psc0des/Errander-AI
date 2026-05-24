@@ -1,8 +1,6 @@
 """Assert that rollback commands use sudo -n — the SRE's missed finding."""
 from __future__ import annotations
 
-import pytest
-
 from errander.execution.commands import AptManager, DnfManager
 
 

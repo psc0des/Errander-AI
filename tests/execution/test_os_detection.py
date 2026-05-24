@@ -184,9 +184,8 @@ class TestDetectOS:
             return_value=self._make_ssh_result("", exit_code=1),
         )
 
-        with patch.object(mgr, "execute", execute_mock):
-            with pytest.raises(ValueError, match="Failed to read"):
-                await detect_os("vm-1", "10.0.1.10", "errander-ai", "/key", mgr)
+        with patch.object(mgr, "execute", execute_mock), pytest.raises(ValueError, match="Failed to read"):
+            await detect_os("vm-1", "10.0.1.10", "errander-ai", "/key", mgr)
 
     async def test_graceful_degradation_on_optional_failures(self) -> None:
         """If df, docker, etc. fail, we still get a VMInfo with defaults."""

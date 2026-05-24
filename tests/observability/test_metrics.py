@@ -2,22 +2,18 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from prometheus_client import CollectorRegistry, Counter, Histogram
+from prometheus_client import Counter, Histogram
 
 from errander.models.actions import ActionResult, ActionStatus, ActionType
 from errander.observability.metrics import (
     ACTIONS_TOTAL,
-    ACTION_DURATION,
-    APPROVAL_WAIT,
-    BATCH_DURATION,
     LLM_REQUESTS_TOTAL,
     REGISTRY,
     SSH_ERRORS_TOTAL,
-    VM_LOCK_HELD,
     _health_handler,
     _metrics_handler,
     start_metrics_server,
@@ -27,7 +23,6 @@ from errander.observability.tracking import (
     record_llm_outcome,
     record_ssh_error,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -39,7 +34,7 @@ def _make_result(
     vm_id: str = "vm-001",
     duration_seconds: float | None = None,
 ) -> ActionResult:
-    started = datetime(2026, 4, 3, 10, 0, 0, tzinfo=timezone.utc)
+    started = datetime(2026, 4, 3, 10, 0, 0, tzinfo=UTC)
     completed = None
     if duration_seconds is not None:
         from datetime import timedelta
@@ -58,8 +53,10 @@ def _sample_value(metric: Counter | Histogram, labels: dict[str, str]) -> float:
     for m in REGISTRY.collect():
         if m.name == metric._name:  # type: ignore[attr-defined]
             for sample in m.samples:
-                if all(sample.labels.get(k) == v for k, v in labels.items()):
-                    if sample.name.endswith("_total") or not sample.name.endswith(("_sum", "_bucket", "_count")):
+                if (
+                    all(sample.labels.get(k) == v for k, v in labels.items())
+                    and (sample.name.endswith("_total") or not sample.name.endswith(("_sum", "_bucket", "_count")))
+                ):
                         return sample.value
     return 0.0
 

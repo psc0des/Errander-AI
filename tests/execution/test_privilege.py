@@ -1,8 +1,6 @@
 """Tests for the privilege escalation helper."""
 from __future__ import annotations
 
-import pytest
-
 from errander.execution.privilege import (
     parse_capability_check,
     privileged,

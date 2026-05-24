@@ -100,12 +100,14 @@ class TestSSHConnectionManager:
         fake_conn = FakeSSHConnection()
         fake_conn.run = slow_run  # type: ignore[assignment]
 
-        with patch.object(mgr, "_connect", return_value=fake_conn):
-            with pytest.raises(TimeoutError, match="timed out"):
-                await mgr.execute(
-                    "vm-1", "10.0.1.10", "errander-ai", "/key", "sleep 999",
-                    timeout=1,
-                )
+        with (
+            patch.object(mgr, "_connect", return_value=fake_conn),
+            pytest.raises(TimeoutError, match="timed out"),
+        ):
+            await mgr.execute(
+                "vm-1", "10.0.1.10", "errander-ai", "/key", "sleep 999",
+                timeout=1,
+            )
 
     async def test_connection_error_removes_from_pool(self) -> None:
         """Connection error during execute removes conn from pool."""
@@ -155,9 +157,11 @@ class TestSSHConnectionManager:
             side_effect=[OSError("refused"), OSError("refused")],
         )
 
-        with patch.object(mgr, "_connect", connect_mock):
-            with pytest.raises(ConnectionError, match="failed after 2 attempts"):
-                await mgr.execute("vm-1", "10.0.1.10", "errander-ai", "/key", "uptime")
+        with (
+            patch.object(mgr, "_connect", connect_mock),
+            pytest.raises(ConnectionError, match="failed after 2 attempts"),
+        ):
+            await mgr.execute("vm-1", "10.0.1.10", "errander-ai", "/key", "uptime")
 
     async def test_close_single(self) -> None:
         mgr = SSHConnectionManager()
@@ -243,12 +247,11 @@ class TestSSHConnectionManager:
         fake_conn = FakeSSHConnection()
         fake_conn.run = timeout_run  # type: ignore[assignment]
 
-        with patch.object(mgr, "_connect", return_value=fake_conn):
-            with pytest.raises(TimeoutError):
-                await mgr.execute(
-                    "vm-1", "10.0.1.10", "errander-ai", "/key", "sleep 999",
-                    timeout=1,
-                )
+        with patch.object(mgr, "_connect", return_value=fake_conn), pytest.raises(TimeoutError):
+            await mgr.execute(
+                "vm-1", "10.0.1.10", "errander-ai", "/key", "sleep 999",
+                timeout=1,
+            )
 
         assert "vm-1" not in mgr._connections
 

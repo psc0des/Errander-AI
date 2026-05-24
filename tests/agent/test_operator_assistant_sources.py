@@ -9,7 +9,6 @@ import pytest
 from errander.agent.operator_assistant import OperatorAssistant, _fallback_response
 from errander.models.analysis import FleetContext, VMSignalSummary
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

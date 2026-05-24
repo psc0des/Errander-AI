@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from errander.models.actions import ACTION_RISK_TIERS, ActionType, LEGACY_ACTION_TYPES, RiskTier
+from errander.models.actions import ACTION_RISK_TIERS, LEGACY_ACTION_TYPES, ActionType, RiskTier
 
 
 class TestActionModels:

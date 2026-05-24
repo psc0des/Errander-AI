@@ -2,17 +2,13 @@
 
 from __future__ import annotations
 
-import asyncio
 from datetime import UTC, datetime, timedelta
-from io import StringIO
-from unittest.mock import patch
 
 import aiosqlite
 import pytest
 
 from errander.commands.vm_facts import cmd_vm_facts
 from errander.safety.migrations import run_migrations
-
 
 # ---------------------------------------------------------------------------
 # Fixtures

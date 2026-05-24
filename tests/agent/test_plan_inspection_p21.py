@@ -10,7 +10,6 @@ Tests cover:
 from __future__ import annotations
 
 import json
-import os
 
 import pytest
 
@@ -140,7 +139,6 @@ class TestPlanShowCLI:
     @pytest.mark.asyncio
     async def test_plan_show_renders_all_packages(self, tmp_path: object) -> None:
         """run_plan_show must print every package from a stored snapshot."""
-        import asyncio
         from pathlib import Path
         assert isinstance(tmp_path, Path)
 
@@ -179,7 +177,6 @@ class TestPlanShowCLI:
                 plan_json=plan_json,
             )
 
-        import io
         from unittest.mock import patch
         captured: list[str] = []
         with patch("builtins.print", side_effect=lambda *a: captured.append(" ".join(str(x) for x in a))):

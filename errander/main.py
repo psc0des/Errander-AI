@@ -23,6 +23,7 @@ import signal
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import structlog
 
@@ -1200,12 +1201,10 @@ async def run_restart_service(
         return 0
 
     # --- Live mode: Slack approval gate + per-VM subgraph execution ---
-    from errander.agent.subgraphs.service_restart import (
-        ServiceRestartState,
-        build_service_restart_subgraph,
-    )
+    from errander.agent.subgraphs.service_restart import build_service_restart_subgraph
     from errander.models.events import AuditEvent as _AuditEvent
     from errander.models.events import EventType as _EventType
+    from errander.models.service_restart import ServiceRestartState  # noqa: TC001
     from errander.safety.approval import poll_approval, request_approval
 
     slack_client: SlackClient | None = None
@@ -1268,7 +1267,11 @@ async def run_restart_service(
 
     print(f"Restart APPROVED by {approver}. Executing on {len(vm_ids)} VM(s)…")
 
-    executor = SandboxExecutor(dry_run=False)
+    ssh_manager = SSHConnectionManager(
+        known_hosts_path=settings.ssh_known_hosts_path,
+        strict_host_keys=settings.ssh_strict_host_keys,
+    )
+    executor = SandboxExecutor(ssh_manager=ssh_manager, dry_run=False)
     subgraph_compiled = build_service_restart_subgraph(
         executor, audit_store=audit_store, batch_id=batch_id,
     ).compile()
@@ -1293,7 +1296,7 @@ async def run_restart_service(
             "dry_run": False,
             "unit_name": unit_name,
             "restartable_units": restartable_units,
-            "hostname": target.host,  # type: ignore[typeddict-unknown-key]
+            "hostname": target.host,
             "username": username,
             "key_path": key_path,
         }
@@ -1681,10 +1684,11 @@ async def run_env_batch(
     # Each batch run gets a unique thread_id so checkpoints don't collide.
     # The same DB file is used for audit + checkpoints (separate tables).
     _thread_id = f"batch-{_uuid.uuid4().hex[:12]}"
+    _checkpointer_cm: Any = None
     try:
         from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver as _AsyncSqliteSaver
-        _checkpointer = _AsyncSqliteSaver.from_conn_string(settings.audit_db_url)
-        await _checkpointer.__aenter__()
+        _checkpointer_cm = _AsyncSqliteSaver.from_conn_string(settings.audit_db_url)
+        _checkpointer = await _checkpointer_cm.__aenter__()
         _checkpointer_entered = True
     except Exception as _exc:
         logger.warning("Could not init AsyncSqliteSaver — running without checkpointing: %s", _exc)
@@ -1809,9 +1813,9 @@ async def run_env_batch(
         final = await graph.ainvoke(initial_state, config=_invoke_config)  # type: ignore[call-overload]
     finally:
         await ai_decision_store.close()
-        if _checkpointer_entered and _checkpointer is not None:
+        if _checkpointer_entered:
             with contextlib.suppress(Exception):
-                await _checkpointer.__aexit__(None, None, None)
+                await _checkpointer_cm.__aexit__(None, None, None)
 
     logger.info(
         "Batch complete",

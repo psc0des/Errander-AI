@@ -4,6 +4,23 @@
 2026-05-24
 
 ## Current Phase
+**Repo-wide quality gate cleanup (2026-05-24, COMPLETE).** 2507 tests passing. `ruff check .` → 0 errors. `mypy errander/` → 0 errors.
+
+Resolved all pre-existing static quality gate debt tracked since the SRE P1/P2 review. Zero new functionality — pure chore. All 252 ruff violations and 15 mypy errors fixed across 40+ files.
+
+### Files changed in quality gate cleanup (2026-05-24)
+- `errander/agent/vm_graph.py` — fix unused var, fix `ServiceRestartState` import (→ TYPE_CHECKING), re-add legitimate `# type: ignore[typeddict-unknown-key]` on PatchingGraphState/BackupVerifyGraphState dicts
+- `errander/main.py` — fix `ServiceRestartState` import location, fix `SandboxExecutor` missing `ssh_manager`, fix checkpointer CM type annotation (`Any`), add `from typing import Any`
+- `errander/agent/graph.py` — remove stale `# type: ignore[attr-defined]` comments
+- `errander/safety/batches.py` — cast `aiosqlite.Row` → `tuple[object, ...]` before `_row_to_record()`
+- `errander/config/configure.py` — combined nested `async with`, fixed bytes decode (str-bytes-safe)
+- `errander/config/migrate.py` — moved `Path` to TYPE_CHECKING, combined nested `if` (SIM102)
+- `errander/observability/metrics.py` — 8 E501 line-length fixes, `# type: ignore[arg-type]` for AppKey stubs
+- `errander/web/server.py` — E402 logger placement, E701 single-line ifs, F841 unused vars, E702 multi-statement lines, N806/N814/E741/B007 naming fixes
+- `scripts/browse_ui.py` — removed unused `port` variable (F841)
+- 30+ test files — I001 sort, SIM117 nested-with, SIM102 nested-if, B905 zip-strict, E501, E741, F841, B007 fixes
+
+## Previous Phase
 **AI Trust Layer — SRE P2 Fixes (2026-05-24, COMPLETE).** 2507 tests passing.
 
 Fixed SRE P1 findings (previous commit) plus P2 follow-ups: (1) evidence validation no longer skips when `context.sources_used` is empty — all hallucinated IDs are now stripped unconditionally; (2) `context_snapshot` in `ai_decisions` now records `redaction_count`, `vms_dropped`, `fields_truncated`, and `entries_truncated` from the budget/redaction pipeline. 2 new tests (empty-sources edge case + snapshot stats). All changed files ruff-clean.

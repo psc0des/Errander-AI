@@ -8,11 +8,9 @@ import pytest
 
 from errander.integrations.slack import (
     APPROVE_REACTION,
-    REJECT_REACTION,
     SlackClient,
     SlackError,
 )
-
 
 # --- Helpers ---
 
@@ -265,6 +263,8 @@ class TestRateLimiting:
             mock_session.post = MagicMock(return_value=_ctx(rate_limit_resp))
             mock_session_cls.return_value = mock_session
 
-            with patch("errander.integrations.slack.asyncio.sleep", AsyncMock()):
-                with pytest.raises(SlackError, match="rate limit"):
-                    await client.post_message("test")
+            with (
+                patch("errander.integrations.slack.asyncio.sleep", AsyncMock()),
+                pytest.raises(SlackError, match="rate limit"),
+            ):
+                await client.post_message("test")

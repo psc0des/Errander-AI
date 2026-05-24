@@ -12,9 +12,10 @@ from __future__ import annotations
 
 import ast
 import inspect
-import os
+from collections.abc import Generator
 from pathlib import Path
-from typing import Any, Generator
+from typing import Any
+
 import pytest
 
 # ---------------------------------------------------------------------------
@@ -41,8 +42,11 @@ def test_server_does_not_import_data_constants() -> None:
     tree = ast.parse(source, filename=str(_SERVER_PY))
 
     for node in ast.walk(tree):
-        if isinstance(node, (ast.Import, ast.ImportFrom)):
-            if isinstance(node, ast.ImportFrom) and node.module in ("errander.web.data", ".data"):
+        if (
+            isinstance(node, (ast.Import, ast.ImportFrom))
+            and isinstance(node, ast.ImportFrom)
+            and node.module in ("errander.web.data", ".data")
+        ):
                 imported_names = {alias.name for alias in node.names}
                 direct_data = imported_names & _DATA_NAMES
                 assert not direct_data, (
@@ -74,7 +78,7 @@ def test_server_imports_get_provider() -> None:
 # ---------------------------------------------------------------------------
 
 @pytest.fixture(autouse=True)
-def reset_singleton() -> "Generator[None, None, None]":
+def reset_singleton() -> Generator[None, None, None]:
     """Reset the provider singleton before and after each test."""
     from errander.web import providers
     old = providers._singleton

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import textwrap
 from pathlib import Path
 
@@ -22,10 +21,12 @@ def sm(key: str) -> SecretsManager:
 
 
 class TestYamlDecryption:
-    def test_encrypted_yaml_value_decrypts(self, tmp_path: Path, sm: SecretsManager, key: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_encrypted_yaml_value_decrypts(
+        self, tmp_path: Path, sm: SecretsManager, key: str, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         monkeypatch.setenv("ERRANDER_SECRETS_KEY", key)
-        encrypted_token = sm.encrypt("xoxb-real-token")
-        yaml_content = textwrap.dedent(f"""
+        sm.encrypt("xoxb-real-token")
+        yaml_content = textwrap.dedent("""
             environments:
               dev:
                 ssh_user: errander
@@ -43,7 +44,9 @@ class TestYamlDecryption:
         inv = validate_inventory(inv_file)
         assert inv.environments["dev"].targets[0].host == "10.0.1.10"
 
-    def test_encrypted_settings_yaml_decrypts(self, tmp_path: Path, sm: SecretsManager, key: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_encrypted_settings_yaml_decrypts(
+        self, tmp_path: Path, sm: SecretsManager, key: str, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         monkeypatch.setenv("ERRANDER_SECRETS_KEY", key)
         encrypted_model = sm.encrypt("gpt-4o-mini")
         yaml_content = textwrap.dedent(f"""\
@@ -60,7 +63,9 @@ class TestYamlDecryption:
         cfg = validate_settings(settings_file)
         assert cfg.llm.model == "gpt-4o-mini"
 
-    def test_encrypted_value_without_key_raises(self, tmp_path: Path, sm: SecretsManager, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_encrypted_value_without_key_raises(
+        self, tmp_path: Path, sm: SecretsManager, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         monkeypatch.delenv("ERRANDER_SECRETS_KEY", raising=False)
         encrypted = sm.encrypt("secret")
         yaml_content = textwrap.dedent(f"""\

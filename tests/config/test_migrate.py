@@ -198,7 +198,9 @@ class TestDiffOutput:
         captured = capsys.readouterr()
         assert "docker_command_mode" in captured.out or "-" in captured.out
 
-    def test_diff_contains_removal_and_addition_markers(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    def test_diff_contains_removal_and_addition_markers(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str],
+    ) -> None:
         inv = tmp_path / "inventory.yaml"
         inv.write_text(_inv({"dev": {"docker_command_mode": "disabled", "targets": [_TARGET]}}))
         migrate_inventory(inv)

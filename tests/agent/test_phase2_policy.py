@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -19,14 +20,13 @@ from errander.models.events import EventType
 from errander.safety.audit import AuditStore
 from errander.safety.validators import validate_action
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
 def _ssh_result(stdout: str = "", exit_code: int = 0) -> SSHResult:
-    from datetime import datetime, timezone
-    now = datetime.now(tz=timezone.utc)
+    from datetime import datetime
+    now = datetime.now(tz=UTC)
     return SSHResult(exit_code=exit_code, stdout=stdout, stderr="", command="mocked",
                      started_at=now, completed_at=now)
 

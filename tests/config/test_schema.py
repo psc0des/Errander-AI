@@ -11,9 +11,6 @@ from pydantic import ValidationError
 from errander.config.schema import (
     EnvironmentSchema,
     InventoryConfig,
-    PoliciesConfig,
-    PolicySchema,
-    SettingsConfig,
     TargetSchema,
     validate_inventory,
     validate_policies,

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -13,7 +13,6 @@ from errander.agent.graph import (
     prepare_waves_node,
 )
 from errander.execution.ssh import SSHConnectionManager, SSHResult
-
 
 # --- Helpers ---
 
@@ -32,7 +31,7 @@ def _make_targets(n: int) -> list[dict[str, object]]:
 
 
 def _make_ssh_result(success: bool = True) -> SSHResult:
-    now = datetime.now(tz=timezone.utc)
+    now = datetime.now(tz=UTC)
     return SSHResult(
         exit_code=0 if success else 1,
         stdout="ok" if success else "failed",

@@ -140,7 +140,6 @@ def _start_server() -> tuple[str, asyncio.AbstractEventLoop, object, AuditStore]
 def main() -> None:
     print("Starting Errander-AI server with sample data...")
     base_url, loop, ctx, thread = _start_server()
-    port = ctx["port"]
 
     print(f"\n  Server running at: {base_url}/ui")
     print(f"  Approvals page  : {base_url}/ui/approvals")

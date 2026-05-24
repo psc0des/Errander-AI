@@ -5,12 +5,12 @@ proves missing sudo causes a failed action, not silent success.
 """
 from __future__ import annotations
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock
 
-from errander.agent.vm_graph import sudo_preflight_node, route_after_sudo_preflight
-from errander.models.events import EventType
+import pytest
 
+from errander.agent.vm_graph import route_after_sudo_preflight, sudo_preflight_node
+from errander.models.events import EventType
 
 # --- Routing tests ---
 

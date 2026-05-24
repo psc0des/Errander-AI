@@ -5,8 +5,6 @@ from __future__ import annotations
 import time
 from unittest.mock import AsyncMock, patch
 
-import pytest
-
 from errander.agent.subgraphs.backup_verify import (
     MANIFEST,
     BackupVerifyGraphState,
@@ -19,7 +17,6 @@ from errander.agent.subgraphs.backup_verify import (
 from errander.execution.sandbox import SandboxExecutor
 from errander.execution.ssh import SSHConnectionManager, SSHResult
 from errander.models.actions import ActionStatus
-
 
 # --- Helpers ---
 

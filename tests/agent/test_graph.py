@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -26,7 +27,6 @@ from errander.safety.approval import ApprovalManager
 from errander.safety.audit import AuditStore
 from errander.safety.locking import FileLocker
 from errander.scheduling.windows import MaintenanceWindow
-
 
 # --- Helpers ---
 
@@ -71,8 +71,8 @@ def _make_executor(dry_run: bool = True) -> SandboxExecutor:
 
 
 def _make_ssh_result(stdout: str = "ok", exit_code: int = 0) -> SSHResult:
-    from datetime import datetime, timezone
-    now = datetime.now(tz=timezone.utc)
+    from datetime import datetime
+    now = datetime.now(tz=UTC)
     return SSHResult(
         exit_code=exit_code,
         stdout=stdout,
@@ -120,11 +120,11 @@ class TestValidateWindowNode:
     @pytest.mark.asyncio
     async def test_passes_inside_window(self) -> None:
         """Current time inside window → no error."""
-        from datetime import datetime, timezone
+        from datetime import datetime
         from unittest.mock import patch
 
         # Patch datetime.now to a known time: Monday 03:00 UTC
-        monday_3am = datetime(2026, 4, 6, 3, 0, 0, tzinfo=timezone.utc)
+        monday_3am = datetime(2026, 4, 6, 3, 0, 0, tzinfo=UTC)
         window = MaintenanceWindow(
             days=["monday"], start_hour=2, end_hour=6, timezone="UTC"
         )
@@ -136,11 +136,11 @@ class TestValidateWindowNode:
     @pytest.mark.asyncio
     async def test_sets_error_outside_window(self) -> None:
         """Current time outside window → sets error, graph will short-circuit."""
-        from datetime import datetime, timezone
+        from datetime import datetime
         from unittest.mock import patch
 
         # Monday 10:00 UTC — outside window [02:00, 06:00)
-        monday_10am = datetime(2026, 4, 6, 10, 0, 0, tzinfo=timezone.utc)
+        monday_10am = datetime(2026, 4, 6, 10, 0, 0, tzinfo=UTC)
         window = MaintenanceWindow(
             days=["monday"], start_hour=2, end_hour=6, timezone="UTC"
         )
@@ -153,11 +153,11 @@ class TestValidateWindowNode:
     @pytest.mark.asyncio
     async def test_sets_error_wrong_day(self) -> None:
         """Wrong day of week → sets error."""
-        from datetime import datetime, timezone
+        from datetime import datetime
         from unittest.mock import patch
 
         # Tuesday 03:00 UTC — window only allows Monday
-        tuesday_3am = datetime(2026, 4, 7, 3, 0, 0, tzinfo=timezone.utc)
+        tuesday_3am = datetime(2026, 4, 7, 3, 0, 0, tzinfo=UTC)
         window = MaintenanceWindow(
             days=["monday"], start_hour=2, end_hour=6, timezone="UTC"
         )
@@ -169,13 +169,13 @@ class TestValidateWindowNode:
     @pytest.mark.asyncio
     async def test_build_graph_with_window_blocks_outside(self, tmp_path: Path) -> None:
         """build_batch_graph with window wires it into the node."""
-        from datetime import datetime, timezone
+        from datetime import datetime
         from unittest.mock import patch
 
         window = MaintenanceWindow(
             days=["monday"], start_hour=2, end_hour=6, timezone="UTC"
         )
-        monday_10am = datetime(2026, 4, 6, 10, 0, 0, tzinfo=timezone.utc)
+        monday_10am = datetime(2026, 4, 6, 10, 0, 0, tzinfo=UTC)
 
         ssh_mgr = SSHConnectionManager()
         executor = _make_executor()
@@ -351,8 +351,8 @@ class TestCollectResultsNode:
 class TestGenerateReportNode:
     @pytest.mark.asyncio
     async def test_generates_report(self) -> None:
-        from datetime import datetime, timezone
-        now = datetime.now(tz=timezone.utc).isoformat()
+        from datetime import datetime
+        now = datetime.now(tz=UTC).isoformat()
         state = _base_state(
             batch_id="b-report-01",
             vm_results=[{
@@ -529,7 +529,6 @@ class TestRunVmNodeExceptionSafety:
     @pytest.mark.asyncio
     async def test_batch_continues_when_one_vm_crashes(self, tmp_path: Path) -> None:
         """When one VM graph crashes, remaining VMs complete and report is generated."""
-        from errander.models.vm import OSFamily, VMInfo
 
         executor = _make_executor(dry_run=True)
         locker = _make_locker(tmp_path)
@@ -543,12 +542,12 @@ class TestRunVmNodeExceptionSafety:
         ]
 
         # Both targets pass SSH validation
-        with patch.object(
-            ssh_main, "execute",
-            AsyncMock(return_value=_make_ssh_result("ok")),
-        ):
-            # vm_graph always raises (simulating crash for all VMs)
-            with patch(
+        with (
+            patch.object(
+                ssh_main, "execute",
+                AsyncMock(return_value=_make_ssh_result("ok")),
+            ),
+            patch(
                 "errander.agent.graph.build_vm_graph",
                 return_value=MagicMock(
                     compile=MagicMock(
@@ -557,7 +556,8 @@ class TestRunVmNodeExceptionSafety:
                         )
                     )
                 ),
-            ):
+            ),
+        ):
                 compiled = build_batch_graph(
                     executor, locker, audit_store, ssh_main,
                 ).compile()
@@ -593,7 +593,7 @@ class TestApprovalGateDeferred:
     @pytest.mark.asyncio
     async def test_dry_run_outside_window_never_deferred(self) -> None:
         """Dry-run is always auto-approved immediately, never deferred regardless of window."""
-        from datetime import datetime, timezone
+        from datetime import datetime
         from unittest.mock import patch
 
         from errander.agent.graph import approval_gate_node
@@ -603,7 +603,7 @@ class TestApprovalGateDeferred:
             days=["monday"], start_hour=2, end_hour=6, timezone="UTC"
         )
         # Monday outside window — dry-run should still NOT be deferred
-        monday_10am = datetime(2030, 1, 7, 10, 0, 0, tzinfo=timezone.utc)
+        monday_10am = datetime(2030, 1, 7, 10, 0, 0, tzinfo=UTC)
 
         deferred_store = DeferredExecutionStore(":memory:")
         await deferred_store.initialize()
@@ -628,7 +628,7 @@ class TestApprovalGateDeferred:
     @pytest.mark.asyncio
     async def test_dry_run_inside_window_not_deferred(self) -> None:
         """Dry-run approval while inside window → not deferred."""
-        from datetime import datetime, timezone
+        from datetime import datetime
         from unittest.mock import patch
 
         from errander.agent.graph import approval_gate_node
@@ -637,7 +637,7 @@ class TestApprovalGateDeferred:
         window = MaintenanceWindow(
             days=["monday"], start_hour=2, end_hour=6, timezone="UTC"
         )
-        monday_3am = datetime(2026, 4, 6, 3, 0, 0, tzinfo=timezone.utc)
+        monday_3am = datetime(2026, 4, 6, 3, 0, 0, tzinfo=UTC)
 
         deferred_store = DeferredExecutionStore(":memory:")
         await deferred_store.initialize()
@@ -660,7 +660,7 @@ class TestApprovalGateDeferred:
     @pytest.mark.asyncio
     async def test_live_run_deferred_when_outside_window(self) -> None:
         """Live run approved while outside maintenance window is deferred to next window."""
-        from datetime import datetime, timezone
+        from datetime import datetime
         from unittest.mock import patch
 
         from errander.agent.graph import approval_gate_node
@@ -670,7 +670,7 @@ class TestApprovalGateDeferred:
             days=["monday"], start_hour=2, end_hour=6, timezone="UTC"
         )
         # 2030-01-07 is a Monday at 10:00 UTC — outside [02:00, 06:00).
-        monday_10am = datetime(2030, 1, 7, 10, 0, 0, tzinfo=timezone.utc)
+        monday_10am = datetime(2030, 1, 7, 10, 0, 0, tzinfo=UTC)
 
         deferred_store = DeferredExecutionStore(":memory:")
         await deferred_store.initialize()
@@ -721,7 +721,7 @@ class TestApprovalGateDeferred:
     @pytest.mark.asyncio
     async def test_live_run_outside_window_notifies_slack(self) -> None:
         """When deferring a live run, Slack gets a notification with the window time."""
-        from datetime import datetime, timezone
+        from datetime import datetime
         from unittest.mock import AsyncMock, patch
 
         from errander.agent.graph import approval_gate_node
@@ -730,7 +730,7 @@ class TestApprovalGateDeferred:
         window = MaintenanceWindow(
             days=["monday"], start_hour=2, end_hour=6, timezone="UTC"
         )
-        monday_10am = datetime(2030, 1, 7, 10, 0, 0, tzinfo=timezone.utc)
+        monday_10am = datetime(2030, 1, 7, 10, 0, 0, tzinfo=UTC)
 
         slack_client = MagicMock()
         slack_client.post_alert = AsyncMock()
@@ -764,7 +764,7 @@ class TestApprovalGateDeferred:
     @pytest.mark.asyncio
     async def test_live_run_outside_window_logs_audit_event(self) -> None:
         """Deferral of a live run logs an EXECUTION_DEFERRED audit event."""
-        from datetime import datetime, timezone
+        from datetime import datetime
         from unittest.mock import patch
 
         from errander.agent.graph import approval_gate_node
@@ -775,7 +775,7 @@ class TestApprovalGateDeferred:
         window = MaintenanceWindow(
             days=["monday"], start_hour=2, end_hour=6, timezone="UTC"
         )
-        monday_10am = datetime(2030, 1, 7, 10, 0, 0, tzinfo=timezone.utc)
+        monday_10am = datetime(2030, 1, 7, 10, 0, 0, tzinfo=UTC)
 
         deferred_store = DeferredExecutionStore(":memory:")
         await deferred_store.initialize()

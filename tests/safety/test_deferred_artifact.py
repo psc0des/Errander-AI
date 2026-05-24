@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import tempfile
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -11,7 +10,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from errander.safety.deferred import DeferredExecution, DeferredExecutionStore
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -146,7 +144,6 @@ async def test_migration_adds_columns(tmp_path: Path) -> None:
 @pytest.mark.asyncio
 async def test_approval_gate_defers_with_artifact(tmp_path: Path) -> None:
     """approval_gate_node must call deferred_store.save() with plan_json when deferring."""
-    from unittest.mock import AsyncMock, MagicMock
 
     from errander.agent.graph import approval_gate_node
     from errander.scheduling.windows import MaintenanceWindow
@@ -203,7 +200,6 @@ async def test_approval_gate_defers_with_artifact(tmp_path: Path) -> None:
 @pytest.mark.asyncio
 async def test_approval_gate_deferred_audit_event(tmp_path: Path) -> None:
     """EXECUTION_DEFERRED audit event should include plan_hash and artifact_saved=True."""
-    from unittest.mock import AsyncMock, MagicMock
 
     from errander.agent.graph import approval_gate_node
     from errander.models.events import AuditEvent, EventType

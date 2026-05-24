@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from errander.execution.commands import AptManager, DnfManager, get_package_manager
 from errander.models.vm import OSFamily
 

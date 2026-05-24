@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -130,7 +130,7 @@ def _report_with_prom(metrics: list[str]) -> DigestReport:
     return DigestReport(
         probe_id="p1",
         env_name="dev",
-        generated_at=datetime(2026, 5, 16, 6, 0, tzinfo=timezone.utc),
+        generated_at=datetime(2026, 5, 16, 6, 0, tzinfo=UTC),
         vm_results=[
             ProbeVMResult(
                 vm_id="v1", hostname="host-1", reachable=True,
@@ -158,7 +158,7 @@ def test_render_digest_report_no_prometheus_section_when_empty() -> None:
 def test_render_digest_report_prometheus_counts_vm() -> None:
     report = DigestReport(
         probe_id="p1", env_name="dev",
-        generated_at=datetime(2026, 5, 16, 6, 0, tzinfo=timezone.utc),
+        generated_at=datetime(2026, 5, 16, 6, 0, tzinfo=UTC),
         vm_results=[
             ProbeVMResult(vm_id="v1", hostname="h1", reachable=True,
                           prometheus_metrics=["CPU (5m): 40.0%"]),

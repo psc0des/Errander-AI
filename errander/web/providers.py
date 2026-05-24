@@ -227,10 +227,10 @@ class LiveProvider:
 
     async def refresh(
         self,
-        db: "Any | None" = None,
-        approval_manager: "Any | None" = None,
-        deferred_store: "Any | None" = None,
-        inventory_path: "Any | None" = None,
+        db: Any | None = None,
+        approval_manager: Any | None = None,
+        deferred_store: Any | None = None,
+        inventory_path: Any | None = None,
     ) -> None:
         """Populate the cache from live stores.  Safe to call repeatedly.
 
@@ -408,7 +408,7 @@ class LiveProvider:
                 logger.warning("LiveProvider: deferred store read failed: %s", exc)
         self._deferred_queue = deferred
 
-        now = _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+        now = _dt.datetime.now(_dt.UTC).strftime("%Y-%m-%d %H:%M UTC")
         suffix = f" · {len(errors)} store(s) unavailable" if errors else ""
         self._freshness = f"live · refreshed {now}{suffix}"
         logger.info(

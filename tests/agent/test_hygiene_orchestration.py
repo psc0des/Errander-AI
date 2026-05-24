@@ -23,7 +23,6 @@ from errander.models.docker_hygiene import (
 )
 from errander.safety.hygiene_approval import HygieneApprovalManager
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

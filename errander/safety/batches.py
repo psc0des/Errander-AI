@@ -101,7 +101,7 @@ class BatchStore:
         row = await cursor.fetchone()
         if row is None:
             return None
-        return self._row_to_record(row)
+        return self._row_to_record(tuple(row))
 
     async def list_recent(self, limit: int = 50) -> list[BatchRecord]:
         """Return up to *limit* batches, most-recent first."""
@@ -111,7 +111,7 @@ class BatchStore:
             (limit,),
         )
         rows = await cursor.fetchall()
-        return [self._row_to_record(r) for r in rows]
+        return [self._row_to_record(tuple(r)) for r in rows]
 
     # ------------------------------------------------------------------
     # Internal

@@ -1,5 +1,21 @@
 # Errander-AI — Lessons Learned
 
+## 2026-05-24 — `ServiceRestartState` belongs in TYPE_CHECKING at module level, `# noqa: TC001` for local imports
+
+When a TypedDict is used only in type annotations (variable annotations like `x: T = {...}`), move it to `TYPE_CHECKING` to avoid the TC001 lint error. With `from __future__ import annotations`, all annotations are lazy — no runtime import needed. For local imports inside function bodies that can't move to TYPE_CHECKING, add `# noqa: TC001` to suppress.
+
+**Why:** Ruff TC001 caught `ServiceRestartState` in two places after it was moved from `service_restart.py` subgraph to the canonical `errander/models/service_restart.py` location.
+
+**How to apply:** After any import refactor, check if the moved symbol is annotation-only. If yes, move to TYPE_CHECKING block. If in a function body, `# noqa: TC001`.
+
+## 2026-05-24 — LangGraph `AsyncSqliteSaver.from_conn_string()` returns a context manager, not the saver itself
+
+`from_conn_string()` is an `asynccontextmanager` factory. Calling it returns a CM object; you must `await cm.__aenter__()` to get the actual `BaseCheckpointSaver`. Store the CM separately (typed as `Any`) so you can `await cm.__aexit__(None, None, None)` in the finally block.
+
+**Why:** mypy rejected `_checkpointer_cm: object = None` in the finally block because `object` has no `__aexit__`. The fix: `_checkpointer_cm: Any = None`.
+
+**How to apply:** Any async context manager stored in a pre-declared variable for later cleanup should be typed `Any` (or the specific CM type if known from stubs).
+
 ## 2026-05-24 — Evidence validation must always run, even when `sources_used` is empty
 
 The guard `if valid_sources:` before the evidence-stripping loop is a latent bug: when `context.sources_used` is empty (no data sources queried), any evidence ID the LLM returns is hallucinated — but the guard skips validation and lets them through. The fix: always run the filter loop. When `valid_sources` is empty, `e not in valid_sources` is True for all `e`, so all evidence is stripped.

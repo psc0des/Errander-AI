@@ -10,7 +10,6 @@ import pytest
 from errander.agent.probe import _parse_failed_services, _parse_journal_errors
 from errander.models.reports import DigestReport, ProbeVMResult
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

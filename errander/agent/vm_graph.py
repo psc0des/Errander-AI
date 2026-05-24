@@ -45,10 +45,7 @@ from errander.agent.subgraphs.patching import (
     PatchingGraphState,
     build_patching_subgraph,
 )
-from errander.agent.subgraphs.service_restart import (
-    ServiceRestartState,
-    build_service_restart_subgraph,
-)
+from errander.agent.subgraphs.service_restart import build_service_restart_subgraph
 from errander.execution.os_detection import detect_os
 from errander.execution.privilege import (
     REQUIRED_BINARIES_BY_ACTION,
@@ -70,6 +67,7 @@ if TYPE_CHECKING:
     from errander.execution.sandbox import SandboxExecutor
     from errander.execution.ssh import SSHConnectionManager
     from errander.integrations.slack import SlackClient
+    from errander.models.service_restart import ServiceRestartState
     from errander.safety.ai_audit import AIDecisionStore
     from errander.safety.audit import AuditStore
     from errander.safety.hygiene_approval import HygieneApprovalManager
@@ -322,9 +320,6 @@ async def sudo_preflight_node(
     action_types = {a.get("action_type") for a in planned}
     batch_id = state.get("batch_id", "unknown")
 
-    from errander.agent.subgraphs import BUILTIN_ACTIONS
-
-    docker_mode = state.get("docker_command_mode", "wrapper")
 
     # Collect binaries required by the planned action types + OS family.
     required: list[str] = []
@@ -1030,11 +1025,11 @@ async def _run_patching(
                         if isinstance(p, dict) and p.get("name")
                     ]
 
-    sub_state: PatchingGraphState = {
+    sub_state: PatchingGraphState = {  # type: ignore[typeddict-unknown-key]
         "vm_id": vm_id,
         "os_family": state.get("os_family", "ubuntu"),
         "dry_run": state.get("dry_run", True),
-        "hostname": state.get("hostname", ""),  # type: ignore[typeddict-unknown-key]
+        "hostname": state.get("hostname", ""),
         "username": state.get("ssh_user", ""),
         "key_path": state.get("ssh_key_path", ""),
         "batch_id": state.get("batch_id", ""),
@@ -1106,12 +1101,12 @@ async def _run_backup_verify(
         bp_raw = params.get("backup_paths")
         backup_paths = [str(p) for p in bp_raw] if isinstance(bp_raw, list) else []
 
-    sub_state: BackupVerifyGraphState = {
+    sub_state: BackupVerifyGraphState = {  # type: ignore[typeddict-unknown-key]
         "vm_id": vm_id,
         "os_family": state.get("os_family", "ubuntu"),
         "dry_run": state.get("dry_run", True),
         "backup_paths": backup_paths,
-        "hostname": state.get("hostname", ""),  # type: ignore[typeddict-unknown-key]
+        "hostname": state.get("hostname", ""),
         "username": state.get("ssh_user", ""),
         "key_path": state.get("ssh_key_path", ""),
     }
@@ -1185,7 +1180,7 @@ async def _run_service_restart(
         "dry_run": state.get("dry_run", True),
         "unit_name": unit_name,
         "restartable_units": restartable_units,
-        "hostname": state.get("hostname", ""),  # type: ignore[typeddict-unknown-key]
+        "hostname": state.get("hostname", ""),
         "username": state.get("ssh_user", ""),
         "key_path": state.get("ssh_key_path", ""),
     }

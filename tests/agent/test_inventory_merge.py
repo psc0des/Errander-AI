@@ -42,14 +42,12 @@ async def _call_run_env_batch(
     overrides_store=None,
 ) -> dict[str, Any]:
     """Call run_env_batch with mocked dependencies; returns last ainvoke() call kwargs."""
-    from errander.config.settings import Settings
+    from errander.config.settings import Settings, SRESignalSettings
     from errander.execution.sandbox import SandboxExecutor
     from errander.execution.ssh import SSHConnectionManager
     from errander.main import run_env_batch
     from errander.safety.audit import AuditStore
     from errander.safety.locking import FileLocker
-
-    from errander.config.settings import SRESignalSettings
     settings = MagicMock(spec=Settings)
     settings.audit_db_url = ":memory:"
     settings.sre_signals = SRESignalSettings()

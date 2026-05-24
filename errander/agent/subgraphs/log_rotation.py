@@ -19,7 +19,6 @@ from typing import TYPE_CHECKING, Any, TypedDict
 from langgraph.graph import END, StateGraph
 
 from errander.execution.command_builder import CommandBuildError, safe_path
-from errander.execution.privilege import privileged
 from errander.models.actions import ActionStatus
 from errander.models.manifest import ActionManifest
 

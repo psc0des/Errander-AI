@@ -1254,9 +1254,8 @@ class TestExecuteNodeV15:
     async def test_volume_approved_calls_wrapper(self) -> None:
         from errander.agent.subgraphs.docker_hygiene import execute_node
         from errander.models.docker_hygiene import (
-            DockerHygieneFinding,
             DockerHygieneAssessment,
-            RemovalStatus,
+            DockerHygieneFinding,
             compute_assessment_hash,
         )
         vol = DockerHygieneFinding(
@@ -1300,8 +1299,8 @@ class TestExecuteNodeV15:
     async def test_build_cache_approved_calls_wrapper(self) -> None:
         from errander.agent.subgraphs.docker_hygiene import execute_node
         from errander.models.docker_hygiene import (
-            DockerHygieneFinding,
             DockerHygieneAssessment,
+            DockerHygieneFinding,
             compute_assessment_hash,
         )
         cache = DockerHygieneFinding(

@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
+import aiosqlite
 import pytest
 import pytest_asyncio
-import aiosqlite
 
 from errander.models.batches import BatchRecord, BatchStatus
 from errander.safety.batches import BatchStore
 from errander.safety.migrations import run_migrations
-
 
 # ---------------------------------------------------------------------------
 # Fixtures

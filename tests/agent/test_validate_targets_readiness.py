@@ -10,7 +10,6 @@ from errander.agent.graph import validate_targets_node
 from errander.execution.target_validation import TargetReadiness
 from errander.models.events import EventType  # noqa: F401
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -33,7 +32,7 @@ def _make_ssh_manager(os_release_stdout: str = "ID=ubuntu\nVERSION_ID=22.04\n") 
 def _target(vm_id: str = "vm-1", os_family: str = "ubuntu") -> dict[str, object]:
     return {
         "vm_id": vm_id,
-        "hostname": f"10.0.0.1",
+        "hostname": "10.0.0.1",
         "ssh_user": "ubuntu",
         "ssh_key_path": "/key",
         "os_family": os_family,
@@ -111,7 +110,10 @@ async def test_validate_targets_ready_vm_unaffected() -> None:
 @pytest.mark.asyncio
 async def test_validate_targets_readiness_exception_non_fatal() -> None:
     """check_target raising an exception must not remove the VM from healthy_targets."""
-    with patch("errander.execution.target_validation.check_target", new=AsyncMock(side_effect=ConnectionError("SSH timeout"))):
+    with patch(
+        "errander.execution.target_validation.check_target",
+        new=AsyncMock(side_effect=ConnectionError("SSH timeout")),
+    ):
         result = await validate_targets_node(
             _batch_state([_target()]),
             ssh_manager=_make_ssh_manager(),

@@ -590,7 +590,9 @@ _SR_INVENTORY = {
     "environments": {
         "production": {
             "targets": [{"host": "10.0.1.1", "name": "web-01", "os_family": "ubuntu"}],
-            "actions": {"service_restart": {"enabled": True, "restartable_units": ["nginx.service", "gunicorn.service"]}},
+            "actions": {"service_restart": {
+                "enabled": True, "restartable_units": ["nginx.service", "gunicorn.service"],
+            }},
         }
     }
 }

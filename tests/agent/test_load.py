@@ -30,8 +30,8 @@ from errander.agent.graph import (
 from errander.config.settings import Settings
 from errander.execution.sandbox import SandboxExecutor
 from errander.execution.ssh import SSHConnectionManager, SSHResult
-from errander.models.actions import ActionStatus
 from errander.execution.target_validation import TargetReadiness
+from errander.models.actions import ActionStatus
 from errander.safety.audit import AuditStore
 from errander.safety.locking import FileLocker
 
@@ -246,7 +246,8 @@ class TestFleetBatchGraph:
         async def _ssh(*args: object, **kwargs: object) -> SSHResult:
             nonlocal call_count
             call_count += 1
-            # 12 validate_targets + 12×5 plan_vm + 12×2 enrich_plan (disk_cleanup preview) + 3 wave-0 health = 99 succeed
+            # 12 validate_targets + 12×5 plan_vm + 12×2 enrich_plan (disk_cleanup preview)
+            # + 3 wave-0 health = 99 succeed
             # wave-1 health check calls (100-102) fail
             return _ssh_ok() if call_count <= 99 else _ssh_ok("", 1)
 

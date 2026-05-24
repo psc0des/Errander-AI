@@ -1,5 +1,23 @@
 # Errander-AI Command Log
 
+## Quality gate cleanup (2026-05-24)
+
+```bash
+# Auto-fix ruff violations
+uv run ruff check --fix .  # 237 fixed
+
+# Check remaining violations
+uv run ruff check .  # ~63 remaining after auto-fix
+
+# Run mypy
+uv run mypy errander/  # 15 errors initially → 0 after fixes
+
+# Final verification
+uv run ruff check .           # All checks passed
+uv run mypy errander/         # Success: no issues found in 102 source files
+uv run pytest --tb=short -q   # 2507 passed in 92.55s
+```
+
 ## SRE P2 Fixes (2026-05-24)
 
 ```bash

@@ -27,7 +27,6 @@ from errander.execution.sandbox import SandboxExecutor
 from errander.execution.ssh import SSHConnectionManager, SSHResult
 from errander.models.actions import ActionStatus
 
-
 # --- Helpers ---
 
 def _make_result(stdout: str = "ok", exit_code: int = 0) -> SSHResult:
@@ -473,7 +472,6 @@ class TestOrphanedDepsExactPreview:
     """orphaned-deps must surface exact package names and abort on drift."""
 
     def test_candidates_extracted_from_apt_simulate_output(self) -> None:
-        from errander.agent.subgraphs.disk_cleanup import _parse_autoremove_candidates
 
         output = (
             "Reading package lists...\n"
@@ -488,7 +486,6 @@ class TestOrphanedDepsExactPreview:
         assert result == ["libbar2", "libfoo1"]  # sorted
 
     def test_candidates_extracted_from_dnf_simulate_output(self) -> None:
-        from errander.agent.subgraphs.disk_cleanup import _parse_autoremove_candidates
 
         output = (
             "Last metadata expiration check: 0:01:23 ago.\n"
@@ -504,7 +501,6 @@ class TestOrphanedDepsExactPreview:
         assert "libbar2" in result
 
     def test_empty_simulate_output_returns_empty_list(self) -> None:
-        from errander.agent.subgraphs.disk_cleanup import _parse_autoremove_candidates
 
         result = _parse_autoremove_candidates("", "ubuntu")
         assert result == []

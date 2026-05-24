@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -29,7 +30,6 @@ from errander.models.events import EventType
 from errander.models.vm import OSFamily, VMInfo
 from errander.safety.audit import AuditStore
 from errander.safety.locking import FileLocker
-
 
 # --- Helpers ---
 
@@ -76,8 +76,8 @@ def _make_executor(dry_run: bool = True) -> SandboxExecutor:
 
 
 def _make_ssh_result(stdout: str = "ok", exit_code: int = 0) -> SSHResult:
-    from datetime import datetime, timezone
-    now = datetime.now(tz=timezone.utc)
+    from datetime import datetime
+    now = datetime.now(tz=UTC)
     return SSHResult(
         exit_code=exit_code,
         stdout=stdout,
@@ -264,7 +264,6 @@ class TestDispatchActionNode:
         executor = _make_executor(dry_run=True)
         ssh = executor._ssh
 
-        os_release = "ID=ubuntu\nVERSION_ID=22.04\nPRETTY_NAME=Ubuntu 22.04\n"
         df_output = "Filesystem Size Used Avail Use% Mounted on\n/dev/sda1 20G 10G 10G 50% /\n"
 
         with patch.object(
@@ -469,13 +468,12 @@ class TestBuildVMGraph:
         with patch(
             "errander.agent.vm_graph.detect_os",
             AsyncMock(return_value=vm_info),
+        ), patch.object(
+            executor._ssh, "execute",
+            AsyncMock(side_effect=ssh_responses),
         ):
-            with patch.object(
-                executor._ssh, "execute",
-                AsyncMock(side_effect=ssh_responses),
-            ):
-                compiled = build_vm_graph(executor, locker, audit_store, ssh).compile()
-                final = await compiled.ainvoke(_base_state())
+            compiled = build_vm_graph(executor, locker, audit_store, ssh).compile()
+            final = await compiled.ainvoke(_base_state())
 
         # Lock released
         assert final.get("locked") is False
@@ -751,13 +749,12 @@ class TestSubgraphExceptionSafety:
         with patch(
             "errander.agent.vm_graph.detect_os",
             AsyncMock(return_value=vm_info),
+        ), patch(
+            "errander.agent.vm_graph.build_disk_cleanup_subgraph",
+            return_value=MagicMock(compile=MagicMock(return_value=bad_compiled)),
         ):
-            with patch(
-                "errander.agent.vm_graph.build_disk_cleanup_subgraph",
-                return_value=MagicMock(compile=MagicMock(return_value=bad_compiled)),
-            ):
-                compiled = build_vm_graph(executor, locker, audit_store, ssh).compile()
-                final = await compiled.ainvoke(_base_state())
+            compiled = build_vm_graph(executor, locker, audit_store, ssh).compile()
+            final = await compiled.ainvoke(_base_state())
 
         assert final.get("locked") is False
         assert not await locker.is_locked("dev/web-01")

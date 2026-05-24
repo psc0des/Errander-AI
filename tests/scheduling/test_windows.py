@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -14,13 +14,12 @@ from errander.scheduling.windows import (
     window_start_cron,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
 def _utc(year: int, month: int, day: int, hour: int) -> datetime:
-    return datetime(year, month, day, hour, 0, 0, tzinfo=timezone.utc)
+    return datetime(year, month, day, hour, 0, 0, tzinfo=UTC)
 
 
 # 2026-04-06 is a Monday (UTC)
@@ -38,7 +37,7 @@ SUN_04H = _utc(2026, 4, 12, 4)  # Sunday 04:00 UTC
 
 class TestIsWithinWindow:
     def test_inside_window(self) -> None:
-        assert is_within_window(MON_03H := _utc(2026, 4, 6, 3), ["monday"], 2, 6, "UTC") is True
+        assert is_within_window(_utc(2026, 4, 6, 3), ["monday"], 2, 6, "UTC") is True
 
     def test_at_start_boundary(self) -> None:
         assert is_within_window(MON_02H, ["monday"], 2, 6, "UTC") is True
@@ -208,7 +207,6 @@ class TestNextWindowOpen:
         now = _utc(2026, 4, 6, 0)
         w = MaintenanceWindow(days=["monday"], start_hour=2, end_hour=6, timezone="UTC")
         result = next_window_open(now, w)
-        from datetime import timezone as _tz
         assert result.tzinfo is not None
         assert result.utcoffset().total_seconds() == 0  # type: ignore[union-attr]
 

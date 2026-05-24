@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from datetime import UTC
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -16,7 +17,6 @@ from errander.agent.graph import (
     route_after_wave_health,
 )
 from errander.execution.ssh import SSHConnectionManager, SSHResult
-
 
 # --- Helpers ---
 
@@ -35,8 +35,8 @@ def _make_targets(n: int) -> list[dict[str, object]]:
 
 
 def _make_ssh_result(success: bool = True) -> SSHResult:
-    from datetime import datetime, timezone
-    now = datetime.now(tz=timezone.utc)
+    from datetime import datetime
+    now = datetime.now(tz=UTC)
     return SSHResult(
         exit_code=0 if success else 1,
         stdout="ok" if success else "",

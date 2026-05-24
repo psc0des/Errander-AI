@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from errander.scheduling.scheduler import MaintenanceScheduler
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -39,7 +38,7 @@ class TestAddMaintenanceJob:
 
     def test_invalid_cron_raises(self) -> None:
         sched = _make_scheduler()
-        with pytest.raises(Exception):
+        with pytest.raises(Exception):  # noqa: B017
             sched.add_maintenance_job(AsyncMock(), "not-a-cron", job_id="bad")
 
     def test_kwargs_accepted(self) -> None:

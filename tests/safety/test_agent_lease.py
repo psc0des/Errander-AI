@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
+import aiosqlite
 import pytest
 import pytest_asyncio
-import aiosqlite
 
 from errander.safety.agent_lease import AgentLease, AgentLeaseError
 from errander.safety.migrations import run_migrations
-
 
 # ---------------------------------------------------------------------------
 # Fixtures

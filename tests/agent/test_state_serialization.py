@@ -15,7 +15,6 @@ from __future__ import annotations
 import json
 from typing import Any
 
-import pytest
 from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 
 from errander.agent.graph import BatchGraphState

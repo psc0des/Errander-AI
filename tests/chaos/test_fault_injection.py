@@ -14,7 +14,7 @@ Tests assert SYSTEM BEHAVIOR under fault conditions, not happy-path correctness:
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -26,13 +26,12 @@ from errander.models.events import AuditEvent, EventType
 from errander.safety.audit import AuditStore, AuditWriteError
 from errander.safety.locking import FileLocker
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
 def _ssh_result(stdout: str = "", exit_code: int = 0, stderr: str = "") -> SSHResult:
-    now = datetime.now(tz=timezone.utc)
+    now = datetime.now(tz=UTC)
     return SSHResult(
         exit_code=exit_code, stdout=stdout, stderr=stderr,
         command="mocked", duration_seconds=0.01,
@@ -49,7 +48,7 @@ def _make_event() -> AuditEvent:
         batch_id="chaos-batch",
         vm_id="dev/web-01",
         detail="chaos test event",
-        timestamp=datetime.now(tz=timezone.utc),
+        timestamp=datetime.now(tz=UTC),
     )
 
 
@@ -172,6 +171,7 @@ class TestPatchingRollback:
     ) -> None:
         """When rollback itself fails, CRITICAL is logged."""
         import logging
+
         from errander.agent.subgraphs.patching import rollback_node
         from errander.execution.sandbox import SandboxExecutor
 
@@ -205,7 +205,7 @@ class TestDpkgLock:
 
     @pytest.mark.asyncio
     async def test_dpkg_lock_produces_failed_status(self) -> None:
-        from errander.agent.subgraphs.patching import execute_node, PatchingGraphState
+        from errander.agent.subgraphs.patching import PatchingGraphState, execute_node
         from errander.execution.sandbox import SandboxExecutor
 
         executor = SandboxExecutor(SSHConnectionManager(), dry_run=False)
@@ -296,9 +296,11 @@ class TestAuditFaultInjection:
                     raise aiosqlite.OperationalError("disk full")
                 return await store._db.execute(sql, params)  # type: ignore
 
-            with patch.object(store._db, "execute", side_effect=_always_fail):  # type: ignore
-                with pytest.raises(AuditWriteError):
-                    await store.log_event(_make_event(), dry_run=False)
+            with (
+                patch.object(store._db, "execute", side_effect=_always_fail),  # type: ignore
+                pytest.raises(AuditWriteError),
+            ):
+                await store.log_event(_make_event(), dry_run=False)
 
         assert call_count >= 2  # at least one retry
 
@@ -333,9 +335,10 @@ class TestLLMFaultInjection:
     @pytest.mark.asyncio
     async def test_llm_malformed_json_falls_back(self) -> None:
         """LLM returning unrecognised action types → parse fails → hardcoded fallback."""
+        from pydantic import BaseModel
+
         from errander.agent.decisions import prioritize_actions
         from errander.models.vm import OSFamily, VMInfo
-        from pydantic import BaseModel
 
         class _FakeResponse(BaseModel):
             action_types: list[str]

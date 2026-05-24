@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -10,7 +10,6 @@ from errander.agent.decisions import StoredSignalContext, _build_prioritize_prom
 from errander.agent.graph import _load_stored_signals
 from errander.models.actions import ActionType
 from errander.models.events import EventType
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -87,7 +86,6 @@ def _make_login_event(total: int = 5) -> MagicMock:
 
 
 def _make_vm_info() -> MagicMock:
-    from errander.models.actions import ActionType
     from errander.models.vm import OSFamily
     vi = MagicMock()
     vi.os_family = OSFamily.UBUNTU

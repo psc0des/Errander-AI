@@ -10,7 +10,6 @@ import pytest
 from errander.main import _parse_args, run_ask_query
 from errander.models.analysis import AssistantResponse
 
-
 # ---------------------------------------------------------------------------
 # CLI flag parsing
 # ---------------------------------------------------------------------------

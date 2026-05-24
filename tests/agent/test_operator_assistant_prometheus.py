@@ -122,7 +122,7 @@ async def test_investigate_passes_prometheus_client_to_context() -> None:
         recommendations=["Investigate"], risk_level="medium",
     ))
 
-    response = await OperatorAssistant().investigate(
+    await OperatorAssistant().investigate(
         "Any CPU pressure?",
         audit_store=_make_audit_store(),
         disk_history_store=disk,

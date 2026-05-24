@@ -13,13 +13,16 @@ from typing import Any
 import aiosqlite
 from aiohttp import web
 
-logger = logging.getLogger(__name__)
-
-from .providers import get_provider
 from .evidence import (
-    APPROVAL_EVIDENCE, AUDIT_EVIDENCE, BATCH_EVIDENCE,
-    UI_MODE, VM_EVIDENCE, audit_evidence_for,
+    APPROVAL_EVIDENCE,
+    BATCH_EVIDENCE,
+    UI_MODE,
+    VM_EVIDENCE,
+    audit_evidence_for,
 )
+from .providers import get_provider
+
+logger = logging.getLogger(__name__)
 
 # ── Evidence gating — overlays are fixture-mode-only ─────────────────────────
 # In live mode every _ev_* helper returns {} / a null sentinel so page
@@ -1457,20 +1460,26 @@ def disk_bar(pct: int) -> str:
 
 
 def _metric_color(pct: int) -> str:
-    if pct >= 90: return "red"
-    if pct >= 75: return "amber"
+    if pct >= 90:
+        return "red"
+    if pct >= 75:
+        return "amber"
     return "indigo"
 
 
 def _metric_text_color(pct: int) -> str:
-    if pct >= 90: return "#dc2626"
-    if pct >= 75: return "#d97706"
+    if pct >= 90:
+        return "#dc2626"
+    if pct >= 75:
+        return "#d97706"
     return "#4f46e5"
 
 
 def _metric_bar_color(pct: int) -> str:
-    if pct >= 90: return "#dc2626"
-    if pct >= 75: return "#d97706"
+    if pct >= 90:
+        return "#dc2626"
+    if pct >= 75:
+        return "#d97706"
     return "#4f46e5"
 
 
@@ -2205,28 +2214,16 @@ def page_approvals() -> str:
         ev = _ev_approval(a["id"])
         tier_cls = "badge-danger" if a["tier"] == "HIGH RISK" else "badge-amber"
 
-        cpu  = a.get("vm_cpu",  0)
-        mem  = a.get("vm_mem",  0)
-        disk = a.get("vm_disk", 0)
-        load = a.get("vm_load", "—")
         uptime = a.get("vm_uptime", "—")
         reject_consequence = a.get("reject_consequence", "")
-
-        health_panel = f"""
-        <div class="appr-health">
-          <div class="appr-health-title">VM Health at Request Time</div>
-          <div class="appr-health-metrics">
-            {_appr_health_metric("CPU", cpu)}
-            {_appr_health_metric("MEM", mem)}
-            {_appr_health_metric("DISK", disk)}
-            {_appr_health_metric("LOAD", min(cpu, 100), load)}
-          </div>
-        </div>"""
 
         countdown_cls = _countdown_cls(a.get("countdown", "30:00"))
 
         # JS-safe identifiers for the modal
-        js_id = a["id"]; js_batch = ev.get("batch_id", ""); js_action = a["action"]; js_host = a["hostname"]
+        js_id = a["id"]
+        js_batch = ev.get("batch_id", "")
+        js_action = a["action"]
+        js_host = a["hostname"]
 
         _action_slug = a["action"].lower().replace(" ", "_")
         _risk_slug = "high" if a["tier"] == "HIGH RISK" else "medium"
@@ -2478,7 +2475,7 @@ def _vm_resource_trends(
         return list(raw)
 
     # Window  → (cpu values, mem values, fallback key for cpu, fallback key for mem, x-axis labels)
-    _W: dict[str, tuple[str, str, list[str]]] = {
+    windows: dict[str, tuple[str, str, list[str]]] = {
         "15m": ("cpu_history",    "mem_history",    ["-15m", "-10m", "-5m",  "now"]),
         "1h":  ("cpu_history",    "mem_history",    ["-1h",  "-45m", "-30m", "-15m", "now"]),
         "24h": ("cpu_history",    "mem_history",    ["-24h", "-18h", "-12h", "-6h",  "now"]),
@@ -2505,14 +2502,14 @@ def _vm_resource_trends(
     def _x_axis(labels: list[str]) -> str:
         return (
             '<div class="spark-x-axis">'
-            + "".join(f"<span>{l}</span>" for l in labels)
+            + "".join(f"<span>{lbl}</span>" for lbl in labels)
             + "</div>"
         )
 
     def _panel(metric: str, label: str, current: int, color: str) -> str:
         curr_style = f"color:{color}"
         views_html = ""
-        for wi, (window, (cpu_fk, mem_fk, x_labels)) in enumerate(_W.items()):
+        for _, (window, (cpu_fk, mem_fk, x_labels)) in enumerate(windows.items()):
             fk = cpu_fk if metric == "cpu" else mem_fk
             vals = _resolve(metric, window, fk)
             # Pin last point to current live value for coherence
@@ -2553,7 +2550,7 @@ def _vm_resource_trends(
 (function(){{
   var _host = {_json.dumps(hostname)};
   var _w = '24h';
-  var _W = {_json.dumps({k: v[2] for k, v in _W.items()})};
+  var _W = {_json.dumps({k: v[2] for k, v in windows.items()})};
   var _SVG_W = 500, _SVG_H = 52, _PAD_T = 6, _PAD_B = 4;
   var _colors = {{cpu:'#0891b2', mem:'#7c3aed'}};
   var _warnPct = 75, _critPct = 90;
@@ -2750,7 +2747,7 @@ def page_vm(hostname: str, metrics_by_window: dict[str, dict[str, Any]] | None =
     last_batch = next((a.get("batch") for a in actions if a.get("batch")), None)
     if last_batch is None:
         last_batch = (
-            (f"prod-0423-0200" if vm["env"] == "PROD" else "staging-0422-1400")
+            ("prod-0423-0200" if vm["env"] == "PROD" else "staging-0422-1400")
             if _is_fixture else "—"
         )
 
@@ -2925,7 +2922,7 @@ def page_audit() -> str:
     batch_opts = "".join(f'<option value="{b["id"]}">{b["id"]}</option>' for b in get_provider().get_batches())
     vm_opts = "".join(f'<option value="{v["hostname"]}">{v["hostname"]}</option>' for v in get_provider().get_vms())
     action_opts = "".join(f'<option value="{a}">{a}</option>' for a in sorted(actions_seen))
-    approver_opts = "".join(f'<option value="{a}">{a}</option>' for a in sorted(approvers_seen))
+    _ = "".join(f'<option value="{a}">{a}</option>' for a in sorted(approvers_seen))
 
     failures = sum(1 for e in get_provider().get_audit_events() if e["status"] == "failed")
     pendings = sum(1 for e in get_provider().get_audit_events() if e["status"] == "pending")
@@ -3638,10 +3635,10 @@ def page_settings() -> str:
                 f'<code style="font-size:0.7rem;background:#f1f5f9;padding:2px 6px;border-radius:4px;color:#4f46e5">{u}</code>'
                 for u in units
             )
-            status_badge = f'<span class="settings-badge" style="background:#dcfce7;color:#16a34a">ENABLED</span>'
+            status_badge = '<span class="settings-badge" style="background:#dcfce7;color:#16a34a">ENABLED</span>'
         else:
             chips = '<span style="font-size:0.8rem;color:#94a3b8">None configured — service_restart disabled</span>'
-            status_badge = f'<span class="settings-badge" style="background:#f1f5f9;color:#94a3b8">DISABLED</span>'
+            status_badge = '<span class="settings-badge" style="background:#f1f5f9;color:#94a3b8">DISABLED</span>'
         restart_rows += f"""
         <tr>
           <td style="padding:10px 14px">
@@ -4461,10 +4458,14 @@ def _trace_bar_pct(duration_s: float, max_log: float) -> int:
 
 
 def _outcome_cell(val: str) -> str:
-    if val == "ok":       return '<span class="oc-ok">✓</span>'
-    if val == "warn":     return '<span class="oc-warn">⚠</span>'
-    if val == "fail":     return '<span class="oc-fail">✗</span>'
-    if val == "approved": return '<span class="oc-appr">APPR</span>'
+    if val == "ok":
+        return '<span class="oc-ok">✓</span>'
+    if val == "warn":
+        return '<span class="oc-warn">⚠</span>'
+    if val == "fail":
+        return '<span class="oc-fail">✗</span>'
+    if val == "approved":
+        return '<span class="oc-appr">APPR</span>'
     return '<span class="oc-skip">—</span>'
 
 
@@ -4665,7 +4666,7 @@ def page_agent() -> str:
         if float(sigs.get("disk_trend","0").replace("+","").split("%")[0] or 0) >= 5:
             sig_tags += f'<span class="signal-tag signal-tag-disk">disk {sigs["disk_trend"]}</span>'
         else:
-            sig_tags += f'<span class="signal-tag signal-tag-ok">disk OK</span>'
+            sig_tags += '<span class="signal-tag signal-tag-ok">disk OK</span>'
         if sigs.get("failed_services", 0) > 0:
             sig_tags += f'<span class="signal-tag signal-tag-svc">{sigs["failed_services"]} failed svc</span>'
         if sigs.get("journal_errors", 0) > 0:
@@ -4895,8 +4896,8 @@ async def handle_fleet(request: web.Request) -> web.Response:
         active_url="/",
         breadcrumb="Fleet Dashboard",
         topnav_extra=f'{env_badge_top("PROD")}'
-                     + (f'<span class="last-batch">Last batch: 2026-04-23 02:00 UTC</span>' if get_provider().data_mode() == "FIXTURE" else "")
-                     + f'<button class="btn-primary" disabled title="Use CLI: errander --run-now --env &lt;env&gt;" style="opacity:0.45;cursor:not-allowed">&#9654; RUN BATCH NOW</button>',
+                     + ('<span class="last-batch">Last batch: 2026-04-23 02:00 UTC</span>' if get_provider().data_mode() == "FIXTURE" else "")
+                     + '<button class="btn-primary" disabled title="Use CLI: errander --run-now --env &lt;env&gt;" style="opacity:0.45;cursor:not-allowed">&#9654; RUN BATCH NOW</button>',
         content=page_fleet(),
     )
     return web.Response(text=html, content_type="text/html")
@@ -5519,9 +5520,9 @@ async def handle_metrics_api(request: web.Request) -> web.Response:
 
 async def _refresh_live_provider(app: web.Application) -> None:
     """Periodic job: refresh the LiveProvider cache from real stores."""
-    from errander.web.providers import LiveProvider as _LP
+    from errander.web.providers import LiveProvider
     prov = app.get("_live_provider")
-    if not isinstance(prov, _LP):
+    if not isinstance(prov, LiveProvider):
         return
     try:
         await prov.refresh(
@@ -5551,9 +5552,10 @@ async def _on_startup(app: web.Application) -> None:
     logger.info("DB opened: %s (migrations applied)", db_url)
 
     targets: list[Any] = []
-    _inv_path_for_provider: "Any | None" = None
+    _inv_path_for_provider: Any | None = None
     try:
         from pathlib import Path as _Path
+
         from errander.config.inventory import load_inventory
         _inv_path = _Path(_os.environ.get("ERRANDER_INVENTORY_PATH", "inventory.yaml"))
         if _inv_path.exists():
@@ -5652,7 +5654,7 @@ _PUBLIC_PATHS = {"/login", "/logout"}
 @web.middleware
 async def _auth_middleware(request: web.Request, handler: Any) -> web.StreamResponse:
     if request.path in _PUBLIC_PATHS:
-        return await handler(request)
+        return await handler(request)  # type: ignore[no-any-return]
     if not _valid_token(request.cookies.get(_AUTH_COOKIE, "")):
         if request.path.startswith("/api/"):
             return web.Response(
@@ -5661,7 +5663,7 @@ async def _auth_middleware(request: web.Request, handler: Any) -> web.StreamResp
                 status=401,
             )
         raise web.HTTPFound("/login")
-    return await handler(request)
+    return await handler(request)  # type: ignore[no-any-return]
 
 
 # ── App factory ───────────────────────────────────────────────────────────────

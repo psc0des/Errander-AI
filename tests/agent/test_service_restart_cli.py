@@ -94,7 +94,10 @@ class TestRestartServiceLiveMode:
             patch("errander.main.load_settings", return_value=_mock_settings()),
             patch("errander.main.AuditStore", return_value=audit),
             patch("errander.main.SlackClient"),
-            patch("errander.safety.approval.request_approval", new_callable=AsyncMock, return_value="ts-123") as mock_req,
+            patch(
+                "errander.safety.approval.request_approval",
+                new_callable=AsyncMock, return_value="ts-123",
+            ) as mock_req,
             patch("errander.safety.approval.poll_approval", new_callable=AsyncMock, return_value=(False, "timeout")),
         ):
             await run_restart_service(
@@ -148,7 +151,10 @@ class TestRestartServiceLiveMode:
             patch("errander.safety.approval.poll_approval", new_callable=AsyncMock, return_value=(True, "operator")),
             patch("errander.main.SandboxExecutor"),
             patch("errander.main.FileLocker", return_value=_mock_locker()),
-            patch("errander.agent.subgraphs.service_restart.build_service_restart_subgraph", return_value=mock_subgraph),
+            patch(
+                "errander.agent.subgraphs.service_restart.build_service_restart_subgraph",
+                return_value=mock_subgraph,
+            ),
         ):
             result = await run_restart_service(
                 env_name="production",
@@ -182,7 +188,10 @@ class TestRestartServiceLiveMode:
             patch("errander.safety.approval.poll_approval", new_callable=AsyncMock, return_value=(True, "operator")),
             patch("errander.main.SandboxExecutor"),
             patch("errander.main.FileLocker", return_value=_mock_locker()),
-            patch("errander.agent.subgraphs.service_restart.build_service_restart_subgraph", return_value=mock_subgraph),
+            patch(
+                "errander.agent.subgraphs.service_restart.build_service_restart_subgraph",
+                return_value=mock_subgraph,
+            ),
         ):
             result = await run_restart_service(
                 env_name="production",
@@ -335,7 +344,10 @@ class TestRestartServiceWindowAndLock:
             patch("errander.safety.approval.poll_approval", new_callable=AsyncMock, return_value=(True, "operator")),
             patch("errander.main.SandboxExecutor"),
             patch("errander.main.FileLocker", return_value=_mock_locker(acquired=False)),
-            patch("errander.agent.subgraphs.service_restart.build_service_restart_subgraph", return_value=mock_subgraph),
+            patch(
+                "errander.agent.subgraphs.service_restart.build_service_restart_subgraph",
+                return_value=mock_subgraph,
+            ),
         ):
             result = await run_restart_service(
                 env_name="production",

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -24,7 +24,7 @@ def _make_event(
         vm_id=vm_id,
         action_type=action_type,
         detail=detail,
-        timestamp=datetime.now(tz=timezone.utc),
+        timestamp=datetime.now(tz=UTC),
         metadata=metadata or {},
     )
 
@@ -92,7 +92,7 @@ class TestAuditStoreWrite:
 
     async def test_log_event_preserves_timestamp(self) -> None:
         async with AuditStore(":memory:") as store:
-            ts = datetime(2026, 3, 21, 14, 30, 0, tzinfo=timezone.utc)
+            ts = datetime(2026, 3, 21, 14, 30, 0, tzinfo=UTC)
             event = _make_event()
             event = AuditEvent(
                 event_type=EventType.ACTION_COMPLETED,
@@ -180,9 +180,9 @@ class TestAuditStoreQuery:
 
     async def test_results_ordered_most_recent_first(self) -> None:
         async with AuditStore(":memory:") as store:
-            ts1 = datetime(2026, 1, 1, tzinfo=timezone.utc)
-            ts2 = datetime(2026, 6, 1, tzinfo=timezone.utc)
-            ts3 = datetime(2026, 12, 1, tzinfo=timezone.utc)
+            ts1 = datetime(2026, 1, 1, tzinfo=UTC)
+            ts2 = datetime(2026, 6, 1, tzinfo=UTC)
+            ts3 = datetime(2026, 12, 1, tzinfo=UTC)
 
             await store.log_event(AuditEvent(
                 event_type=EventType.ACTION_STARTED,
@@ -236,7 +236,7 @@ class TestAuditStoreResilience:
 
     async def test_log_event_retries_on_operational_error(self) -> None:
         """First execute raises OperationalError; second succeeds; event is written."""
-        from unittest.mock import AsyncMock, MagicMock, patch
+        from unittest.mock import patch
 
         import aiosqlite
 

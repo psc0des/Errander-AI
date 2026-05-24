@@ -2,16 +2,14 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-
-import pytest
+from datetime import UTC, datetime
 
 from errander.models.reports import DigestReport, ProbeVMResult
 from errander.observability.reporting import render_digest_report
 
 
 def _ts() -> datetime:
-    return datetime(2026, 5, 15, 6, 0, 0, tzinfo=timezone.utc)
+    return datetime(2026, 5, 15, 6, 0, 0, tzinfo=UTC)
 
 
 def _healthy_report(env: str = "dev", vm_count: int = 3) -> DigestReport:

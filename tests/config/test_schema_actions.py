@@ -284,7 +284,8 @@ class TestServiceRestartUnitNameValidationAtConfigLoad:
         }))
         with pytest.raises((ConfigError, ValidationError, ValueError)) as exc_info:
             validate_inventory(config_file)
-        assert "nginx" in str(exc_info.value) or "grammar" in str(exc_info.value) or "unit" in str(exc_info.value).lower()
+        v = str(exc_info.value)
+        assert "nginx" in v or "grammar" in v or "unit" in v.lower()
 
     def test_unit_name_with_shell_metachar_rejected_at_load(self, tmp_path: Path) -> None:
         """Unit names containing shell metacharacters must fail at config load."""

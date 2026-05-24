@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -15,7 +15,7 @@ class TestLockInfo:
     """Tests for LockInfo dataclass."""
 
     def test_not_expired(self) -> None:
-        now = datetime.now(tz=timezone.utc)
+        now = datetime.now(tz=UTC)
         info = LockInfo(
             vm_id="vm-1", batch_id="b-1",
             acquired_at=now.isoformat(), ttl_seconds=3600,
@@ -23,7 +23,7 @@ class TestLockInfo:
         assert not info.is_expired(now)
 
     def test_expired(self) -> None:
-        past = datetime.now(tz=timezone.utc) - timedelta(hours=3)
+        past = datetime.now(tz=UTC) - timedelta(hours=3)
         info = LockInfo(
             vm_id="vm-1", batch_id="b-1",
             acquired_at=past.isoformat(), ttl_seconds=3600,
@@ -82,7 +82,7 @@ class TestFileLocker:
         locker = FileLocker(tmp_path / "locks")
         # Write an already-expired lock
         lock_path = locker._lock_path("vm-1")
-        past = datetime.now(tz=timezone.utc) - timedelta(hours=5)
+        past = datetime.now(tz=UTC) - timedelta(hours=5)
         lock_data = {
             "vm_id": "vm-1", "batch_id": "old-batch",
             "acquired_at": past.isoformat(), "ttl_seconds": 3600,
@@ -98,7 +98,7 @@ class TestFileLocker:
     async def test_is_locked_cleans_expired(self, tmp_path: Path) -> None:
         locker = FileLocker(tmp_path / "locks")
         lock_path = locker._lock_path("vm-1")
-        past = datetime.now(tz=timezone.utc) - timedelta(hours=5)
+        past = datetime.now(tz=UTC) - timedelta(hours=5)
         lock_data = {
             "vm_id": "vm-1", "batch_id": "old",
             "acquired_at": past.isoformat(), "ttl_seconds": 3600,
@@ -128,7 +128,7 @@ class TestFileLocker:
         await locker.acquire("vm-3", "batch-A")
 
         locks = await locker.list_locks()
-        vm_ids = {l.vm_id for l in locks}
+        vm_ids = {lk.vm_id for lk in locks}
         assert vm_ids == {"vm-1", "vm-2", "vm-3"}
 
     async def test_list_locks_excludes_expired(self, tmp_path: Path) -> None:
@@ -137,7 +137,7 @@ class TestFileLocker:
 
         # Write an expired lock for vm-2
         lock_path = locker._lock_path("vm-2")
-        past = datetime.now(tz=timezone.utc) - timedelta(hours=5)
+        past = datetime.now(tz=UTC) - timedelta(hours=5)
         lock_data = {
             "vm_id": "vm-2", "batch_id": "old",
             "acquired_at": past.isoformat(), "ttl_seconds": 3600,

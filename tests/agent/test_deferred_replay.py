@@ -5,18 +5,15 @@ from __future__ import annotations
 import hashlib
 import json
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from errander.agent.graph import (
-    BatchGraphState,
     approval_gate_node,
     load_deferred_artifact_node,
     route_after_fleet_check,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -314,7 +311,6 @@ async def test_window_opener_uses_stored_artifact() -> None:
     deferred_store.mark_executing = AsyncMock()
     deferred_store.mark_done = AsyncMock()
 
-    from errander.models.events import AuditEvent
     from errander.safety.audit import AuditStore
 
     audit_store = AsyncMock(spec=AuditStore)

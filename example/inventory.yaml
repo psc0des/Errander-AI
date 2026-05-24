@@ -97,12 +97,16 @@ environments:
         enabled: true
       log_rotation:
         enabled: true
-      docker_prune:
-        # Skip this entire section if you are not enabling docker_prune.
+      docker_hygiene:
+        # Skip this entire section if you are not enabling docker_hygiene.
         # Leave enabled: false and continue to the next environment.
-        # To enable: install wrappers first — see SETUP.md#optional-docker-cleanup
+        # To enable: install wrappers first — see SETUP.md#optional-docker-hygiene
         enabled: false
         command_mode: disabled
+        # v1.5 volume + build cache deletion (all default-off — enable explicitly):
+        # volume_deletion_enabled: false
+        # volume_last_mount_days_threshold: 90
+        # build_cache_deletion_enabled: false
       backup_verify:
         enabled: false
       service_restart:
@@ -171,7 +175,7 @@ environments:
         enabled: true
       log_rotation:
         enabled: true
-      docker_prune:
+      docker_hygiene:
         enabled: false
         command_mode: disabled
       backup_verify:
@@ -211,14 +215,25 @@ environments:
         enabled: true
       log_rotation:
         enabled: true
-      docker_prune:
-        enabled: false
-        command_mode: disabled
+      docker_hygiene:
+        # Full example — requires wrappers installed: scripts/install-docker-wrappers-v2.sh
+        # Verify with: uv run python -m errander --check-targets dev
+        enabled: true
+        command_mode: wrapper
+        # v1.5 volume + build cache (default off — enable only after reviewing risks):
+        # volume_deletion_enabled: false
+        # volume_last_mount_days_threshold: 90
+        # build_cache_deletion_enabled: false
       backup_verify:
         enabled: false
       service_restart:
-        enabled: false
-        restartable_units: []   # Example: [nginx.service, gunicorn.service, redis-server.service]
+        # Full example — requires wrapper installed: scripts/install-systemctl-restart-wrapper.sh
+        # Verify with: uv run python -m errander --check-targets dev
+        enabled: true
+        restartable_units:
+          - nginx.service
+          - gunicorn.service
+          - redis-server.service
     targets:
       - host: 10.0.20.10
         name: dev-all-in-one

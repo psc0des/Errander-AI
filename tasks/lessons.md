@@ -1,5 +1,13 @@
 # Errander-AI — Lessons Learned
 
+## 2026-05-25 — Store parsed sizes, not raw command output, in assessment state
+
+`space_by_path` stored raw SSH stdout: `"130M\t/var/cache/apt"` for `du -sh`, `"Archived and active journals take up 16.0M in the file system."` for `journalctl --disk-usage`. Both bled straight into the batch report as garbled text.
+
+**Why:** The assess_node stored `result.stdout.strip()` directly. The commands were never designed for human-report consumption — they produce machine-readable output.
+
+**How to apply:** Any time a command produces structured output (tab-separated, full sentences, multi-line), parse it at storage time. Store the extracted value (e.g., `"130M"`, `"16.0M"`) not the raw stdout. The assessment state is a domain model — it should hold domain values, not command output.
+
 ## 2026-05-25 — `docker info` without sudo is wrong for wrapper-mode docker_hygiene
 
 The OS detection probe `docker info >/dev/null 2>&1` fails for the `errander` SSH user because they're not in the docker group. This sets `docker_available=False`, which causes `_is_action_applicable()` to silently filter out `docker_hygiene` in the planning phase — even when it's enabled in inventory and the wrapper is installed.

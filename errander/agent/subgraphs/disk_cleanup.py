@@ -120,6 +120,25 @@ def _journal_size_cmd() -> str:
     return "journalctl --disk-usage 2>/dev/null || echo '0'"
 
 
+def _parse_du_size(raw: str) -> str:
+    """Extract human size from `du -sh` output: '130M\\t/var/cache/apt' → '130M'."""
+    first_line = raw.strip().split("\n")[0]
+    return first_line.split("\t")[0].strip() or "0"
+
+
+def _parse_journal_size(raw: str) -> str:
+    """Extract size from journalctl --disk-usage sentence → e.g. '16.0M'."""
+    import re
+    m = re.search(r"(\d[\d.]*\s*[KMGTP]i?B?)", raw)
+    return m.group(1).replace(" ", "") if m else raw.strip()
+
+
+def _parse_tmp_size(raw: str) -> str:
+    """Extract size from find|tail output: '5.2M\\ttotal' → '5.2M'; '0\\ttotal' → '0'."""
+    first_field = raw.strip().split("\t")[0].strip()
+    return first_field if first_field else "0"
+
+
 # --- Orphaned-deps helpers ---
 
 def _parse_autoremove_candidates(output: str, os_family: str) -> list[str]:
@@ -229,7 +248,7 @@ async def assess_node(
                 command=_tmp_assess_cmd(age_days),
                 dry_run=False,
             )
-            space["/tmp"] = result.stdout.strip() if result.success else "unknown"
+            space["/tmp"] = _parse_tmp_size(result.stdout) if result.success else "unknown"
 
         elif path in ("apt-cache", "yum-cache"):
             cmd = pkg_mgr.cache_size()
@@ -238,7 +257,7 @@ async def assess_node(
                 command=cmd,
                 dry_run=False,
             )
-            space[path] = result.stdout.strip() if result.success else "unknown"
+            space[path] = _parse_du_size(result.stdout) if result.success else "unknown"
 
         elif path == "journal":
             result = await executor.execute(
@@ -246,7 +265,7 @@ async def assess_node(
                 command=_journal_size_cmd(),
                 dry_run=False,
             )
-            space["journal"] = result.stdout.strip() if result.success else "unknown"
+            space["journal"] = _parse_journal_size(result.stdout) if result.success else "unknown"
 
         elif path == "orphaned-deps":
             # Full simulate output — no tail -1 — so we can extract exact package names.

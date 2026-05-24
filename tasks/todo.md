@@ -1,3 +1,12 @@
+## Dry-run report UX overhaul (2026-05-25, COMPLETE)
+
+- [x] `_parse_du_size` / `_parse_journal_size` / `_parse_tmp_size` in disk_cleanup.py; apply at assess time
+- [x] `BatchReport.dry_run: bool = False`; pass from `generate_report_node`
+- [x] `render_batch_report`: dry-run title, env label, "○ queued" vs "⊘ skipped", hide 0-login noise, next-steps section
+- [x] All 2507 tests pass, ruff + mypy clean
+
+---
+
 ## docker_hygiene wrapper-mode docker_available fallback (2026-05-25, COMPLETE)
 
 - [x] Diagnose: `docker info` without sudo fails for errander user → `docker_available=False` → planner skips docker_hygiene

@@ -122,6 +122,7 @@ class BatchReport:
 
     batch_id: str
     generated_at: datetime = field(default_factory=datetime.now)
+    dry_run: bool = False
 
     # Existing flow — per-VM action results (serialised dicts from vm_graph)
     vm_action_results: list[dict[str, object]] = field(default_factory=list)

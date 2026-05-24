@@ -1,5 +1,21 @@
 # Errander-AI Command Log
 
+## Dry-run report UX overhaul (2026-05-25)
+
+```bash
+# Three issues: garbled disk_cleanup sizes, no dry-run context, 0-login noise
+# Fix: parse sizes in assess_node; BatchReport.dry_run flag; render_batch_report UX
+
+uv run pytest tests/ -q --tb=short  # 2507 passed
+uv run ruff check .                  # All checks passed
+uv run mypy errander/ --no-error-summary  # 0 errors
+git add errander/agent/subgraphs/disk_cleanup.py errander/models/reports.py
+git add errander/agent/graph.py errander/observability/reporting.py
+git add STATUS.md tasks/todo.md tasks/lessons.md docs/command-log.md
+git commit -m "fix: dry-run report UX — parse disk sizes, dry-run banner, filter 0-login noise"
+git push origin main
+```
+
 ## docker_hygiene wrapper-mode docker_available fallback (2026-05-25)
 
 ```bash

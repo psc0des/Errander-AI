@@ -745,12 +745,13 @@ async def generate_report_node(
     batch_report = BatchReport(
         batch_id=batch_id,
         generated_at=datetime.now(tz=UTC),
+        dry_run=bool(state.get("dry_run", False)),
         vm_action_results=raw_results,
         disk_growth_alerts=disk_growth_alerts,
         drift_changes=drift_changes,
         failed_logins=failed_logins,
     )
-    rendered = render_batch_report(batch_report)
+    rendered = render_batch_report(batch_report, env_name=str(state.get("env_name", "")))
 
     # Record batch duration
     started_at_str = state.get("batch_started_at")

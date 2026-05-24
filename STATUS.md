@@ -4,6 +4,17 @@
 2026-05-24
 
 ## Current Phase
+**Dry-run report UX overhaul (2026-05-25, COMPLETE).** Working tree clean.
+
+Three issues fixed: (1) `space_by_path` stored raw command output (`du -sh` with tab+path, `journalctl --disk-usage` sentences) — added `_parse_du_size`, `_parse_journal_size`, `_parse_tmp_size` helpers in `disk_cleanup.py` to extract just the human size at assess time. (2) `BatchReport` lacked a `dry_run` flag — added it and pass it from `generate_report_node`. (3) `render_batch_report` was confusing in dry-run mode — title now says "Dry-Run Report", shows env name, uses "○ queued for approval" instead of "⊘ skipped", hides 0-login noise, adds "Next Steps" section. All 2507 tests pass.
+
+### Files changed (2026-05-25 — dry-run report UX)
+- `errander/agent/subgraphs/disk_cleanup.py` — `_parse_du_size`, `_parse_journal_size`, `_parse_tmp_size` helpers; apply in `assess_node`
+- `errander/models/reports.py` — `dry_run: bool = False` field on `BatchReport`
+- `errander/agent/graph.py` — pass `dry_run` + `env_name` to `BatchReport`/`render_batch_report`
+- `errander/observability/reporting.py` — dry-run title, env label, "○ queued" label, 0-login filter, next-steps section; `render_batch_report` accepts `env_name`
+
+## Previous Phase
 **docker_hygiene wrapper-mode docker_available fallback (2026-05-25, COMPLETE).** Working tree clean.
 
 `docker_hygiene` was silently excluded from every dry-run plan even when `enabled: true` in inventory. Root cause: `detect_os()` probes `docker info` without sudo — the `errander` SSH user isn't in the docker group on target VMs, so `docker_available=False`, and `_is_action_applicable()` filters out docker_hygiene before it reaches the planner. Fix: in `plan_vm_node`, after OS detection, if `docker_available=False` and `docker_hygiene` is in `enabled_actions`, probe the assess wrapper's `--check` (which IS in sudoers). If that passes, override `docker_available=True` for planning. Stopped containers (e.g. exited-0 `setup` container) will now be assessed and presented for approval. All 2507 tests pass.

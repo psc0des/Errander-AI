@@ -76,7 +76,7 @@ def format_reboot_required_section(vms: list[VMState]) -> str:
     return "\n".join(lines)
 
 
-def render_batch_report(report: BatchReport) -> str:
+def render_batch_report(report: BatchReport, env_name: str = "") -> str:
     """Render a BatchReport to a Slack-formatted human-readable string.
 
     Sections are emitted only when non-empty, in priority order:
@@ -90,35 +90,50 @@ def render_batch_report(report: BatchReport) -> str:
         Formatted multi-line string suitable for Slack posting.
     """
     lines: list[str] = []
+    dry_run = report.dry_run
 
     ts = report.generated_at.strftime("%Y-%m-%d %H:%M UTC")
-    lines.append(f"*Errander Batch Report* — `{report.batch_id}`")
+    mode_label = "Dry-Run Report" if dry_run else "Batch Report"
+    env_part = f" `{env_name}` —" if env_name else " —"
+    lines.append(f"*Errander {mode_label}*{env_part} `{report.batch_id}`")
     lines.append(f"Generated: {ts}")
+    if dry_run:
+        lines.append("Mode: *DRY-RUN* — nothing was changed on any VM")
 
     # --- Action results ---
     results = report.vm_action_results
     if results:
         lines.append("")
-        lines.append("*Action Results*")
+        section_title = "*Assessment Results* (what would run after approval)" if dry_run else "*Action Results*"
+        lines.append(section_title)
         succeeded = sum(1 for r in results if str(r.get("status", "")) == "succeeded")
         failed = sum(1 for r in results if str(r.get("status", "")) == "failed")
-        skipped = len(results) - succeeded - failed
-        lines.append(
-            f"  {len(results)} actions — "
-            f"✓ {succeeded} succeeded, ✗ {failed} failed, ⊘ {skipped} skipped"
-        )
+        assessed = len(results) - succeeded - failed
+        if dry_run:
+            lines.append(
+                f"  {len(results)} action(s) assessed — "
+                f"✓ {succeeded} would succeed, ✗ {failed} would fail, "
+                f"⊘ {assessed} queued for approval"
+            )
+        else:
+            lines.append(
+                f"  {len(results)} actions — "
+                f"✓ {succeeded} succeeded, ✗ {failed} failed, ⊘ {assessed} skipped"
+            )
         for r in results:
-            vm = r.get("vm_id", "?")
+            vm = str(r.get("vm_id", "?"))
             action = r.get("action_type", "?")
             status = r.get("status", "?")
             detail = r.get("detail", "")
             err = r.get("error")
             icon = "✓" if status == "succeeded" else "✗" if status == "failed" else "⊘"
+            if dry_run and icon == "⊘":
+                icon = "○"  # assessed/queued, not "skipped"
             line = f"  {icon} `{vm}` {action}"
             if detail:
                 line += f" — {detail}"
             if err:
-                line += f" [error: {err}]"
+                line += f"\n      Error: {err}"
             lines.append(line)
 
     # --- Preflight blocks ---
@@ -136,7 +151,7 @@ def render_batch_report(report: BatchReport) -> str:
     regressions = report.service_health_regressions
     if regressions:
         lines.append("")
-        lines.append(f"*:rotating_light: Service Regressions* ({len(regressions)})")
+        lines.append(f"*Service Regressions* ({len(regressions)})")
         for reg in regressions:
             lines.append(
                 f"  • `{reg.vm_id}` {reg.service_name}: "
@@ -148,8 +163,8 @@ def render_batch_report(report: BatchReport) -> str:
     if reboot_vms:
         lines.append("")
         lines.append(f"*Reboot Required* ({len(reboot_vms)} VMs)")
-        for vm in reboot_vms:
-            pkgs = vm.pkgs_requiring
+        for rvm in reboot_vms:
+            pkgs = rvm.pkgs_requiring
             pkg_detail = ""
             if pkgs:
                 shown = ", ".join(pkgs[:5])
@@ -157,8 +172,8 @@ def render_batch_report(report: BatchReport) -> str:
                 if len(pkgs) > 5:
                     pkg_detail += f" +{len(pkgs) - 5} more"
                 pkg_detail += ")"
-            reason = vm.reason or "reboot required"
-            lines.append(f"  • `{vm.vm_id}` — {reason}{pkg_detail}")
+            reason = rvm.reason or "reboot required"
+            lines.append(f"  • `{rvm.vm_id}` — {reason}{pkg_detail}")
 
     # --- Drift changes (grouped by kind) ---
     drift = report.drift_changes
@@ -188,8 +203,8 @@ def render_batch_report(report: BatchReport) -> str:
                 f"(+{g.delta_pct:.1f}%) over {g.window_label}"
             )
 
-    # --- Failed logins ---
-    logins = report.failed_logins
+    # --- Failed logins — only show when there are actual attempts ---
+    logins = [fl for fl in report.failed_logins if fl.total_count > 0]
     if logins:
         lines.append("")
         lines.append(f"*Failed SSH Logins* ({len(logins)} VM(s))")
@@ -204,6 +219,14 @@ def render_batch_report(report: BatchReport) -> str:
             if fl.top_source_ips:
                 top_ips = ", ".join(f"{ip}x{c}" for ip, c in fl.top_source_ips[:3])
                 lines.append(f"    top IPs: {top_ips}")
+
+    # --- Dry-run next steps ---
+    if dry_run:
+        lines.append("")
+        lines.append("*Next Steps*")
+        lines.append("  1. Review the assessment above")
+        lines.append("  2. Run without --dry-run to submit for Slack approval")
+        lines.append("  3. React with ✅ in your approvals channel to execute")
 
     return "\n".join(lines)
 

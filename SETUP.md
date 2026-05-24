@@ -1082,7 +1082,7 @@ Type=simple
 User=${INSTALL_USER}
 WorkingDirectory=${INSTALL_DIR}
 EnvironmentFile=${INSTALL_DIR}/.env
-EnvironmentFile=${KEY_PATH}
+EnvironmentFile=-${KEY_PATH}
 ExecStart=${INSTALL_DIR}/.venv/bin/python -m errander \\
   --inventory ${INSTALL_DIR}/inventory.yaml \\
   --config ${INSTALL_DIR}/settings.yaml

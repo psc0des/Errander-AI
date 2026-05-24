@@ -1032,11 +1032,17 @@ What happens:
 
 ## Step 8 — Live run
 
-Once dry-run looks correct (replace `<your-env-name>` as above):
+Once dry-run looks correct, run live for each environment you want to execute against.
+`--env` targets one environment at a time — run once per env, or in parallel across terminals:
 
 **Linux / Git Bash:**
 ```bash
-uv run python -m errander --run-now --env <your-env-name> --inventory inventory.yaml --live
+# Single environment
+uv run python -m errander --run-now --env dr --inventory inventory.yaml --live
+
+# Multiple environments (run in separate terminals, or background each)
+uv run python -m errander --run-now --env prod --inventory inventory.yaml --live
+uv run python -m errander --run-now --env staging --inventory inventory.yaml --live
 ```
 
 **Windows PowerShell:**
@@ -1045,14 +1051,16 @@ Get-Content .env | Where-Object { $_ -notmatch "^#" -and $_ -ne "" } | ForEach-O
     $parts = $_ -split "=", 2
     [System.Environment]::SetEnvironmentVariable($parts[0], $parts[1], "Process")
 }
-uv run python -m errander --run-now --env <your-env-name> --inventory inventory.yaml --live
+uv run python -m errander --run-now --env dr --inventory inventory.yaml --live
 ```
 
-Real commands execute on the target VMs.
+Real commands execute on the target VMs. Each environment gets its own Slack approval message — approve or reject them independently.
 
 ---
 
 ## Step 9 — Run as a scheduled service (production)
+
+In service mode (no `--run-now`, no `--env`), Errander runs as a long-lived daemon and executes **all environments** defined in `inventory.yaml` according to each environment's `maintenance_window` schedule. No `--env` flag needed — the scheduler picks up every environment automatically.
 
 ### Linux controller — systemd
 

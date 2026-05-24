@@ -1,3 +1,11 @@
+## docker_available: wire enabled_actions into run_vm Send payloads (2026-05-25, COMPLETE)
+
+- [x] Read both VMGraphState constructions for run_vm in graph.py
+- [x] Pass `enabled_actions` in `route_after_validate` (dry-run Send) and `dispatch_current_wave` (live Send)
+- [x] All 2507 tests pass, mypy clean
+
+---
+
 ## docker_available execution-phase fallback (2026-05-25, COMPLETE)
 
 - [x] Add `enabled_actions: list[str]` to `VMGraphState` TypedDict

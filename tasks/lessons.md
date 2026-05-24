@@ -8,6 +8,14 @@
 
 **How to apply:** Any time a command produces structured output (tab-separated, full sentences, multi-line), parse it at storage time. Store the extracted value (e.g., `"130M"`, `"16.0M"`) not the raw stdout. The assessment state is a domain model — it should hold domain values, not command output.
 
+## 2026-05-25 — Fields added to a sub-graph state TypedDict must also be wired into every Send() construction
+
+Adding a field to `VMGraphState` (the TypedDict) and reading it inside a node is not enough — the field must also be explicitly passed in every `Send("run_vm", VMGraphState(...))` call that constructs the state. If it's missing from the constructor, `state.get("field")` returns `None` and any logic gated on that field silently does nothing.
+
+**Why:** `VMGraphState` is a TypedDict, not a dataclass with defaults. The Send payload is a plain dict at runtime. LangGraph doesn't fill in missing keys from the type definition — it only carries through what was explicitly set at construction time.
+
+**How to apply:** Any time you add a field to `VMGraphState` and read it in a node: immediately grep for all `Send("run_vm", VMGraphState(` sites and add the new field to each one. There are two in `graph.py` (`route_after_validate` for dry-run and `dispatch_current_wave` for live execution). Both must be updated together.
+
 ## 2026-05-25 — Planning phase and execution phase run detect_os() independently
 
 A fix applied to `plan_vm_node` (in `graph.py`) does NOT automatically carry through to `discover_node` (in `vm_graph.py`). Both phases independently call `detect_os()` and build their own `VMInfo`. A symptom appeared where docker_hygiene showed up in the dry-run plan (planning phase fixed) but then hit "Docker not installed or not running" at execution time (execution phase still broken).

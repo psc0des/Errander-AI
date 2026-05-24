@@ -1787,6 +1787,7 @@ def make_fan_out_router(
         dry_run = state.get("dry_run", True)
         env_policy = state.get("env_policy", "strict")
         docker_command_mode = state.get("docker_command_mode", "wrapper")
+        _enabled_raw: list[str] | None = state.get("enabled_actions")
 
         return [
             Send(
@@ -1810,6 +1811,7 @@ def make_fan_out_router(
                     drift_abort_on_detection=state.get("drift_abort_on_detection", False),
                     disable_failed_login_check=bool(t.get("disable_failed_login_check", False)),
                     critical_services=list(t.get("critical_services") or []),  # type: ignore[call-overload]
+                    enabled_actions=list(_enabled_raw) if _enabled_raw is not None else [],
                 ),
             )
             for t in healthy
@@ -1878,6 +1880,7 @@ def make_wave_dispatcher(
         env_policy = state.get("env_policy", "strict")
         ai_db_path = state.get("ai_db_path", "")
         docker_command_mode = state.get("docker_command_mode", "wrapper")
+        _enabled_exec: list[str] | None = state.get("enabled_actions")
 
         # Build approved plan lookup: vm_id → planned_actions.
         # Execution MUST follow the approved plan — the VM graph skips re-planning
@@ -1933,6 +1936,7 @@ def make_wave_dispatcher(
                         drift_abort_on_detection=state.get("drift_abort_on_detection", False),
                         disable_failed_login_check=bool(t.get("disable_failed_login_check", False)),
                         critical_services=list(t.get("critical_services") or []),  # type: ignore[call-overload]
+                        enabled_actions=list(_enabled_exec) if _enabled_exec is not None else [],
                     ),
                 )
             )

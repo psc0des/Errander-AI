@@ -4,6 +4,14 @@
 2026-05-25
 
 ## Current Phase
+**docker_available: enabled_actions wired into run_vm Send payloads (2026-05-25, COMPLETE).** Working tree clean.
+
+`enabled_actions` was set in `BatchGraphState` but never forwarded into the `VMGraphState` constructions for `run_vm` in `route_after_validate` and `dispatch_current_wave`. So `discover_node`'s `state.get("enabled_actions")` always returned `None`, short-circuiting the wrapper fallback check before it could run. Fix: pass `enabled_actions=list(_enabled_raw) if _enabled_raw is not None else []` in both `run_vm` Send constructions in `graph.py`. All 2507 tests pass.
+
+### Files changed (2026-05-25 — enabled_actions wiring)
+- `errander/agent/graph.py` — pass `enabled_actions` in both `run_vm` VMGraphState constructions
+
+## Previous Phase
 **docker_available wrapper fallback in execution phase (2026-05-25, COMPLETE).** Working tree clean.
 
 `discover_node` in `vm_graph.py` called `detect_os()` independently of `plan_vm_node`, so it always got `docker_available=False` for the `errander` SSH user (not in docker group). This caused the execution phase to report "Docker not installed or not running" even though the planning phase correctly detected Docker via the wrapper fallback. Fix: applied the same wrapper-check pattern in `discover_node` — if `docker_available=False` and `docker_hygiene` is in `enabled_actions`, probe `sudo -n errander-docker-assess-v2 --check`; override `docker_available=True` on success. Also added `enabled_actions: list[str]` to `VMGraphState` TypedDict. All 2507 tests pass.

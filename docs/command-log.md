@@ -1,5 +1,18 @@
 # Errander-AI Command Log
 
+## docker_available: wire enabled_actions into run_vm Send payloads (2026-05-25)
+
+```bash
+# enabled_actions was never passed into VMGraphState for run_vm — discover_node always saw None
+# Fix: pass enabled_actions=list(_enabled_raw) in both route_after_validate and dispatch_current_wave
+
+uv run mypy errander/agent/graph.py errander/agent/vm_graph.py   # 0 errors
+uv run pytest -q --tb=short                                       # 2507 passed
+git add errander/agent/graph.py STATUS.md tasks/todo.md tasks/lessons.md docs/command-log.md
+git commit -m "fix: pass enabled_actions into run_vm VMGraphState — docker_available fallback now reachable"
+git push origin main
+```
+
 ## docker_available execution-phase fallback (2026-05-25)
 
 ```bash

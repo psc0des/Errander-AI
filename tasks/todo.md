@@ -1,3 +1,12 @@
+## docker_available execution-phase fallback (2026-05-25, COMPLETE)
+
+- [x] Add `enabled_actions: list[str]` to `VMGraphState` TypedDict
+- [x] In `discover_node`, after `detect_os()`, probe `sudo -n errander-docker-assess-v2 --check` when `docker_available=False` and `docker_hygiene` in `enabled_actions`
+- [x] Override `docker_available=True` on wrapper check success
+- [x] All 2507 tests pass, mypy clean
+
+---
+
 ## Dry-run report UX overhaul (2026-05-25, COMPLETE)
 
 - [x] `_parse_du_size` / `_parse_journal_size` / `_parse_tmp_size` in disk_cleanup.py; apply at assess time

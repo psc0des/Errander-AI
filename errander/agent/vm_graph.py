@@ -138,6 +138,10 @@ class VMGraphState(TypedDict, total=False):
     # Docker command mode: "wrapper" | "direct_sudo" | "disabled" (default: "wrapper")
     docker_command_mode: str
 
+    # Subset of action names enabled for this batch — used by discover_node to
+    # decide whether to probe the docker assess wrapper as a docker_available fallback.
+    enabled_actions: list[str]
+
 
 # --- Node functions ---
 
@@ -183,6 +187,40 @@ async def discover_node(
     except (ValueError, ConnectionError, OSError) as exc:
         logger.error("Discovery failed for %s: %s", vm_id, exc)
         return {"error": f"Discovery failed: {exc}"}
+
+    # Wrapper fallback: errander user may not be in the docker group, so
+    # `docker info` fails even when Docker is running. If docker_hygiene is
+    # enabled and the raw probe returned False, probe the assess wrapper with
+    # --check (which IS in sudoers) to get the definitive answer.
+    _enabled: list[str] | None = state.get("enabled_actions")
+    if (
+        not vm_info.docker_available
+        and _enabled is not None
+        and "docker_hygiene" in _enabled
+    ):
+        from errander.agent.subgraphs import BUILTIN_ACTIONS as _BA
+        from errander.models.vm import VMInfo as _VMInfo
+
+        _hygiene = _BA.get("docker_hygiene")
+        if _hygiene and _hygiene.required_wrappers:
+            _assess = _hygiene.required_wrappers[0]
+            _chk = await ssh_manager.execute(
+                vm_id, hostname, ssh_user, key_path,
+                f"sudo -n {_assess} --check 2>/dev/null && echo yes || echo no",
+            )
+            if _chk.success and "yes" in _chk.stdout:
+                vm_info = _VMInfo(
+                    os_family=vm_info.os_family,
+                    os_version=vm_info.os_version,
+                    disk_usage=vm_info.disk_usage,
+                    docker_available=True,
+                    pending_packages=vm_info.pending_packages,
+                    uptime_seconds=vm_info.uptime_seconds,
+                )
+                logger.info(
+                    "docker_available=True for %s via wrapper check (raw docker info denied)",
+                    vm_id,
+                )
 
     return {
         "vm_info": {

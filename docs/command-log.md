@@ -1,5 +1,18 @@
 # Errander-AI Command Log
 
+## docker_available execution-phase fallback (2026-05-25)
+
+```bash
+# discover_node re-ran detect_os() independently of plan_vm_node → always docker_available=False
+# Fix: mirror plan_vm_node wrapper-check pattern in discover_node; add enabled_actions to VMGraphState
+
+uv run mypy errander/agent/vm_graph.py        # 0 errors
+uv run pytest -q --tb=short                   # 2507 passed
+git add errander/agent/vm_graph.py STATUS.md tasks/todo.md tasks/lessons.md docs/command-log.md
+git commit -m "fix: docker_available wrapper fallback in discover_node (execution phase)"
+git push origin main
+```
+
 ## Dry-run report UX overhaul (2026-05-25)
 
 ```bash

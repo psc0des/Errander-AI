@@ -1,9 +1,17 @@
 # Errander-AI — Project Status
 
 ## Last Updated
-2026-05-24
+2026-05-25
 
 ## Current Phase
+**docker_available wrapper fallback in execution phase (2026-05-25, COMPLETE).** Working tree clean.
+
+`discover_node` in `vm_graph.py` called `detect_os()` independently of `plan_vm_node`, so it always got `docker_available=False` for the `errander` SSH user (not in docker group). This caused the execution phase to report "Docker not installed or not running" even though the planning phase correctly detected Docker via the wrapper fallback. Fix: applied the same wrapper-check pattern in `discover_node` — if `docker_available=False` and `docker_hygiene` is in `enabled_actions`, probe `sudo -n errander-docker-assess-v2 --check`; override `docker_available=True` on success. Also added `enabled_actions: list[str]` to `VMGraphState` TypedDict. All 2507 tests pass.
+
+### Files changed (2026-05-25 — docker_available execution-phase fallback)
+- `errander/agent/vm_graph.py` — wrapper-mode `docker_available` fallback in `discover_node`; `enabled_actions` field on `VMGraphState`
+
+## Previous Phase
 **Dry-run report UX overhaul (2026-05-25, COMPLETE).** Working tree clean.
 
 Three issues fixed: (1) `space_by_path` stored raw command output (`du -sh` with tab+path, `journalctl --disk-usage` sentences) — added `_parse_du_size`, `_parse_journal_size`, `_parse_tmp_size` helpers in `disk_cleanup.py` to extract just the human size at assess time. (2) `BatchReport` lacked a `dry_run` flag — added it and pass it from `generate_report_node`. (3) `render_batch_report` was confusing in dry-run mode — title now says "Dry-Run Report", shows env name, uses "○ queued for approval" instead of "⊘ skipped", hides 0-login noise, adds "Next Steps" section. All 2507 tests pass.

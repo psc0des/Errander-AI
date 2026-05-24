@@ -1,3 +1,11 @@
+## Workspace hygiene — gitignore cleanup (2026-05-24, COMPLETE)
+
+- [x] Add `.gitignore` patterns: `*.sqlite-journal/wal/shm`, `.playwright-mcp/`, `errander-*.png`, `tmp_*.yaml`, `approvals_text.txt`
+- [x] Delete 10 untracked artifact files from working tree
+- [x] Push to origin — working tree clean
+
+---
+
 ## Repo-wide quality gate cleanup (2026-05-24, COMPLETE)
 
 **Status:** All items complete. 2507 tests passing. `ruff check .` → 0 errors. `mypy errander/` → 0 errors.

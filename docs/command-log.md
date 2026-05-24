@@ -1,5 +1,21 @@
 # Errander-AI Command Log
 
+## Workspace hygiene — gitignore cleanup (2026-05-24)
+
+```bash
+# Delete untracked artifact files
+rm -f approvals_text.txt errander-*.png tmp_*.yaml *.sqlite-journal
+rm -rf .playwright-mcp/
+
+# Verify clean
+git status --short  # only .gitignore modified
+
+# Commit and push
+git add .gitignore
+git commit -m "chore: gitignore sqlite journals, playwright artifacts, UI screenshots"
+git push origin main
+```
+
 ## Quality gate cleanup (2026-05-24)
 
 ```bash

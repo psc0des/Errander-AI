@@ -4,6 +4,14 @@
 2026-05-24
 
 ## Current Phase
+**Workspace hygiene — gitignore cleanup (2026-05-24, COMPLETE).** Working tree clean.
+
+Removed 10 untracked artifact files (UI screenshots, SQLite journals, Playwright MCP session dir, temp inventory). Added `.gitignore` patterns for `*.sqlite-journal`, `*.sqlite-wal`, `*.sqlite-shm`, `.playwright-mcp/`, `errander-*.png`, `tmp_*.yaml`, `approvals_text.txt`.
+
+### Files changed (2026-05-24)
+- `.gitignore` — 3 new ignore sections for SQLite journals, Playwright artifacts, UI QA screenshots
+
+## Previous Phase
 **Repo-wide quality gate cleanup (2026-05-24, COMPLETE).** 2507 tests passing. `ruff check .` → 0 errors. `mypy errander/` → 0 errors.
 
 Resolved all pre-existing static quality gate debt tracked since the SRE P1/P2 review. Zero new functionality — pure chore. All 252 ruff violations and 15 mypy errors fixed across 40+ files.

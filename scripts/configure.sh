@@ -517,6 +517,10 @@ _env_slack_token=""
     echo "# SSH host key verification"
     echo "# Run --bootstrap-known-hosts <env> to pin host keys, then set this to true"
     echo "ERRANDER_SSH_STRICT_HOST_KEYS=false"
+    echo ""
+    echo "# Web UI / metrics bind address"
+    echo "# 0.0.0.0 = reachable from your laptop; 127.0.0.1 = localhost only (SSH tunnel required)"
+    echo "ERRANDER_UI_BIND=0.0.0.0"
 } > .env
 
 chmod 600 .env

@@ -826,6 +826,9 @@ class TestCheckTargetsAllowlistDrift:
 
         captured = capsys.readouterr()
         assert "ALLOWLIST DRIFT" not in captured.out
+        assert "ALLOWLIST OK" in captured.out
+        assert "nginx.service" in captured.out
+        assert "gunicorn.service" in captured.out
         assert result == 0
 
     @pytest.mark.asyncio

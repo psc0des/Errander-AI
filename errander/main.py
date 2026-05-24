@@ -822,17 +822,26 @@ async def run_check_targets(env_name: str, inventory_path: Path) -> int:
                             for line in ssh_result.stdout.splitlines()
                             if line.strip()
                         }
+                        drift_found = False
                         for unit in sorted(inventory_units - on_target_units):
+                            drift_found = True
                             print(
                                 f"  ALLOWLIST DRIFT {target.name}: "
                                 f"'{unit}' in inventory but missing from "
                                 f"/etc/errander/restart-allowlist"
                             )
                         for unit in sorted(on_target_units - inventory_units):
+                            drift_found = True
                             print(
                                 f"  ALLOWLIST DRIFT {target.name}: "
                                 f"'{unit}' in /etc/errander/restart-allowlist "
                                 f"but not in inventory restartable_units"
+                            )
+                        if not drift_found:
+                            units_str = ", ".join(sorted(on_target_units))
+                            print(
+                                f"  ALLOWLIST OK {target.name}: "
+                                f"{units_str} ({len(on_target_units)} unit(s) verified)"
                             )
                     else:
                         print(

@@ -1,4 +1,14 @@
-## SRE Trust Gap Fixes (2026-05-24, COMPLETE)
+## SRE P2 Fixes (2026-05-24, COMPLETE)
+
+**Status:** All items complete. 2507 tests passing, ruff clean on changed files.
+
+- [x] P2.1: evidence validation always runs — remove `if valid_sources:` guard; when sources_used is empty, all evidence is hallucinated and stripped
+- [x] P2.2: `context_snapshot` now includes `redaction_count`, `vms_dropped`, `fields_truncated`, `entries_truncated`
+- [x] 2 new tests: `test_investigate_strips_evidence_when_sources_empty` + `test_investigate_context_snapshot_includes_budget_and_redaction_stats`
+
+---
+
+## SRE Trust Gap Fixes — P1 (2026-05-24, COMPLETE)
 
 **Status:** All items complete. 2505 tests passing, ruff clean on changed files.
 

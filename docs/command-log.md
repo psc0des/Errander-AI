@@ -1,6 +1,19 @@
 # Errander-AI Command Log
 
-## SRE Trust Gap Fixes (2026-05-24)
+## SRE P2 Fixes (2026-05-24)
+
+```bash
+# Targeted tests
+uv run pytest tests/agent/test_operator_assistant.py -q  # 31 passed
+
+# Ruff fix
+uv run ruff check --fix tests/agent/test_operator_assistant.py  # 1 fixed
+
+# Full suite
+uv run pytest --tb=short -q  # 2507 passed
+```
+
+## SRE Trust Gap Fixes — P1 (2026-05-24)
 
 ```bash
 # Targeted tests for SRE findings 1-3

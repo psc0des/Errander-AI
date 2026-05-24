@@ -1,5 +1,21 @@
 # Errander-AI — Lessons Learned
 
+## 2026-05-24 — Evidence validation must always run, even when `sources_used` is empty
+
+The guard `if valid_sources:` before the evidence-stripping loop is a latent bug: when `context.sources_used` is empty (no data sources queried), any evidence ID the LLM returns is hallucinated — but the guard skips validation and lets them through. The fix: always run the filter loop. When `valid_sources` is empty, `e not in valid_sources` is True for all `e`, so all evidence is stripped.
+
+**Why:** SRE confirmed via direct probe that `["fake_source"]` survived when `sources_used` was empty. The fix is one line — remove the outer `if valid_sources:` guard.
+
+**How to apply:** Any time you validate LLM output against a known set, avoid early-exit guards that skip validation on empty sets. An empty allowed set means nothing is allowed, not that anything is allowed.
+
+## 2026-05-24 — Record pipeline stats (redaction, budget) in the audit context_snapshot
+
+When logging an LLM call to `ai_decisions`, capture the pipeline stats from the preprocessing steps: `redaction_count` (how many secrets were stripped), `vms_dropped` / `fields_truncated` / `entries_truncated` (from the context budgeter). Without these, operators cannot tell from the audit log whether the LLM saw a truncated or redacted context.
+
+**Why:** SRE P2 finding — the original `context_snapshot` only had `sources_used`, `vm_count`, `env_name`. Operators debugging an LLM recommendation need to know if context was capped or redacted.
+
+**How to apply:** After `_REDACTOR.redact_prompt()` and `_BUDGETER.apply()`, capture their returned stats objects. Include `redaction_stats.total_redactions`, `budget_stats.vms_dropped`, `budget_stats.fields_truncated`, `budget_stats.entries_truncated` in the `context_snapshot` dict when calling `ai_decision_store.log()`.
+
 ## 2026-05-24 — Belt-and-suspenders redaction: centralize at the LLM client AND at each call site
 
 When adding a redaction layer, don't assume callers will always redact before calling `LLMClient.complete()`. Apply redaction inside `complete()` as a final safety net. Callers should still redact before storing `prompt_full` in the audit log (since `complete()` only sees the prompt string, not the audit record). Two distinct risks: (1) secret leaks to the model, (2) secret leaks to the audit DB. Both need independent guards.

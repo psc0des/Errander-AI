@@ -113,18 +113,18 @@ class OperatorAssistant:
 
             if result is not None:
                 # Validate citation evidence against known source IDs.
+                # Always run — when sources_used is empty, all evidence is hallucinated.
                 valid_sources = set(context.sources_used)
-                if valid_sources:
-                    for finding in result.findings:
-                        invalid = [e for e in finding.evidence if e not in valid_sources]
-                        if invalid:
-                            logger.warning(
-                                "LLM cited unknown source(s) %s — removing from evidence",
-                                invalid,
-                            )
-                            finding.evidence = [
-                                e for e in finding.evidence if e in valid_sources
-                            ]
+                for finding in result.findings:
+                    invalid = [e for e in finding.evidence if e not in valid_sources]
+                    if invalid:
+                        logger.warning(
+                            "LLM cited unknown source(s) %s — removing from evidence",
+                            invalid,
+                        )
+                        finding.evidence = [
+                            e for e in finding.evidence if e in valid_sources
+                        ]
                 result.data_sources = context.sources_used
 
             if ai_decision_store is not None:
@@ -145,6 +145,10 @@ class OperatorAssistant:
                         "sources_used": context.sources_used,
                         "vm_count": len(context.vm_summaries),
                         "env_name": context.env_name,
+                        "redaction_count": redaction_stats.total_redactions,
+                        "vms_dropped": budget_stats.vms_dropped,
+                        "fields_truncated": budget_stats.fields_truncated,
+                        "entries_truncated": budget_stats.entries_truncated,
                     }),
                     model_params=json.dumps({
                         "temperature": getattr(llm_client, "_temperature", None),

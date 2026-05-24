@@ -4,18 +4,13 @@
 2026-05-24
 
 ## Current Phase
-**AI Trust Layer — SRE Trust Gap Fixes (2026-05-24, COMPLETE).** 2505 tests passing.
+**AI Trust Layer — SRE P2 Fixes (2026-05-24, COMPLETE).** 2507 tests passing.
 
-Addressed four SRE findings: (1) centralized LLM redaction — `ContextRedactor` now applied belt-and-suspenders inside `LLMClient.complete()` and at each of the three LLM paths in `decisions.py` (prioritize, analyze_failure, generate_report); (2) `OperatorAssistant.investigate()` now accepts optional `AIDecisionStore` and logs every LLM call as `decision_type="operator_assistant"` with timing and outcome; (3) LLM-returned `finding.evidence` IDs are validated against `context.sources_used` — unknown IDs are stripped with a warning; (4) pre-existing ruff/mypy errors documented as tracked debt in todo.md. 9 new targeted tests. All changed files ruff-clean.
+Fixed SRE P1 findings (previous commit) plus P2 follow-ups: (1) evidence validation no longer skips when `context.sources_used` is empty — all hallucinated IDs are now stripped unconditionally; (2) `context_snapshot` in `ai_decisions` now records `redaction_count`, `vms_dropped`, `fields_truncated`, and `entries_truncated` from the budget/redaction pipeline. 2 new tests (empty-sources edge case + snapshot stats). All changed files ruff-clean.
 
-### Files changed in SRE Trust Gap Fixes (2026-05-24)
-- `errander/integrations/llm.py` — `ContextRedactor` belt-and-suspenders redaction in `complete()`
-- `errander/agent/decisions.py` — `_REDACTOR` at module level; redact in `prioritize_actions`, `analyze_failure`, `generate_report`
-- `errander/agent/operator_assistant.py` — `ai_decision_store` param; timing + audit log; evidence validation
-- `errander/main.py` — open `AIDecisionStore` for `--ask` queries; pass to `investigate()`; fix `finding.text` print
-- `tests/agent/test_decisions.py` — `TestRedactionInDecisionPaths` (4 tests)
-- `tests/agent/test_operator_assistant.py` — 5 audit + evidence validation tests
-- `docs/learning/49-sre-trust-gap-fixes.md` (NEW)
+### Files changed in SRE P2 Fixes (2026-05-24)
+- `errander/agent/operator_assistant.py` — remove `if valid_sources:` guard on evidence validation; add stats fields to `context_snapshot`
+- `tests/agent/test_operator_assistant.py` — `test_investigate_strips_evidence_when_sources_empty`; `test_investigate_context_snapshot_includes_budget_and_redaction_stats`; fix stale comment in `test_investigate_preserves_valid_evidence_ids`
 
 ## Previous Phase
 **AI Trust Layer — Phase 5: Source Citation for AI Answers (2026-05-24, COMPLETE).** 2485 tests passing.

@@ -585,17 +585,11 @@ async def test_investigate_strips_unknown_evidence_ids() -> None:
 
 @pytest.mark.asyncio
 async def test_investigate_preserves_valid_evidence_ids() -> None:
-    """Valid evidence IDs (in sources_used) must be preserved."""
+    """Empty evidence list is preserved (no items to strip)."""
     llm = MagicMock()
     llm._model = "test-model"
     llm._base_url = "http://localhost/v1"
     llm._temperature = 0.1
-
-    # We need sources_used to contain audit_store so evidence is preserved.
-    # Simulate by making _build_context return a context with sources_used populated,
-    # but since _build_context is complex we test via a mocked response that the
-    # code preserves evidence IDs when they match sources_used.
-    # The simplest path: if sources_used is empty, validation is skipped (no stripping).
     llm.complete = AsyncMock(return_value=AssistantResponse(
         summary="ok",
         findings=[{"text": "some finding", "evidence": []}],
@@ -614,5 +608,73 @@ async def test_investigate_preserves_valid_evidence_ids() -> None:
         inventory=inv,
         llm_client=llm,
     )
-    # Empty evidence survives untouched
+    # Empty evidence survives untouched (nothing to strip)
     assert result.findings[0].evidence == []
+
+
+@pytest.mark.asyncio
+async def test_investigate_strips_evidence_when_sources_empty() -> None:
+    """When context.sources_used is empty, ALL evidence IDs are hallucinated and must be stripped."""
+    llm = MagicMock()
+    llm._model = "test-model"
+    llm._base_url = "http://localhost/v1"
+    llm._temperature = 0.1
+    llm.complete = AsyncMock(return_value=AssistantResponse(
+        summary="ok",
+        findings=[{"text": "some finding", "evidence": ["fake_source"]}],
+        recommendations=[],
+        risk_level="low",
+    ))
+    disk, base = _empty_stores()
+    audit = _make_audit_store()
+    inv = _make_inventory(["dev"])
+
+    result = await OperatorAssistant().investigate(
+        "q",
+        audit_store=audit,
+        disk_history_store=disk,
+        baseline_store=base,
+        inventory=inv,
+        llm_client=llm,
+    )
+    # sources_used is empty → fake_source cannot be validated → must be stripped
+    for finding in result.findings:
+        assert finding.evidence == []
+
+
+@pytest.mark.asyncio
+async def test_investigate_context_snapshot_includes_budget_and_redaction_stats() -> None:
+    """context_snapshot in ai_decisions must include redaction_count, vms_dropped, etc."""
+    import json as _json
+
+    from errander.safety.ai_audit import AIDecisionStore
+
+    llm = MagicMock()
+    llm._model = "test-model"
+    llm._base_url = "http://localhost/v1"
+    llm._temperature = 0.1
+    llm.complete = AsyncMock(return_value=AssistantResponse(
+        summary="ok", findings=[], recommendations=[], risk_level="low",
+    ))
+    disk, base = _empty_stores()
+    audit = _make_audit_store()
+    inv = _make_inventory(["dev"])
+
+    async with AIDecisionStore(":memory:") as ai_store:
+        await OperatorAssistant().investigate(
+            "q",
+            audit_store=audit,
+            disk_history_store=disk,
+            baseline_store=base,
+            inventory=inv,
+            llm_client=llm,
+            ai_decision_store=ai_store,
+        )
+        decisions = await ai_store.get_decisions(limit=10)
+
+    assert len(decisions) == 1
+    snapshot = _json.loads(decisions[0].context_snapshot or "{}")
+    assert "redaction_count" in snapshot
+    assert "vms_dropped" in snapshot
+    assert "fields_truncated" in snapshot
+    assert "entries_truncated" in snapshot

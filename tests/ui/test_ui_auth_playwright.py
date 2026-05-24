@@ -1,19 +1,16 @@
-"""Playwright tests for UI HTTP Basic Auth (/ui/* protection).
+"""Playwright tests for UI session-cookie auth (/ui/* protection).
 
 Architecture:
 - auth_base_url: server started with ui_user="admin", ui_password="testpass"
 - open_base_url: server started with no credentials (auth disabled)
-- Uses page.request.get() for raw HTTP status checks — avoids the browser
-  credential dialog that Playwright/Chromium shows on 401.
-- Uses /ui/settings (no trailing slash) to avoid aiohttp 301 redirect stripping
-  the Authorization header.
+- Unauthenticated /ui/* requests receive a 302 redirect to /ui/login (not 401).
+- /ui/login POST with correct credentials issues a session cookie and redirects to /ui.
 - /metrics and /health must remain open regardless of auth config.
 """
 
 from __future__ import annotations
 
 import asyncio
-import base64
 import threading
 from typing import TYPE_CHECKING
 
@@ -26,14 +23,10 @@ from errander.safety.overrides import OverridesStore
 if TYPE_CHECKING:
     from playwright.sync_api import Page
 
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-def _basic_auth_header(user: str, password: str) -> dict[str, str]:
-    token = base64.b64encode(f"{user}:{password}".encode()).decode()
-    return {"Authorization": f"Basic {token}"}
-
 
 def _start_server(
     ui_user: str = "", ui_password: str = "",
@@ -82,7 +75,7 @@ def _start_server(
 
 @pytest.fixture(scope="module")
 def auth_base_url() -> str:  # type: ignore[return]
-    """Server with Basic Auth enabled (admin / testpass)."""
+    """Server with session auth enabled (admin / testpass)."""
     base_url, loop, t, ctx = _start_server(ui_user="admin", ui_password="testpass")
     yield base_url
     loop.call_soon_threadsafe(ctx["stop"].set)  # type: ignore[union-attr]
@@ -98,67 +91,73 @@ def open_base_url() -> str:  # type: ignore[return]
     t.join(timeout=5)
 
 
+def _login(page: Page, base_url: str, user: str, password: str) -> None:
+    """Navigate to login page, fill credentials, and submit."""
+    page.goto(f"{base_url}/ui/login")
+    page.fill("input[name=username]", user)
+    page.fill("input[name=password]", password)
+    page.click("button[type=submit]")
+
+
 # ---------------------------------------------------------------------------
-# Auth-enabled server: /ui/* requires credentials
+# Auth-enabled server: /ui/* requires session cookie
 # ---------------------------------------------------------------------------
 
 class TestAuthEnabled:
 
-    def test_ui_settings_without_credentials_returns_401(
-        self, page: Page, auth_base_url: str,
-    ) -> None:
-        response = page.request.get(f"{auth_base_url}/ui/settings")
-        assert response.status == 401
-
-    def test_ui_inventory_without_credentials_returns_401(
-        self, page: Page, auth_base_url: str,
-    ) -> None:
-        response = page.request.get(f"{auth_base_url}/ui/inventory")
-        assert response.status == 401
-
-    def test_ui_settings_with_correct_credentials_returns_200(
+    def test_ui_settings_without_credentials_redirects_to_login(
         self, page: Page, auth_base_url: str,
     ) -> None:
         response = page.request.get(
-            f"{auth_base_url}/ui/settings",
-            headers=_basic_auth_header("admin", "testpass"),
+            f"{auth_base_url}/ui/settings", max_redirects=0,
         )
-        assert response.status == 200
+        assert response.status == 302
+        assert "/ui/login" in response.headers.get("location", "")
 
-    def test_ui_inventory_with_correct_credentials_returns_200(
+    def test_ui_inventory_without_credentials_redirects_to_login(
         self, page: Page, auth_base_url: str,
     ) -> None:
         response = page.request.get(
-            f"{auth_base_url}/ui/inventory",
-            headers=_basic_auth_header("admin", "testpass"),
+            f"{auth_base_url}/ui/inventory", max_redirects=0,
         )
-        assert response.status == 200
+        assert response.status == 302
+        assert "/ui/login" in response.headers.get("location", "")
 
-    def test_ui_with_wrong_password_returns_401(
+    def test_login_page_renders(
         self, page: Page, auth_base_url: str,
     ) -> None:
-        response = page.request.get(
-            f"{auth_base_url}/ui/settings",
-            headers=_basic_auth_header("admin", "wrongpassword"),
-        )
-        assert response.status == 401
+        page.goto(f"{auth_base_url}/ui/login")
+        assert page.title() == "Errander-AI — Sign in"
+        assert page.locator("input[name=username]").is_visible()
+        assert page.locator("input[name=password]").is_visible()
+        assert page.locator("button[type=submit]").is_visible()
 
-    def test_ui_with_wrong_username_returns_401(
+    def test_correct_credentials_grant_access(
         self, page: Page, auth_base_url: str,
     ) -> None:
-        response = page.request.get(
-            f"{auth_base_url}/ui/settings",
-            headers=_basic_auth_header("hacker", "testpass"),
-        )
-        assert response.status == 401
+        _login(page, auth_base_url, "admin", "testpass")
+        page.wait_for_url(f"{auth_base_url}/ui")
+        assert page.url == f"{auth_base_url}/ui"
 
-    def test_401_response_contains_www_authenticate_header(
+    def test_wrong_password_shows_error(
         self, page: Page, auth_base_url: str,
     ) -> None:
-        response = page.request.get(f"{auth_base_url}/ui/settings")
-        # aiohttp lowercases header names
-        headers_lower = {k.lower(): v for k, v in response.headers.items()}
-        assert "www-authenticate" in headers_lower
+        page.goto(f"{auth_base_url}/ui/login")
+        page.fill("input[name=username]", "admin")
+        page.fill("input[name=password]", "wrongpassword")
+        page.click("button[type=submit]")
+        page.wait_for_url(f"{auth_base_url}/ui/login?err=1")
+        assert page.locator(".login-err").is_visible()
+
+    def test_wrong_username_shows_error(
+        self, page: Page, auth_base_url: str,
+    ) -> None:
+        page.goto(f"{auth_base_url}/ui/login")
+        page.fill("input[name=username]", "hacker")
+        page.fill("input[name=password]", "testpass")
+        page.click("button[type=submit]")
+        page.wait_for_url(f"{auth_base_url}/ui/login?err=1")
+        assert page.locator(".login-err").is_visible()
 
     def test_metrics_remains_open_when_auth_enabled(
         self, page: Page, auth_base_url: str,

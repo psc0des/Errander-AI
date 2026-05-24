@@ -63,6 +63,14 @@ _CSRF_SECRET_KEY: web.AppKey[str] = web.AppKey("csrf_secret")
 _CSRF_COOKIE = "errander_csrf"
 _CSRF_HEADER = "X-CSRF-Token"
 _CSRF_FIELD = "_csrf_token"
+_SESSION_COOKIE = "errander_session"
+
+#: In-memory session store: token → expiry timestamp (UTC epoch seconds).
+#: Sessions expire after 8 hours. Process restart invalidates all sessions.
+_SESSIONS: dict[str, float] = {}
+_SESSION_TTL = 8 * 3600  # seconds
+
+_SESSION_STORE_KEY: web.AppKey[dict[str, float]] = web.AppKey("session_store")
 
 logger = logging.getLogger(__name__)
 
@@ -459,6 +467,37 @@ input:disabled,select:disabled{opacity:.45;cursor:not-allowed}
 .inv-badge{font-family:var(--mono);font-size:.6rem;padding:2px 8px;border-radius:20px;
 background:var(--blue-bg);color:var(--primary)}
 .inv-dis{opacity:.4;text-decoration:line-through}
+
+/* ── LOGIN PAGE ──────────────────────────────────────────── */
+.login-wrap{
+  min-height:100vh;display:flex;align-items:center;justify-content:center;
+  background:var(--bg);
+}
+.login-card{
+  background:var(--surface-lowest);border-radius:14px;
+  padding:2.5rem 2.75rem;width:100%;max-width:380px;
+  box-shadow:var(--shadow);
+}
+.login-brand{
+  font-family:var(--head);font-size:1.15rem;font-weight:700;
+  color:var(--text);display:flex;align-items:center;gap:.6rem;
+  margin-bottom:.3rem;
+}
+.login-sub{font-family:var(--mono);font-size:.65rem;color:var(--text-d);margin-bottom:2rem}
+.login-card .form-row{margin-bottom:1rem}
+.login-card .form-lbl{font-size:.78rem;font-weight:500;color:var(--text-m)}
+.login-submit{
+  width:100%;padding:.6rem;margin-top:.5rem;
+  background:var(--gradient);color:#fff;border:none;border-radius:7px;
+  font-family:var(--sans);font-size:.88rem;font-weight:600;
+  cursor:pointer;letter-spacing:.01em;transition:opacity .15s;
+}
+.login-submit:hover{opacity:.88}
+.login-err{
+  background:var(--red-bg);color:var(--red);
+  border-radius:6px;padding:.55rem .85rem;
+  font-family:var(--mono);font-size:.75rem;margin-bottom:1rem;
+}
 """
 
 # ---------------------------------------------------------------------------
@@ -582,6 +621,10 @@ def _page(
     <a href="/health" target="_blank" class="sb-a sb-ext">
       <span class="sb-ico" aria-hidden="true">&#8599;</span>Health
     </a>
+    <div class="sb-divider"></div>
+    <a href="/ui/logout" class="sb-a sb-ext">
+      <span class="sb-ico" aria-hidden="true">&#10006;</span>Sign out
+    </a>
   </nav>
   <div class="sb-foot">v1 &nbsp;&middot;&nbsp; sqlite &nbsp;&middot;&nbsp; {ts}</div>
 </aside>
@@ -604,15 +647,42 @@ def _page(
 
 
 # ---------------------------------------------------------------------------
-# Basic Auth middleware
+# Session auth middleware + login / logout handlers
 # ---------------------------------------------------------------------------
 
+def _session_valid(app: web.Application, token: str) -> bool:
+    """Return True if the session token exists and has not expired."""
+    import time
+    store: dict[str, float] = app.get(_SESSION_STORE_KEY, {})
+    expiry = store.get(token)
+    if expiry is None:
+        return False
+    if time.time() > expiry:
+        store.pop(token, None)
+        return False
+    return True
+
+
+def _create_session(app: web.Application) -> str:
+    """Generate a new session token, store it, and return it."""
+    import time
+    token = secrets.token_urlsafe(32)
+    store: dict[str, float] = app.get(_SESSION_STORE_KEY, {})
+    store[token] = time.time() + _SESSION_TTL
+    return token
+
+
+def _destroy_session(app: web.Application, token: str) -> None:
+    store: dict[str, float] = app.get(_SESSION_STORE_KEY, {})
+    store.pop(token, None)
+
+
 @web.middleware
-async def _basic_auth_middleware(
+async def _session_auth_middleware(
     request: web.Request,
     handler: web.RequestHandler,
 ) -> web.StreamResponse:
-    """Require HTTP Basic Auth on /ui/* when ERRANDER_UI_USER/PASSWORD are set."""
+    """Require session-cookie auth on /ui/* (except /ui/login) when credentials are set."""
     ui_user: str = request.app.get(_UI_USER_KEY, "")
     ui_password: str = request.app.get(_UI_PASSWORD_KEY, "")
 
@@ -622,24 +692,98 @@ async def _basic_auth_middleware(
     if not request.path.startswith("/ui"):
         return await handler(request)  # type: ignore[operator, no-any-return]
 
-    auth_header = request.headers.get("Authorization", "")
-    if auth_header.startswith("Basic "):
-        import base64
-        try:
-            decoded = base64.b64decode(auth_header[6:]).decode("utf-8")
-            provided_user, _, provided_pass = decoded.partition(":")
-            user_ok = secrets.compare_digest(provided_user, ui_user)
-            pass_ok = secrets.compare_digest(provided_pass, ui_password)
-            if user_ok and pass_ok:
-                return await handler(request)  # type: ignore[operator, no-any-return]
-        except Exception:
-            pass
+    if request.path in ("/ui/login",):
+        return await handler(request)  # type: ignore[operator, no-any-return]
 
-    return web.Response(
-        status=401,
-        headers={"WWW-Authenticate": 'Basic realm="Errander-AI"'},
-        text="Unauthorized",
+    token = request.cookies.get(_SESSION_COOKIE, "")
+    if token and _session_valid(request.app, token):
+        return await handler(request)  # type: ignore[operator, no-any-return]
+
+    raise web.HTTPFound("/ui/login")
+
+
+async def _ui_login_get(request: web.Request) -> web.Response:
+    """Render the login page."""
+    err = request.rel_url.query.get("err", "")
+    err_html = f'<div class="login-err">Invalid username or password.</div>' if err else ""
+    html = f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Errander-AI &mdash; Sign in</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="{_FONTS}" rel="stylesheet">
+  <style>{_CSS}</style>
+</head>
+<body>
+<div class="login-wrap">
+  <div class="login-card">
+    <div class="login-brand"><span class="sb-led"></span>Errander-AI</div>
+    <div class="login-sub">autonomous ops hub</div>
+    {err_html}
+    <form method="post" action="/ui/login">
+      <input type="hidden" name="{_CSRF_FIELD}" value="">
+      <div class="form-row">
+        <label class="form-lbl login-card" for="username">Username</label>
+        <input type="text" id="username" name="username" autocomplete="username" autofocus required>
+      </div>
+      <div class="form-row">
+        <label class="form-lbl" for="password">Password</label>
+        <input type="password" id="password" name="password" autocomplete="current-password" required>
+      </div>
+      <button type="submit" class="login-submit">Sign in</button>
+    </form>
+  </div>
+</div>
+</body>
+</html>"""
+    html, nonce = _inject_csrf(request, html)
+    response = web.Response(text=html, content_type="text/html")
+    _set_csrf_cookie(response, nonce)
+    return response
+
+
+async def _ui_login_post(request: web.Request) -> web.Response:
+    """Validate credentials and issue a session cookie."""
+    ui_user: str = request.app.get(_UI_USER_KEY, "")
+    ui_password: str = request.app.get(_UI_PASSWORD_KEY, "")
+
+    try:
+        data = await request.post()
+    except Exception:
+        raise web.HTTPFound("/ui/login?err=1")
+
+    provided_user = str(data.get("username", ""))
+    provided_pass = str(data.get("password", ""))
+
+    user_ok = bool(ui_user) and secrets.compare_digest(provided_user, ui_user)
+    pass_ok = bool(ui_password) and secrets.compare_digest(provided_pass, ui_password)
+
+    if not (user_ok and pass_ok):
+        raise web.HTTPFound("/ui/login?err=1")
+
+    token = _create_session(request.app)
+    resp = web.HTTPFound("/ui")
+    resp.set_cookie(
+        _SESSION_COOKIE,
+        token,
+        httponly=True,
+        samesite="Lax",
+        max_age=_SESSION_TTL,
     )
+    raise resp
+
+
+async def _ui_logout(request: web.Request) -> web.Response:
+    """Destroy the session and redirect to login."""
+    token = request.cookies.get(_SESSION_COOKIE, "")
+    if token:
+        _destroy_session(request.app, token)
+    resp = web.HTTPFound("/ui/login")
+    resp.del_cookie(_SESSION_COOKIE)
+    raise resp
 
 
 @web.middleware
@@ -2068,7 +2212,7 @@ async def start_metrics_server(
     import os as _os
     csrf_secret = _os.urandom(32).hex()  # fresh per server start
 
-    app = web.Application(middlewares=[_basic_auth_middleware, _csrf_middleware])  # type: ignore[list-item]
+    app = web.Application(middlewares=[_session_auth_middleware, _csrf_middleware])  # type: ignore[list-item]
     app[_AUDIT_STORE_KEY] = audit_store
     app[_APPROVAL_MANAGER_KEY] = approval_manager
     app[_HYGIENE_MANAGER_KEY] = hygiene_manager
@@ -2078,9 +2222,13 @@ async def start_metrics_server(
     app[_UI_USER_KEY] = ui_user
     app[_UI_PASSWORD_KEY] = ui_password
     app[_CSRF_SECRET_KEY] = csrf_secret
+    app[_SESSION_STORE_KEY] = _SESSIONS
 
     app.router.add_get("/metrics", _metrics_handler)
     app.router.add_get("/health", _health_handler)
+    app.router.add_get("/ui/login", _ui_login_get)
+    app.router.add_post("/ui/login", _ui_login_post)
+    app.router.add_get("/ui/logout", _ui_logout)
     app.router.add_get("/ui", _ui_dashboard)
     app.router.add_get("/ui/batches", _ui_batches)
     app.router.add_get("/ui/batches/{batch_id}", _ui_batch_detail)

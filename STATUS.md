@@ -4,6 +4,16 @@
 2026-05-24
 
 ## Current Phase
+**service_restart excluded from automated batch planning (2026-05-24, COMPLETE).** Working tree clean.
+
+`service_restart` was being included in the automated LLM batch plan when `enabled: true` in inventory, causing `SERVICE_RESTART blocked: Unit ''` errors in every dry-run. Root cause: `_enabled_actions` in `main.py` was built from all `cfg.enabled` keys, passing `service_restart` to `prioritize_actions()`. Fix: added `operator_triggered: bool = False` to `ActionManifest`; set `operator_triggered=True` in `service_restart.MANIFEST`; filtered operator-triggered actions out of `_enabled_actions` before batch init. `service_restart` remains reachable via `--restart-service` CLI only. All 2507 tests pass.
+
+### Files changed (2026-05-24 — service_restart batch fix)
+- `errander/models/manifest.py` — add `operator_triggered: bool = False` to `ActionManifest`
+- `errander/agent/subgraphs/service_restart.py` — set `operator_triggered=True` in MANIFEST
+- `errander/main.py` — filter `operator_triggered` actions out of `_enabled_actions` list
+
+## Previous Phase
 **--check-targets ALLOWLIST OK confirmation (2026-05-24, COMPLETE).** Working tree clean.
 
 `--check-targets` was silent when the restart-allowlist matched the inventory perfectly — no output meant no way to confirm nginx (or any unit) was actually verified. Fix: print `ALLOWLIST OK vm-dr-01: nginx.service (1 unit(s) verified)` when the match is clean. Drift still prints `ALLOWLIST DRIFT` as before. Test updated to assert `ALLOWLIST OK` appears.

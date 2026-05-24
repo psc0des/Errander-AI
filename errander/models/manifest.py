@@ -39,3 +39,6 @@ class ActionManifest:
     required_wrappers: tuple[str, ...]
     setup_doc: str
     requires_config_section: str | None = None
+    # True = never included in automated batch plans; only runs via explicit CLI
+    # (e.g. --restart-service). enabled: true in inventory just means "configured".
+    operator_triggered: bool = False

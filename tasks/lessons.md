@@ -1,5 +1,13 @@
 # Errander-AI — Lessons Learned
 
+## 2026-05-24 — `enabled: true` in inventory ≠ "include in automated batch"
+
+`service_restart` was dispatched by the automated LLM planner because `enabled: true` was included in `_enabled_actions`. But `enabled: true` for `service_restart` means "this action is configured and available via CLI" — it does NOT mean "schedule it automatically." The planner had no way to know the distinction.
+
+**Why:** `_enabled_actions` was built as `[name for name, cfg in env_schema.actions.items() if cfg.enabled]` with no filtering for operator-triggered actions. The planner got `service_restart` in its available-actions list and tried to include it, producing `Unit '' is not in restartable_units` because no unit was specified.
+
+**How to apply:** Any action that is "operator-triggered only" must be excluded from the automated batch `_enabled_actions` list at the source. Use `ActionManifest.operator_triggered = True` to declare this and filter it at `_enabled_actions` construction time. `enabled: true` in inventory only means the action is deployed and reachable via explicit CLI; it does not mean the planner can auto-schedule it.
+
 ## 2026-05-24 — Silent success is indistinguishable from silent skip
 
 `--check-targets` printed nothing when the restart-allowlist matched perfectly. The user had no way to know whether nginx was verified or the check was silently skipped. Always emit a positive confirmation line for every check that passes — not just for failures and warnings.

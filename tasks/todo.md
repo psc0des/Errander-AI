@@ -1,3 +1,12 @@
+## service_restart excluded from automated batch planning (2026-05-24, COMPLETE)
+
+- [x] Add `operator_triggered: bool = False` to `ActionManifest` in `models/manifest.py`
+- [x] Set `operator_triggered=True` in `service_restart.MANIFEST`
+- [x] Filter operator-triggered actions out of `_enabled_actions` in `main.py` batch init
+- [x] All 2507 tests pass, ruff + mypy clean
+
+---
+
 ## --check-targets ALLOWLIST OK confirmation (2026-05-24, COMPLETE)
 
 - [x] Print `ALLOWLIST OK vm: unit(s) (N unit(s) verified)` when allowlist matches inventory

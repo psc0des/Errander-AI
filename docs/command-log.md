@@ -1,5 +1,21 @@
 # Errander-AI Command Log
 
+## service_restart automated-batch exclusion (2026-05-24)
+
+```bash
+# Diagnosed: service_restart dispatched in automated batch with Unit ''
+# Root cause: _enabled_actions included service_restart from inventory cfg.enabled
+# Fix: ActionManifest.operator_triggered=True + filter in main.py _enabled_actions
+
+uv run pytest tests/ -q --tb=short  # 2507 passed
+uv run ruff check .                  # All checks passed
+uv run mypy errander/ --no-error-summary  # 0 errors
+git add errander/models/manifest.py errander/agent/subgraphs/service_restart.py errander/main.py
+git add STATUS.md tasks/todo.md tasks/lessons.md docs/command-log.md
+git commit -m "fix: exclude operator_triggered actions from automated batch planning"
+git push origin main
+```
+
 ## --check-targets ALLOWLIST OK confirmation (2026-05-24)
 
 ```bash

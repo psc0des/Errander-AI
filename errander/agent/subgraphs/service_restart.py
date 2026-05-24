@@ -42,6 +42,7 @@ MANIFEST = ActionManifest(
     required_binaries=("/bin/systemctl", "/bin/journalctl"),
     required_wrappers=("/usr/local/sbin/errander-systemctl-restart",),
     setup_doc="SETUP.md#optional-service-restart",
+    operator_triggered=True,
 )
 
 _WRAPPER = "/usr/local/sbin/errander-systemctl-restart"

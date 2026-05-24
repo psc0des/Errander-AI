@@ -1788,7 +1788,13 @@ async def run_env_batch(
         if _docker_hygiene_cfg and _docker_hygiene_cfg.enabled
         else "disabled"
     )
-    _enabled_actions = [name for name, cfg in env_schema.actions.items() if cfg.enabled]
+    from errander.agent.subgraphs import BUILTIN_ACTIONS
+    _enabled_actions = [
+        name for name, cfg in env_schema.actions.items()
+        if cfg.enabled and (
+            name not in BUILTIN_ACTIONS or not BUILTIN_ACTIONS[name].operator_triggered
+        )
+    ]
 
     initial_state = {
         "targets": targets,

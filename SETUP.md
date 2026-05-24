@@ -359,6 +359,8 @@ actions:
     command_mode: wrapper
 ```
 
+> **Full annotated example:** `example/inventory.yaml` → `dev` environment shows a complete `docker_hygiene` block including the v1.5 volume and build cache fields.
+
 Then verify from the **controller VM** (where Errander is installed — not on the targets):
 
 ```bash
@@ -456,6 +458,8 @@ actions:
       - gunicorn.service
       - redis-server.service
 ```
+
+> **Full annotated example:** `example/inventory.yaml` → `dev` environment shows a complete `service_restart` block with real unit names.
 
 Then verify from the **controller VM** (where Errander is installed — not on the targets):
 

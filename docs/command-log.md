@@ -1,5 +1,18 @@
 # Errander-AI Command Log
 
+## --check-targets ALLOWLIST OK confirmation (2026-05-24)
+
+```bash
+# Diagnosed: --check-targets silent on allowlist match; no output != verified
+# Fix: added ALLOWLIST OK print in run_check_targets() when drift_found=False
+# Updated test_no_drift_when_allowlist_matches to assert ALLOWLIST OK appears
+
+uv run pytest tests/test_main.py -k "allowlist" -q  # 4 passed
+git add errander/main.py tests/test_main.py
+git commit -m "fix: --check-targets prints ALLOWLIST OK confirmation when units match"
+git push origin main
+```
+
 ## configure.sh SSH host key fix (2026-05-24)
 
 ```bash

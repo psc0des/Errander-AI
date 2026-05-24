@@ -1,5 +1,13 @@
 # Errander-AI — Lessons Learned
 
+## 2026-05-24 — Silent success is indistinguishable from silent skip
+
+`--check-targets` printed nothing when the restart-allowlist matched perfectly. The user had no way to know whether nginx was verified or the check was silently skipped. Always emit a positive confirmation line for every check that passes — not just for failures and warnings.
+
+**Why:** Absence of output is ambiguous. It could mean "all good" or "this check didn't run." In a CLI readiness tool, ambiguity is dangerous.
+
+**How to apply:** For every probe or validation that can succeed silently, add an `OK` or `verified` output line so the operator has positive evidence the check ran and passed.
+
 ## 2026-05-24 — configure.sh must always write SSH host key vars to .env
 
 `configure.sh` wrote `.env` but included no SSH vars. The SSH module defaults to `strict_host_keys=True` with no `known_hosts_path`, which raises a hard `ConnectionError` on every connection attempt — no warning, no fallback.

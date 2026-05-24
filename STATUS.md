@@ -4,6 +4,15 @@
 2026-05-24
 
 ## Current Phase
+**--check-targets ALLOWLIST OK confirmation (2026-05-24, COMPLETE).** Working tree clean.
+
+`--check-targets` was silent when the restart-allowlist matched the inventory perfectly — no output meant no way to confirm nginx (or any unit) was actually verified. Fix: print `ALLOWLIST OK vm-dr-01: nginx.service (1 unit(s) verified)` when the match is clean. Drift still prints `ALLOWLIST DRIFT` as before. Test updated to assert `ALLOWLIST OK` appears.
+
+### Files changed (2026-05-24 — ALLOWLIST OK)
+- `errander/main.py` — print `ALLOWLIST OK` confirmation when units match
+- `tests/test_main.py` — assert `ALLOWLIST OK` + unit names in `test_no_drift_when_allowlist_matches`
+
+## Previous Phase
 **configure.sh SSH host key fix (2026-05-24, COMPLETE).** Working tree clean.
 
 Fixed a setup gap: `configure.sh` wrote `.env` without any SSH host key setting. Since `ERRANDER_SSH_STRICT_HOST_KEYS` defaults to `true` in code, every `--check-targets` run failed with a `ConnectionError` unless the user manually set the var. Fix: (1) always write `ERRANDER_SSH_STRICT_HOST_KEYS=false` to `.env` (TOFU mode — works immediately); (2) new bootstrap prompt after LLM verify — if accepted, runs `--bootstrap-known-hosts <env>` and flips strict to `true`; (3) Done banner now shows `--check-targets <env>` in Step 6. SETUP.md updated: configure.sh description, `.env` template (SSH section), env var table (SSH vars).

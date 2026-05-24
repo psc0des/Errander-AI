@@ -1,3 +1,10 @@
+## --check-targets ALLOWLIST OK confirmation (2026-05-24, COMPLETE)
+
+- [x] Print `ALLOWLIST OK vm: unit(s) (N unit(s) verified)` when allowlist matches inventory
+- [x] Update `test_no_drift_when_allowlist_matches` to assert `ALLOWLIST OK` appears
+
+---
+
 ## configure.sh SSH host key fix (2026-05-24, COMPLETE)
 
 - [x] Add `ERRANDER_SSH_STRICT_HOST_KEYS=false` to `.env` write in configure.sh (TOFU mode by default)

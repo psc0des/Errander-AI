@@ -2342,3 +2342,8 @@ uv run pytest tests/agent/test_operator_assistant.py tests/agent/test_operator_a
 uv run ruff check errander/models/analysis.py errander/agent/operator_assistant.py tests/agent/test_operator_assistant.py tests/agent/test_operator_assistant_facts.py  # 1 fixable I001
 uv run ruff check --fix tests/agent/test_operator_assistant.py  # fixed import sort
 uv run pytest --tb=short -q  # 2485 passed
+
+# AI Trust Layer Phase 6a — Provider Prefix/Input Caching (2026-05-24)
+uv run pytest tests/integrations/test_llm.py -v --tb=short  # 35 passed
+uv run ruff check --fix tests/integrations/test_llm.py  # fixed I001 import sort
+uv run pytest --tb=short -q  # 2496 passed

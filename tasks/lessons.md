@@ -1387,3 +1387,7 @@ Any test file that uses `SSHConnectionManager` should define a `_make_ssh_manage
 ## 2026-05-24 — Pydantic field_validator coercion for backward-compatible model evolution
 
 When changing a model field type from bare scalar (list[str]) to a richer type (list[Finding]), use @field_validator(mode='before') to coerce the old form to the new. This keeps all existing instantiation sites and test fixtures working without modification. The validator converts {"text": item} if isinstance(item, str) else item, so old code passes strings and new code passes dicts or model instances — both work.
+
+## 2026-05-24 — Anthropic prefix caching requires content-block list format
+
+For Anthropic endpoints (api.anthropic.com), the cache_control field must be attached to the content block as a dict inside a list, not to the top-level message. The message content becomes: [{"type": "text", "text": "...", "cache_control": {"type": "ephemeral"}}]. For OpenAI/vLLM, string content works and prefix caching is automatic from matching byte-stable prefixes — no extra fields needed.

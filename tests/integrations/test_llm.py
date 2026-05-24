@@ -399,3 +399,115 @@ class TestDecisionsWithLLM:
         assert "b-002" in report
         assert "dev/web-01" in report
         assert "[DRY]" in report
+
+
+# ---------------------------------------------------------------------------
+# Phase 6a: Provider prefix/input caching
+# ---------------------------------------------------------------------------
+
+
+class TestPrefixCaching:
+    """Verify that cache_control is attached for Anthropic endpoints and absent otherwise."""
+
+    def _anthropic_client(self) -> LLMClient:
+        return LLMClient(
+            base_url="https://api.anthropic.com/v1",
+            model="claude-sonnet-4-6",
+        )
+
+    def _vllm_client(self) -> LLMClient:
+        return LLMClient(
+            base_url="http://10.0.1.5:8000/v1",
+            model="Qwen/Qwen3-8B-AWQ",
+        )
+
+    def _openai_client(self) -> LLMClient:
+        return LLMClient(
+            base_url="https://api.openai.com/v1",
+            model="gpt-4o-mini",
+        )
+
+    def test_prefix_cache_enabled_for_anthropic_url(self) -> None:
+        assert self._anthropic_client()._prefix_cache is True
+
+    def test_prefix_cache_disabled_for_vllm_url(self) -> None:
+        assert self._vllm_client()._prefix_cache is False
+
+    def test_prefix_cache_disabled_for_openai_url(self) -> None:
+        assert self._openai_client()._prefix_cache is False
+
+    def test_prefix_cache_disabled_by_default(self) -> None:
+        client = LLMClient(base_url="http://localhost:8000/v1", model="m")
+        assert client._prefix_cache is False
+
+    def test_build_messages_anthropic_has_cache_control(self) -> None:
+        client = self._anthropic_client()
+        messages = client._build_messages("hello")
+        system_msg = messages[0]
+        assert system_msg["role"] == "system"
+        content = system_msg["content"]
+        assert isinstance(content, list)
+        assert len(content) == 1
+        block = content[0]
+        assert isinstance(block, dict)
+        assert block.get("cache_control") == {"type": "ephemeral"}
+        assert block.get("type") == "text"
+        assert block.get("text") == client._build_messages("x")[0]["content"][0]["text"]  # type: ignore[index]
+
+    def test_build_messages_vllm_has_no_cache_control(self) -> None:
+        client = self._vllm_client()
+        messages = client._build_messages("hello")
+        system_content = messages[0]["content"]
+        assert isinstance(system_content, str)
+
+    def test_build_messages_openai_has_no_cache_control(self) -> None:
+        client = self._openai_client()
+        messages = client._build_messages("hello")
+        system_content = messages[0]["content"]
+        assert isinstance(system_content, str)
+
+    def test_build_messages_user_content_is_prompt(self) -> None:
+        client = self._vllm_client()
+        messages = client._build_messages("my exact prompt")
+        user_msg = messages[1]
+        assert user_msg["role"] == "user"
+        assert user_msg["content"] == "my exact prompt"
+
+    def test_build_messages_anthropic_user_content_is_prompt(self) -> None:
+        client = self._anthropic_client()
+        messages = client._build_messages("my exact prompt")
+        user_msg = messages[1]
+        assert user_msg["role"] == "user"
+        assert user_msg["content"] == "my exact prompt"
+
+    def test_system_prompt_is_byte_stable(self) -> None:
+        """_SYSTEM_PROMPT must be a static string — no runtime format placeholders."""
+        import re
+
+        from errander.integrations.llm import _SYSTEM_PROMPT
+        assert isinstance(_SYSTEM_PROMPT, str)
+        # No Python format placeholders that could introduce volatile values
+        assert not re.search(r"\{[^}]*\}", _SYSTEM_PROMPT), (
+            "_SYSTEM_PROMPT must not contain format placeholders — "
+            "volatile values would break prefix caching"
+        )
+
+    @pytest.mark.asyncio
+    async def test_complete_uses_build_messages_for_anthropic(self) -> None:
+        """complete() must call _build_messages and send its output to the API."""
+        client = self._anthropic_client()
+        payload = json.dumps({"message": "ok", "count": 1})
+        mock_response = _make_chat_response(payload)
+        captured: list[list[dict]] = []
+
+        async def _capture(**kwargs: object) -> MagicMock:
+            captured.append(kwargs.get("messages", []))  # type: ignore[arg-type]
+            return mock_response
+
+        with patch.object(client._client.chat.completions, "create", _capture):
+            await client.complete("test", _Echo)
+
+        assert captured, "completions.create was not called"
+        system_content = captured[0][0]["content"]
+        assert isinstance(system_content, list), "Anthropic path must use content-block list"
+        assert captured[0][0]["content"][0].get("cache_control") == {"type": "ephemeral"}  # type: ignore[index]

@@ -74,12 +74,38 @@ class LLMClient:
         self._temperature = temperature
         self._timeout_seconds = timeout_seconds
         self._max_retries = max_retries
+        # Anthropic supports explicit cache_control breakpoints on stable content blocks.
+        # For OpenAI/vLLM, prefix caching is automatic when the prompt prefix is byte-stable.
+        self._prefix_cache = "anthropic.com" in base_url
         self._client = AsyncOpenAI(
             base_url=base_url,
             api_key=api_key,
             timeout=timeout_seconds,
             max_retries=0,  # we handle retries ourselves
         )
+
+    def _build_messages(self, prompt: str) -> list[dict[str, object]]:
+        """Build the messages list for a completion request.
+
+        For Anthropic endpoints, wraps the system prompt in a content block with
+        cache_control so the stable prefix is eligible for provider-side caching.
+        For all other providers, returns plain string content (prefix caching is
+        automatic and requires no extra fields).
+        """
+        if self._prefix_cache:
+            system_content: str | list[dict[str, object]] = [
+                {
+                    "type": "text",
+                    "text": _SYSTEM_PROMPT,
+                    "cache_control": {"type": "ephemeral"},
+                }
+            ]
+        else:
+            system_content = _SYSTEM_PROMPT
+        return [
+            {"role": "system", "content": system_content},
+            {"role": "user", "content": prompt},
+        ]
 
     async def complete(
         self,
@@ -104,10 +130,7 @@ class LLMClient:
             try:
                 response = await self._client.chat.completions.create(
                     model=self._model,
-                    messages=[
-                        {"role": "system", "content": _SYSTEM_PROMPT},
-                        {"role": "user", "content": prompt},
-                    ],
+                    messages=self._build_messages(prompt),
                     temperature=self._temperature,
                     timeout=effective_timeout,
                 )

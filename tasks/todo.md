@@ -1,3 +1,13 @@
+## AI Trust Layer — Phase 6a: Provider Prefix/Input Caching (2026-05-24, COMPLETE)
+
+**Status:** All items complete. 2496 tests passing, ruff + mypy clean on changed files.
+
+- [x] `errander/integrations/llm.py` — `_prefix_cache` auto-detection from `base_url`; `_build_messages()` helper; `complete()` uses `_build_messages()`
+- [x] `tests/integrations/test_llm.py` — `TestPrefixCaching` (11 tests)
+- [x] Doc sync: STATUS.md, todo.md, lessons.md, command-log.md, README.md, learning/48-ai-prefix-caching.md
+
+---
+
 ## AI Trust Layer — Phase 5: Source Citation for AI Answers (2026-05-24, COMPLETE)
 
 **Status:** All items complete. 2485 tests passing, ruff + mypy clean on changed files.

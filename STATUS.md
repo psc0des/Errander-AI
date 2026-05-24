@@ -4,6 +4,15 @@
 2026-05-24
 
 ## Current Phase
+**AI Trust Layer — Phase 6a: Provider Prefix/Input Caching (2026-05-24, COMPLETE).** 2496 tests passing.
+
+`LLMClient` now auto-detects Anthropic endpoints (`"anthropic.com"` in `base_url`) and attaches `cache_control: {"type": "ephemeral"}` breakpoints to the stable system-prompt content block, enabling Anthropic's prompt prefix caching. For OpenAI/vLLM endpoints, prefix caching is automatic when the prompt prefix is byte-stable — `_SYSTEM_PROMPT` is a plain constant with no volatile interpolation. New `_build_messages()` method isolates the message-building logic. 11 new tests covering detection, message format, and prompt stability.
+
+### Files changed in AI Trust Layer Phase 6a (2026-05-24)
+- `errander/integrations/llm.py` — `_prefix_cache` flag (auto from base_url); `_build_messages()`; `complete()` uses `_build_messages()`
+- `tests/integrations/test_llm.py` — `TestPrefixCaching` (11 tests)
+
+## Previous Phase
 **AI Trust Layer — Phase 5: Source Citation for AI Answers (2026-05-24, COMPLETE).** 2485 tests passing.
 
 `AssistantResponse.findings` changed from `list[str]` to `list[Finding]`. `Finding` carries `text: str`, `evidence: list[str]` (source IDs), and a computed `is_cited: bool`. A `@field_validator` coerces bare strings for backward compatibility. `_fallback_response()` now constructs typed `Finding` objects with citations: `audit_store` for failures/logins, `disk_history` for disk alerts, `drift_baselines` for drift, `elk_store` for ELK errors, `live_ssh_probe` for service failures, `vm_facts:{vm_id}:{action}` for low-success-rate facts, `vm_facts:fleet:{action}` for frequently-rejected actions. The LLM prompt schema now includes the `evidence` field and lists valid source IDs. 10 new citation tests added.

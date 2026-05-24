@@ -147,7 +147,7 @@ class TestAuthEnabled:
         page.fill("input[name=password]", "wrongpassword")
         page.click("button[type=submit]")
         page.wait_for_url(f"{auth_base_url}/ui/login?err=1")
-        assert page.locator(".login-err").is_visible()
+        assert page.locator(".lc-err").is_visible()
 
     def test_wrong_username_shows_error(
         self, page: Page, auth_base_url: str,
@@ -157,7 +157,7 @@ class TestAuthEnabled:
         page.fill("input[name=password]", "testpass")
         page.click("button[type=submit]")
         page.wait_for_url(f"{auth_base_url}/ui/login?err=1")
-        assert page.locator(".login-err").is_visible()
+        assert page.locator(".lc-err").is_visible()
 
     def test_metrics_remains_open_when_auth_enabled(
         self, page: Page, auth_base_url: str,

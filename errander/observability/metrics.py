@@ -702,10 +702,155 @@ async def _session_auth_middleware(
     raise web.HTTPFound("/ui/login")
 
 
+_LOGIN_CSS = """
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#fcf8ff;--surface-lo:#f6f2ff;--surface-lowest:#ffffff;
+  --sidebar:#1e1b4b;
+  --primary:#3525cd;--secondary:#712ae2;
+  --gradient:linear-gradient(135deg,#3525cd,#712ae2);
+  --text:#181445;--text-m:#464555;--text-d:#777587;
+  --outline-v:#c7c4d8;
+  --red:#ba1a1a;--red-bg:#ffdad6;
+  --shadow:0px 24px 48px -12px rgba(24,20,69,0.08);
+  --mono:'JetBrains Mono',monospace;
+  --sans:'Inter',sans-serif;
+  --head:'Space Grotesk',sans-serif;
+}
+html,body{height:100%;font-family:var(--sans);-webkit-font-smoothing:antialiased}
+body{display:flex;min-height:100vh;background:var(--surface-lo)}
+
+/* ── LEFT SHELL ── */
+.l-shell{
+  width:420px;min-height:100vh;flex-shrink:0;
+  background:var(--sidebar);
+  display:flex;flex-direction:column;justify-content:center;
+  padding:3.5rem 3rem;position:relative;overflow:hidden;
+}
+.l-shell::before{
+  content:'';position:absolute;top:-120px;right:-80px;
+  width:340px;height:340px;border-radius:50%;
+  background:radial-gradient(circle,rgba(113,42,226,0.18) 0%,transparent 70%);
+  pointer-events:none;
+}
+.l-shell::after{
+  content:'';position:absolute;bottom:-80px;left:-60px;
+  width:260px;height:260px;border-radius:50%;
+  background:radial-gradient(circle,rgba(53,37,205,0.22) 0%,transparent 70%);
+  pointer-events:none;
+}
+.l-brand{display:flex;align-items:center;gap:.7rem;margin-bottom:.5rem}
+.l-led{
+  width:9px;height:9px;border-radius:50%;
+  background:#c3c0ff;flex-shrink:0;
+  animation:lpulse 2.8s ease-in-out infinite;
+}
+@keyframes lpulse{
+  0%,100%{box-shadow:0 0 0 0 rgba(195,192,255,0.5);opacity:1}
+  50%{box-shadow:0 0 0 6px transparent;opacity:.55}
+}
+.l-title{
+  font-family:var(--head);font-size:1.3rem;font-weight:700;
+  color:#fff;letter-spacing:-.01em;
+}
+.l-tag{
+  font-family:var(--mono);font-size:.65rem;
+  color:rgba(255,255,255,0.38);letter-spacing:.1em;
+  margin-bottom:3rem;
+}
+.l-divider{
+  width:32px;height:2px;
+  background:var(--gradient);
+  border-radius:2px;margin-bottom:2.5rem;opacity:.7;
+}
+.l-features{display:flex;flex-direction:column;gap:1.25rem}
+.l-feat{display:flex;align-items:flex-start;gap:.9rem}
+.l-feat-icon{
+  width:28px;height:28px;border-radius:7px;flex-shrink:0;
+  background:rgba(255,255,255,0.07);
+  display:flex;align-items:center;justify-content:center;
+  font-size:.72rem;color:#c3c0ff;margin-top:.05rem;
+}
+.l-feat-body{}
+.l-feat-title{
+  font-family:var(--head);font-size:.82rem;font-weight:600;
+  color:#fff;margin-bottom:.18rem;
+}
+.l-feat-desc{
+  font-family:var(--sans);font-size:.72rem;
+  color:rgba(255,255,255,0.42);line-height:1.5;
+}
+.l-foot{
+  margin-top:auto;padding-top:3rem;
+  font-family:var(--mono);font-size:.58rem;
+  color:rgba(255,255,255,0.18);letter-spacing:.05em;
+}
+
+/* ── RIGHT FORM ── */
+.r-panel{
+  flex:1;display:flex;align-items:center;justify-content:center;
+  padding:2.5rem;background:var(--surface-lo);
+}
+.login-card{
+  background:var(--surface-lowest);border-radius:16px;
+  padding:2.75rem 2.5rem;width:100%;max-width:400px;
+  box-shadow:var(--shadow);
+}
+.lc-eyebrow{
+  font-family:var(--mono);font-size:.62rem;
+  color:var(--primary);letter-spacing:.12em;text-transform:uppercase;
+  margin-bottom:.75rem;
+}
+.lc-title{
+  font-family:var(--head);font-size:1.65rem;font-weight:700;
+  color:var(--text);line-height:1.2;margin-bottom:.4rem;
+}
+.lc-sub{
+  font-size:.82rem;color:var(--text-d);margin-bottom:2rem;line-height:1.5;
+}
+.lc-field{margin-bottom:1.2rem}
+.lc-label{
+  display:block;font-size:.75rem;font-weight:500;
+  color:var(--text-m);margin-bottom:.45rem;
+}
+.lc-input{
+  width:100%;padding:.6rem .9rem;
+  background:var(--surface-lo);
+  border:1.5px solid rgba(199,196,216,0.25);
+  border-radius:8px;
+  color:var(--text);font-family:var(--sans);font-size:.88rem;
+  transition:border-color .15s,background .15s;outline:none;
+}
+.lc-input:focus{
+  border-color:var(--primary);background:var(--surface-lowest);
+  border-width:2px;
+}
+.lc-input::placeholder{color:var(--text-d);font-size:.82rem}
+.lc-btn{
+  width:100%;padding:.7rem;margin-top:.6rem;
+  background:var(--gradient);color:#fff;border:none;
+  border-radius:10px;cursor:pointer;
+  font-family:var(--head);font-size:.9rem;font-weight:600;
+  letter-spacing:.01em;transition:opacity .15s,box-shadow .15s;
+}
+.lc-btn:hover{opacity:.9;box-shadow:0 6px 20px rgba(53,37,205,.3)}
+.lc-err{
+  display:flex;align-items:center;gap:.5rem;
+  background:var(--red-bg);color:var(--red);
+  border-radius:8px;padding:.6rem .9rem;
+  font-size:.78rem;margin-bottom:1.25rem;line-height:1.4;
+}
+.lc-err-ico{font-size:.9rem;flex-shrink:0}
+"""
+
+
 async def _ui_login_get(request: web.Request) -> web.Response:
     """Render the login page."""
     err = request.rel_url.query.get("err", "")
-    err_html = f'<div class="login-err">Invalid username or password.</div>' if err else ""
+    err_html = (
+        '<div class="lc-err"><span class="lc-err-ico">&#9888;</span>'
+        'Invalid username or password. Please try again.</div>'
+    ) if err else ""
     html = f"""<!doctype html>
 <html lang="en">
 <head>
@@ -715,28 +860,75 @@ async def _ui_login_get(request: web.Request) -> web.Response:
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="{_FONTS}" rel="stylesheet">
-  <style>{_CSS}</style>
+  <style>{_LOGIN_CSS}</style>
 </head>
 <body>
-<div class="login-wrap">
+
+<!-- Left: Indigo brand shell -->
+<aside class="l-shell">
+  <div class="l-brand">
+    <span class="l-led"></span>
+    <span class="l-title">Errander-AI</span>
+  </div>
+  <div class="l-tag">autonomous ops hub</div>
+  <div class="l-divider"></div>
+  <div class="l-features">
+    <div class="l-feat">
+      <div class="l-feat-icon">&#9632;</div>
+      <div class="l-feat-body">
+        <div class="l-feat-title">Supervised patch management</div>
+        <div class="l-feat-desc">Non-kernel OS patching with full rollback on failure.</div>
+      </div>
+    </div>
+    <div class="l-feat">
+      <div class="l-feat-icon">&#10003;</div>
+      <div class="l-feat-body">
+        <div class="l-feat-title">Slack-gated approvals</div>
+        <div class="l-feat-desc">Every live change requires a human ✅ reaction before execution.</div>
+      </div>
+    </div>
+    <div class="l-feat">
+      <div class="l-feat-icon">&#9670;</div>
+      <div class="l-feat-body">
+        <div class="l-feat-title">Exact-object safety</div>
+        <div class="l-feat-desc">Operators approve exact object IDs — never vague action categories.</div>
+      </div>
+    </div>
+    <div class="l-feat">
+      <div class="l-feat-icon">&#9776;</div>
+      <div class="l-feat-body">
+        <div class="l-feat-title">Full audit trail</div>
+        <div class="l-feat-desc">Every action logged before and after execution, with drift detection.</div>
+      </div>
+    </div>
+  </div>
+  <div class="l-foot">v1 &nbsp;&middot;&nbsp; errander-ai &nbsp;&middot;&nbsp; sqlite</div>
+</aside>
+
+<!-- Right: Login form -->
+<div class="r-panel">
   <div class="login-card">
-    <div class="login-brand"><span class="sb-led"></span>Errander-AI</div>
-    <div class="login-sub">autonomous ops hub</div>
+    <div class="lc-eyebrow">Operations Hub</div>
+    <div class="lc-title">Welcome back</div>
+    <div class="lc-sub">Sign in to your Errander-AI instance to manage your fleet.</div>
     {err_html}
     <form method="post" action="/ui/login">
       <input type="hidden" name="{_CSRF_FIELD}" value="">
-      <div class="form-row">
-        <label class="form-lbl login-card" for="username">Username</label>
-        <input type="text" id="username" name="username" autocomplete="username" autofocus required>
+      <div class="lc-field">
+        <label class="lc-label" for="username">Username</label>
+        <input class="lc-input" type="text" id="username" name="username"
+               autocomplete="username" autofocus required placeholder="admin">
       </div>
-      <div class="form-row">
-        <label class="form-lbl" for="password">Password</label>
-        <input type="password" id="password" name="password" autocomplete="current-password" required>
+      <div class="lc-field">
+        <label class="lc-label" for="password">Password</label>
+        <input class="lc-input" type="password" id="password" name="password"
+               autocomplete="current-password" required placeholder="&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;">
       </div>
-      <button type="submit" class="login-submit">Sign in</button>
+      <button type="submit" class="lc-btn">Sign in &rarr;</button>
     </form>
   </div>
 </div>
+
 </body>
 </html>"""
     html, nonce = _inject_csrf(request, html)

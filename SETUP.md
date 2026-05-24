@@ -281,10 +281,6 @@ errander ALL=(root) NOPASSWD: \
 EOF
 ```
 
-> **Docker — production hardening (see below):** Do NOT add `/usr/bin/docker` to the sudoers above for production. Use root-owned wrapper scripts instead (see "Docker hardening" section below). Raw `sudo docker` is root-equivalent — any `docker run` command can mount the host filesystem. The wrapper approach restricts the agent to exactly the prune operations it is allowed to perform.
-
-> **Read-only commands** — these run without sudo (no sudoers entry needed): `df`, `du`, `dpkg-query`, `rpm -q`, `apt list`, `dnf check-update`, `find` (listing only), `stat`, `systemctl is-active`, `journalctl --disk-usage`.
-
 **3. Set correct permissions and validate syntax** *(Target VM)*
 
 ```bash
@@ -321,6 +317,10 @@ sudo -u errander sudo -n /usr/bin/id  # should FAIL — /usr/bin/id is not in su
 
 > **Skip this entire section if you are not enabling Docker hygiene.**
 > When you create `inventory.yaml` in Step 5, leave `actions.docker_hygiene.enabled: false` (the default). Continue to the next section.
+
+> **Why not `sudo docker` in sudoers?** Raw `sudo docker` is root-equivalent — any `docker run` command can mount the host filesystem. The wrapper approach restricts the agent to exactly the prune operations it is allowed to perform. Do NOT add `/usr/bin/docker` to `/etc/sudoers.d/errander`.
+
+> **Read-only commands** — these run without sudo (no sudoers entry needed): `df`, `du`, `dpkg-query`, `rpm -q`, `apt list`, `dnf check-update`, `find` (listing only), `stat`, `systemctl is-active`, `journalctl --disk-usage`.
 
 The Docker group is effectively root: a user in it can mount the host filesystem via `docker run`. Do **not** add `errander` to the docker group, and do not grant raw `sudo /usr/bin/docker` in production.
 

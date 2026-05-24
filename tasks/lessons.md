@@ -8,6 +8,14 @@
 
 **How to apply:** Any time a command produces structured output (tab-separated, full sentences, multi-line), parse it at storage time. Store the extracted value (e.g., `"130M"`, `"16.0M"`) not the raw stdout. The assessment state is a domain model — it should hold domain values, not command output.
 
+## 2026-05-25 — Planning phase and execution phase run detect_os() independently
+
+A fix applied to `plan_vm_node` (in `graph.py`) does NOT automatically carry through to `discover_node` (in `vm_graph.py`). Both phases independently call `detect_os()` and build their own `VMInfo`. A symptom appeared where docker_hygiene showed up in the dry-run plan (planning phase fixed) but then hit "Docker not installed or not running" at execution time (execution phase still broken).
+
+**Why:** The graph is split across two files: `graph.py` orchestrates at the batch level and computes which VMs and actions to include; `vm_graph.py` is the per-VM sub-graph that re-discovers system state before executing. They share nothing at runtime except what is passed explicitly through state.
+
+**How to apply:** Any probe or override applied in `plan_vm_node` must also be applied in `discover_node` if the execution phase depends on the same flag. When fixing an OS-detection issue, always ask: "Does `discover_node` also need this fix?" The two functions have symmetric SSH access but are otherwise independent.
+
 ## 2026-05-25 — `docker info` without sudo is wrong for wrapper-mode docker_hygiene
 
 The OS detection probe `docker info >/dev/null 2>&1` fails for the `errander` SSH user because they're not in the docker group. This sets `docker_available=False`, which causes `_is_action_applicable()` to silently filter out `docker_hygiene` in the planning phase — even when it's enabled in inventory and the wrapper is installed.

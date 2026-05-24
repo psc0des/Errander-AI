@@ -1091,10 +1091,34 @@ RestartSec=30
 WantedBy=multi-user.target
 EOF
 
+--
+
 sudo systemctl daemon-reload
 sudo systemctl enable errander
 sudo systemctl start errander
 sudo systemctl status errander
+```
+
+**Access the web UI**
+
+Once the service is running, the web UI is available on port 9090 of the controller VM:
+
+```
+http://<controller-ip>:9090/ui
+```
+
+If you can't reach port 9090 directly (e.g., Azure NSG blocks it), use an SSH tunnel from your laptop:
+
+```bash
+ssh -L 9090:localhost:9090 <your-admin-user>@<controller-ip>
+```
+
+Then open `http://localhost:9090/ui` in your browser. No firewall changes needed.
+
+**Tail the service logs**
+
+```bash
+journalctl -u errander -f
 ```
 
 ### Windows controller — Task Scheduler

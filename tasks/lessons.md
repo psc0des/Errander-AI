@@ -1383,3 +1383,7 @@ Any test file that uses `SSHConnectionManager` should define a `_make_ssh_manage
 `server.py` has `create_app()` with routes at `/`, `/glossary`, `/inventory`, etc. — this is a standalone demo. The actual production server is `metrics.py`'s `start_metrics_server()` with routes under `/ui/`. Navigating to `/glossary` on the metrics server returns 404 because the route is only registered in `server.py`.
 
 **Rule**: when adding a UI page, add the route and handler to **both** `server.py` (standalone demo) and `metrics.py` (production). Check which server is actually running before debugging a 404.
+
+## 2026-05-24 — Pydantic field_validator coercion for backward-compatible model evolution
+
+When changing a model field type from bare scalar (list[str]) to a richer type (list[Finding]), use @field_validator(mode='before') to coerce the old form to the new. This keeps all existing instantiation sites and test fixtures working without modification. The validator converts {"text": item} if isinstance(item, str) else item, so old code passes strings and new code passes dicts or model instances — both work.

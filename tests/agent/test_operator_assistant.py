@@ -13,7 +13,6 @@ from errander.agent.operator_assistant import (
 )
 from errander.models.analysis import AssistantResponse, FleetContext, VMSignalSummary
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -225,7 +224,7 @@ async def test_build_context_counts_failures() -> None:
 def test_fallback_healthy_fleet() -> None:
     ctx = _healthy_context()
     result = _fallback_response("How are things?", ctx)
-    assert "no significant signals" in result.findings[0].lower()
+    assert "no significant signals" in result.findings[0].text.lower()
     assert result.risk_level == "low"
 
 
@@ -238,7 +237,7 @@ def test_fallback_flags_failures() -> None:
         total_failures_7d=2,
     )
     result = _fallback_response("q", ctx)
-    assert any("failure" in f.lower() for f in result.findings)
+    assert any("failure" in f.text.lower() for f in result.findings)
     assert result.risk_level == "high"
 
 
@@ -256,7 +255,7 @@ def test_fallback_flags_disk_alerts() -> None:
         total_failures_7d=0,
     )
     result = _fallback_response("q", ctx)
-    assert any("disk" in f.lower() for f in result.findings)
+    assert any("disk" in f.text.lower() for f in result.findings)
     assert result.risk_level == "medium"
 
 
@@ -271,7 +270,7 @@ def test_fallback_flags_drift_changes() -> None:
         total_failures_7d=0,
     )
     result = _fallback_response("q", ctx)
-    assert any("drift" in f.lower() for f in result.findings)
+    assert any("drift" in f.text.lower() for f in result.findings)
     assert result.risk_level == "high"
 
 
@@ -286,7 +285,7 @@ def test_fallback_flags_failed_logins() -> None:
         total_failures_7d=0,
     )
     result = _fallback_response("q", ctx)
-    assert any("login" in f.lower() for f in result.findings)
+    assert any("login" in f.text.lower() for f in result.findings)
     assert result.risk_level == "medium"
 
 
@@ -347,3 +346,109 @@ def test_format_prompt_layer_a_instruction_present() -> None:
     ctx = _healthy_context()
     prompt = _format_prompt("q", ctx)
     assert "NEVER suggest executing commands" in prompt
+
+
+# ---------------------------------------------------------------------------
+# Phase 5: Source citation — Finding.evidence and prompt schema
+# ---------------------------------------------------------------------------
+
+
+def test_format_prompt_includes_evidence_field_in_schema() -> None:
+    """Prompt JSON schema must include the 'evidence' field for citations."""
+    ctx = _healthy_context()
+    prompt = _format_prompt("q", ctx)
+    assert '"evidence"' in prompt
+
+
+def test_format_prompt_includes_valid_source_ids_when_sources_used() -> None:
+    ctx = FleetContext(
+        env_name="dev",
+        vm_summaries=[VMSignalSummary(vm_id="v1", hostname="h1")],
+        recent_batch_count=1,
+        last_batch_at=None,
+        total_failures_7d=0,
+        sources_used=["audit_store", "disk_history"],
+    )
+    prompt = _format_prompt("q", ctx)
+    assert "audit_store" in prompt
+    assert "disk_history" in prompt
+
+
+def test_format_prompt_source_ids_absent_when_no_sources() -> None:
+    ctx = _healthy_context()  # sources_used=[]
+    prompt = _format_prompt("q", ctx)
+    assert "Valid source IDs" in prompt
+    assert "none" in prompt
+
+
+def test_fallback_findings_are_finding_objects() -> None:
+    """All items in findings must be Finding instances, not bare strings."""
+    from errander.models.analysis import Finding
+
+    ctx = FleetContext(
+        env_name="dev",
+        vm_summaries=[VMSignalSummary(vm_id="v1", hostname="h1", recent_failure_count=3)],
+        recent_batch_count=1,
+        last_batch_at=None,
+        total_failures_7d=3,
+    )
+    result = _fallback_response("q", ctx)
+    assert all(isinstance(f, Finding) for f in result.findings)
+
+
+def test_fallback_failure_finding_is_cited() -> None:
+    """Failure findings must cite audit_store as evidence."""
+    ctx = FleetContext(
+        env_name="dev",
+        vm_summaries=[VMSignalSummary(vm_id="v1", hostname="h1", recent_failure_count=2)],
+        recent_batch_count=1,
+        last_batch_at=None,
+        total_failures_7d=2,
+    )
+    result = _fallback_response("q", ctx)
+    failure_findings = [f for f in result.findings if "failure" in f.text.lower()]
+    assert failure_findings, "Expected at least one failure finding"
+    assert all(f.is_cited for f in failure_findings)
+    assert all("audit_store" in f.evidence for f in failure_findings)
+
+
+def test_fallback_disk_finding_is_cited() -> None:
+    """Disk alert findings must cite disk_history as evidence."""
+    ctx = FleetContext(
+        env_name="dev",
+        vm_summaries=[
+            VMSignalSummary(vm_id="v1", hostname="h1", disk_alerts=["/ 70% -> 88%"])
+        ],
+        recent_batch_count=1,
+        last_batch_at=None,
+        total_failures_7d=0,
+    )
+    result = _fallback_response("q", ctx)
+    disk_findings = [f for f in result.findings if "disk" in f.text.lower()]
+    assert disk_findings
+    assert all("disk_history" in f.evidence for f in disk_findings)
+
+
+def test_fallback_healthy_finding_is_uncited() -> None:
+    """The 'no significant signals' fallback finding should have no evidence."""
+    ctx = _healthy_context()
+    result = _fallback_response("q", ctx)
+    assert len(result.findings) == 1
+    assert not result.findings[0].is_cited
+
+
+def test_assistant_response_coerces_bare_string_findings() -> None:
+    """AssistantResponse must accept list[str] findings for backward compat."""
+    from errander.models.analysis import Finding
+
+    resp = AssistantResponse(
+        summary="OK",
+        findings=["bare string finding"],
+        recommendations=[],
+        risk_level="low",
+    )
+    assert len(resp.findings) == 1
+    assert isinstance(resp.findings[0], Finding)
+    assert resp.findings[0].text == "bare string finding"
+    assert resp.findings[0].evidence == []
+    assert not resp.findings[0].is_cited

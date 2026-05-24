@@ -19,7 +19,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from errander.models.analysis import AssistantResponse, FleetContext, VMSignalSummary
+from errander.models.analysis import AssistantResponse, Finding, FleetContext, VMSignalSummary
 from errander.safety.context_budget import ContextBudgeter
 from errander.safety.context_redactor import ContextRedactor
 
@@ -332,22 +332,26 @@ def _format_prompt(question: str, context: FleetContext) -> str:
     if context.sources_used:
         lines += ["", "## Data sources consulted", ", ".join(context.sources_used)]
 
+    valid_sources = ", ".join(context.sources_used) if context.sources_used else "none"
     lines += [
         "",
         "## Operator question",
         question,
         "",
         "Respond with valid JSON matching this schema exactly:",
-        '{"summary": "<1-2 sentences>", "findings": ["<observation>", ...], '
+        '{"summary": "<1-2 sentences>", '
+        '"findings": [{"text": "<observation>", "evidence": ["<source-id>", ...]}, ...], '
         '"recommendations": ["<action for operator to consider>", ...], '
         '"risk_level": "low|medium|high|unknown"}',
+        f"Valid source IDs for evidence: {valid_sources}",
+        "A finding with no traceable source should set evidence to [].",
     ]
     return "\n".join(lines)
 
 
 def _fallback_response(question: str, context: FleetContext) -> AssistantResponse:
     """Deterministic summary when LLM is unavailable. Never blocks the CLI."""
-    findings: list[str] = []
+    findings: list[Finding] = []
     recommendations: list[str] = []
 
     alarm_vms = [v for v in context.vm_summaries if v.recent_failure_count > 0]
@@ -357,53 +361,67 @@ def _fallback_response(question: str, context: FleetContext) -> AssistantRespons
     elk_vms = [v for v in context.vm_summaries if v.elk_errors]
 
     if alarm_vms:
-        findings.append(
-            f"{len(alarm_vms)} VM(s) have recent action failures: "
-            + ", ".join(v.vm_id for v in alarm_vms)
-        )
+        findings.append(Finding(
+            text=(
+                f"{len(alarm_vms)} VM(s) have recent action failures: "
+                + ", ".join(v.vm_id for v in alarm_vms)
+            ),
+            evidence=["audit_store"],
+        ))
         recommendations.append(
             "Review audit trail for failed VMs: --audit --vm-id <id>"
         )
     if disk_vms:
         for v in disk_vms:
-            findings.append(
-                f"{v.vm_id}: disk growth detected -- {'; '.join(v.disk_alerts)}"
-            )
+            findings.append(Finding(
+                text=f"{v.vm_id}: disk growth detected -- {'; '.join(v.disk_alerts)}",
+                evidence=["disk_history"],
+            ))
         recommendations.append(
             "Run a maintenance batch with disk_cleanup or review retention policies"
         )
     if drift_vms:
         for v in drift_vms:
-            findings.append(
-                f"{v.vm_id}: configuration drift in {', '.join(v.drift_kinds)}"
-            )
+            findings.append(Finding(
+                text=f"{v.vm_id}: configuration drift in {', '.join(v.drift_kinds)}",
+                evidence=["drift_baselines"],
+            ))
         recommendations.append(
             "Run --probe-now to refresh drift baselines and review unified diffs"
         )
     if login_vms:
-        findings.append(
-            f"{len(login_vms)} VM(s) have failed SSH login attempts: "
-            + ", ".join(v.vm_id for v in login_vms)
-        )
+        findings.append(Finding(
+            text=(
+                f"{len(login_vms)} VM(s) have failed SSH login attempts: "
+                + ", ".join(v.vm_id for v in login_vms)
+            ),
+            evidence=["audit_store"],
+        ))
         recommendations.append(
             "Review /var/log/auth.log on affected VMs; consider IP allowlisting"
         )
 
     if elk_vms:
-        findings.append(
-            f"{len(elk_vms)} VM(s) have recent ELK error events: "
-            + ", ".join(v.vm_id for v in elk_vms)
-        )
+        findings.append(Finding(
+            text=(
+                f"{len(elk_vms)} VM(s) have recent ELK error events: "
+                + ", ".join(v.vm_id for v in elk_vms)
+            ),
+            evidence=["elk_store"],
+        ))
         recommendations.append(
             "Review ELK dashboard for error patterns before next maintenance batch"
         )
 
     service_fail_vms = [v for v in context.vm_summaries if v.failed_services]
     if service_fail_vms:
-        findings.append(
-            f"{len(service_fail_vms)} VM(s) have failed systemd services: "
-            + ", ".join(v.vm_id for v in service_fail_vms)
-        )
+        findings.append(Finding(
+            text=(
+                f"{len(service_fail_vms)} VM(s) have failed systemd services: "
+                + ", ".join(v.vm_id for v in service_fail_vms)
+            ),
+            evidence=["live_ssh_probe"],
+        ))
         recommendations.append(
             "Run --probe-now --live to capture current service state; "
             "investigate with: systemctl status <unit>"
@@ -414,10 +432,13 @@ def _fallback_response(question: str, context: FleetContext) -> AssistantRespons
     ]
     if low_success_rate_facts:
         for f in low_success_rate_facts:
-            findings.append(
-                f"{f.vm_id} {f.action_type}: {f.success_rate * 100:.0f}% success rate"
-                + (f" — last failure: {f.last_failure_reason}" if f.last_failure_reason else "")
-            )
+            findings.append(Finding(
+                text=(
+                    f"{f.vm_id} {f.action_type}: {f.success_rate * 100:.0f}% success rate"
+                    + (f" — last failure: {f.last_failure_reason}" if f.last_failure_reason else "")
+                ),
+                evidence=[f"vm_facts:{f.vm_id}:{f.action_type}"],
+            ))
         recommendations.append(
             "Review audit trail for VMs with low action success rates"
         )
@@ -427,15 +448,19 @@ def _fallback_response(question: str, context: FleetContext) -> AssistantRespons
     ]
     if frequently_rejected:
         for rf in frequently_rejected:
-            findings.append(
-                f"{rf.action_type} has been rejected {rf.rejections_last_90d} time(s) in 90 days"
-            )
+            findings.append(Finding(
+                text=f"{rf.action_type} has been rejected {rf.rejections_last_90d} time(s) in 90 days",
+                evidence=[f"vm_facts:fleet:{rf.action_type}"],
+            ))
         recommendations.append(
             "Investigate why actions are being repeatedly rejected before scheduling"
         )
 
     if not findings:
-        findings.append("No significant signals detected in available store data")
+        findings.append(Finding(
+            text="No significant signals detected in available store data",
+            evidence=[],
+        ))
         recommendations.append(
             "Run --probe-now to collect fresh signal data before re-asking"
         )

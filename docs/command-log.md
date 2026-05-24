@@ -2336,3 +2336,9 @@ uv run pytest tests/agent/subgraphs/test_docker_hygiene.py tests/safety/test_hyg
 uv run pytest -x -q   # 2295 passed (+37 net new; decisions.py semantic debt fix +5 net new committed separately)
 uv run ruff check errander/agent/subgraphs/docker_hygiene.py errander/config/schema.py errander/safety/hygiene_approval.py errander/agent/vm_graph.py scripts/install-docker-wrappers-v2.sh tests/agent/subgraphs/test_docker_hygiene.py tests/safety/test_hygiene_approval.py tests/config/test_schema_actions.py   # All checks passed!
 uv run mypy errander/agent/subgraphs/docker_hygiene.py errander/config/schema.py errander/safety/hygiene_approval.py errander/agent/vm_graph.py   # Success: no issues found in 4 source files
+
+# AI Trust Layer Phase 5 — Source Citation (2026-05-24)
+uv run pytest tests/agent/test_operator_assistant.py tests/agent/test_operator_assistant_facts.py -v --tb=short  # 43 passed
+uv run ruff check errander/models/analysis.py errander/agent/operator_assistant.py tests/agent/test_operator_assistant.py tests/agent/test_operator_assistant_facts.py  # 1 fixable I001
+uv run ruff check --fix tests/agent/test_operator_assistant.py  # fixed import sort
+uv run pytest --tb=short -q  # 2485 passed

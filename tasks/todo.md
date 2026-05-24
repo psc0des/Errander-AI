@@ -1,3 +1,15 @@
+## AI Trust Layer — Phase 5: Source Citation for AI Answers (2026-05-24, COMPLETE)
+
+**Status:** All items complete. 2485 tests passing, ruff + mypy clean on changed files.
+
+- [x] `errander/models/analysis.py` — new `Finding(text, evidence, is_cited)` model; `AssistantResponse.findings: list[Finding]`; `@field_validator` backward-compat coercion
+- [x] `errander/agent/operator_assistant.py` — `Finding` imports; updated prompt schema with `evidence` + valid source IDs; `_fallback_response()` constructs typed `Finding` with citations
+- [x] `tests/agent/test_operator_assistant.py` — fix 5 string-accessor assertions; add 8 citation tests
+- [x] `tests/agent/test_operator_assistant_facts.py` — fix 4 string-accessor assertions; add 2 citation tests
+- [x] Doc sync: STATUS.md, todo.md, lessons.md, command-log.md, README.md, learning/47-ai-source-citation.md
+
+---
+
 ## AI Trust Layer — Phase 4: Operational Memory Confidence (2026-05-24, COMPLETE)
 
 **Status:** All items complete. 2475 tests passing, ruff + mypy clean on changed files.

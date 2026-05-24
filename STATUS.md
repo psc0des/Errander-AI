@@ -4,6 +4,18 @@
 2026-05-24
 
 ## Current Phase
+**AI Trust Layer — Phase 5: Source Citation for AI Answers (2026-05-24, COMPLETE).** 2485 tests passing.
+
+`AssistantResponse.findings` changed from `list[str]` to `list[Finding]`. `Finding` carries `text: str`, `evidence: list[str]` (source IDs), and a computed `is_cited: bool`. A `@field_validator` coerces bare strings for backward compatibility. `_fallback_response()` now constructs typed `Finding` objects with citations: `audit_store` for failures/logins, `disk_history` for disk alerts, `drift_baselines` for drift, `elk_store` for ELK errors, `live_ssh_probe` for service failures, `vm_facts:{vm_id}:{action}` for low-success-rate facts, `vm_facts:fleet:{action}` for frequently-rejected actions. The LLM prompt schema now includes the `evidence` field and lists valid source IDs. 10 new citation tests added.
+
+### Files changed in AI Trust Layer Phase 5 (2026-05-24)
+- `errander/models/analysis.py` — new `Finding(text, evidence, is_cited)` model; `AssistantResponse.findings: list[Finding]`; `@field_validator` backward-compat coercion
+- `errander/agent/operator_assistant.py` — import `Finding`; updated prompt JSON schema with `evidence` field + valid source IDs; `_fallback_response()` constructs typed `Finding` objects with citations
+- `tests/agent/test_operator_assistant.py` — fix 5 assertions to use `.text`; add 8 new citation tests
+- `tests/agent/test_operator_assistant_facts.py` — fix 4 assertions to use `.text`; add 2 new citation tests
+- `docs/learning/47-ai-source-citation.md` (NEW)
+
+## Previous Phase
 **AI Trust Layer — Phase 4: Operational Memory Confidence (2026-05-24, COMPLETE).** 2475 tests passing.
 
 `confidence` field added to `ActionOutcomeFact`, `VMRebootPatternFact`, and `ActionRejectionFact` as a Pydantic `@computed_field` — always auto-derived, never manually passed. Thresholds: `high` ≥10 samples (or ≥5 rejections), `medium` ≥5 samples (or ≥2 rejections), else `low`. Confidence labels are now surfaced inline in the LLM prompt so the model can calibrate its findings. 13 new confidence tests + 3 new prompt tests.
@@ -14,7 +26,7 @@
 - `tests/safety/test_vm_facts.py` — `TestConfidenceLabels` (10 tests)
 - `tests/agent/test_operator_assistant_facts.py` — 3 new prompt confidence tests
 
-## Previous Phase
+## Previous Phase (2)
 **AI Trust Layer — Phase 2: Prompt Versioning & Replay Evals (2026-05-24, COMPLETE).** 2462 tests passing.
 
 `EvalStore` persists replay run summaries and per-decision results in new SQLite tables (`ai_eval_runs`, `ai_eval_results`, migration 9). `run_replay()` queries stored `ai_decisions`, re-sends each `prompt_full` to a candidate model, runs deterministic assertions (`check_assertions`), and saves the `EvalRun`. CLI: `--ai-eval-replay [--eval-model <id>]`. 28 tests covering all assertion types, store roundtrip, and replay integration scenarios.

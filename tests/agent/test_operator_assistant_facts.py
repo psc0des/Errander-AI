@@ -274,7 +274,7 @@ class TestFallbackResponseWithFacts:
         )
         ctx = _context_with_facts(outcomes=[fact])
         resp = _fallback_response("Is this fleet healthy?", ctx)
-        assert any("50%" in f or "patching" in f for f in resp.findings)
+        assert any("50%" in f.text or "patching" in f.text for f in resp.findings)
 
     def test_high_success_rate_not_flagged(self) -> None:
         fact = ActionOutcomeFact(
@@ -287,7 +287,7 @@ class TestFallbackResponseWithFacts:
         )
         ctx = _context_with_facts(outcomes=[fact])
         resp = _fallback_response("Is this fleet healthy?", ctx)
-        findings_text = " ".join(resp.findings)
+        findings_text = " ".join(f.text for f in resp.findings)
         assert "vm1 patching" not in findings_text
 
     def test_small_sample_not_flagged_even_if_low_rate(self) -> None:
@@ -301,7 +301,7 @@ class TestFallbackResponseWithFacts:
         )
         ctx = _context_with_facts(outcomes=[fact])
         resp = _fallback_response("Is this fleet healthy?", ctx)
-        findings_text = " ".join(resp.findings)
+        findings_text = " ".join(f.text for f in resp.findings)
         assert "vm1 patching" not in findings_text
 
     def test_frequently_rejected_actions_appear_in_findings(self) -> None:
@@ -312,7 +312,7 @@ class TestFallbackResponseWithFacts:
         )
         ctx = _context_with_facts(rejections=[rf])
         resp = _fallback_response("Why is patching being rejected?", ctx)
-        assert any("patching" in f and "rejected" in f for f in resp.findings)
+        assert any("patching" in f.text and "rejected" in f.text for f in resp.findings)
 
     def test_risk_elevated_when_facts_flagged(self) -> None:
         fact = ActionOutcomeFact(
@@ -326,3 +326,32 @@ class TestFallbackResponseWithFacts:
         ctx = _context_with_facts(outcomes=[fact])
         resp = _fallback_response("Status?", ctx)
         assert resp.risk_level == "high"
+
+    def test_low_success_rate_finding_cites_vm_facts(self) -> None:
+        """Low-success-rate findings must cite vm_facts:<vm_id>:<action_type>."""
+        fact = ActionOutcomeFact(
+            vm_id="vm1",
+            action_type="patching",
+            success_rate=0.4,
+            sample_size=10,
+            last_failure_reason="timeout",
+            last_success_at=None,
+        )
+        ctx = _context_with_facts(outcomes=[fact])
+        resp = _fallback_response("Status?", ctx)
+        rate_findings = [f for f in resp.findings if "40%" in f.text or "patching" in f.text]
+        assert rate_findings
+        assert all("vm_facts:vm1:patching" in f.evidence for f in rate_findings)
+
+    def test_rejection_finding_cites_vm_facts_fleet(self) -> None:
+        """Rejection findings must cite vm_facts:fleet:<action_type>."""
+        rf = ActionRejectionFact(
+            action_type="patching",
+            rejections_last_90d=5,
+            rejection_reasons=["maintenance freeze"],
+        )
+        ctx = _context_with_facts(rejections=[rf])
+        resp = _fallback_response("Status?", ctx)
+        rej_findings = [f for f in resp.findings if "patching" in f.text and "rejected" in f.text]
+        assert rej_findings
+        assert all("vm_facts:fleet:patching" in f.evidence for f in rej_findings)

@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 if TYPE_CHECKING:
     from errander.safety.vm_facts import (
@@ -19,14 +19,38 @@ if TYPE_CHECKING:
     )
 
 
+class Finding(BaseModel):
+    """A single operator-assistant finding with optional source evidence.
+
+    evidence is a list of source IDs (e.g. "audit_store", "vm_facts:prod/vm1:patching").
+    An empty evidence list means the finding is uncited.
+    """
+
+    text: str
+    evidence: list[str] = []
+
+    @property
+    def is_cited(self) -> bool:
+        """True when the finding cites at least one data source."""
+        return bool(self.evidence)
+
+
 class AssistantResponse(BaseModel):
     """Structured LLM response from the Operator Assistant (Layer A)."""
 
     summary: str
-    findings: list[str]
+    findings: list[Finding]
     recommendations: list[str]
     risk_level: str  # "low" | "medium" | "high" | "unknown"
     data_sources: list[str] = []
+
+    @field_validator("findings", mode="before")
+    @classmethod
+    def _coerce_findings(cls, v: object) -> list[object]:
+        """Accept bare strings as well as Finding dicts for backward compatibility."""
+        if not isinstance(v, list):
+            return v  # type: ignore[return-value]
+        return [{"text": item} if isinstance(item, str) else item for item in v]
 
 
 @dataclass

@@ -1070,6 +1070,7 @@ Run this from inside the `errander/` directory — it auto-fills your username a
 # Run from inside the errander/ directory
 INSTALL_DIR=$(pwd)
 INSTALL_USER=$(whoami)
+KEY_PATH=$(echo ~/.errander.key)
 
 sudo tee /etc/systemd/system/errander.service << EOF
 [Unit]
@@ -1081,6 +1082,7 @@ Type=simple
 User=${INSTALL_USER}
 WorkingDirectory=${INSTALL_DIR}
 EnvironmentFile=${INSTALL_DIR}/.env
+EnvironmentFile=${KEY_PATH}
 ExecStart=${INSTALL_DIR}/.venv/bin/python -m errander \\
   --inventory ${INSTALL_DIR}/inventory.yaml \\
   --config ${INSTALL_DIR}/settings.yaml

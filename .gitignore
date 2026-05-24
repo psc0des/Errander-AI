@@ -50,3 +50,16 @@ ai_sre_*.md
 
 # Observability demo (WIP — not ready to commit)
 demo/observability-demo-env/
+
+# SQLite WAL/journal temp files
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+
+# Playwright MCP session artifacts
+.playwright-mcp/
+
+# UI QA / browser-automation artifacts (screenshots, temp inventories)
+errander-*.png
+tmp_*.yaml
+approvals_text.txt

@@ -903,7 +903,7 @@ uv run python -m errander --check-inventory
 
 ```bash
 # Linux / Git Bash
-export $(grep -v '^#' .env | xargs)
+set -a; source .env; set +a
 ```
 
 ```powershell
@@ -929,10 +929,10 @@ uv run python -m errander --check-llm
 uv run python -m errander --bootstrap-known-hosts <your-env-name>
 ```
 
-This pins the host keys and automatically adds `ERRANDER_SSH_KNOWN_HOSTS` to your `.env`. Reload env vars before continuing:
+This pins the host keys and automatically adds `ERRANDER_SSH_KNOWN_HOSTS` to your `.env`. **Reload env vars now** — without this step, `--check-targets` will still report the key as missing:
 
 ```bash
-export $(grep -v '^#' .env | xargs)
+set -a; source .env; set +a
 ```
 
 **5. Verify target VM readiness**
@@ -1002,7 +1002,7 @@ The agent reads credentials from environment variables — load `.env` first, th
 
 **Linux / Git Bash:**
 ```bash
-export $(grep -v '^#' .env | xargs)
+set -a; source .env; set +a
 uv run python -m errander --run-now --env <your-env-name> --inventory inventory.yaml --dry-run --force --force-reason "initial dry-run validation"
 ```
 
@@ -1031,7 +1031,7 @@ Once dry-run looks correct (replace `<your-env-name>` as above):
 
 **Linux / Git Bash:**
 ```bash
-export $(grep -v '^#' .env | xargs)
+set -a; source .env; set +a
 uv run python -m errander --run-now --env <your-env-name> --inventory inventory.yaml --live
 ```
 

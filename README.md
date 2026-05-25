@@ -222,9 +222,11 @@ Dual-channel approval — Slack reactions and Web UI buttons race:
 
 1. Agent completes dry-run and posts the plan to `#errander-approvals` on Slack
 2. **Race**: first channel to decide wins
-   - Slack: operator reacts with :white_check_mark: (approve) or :x: (reject)
-   - Web UI: operator clicks Approve/Reject at `/ui/approvals`
+   - Slack: operator reacts with :white_check_mark: (approve) or :x: (reject) — approves all items
+   - Web UI: operator uses `/ui/approvals` — per-item granularity (approve individual packages, service restarts; categorical actions auto-included)
 3. Timeout after 30 minutes (configurable) = auto-reject
+
+Web UI approval cards show: per-VM / per-action plan with checkboxes for each item, a **Decision Reasoning** section (LLM vs deterministic fallback, model, latency), and the operator's decision is recorded by username (not a generic "ui" label).
 
 All Slack communication is outbound HTTPS. No webhooks, no inbound traffic.
 

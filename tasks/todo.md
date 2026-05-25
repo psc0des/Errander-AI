@@ -1,3 +1,13 @@
+## Approval UI overhaul — per-item approval + decision reasoning (2026-05-25, COMPLETE)
+
+- [x] `errander/safety/approval.py` — `BatchApprovalResult` 3-tuple type; `vm_plans` + `approved_items` on `PendingApproval`; updated `register()`, `decide()`, `await_dual_approval()`
+- [x] `errander/agent/graph.py` — `operator_approved_packages` BatchGraphState key; `_filter_patching_packages()` helper; updated `approval_gate_node` (3-tuple unpack, `approved_items` init) + `dispatch_current_wave`
+- [x] `errander/observability/metrics.py` — per-item approval plan card (`_render_approval_plan`); Decision Reasoning tab (`_render_approval_reasoning`); username fix; expanded 35-entry `_EVENT_BADGE` map; new CSS
+- [x] Updated 4 test files for `await_dual_approval` 3-tuple return: `test_approval.py`, `test_graph.py`, `test_plan_apply_flow.py`, `test_deferred_artifact.py`
+- [x] 126 tests passing, ruff clean, mypy clean
+
+---
+
 ## Doc sync — README stale sections + login + UI bind (2026-05-25, COMPLETE)
 
 - [x] README.md: replace Docker Prune with docker_hygiene in Action Types table

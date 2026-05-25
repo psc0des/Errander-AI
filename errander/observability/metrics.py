@@ -15,6 +15,7 @@ Metrics exposed:
 
 from __future__ import annotations
 
+import contextlib
 import html as _html_mod
 import logging
 import secrets
@@ -330,10 +331,11 @@ td.mono,th.mono{font-family:var(--mono);font-size:.75rem;color:var(--text-m)}
   font-family:var(--mono);font-size:.63rem;letter-spacing:.03em;
   padding:2px 8px;border-radius:20px;font-weight:500;white-space:nowrap;
 }
-.bk-ok {background:var(--green-bg);color:var(--green)}
-.bk-err{background:var(--red-bg);  color:var(--red)}
-.bk-inf{background:var(--blue-bg); color:var(--primary)}
-.bk-neu{background:var(--surface-hi);color:var(--text-m)}
+.bk-ok  {background:var(--green-bg); color:var(--green)}
+.bk-err {background:var(--red-bg);   color:var(--red)}
+.bk-inf {background:var(--blue-bg);  color:var(--primary)}
+.bk-neu {background:var(--surface-hi);color:var(--text-m)}
+.bk-warn{background:var(--amber-bg,#fef3c7);color:var(--amber,#92400e)}
 
 /* ── LINKS ───────────────────────────────────────────────── */
 a{color:var(--primary);text-decoration:none;transition:color .12s}
@@ -399,6 +401,75 @@ a:hover{color:var(--secondary)}
 /* ── HISTORY DECISION BADGES ─────────────────────────────── */
 .dec-ok{color:var(--green);font-family:var(--mono);font-size:.75rem;font-weight:500}
 .dec-no{color:var(--red);font-family:var(--mono);font-size:.75rem;font-weight:500}
+
+/* ── PER-ITEM APPROVAL CARD ─────────────────────────────── */
+.apv-vm{margin-bottom:1.1rem}
+.apv-vm-hdr{
+  display:flex;align-items:center;gap:.55rem;
+  padding:.45rem .7rem;background:var(--surface-hi);
+  border-radius:6px;margin-bottom:.6rem;
+  font-family:var(--mono);font-size:.75rem;font-weight:600;color:var(--text);
+}
+.apv-action{
+  border:1px solid var(--outline);border-radius:7px;
+  margin-bottom:.55rem;overflow:hidden;
+}
+.apv-action-hdr{
+  display:flex;align-items:center;gap:.5rem;
+  padding:.4rem .75rem;background:var(--surface-lo);
+  border-bottom:1px solid var(--outline);
+}
+.apv-action-lbl{font-size:.7rem;color:var(--text-m);margin-left:auto}
+.apv-action-ctrl{
+  margin-left:auto;display:flex;gap:.35rem;
+}
+.apv-ctrl-btn{
+  font-family:var(--mono);font-size:.58rem;color:var(--text-d);
+  background:none;border:1px solid var(--outline);border-radius:4px;
+  padding:2px 7px;cursor:pointer;transition:all .12s;
+}
+.apv-ctrl-btn:hover{background:var(--surface-hi);color:var(--text)}
+.apv-items{
+  padding:.5rem .75rem;display:flex;flex-direction:column;gap:.2rem;
+  max-height:220px;overflow-y:auto;
+}
+.apv-item{
+  display:flex;align-items:center;gap:.5rem;
+  padding:.2rem .25rem;border-radius:4px;cursor:pointer;
+}
+.apv-item:hover{background:var(--surface-hi)}
+.apv-item input[type=checkbox]{width:13px;height:13px;accent-color:var(--primary);flex-shrink:0}
+.apv-pkg-name{font-family:var(--mono);font-size:.72rem;color:var(--text);font-weight:500}
+.apv-pkg-ver{font-family:var(--mono);font-size:.65rem;color:var(--text-d);margin-left:.4rem}
+.apv-cat-note{font-size:.67rem;color:var(--text-d);padding:.45rem .75rem}
+
+/* Reasoning section */
+.apv-reasoning{
+  border:1px solid var(--outline);border-radius:7px;
+  margin-bottom:.9rem;overflow:hidden;
+}
+.apv-reasoning>summary{
+  padding:.4rem .75rem;cursor:pointer;list-style:none;
+  display:flex;align-items:center;gap:.45rem;
+  font-family:var(--mono);font-size:.65rem;color:var(--text-m);
+  background:var(--surface-lo);border-bottom:1px solid transparent;
+  user-select:none;transition:color .12s;
+}
+.apv-reasoning[open]>summary{border-bottom-color:var(--outline)}
+.apv-reasoning>summary::before{content:'▶';font-size:.45rem;transition:transform .15s;opacity:.5}
+.apv-reasoning[open]>summary::before{transform:rotate(90deg)}
+.apv-reasoning>summary::marker,.apv-reasoning>summary::-webkit-details-marker{display:none}
+.apv-reasoning>summary:hover{color:var(--text)}
+.apv-reasoning-body{padding:.65rem .75rem}
+.apv-reasoning-row{
+  display:grid;grid-template-columns:8rem 1fr;
+  font-size:.7rem;gap:.1rem 0;padding:.15rem 0;
+  border-bottom:1px solid var(--outline);
+}
+.apv-reasoning-row:last-child{border-bottom:none}
+.apv-reasoning-key{font-family:var(--mono);color:var(--text-d);font-size:.65rem}
+.apv-reasoning-val{color:var(--text);font-family:var(--mono);font-size:.68rem}
+.apv-reasoning-empty{font-size:.7rem;color:var(--text-d);padding:.3rem 0}
 
 /* ── EMPTY / NOTE ────────────────────────────────────────── */
 .empty{padding:2.5rem;text-align:center;font-family:var(--mono);font-size:.76rem;color:var(--text-d)}
@@ -505,11 +576,42 @@ background:var(--blue-bg);color:var(--primary)}
 # ---------------------------------------------------------------------------
 
 _EVENT_BADGE: dict[str, str] = {
-    EventType.ACTION_COMPLETED.value: "bk-ok",
-    EventType.BATCH_COMPLETED.value:  "bk-ok",
-    EventType.ACTION_FAILED.value:    "bk-err",
-    EventType.BATCH_STARTED.value:    "bk-inf",
-    EventType.ACTION_STARTED.value:   "bk-inf",
+    EventType.ACTION_COMPLETED.value:           "bk-ok",
+    EventType.BATCH_COMPLETED.value:            "bk-ok",
+    EventType.ROLLBACK_COMPLETED.value:         "bk-ok",
+    EventType.APPROVAL_GRANTED.value:           "bk-ok",
+    EventType.SERVICE_RESTART_VERIFY_OK.value:  "bk-ok",
+    EventType.SERVICE_RESTART_EXECUTED.value:   "bk-ok",
+    EventType.DAILY_PROBE_COMPLETE.value:       "bk-ok",
+    EventType.DOCKER_HYGIENE_OBJECT_REMOVED.value: "bk-ok",
+
+    EventType.ACTION_FAILED.value:              "bk-err",
+    EventType.ROLLBACK_FAILED.value:            "bk-err",
+    EventType.APPROVAL_REJECTED.value:          "bk-err",
+    EventType.APPROVAL_TIMEOUT.value:           "bk-err",
+    EventType.TARGET_PREFLIGHT_FAILED.value:    "bk-err",
+    EventType.SUDO_PREFLIGHT_FAILED.value:      "bk-err",
+    EventType.SERVICE_RESTART_VERIFY_FAILED.value: "bk-err",
+    EventType.DAILY_PROBE_FAILED.value:         "bk-err",
+    EventType.DOCKER_HYGIENE_OBJECT_REMOVE_FAILED.value: "bk-err",
+    EventType.FLEET_ABORT.value:                "bk-err",
+
+    EventType.BATCH_STARTED.value:              "bk-inf",
+    EventType.ACTION_STARTED.value:             "bk-inf",
+    EventType.ACTION_PLANNED.value:             "bk-inf",
+    EventType.APPROVAL_REQUESTED.value:         "bk-inf",
+    EventType.ROLLBACK_STARTED.value:           "bk-inf",
+    EventType.DAILY_PROBE_STARTED.value:        "bk-inf",
+    EventType.SERVICE_RESTART_REQUESTED.value:  "bk-inf",
+    EventType.DEFERRED_EXECUTION_STARTED.value: "bk-inf",
+
+    EventType.EXECUTION_DEFERRED.value:         "bk-neu",
+    EventType.DRIFT_DETECTED.value:             "bk-warn",
+    EventType.DRIFT_KIND_CHANGED.value:         "bk-warn",
+    EventType.SERVICE_HEALTH_REGRESSION.value:  "bk-warn",
+    EventType.REBOOT_REQUIRED_DETECTED.value:   "bk-warn",
+    EventType.DISK_USAGE_CAPTURED.value:        "bk-neu",
+    EventType.DOCKER_HYGIENE_OBJECT_DRIFT_SKIPPED.value: "bk-warn",
 }
 
 
@@ -1773,14 +1875,171 @@ async def _ui_vm(request: web.Request) -> web.Response:
 
 
 # ---------------------------------------------------------------------------
-# Approval UI — list pending + decide
+# Approval UI — helpers, list pending + decide
 # ---------------------------------------------------------------------------
+
+# Action types where per-item checkboxes make sense vs. categorical approval
+_EXACT_ITEM_ACTIONS = {"patching", "service_restart"}
+_CATEGORICAL_ACTIONS = {"disk_cleanup", "log_rotation", "backup_verify"}
+
+
+def _render_approval_plan(
+    vm_plans: list[dict[str, object]],
+    batch_id: str,
+) -> str:
+    """Render per-VM, per-action plan with checkboxes for exact-item actions."""
+    parts: list[str] = []
+    for vm_idx, plan in enumerate(vm_plans):
+        vm_id = str(plan.get("vm_id", "?"))
+        os_family = str(plan.get("os_family", ""))
+        os_badge = f'<span class="badge bk-neu">{_esc(os_family)}</span>' if os_family else ""
+        vm_hdr = (
+            f'<div class="apv-vm-hdr">'
+            f'<span class="mono">{_esc(vm_id)}</span>'
+            f'{os_badge}'
+            f'</div>'
+        )
+        actions_html: list[str] = []
+        raw_actions = plan.get("planned_actions")
+        for act_idx, action in enumerate(raw_actions if isinstance(raw_actions, list) else []):
+            at = str(action.get("action_type", "?"))
+            preview = action.get("preview") if isinstance(action.get("preview"), dict) else {}
+            assert isinstance(preview, dict)
+
+            if at == "patching":
+                packages = preview.get("packages")
+                pkg_list_id = f"pkgs_{vm_idx}_{act_idx}"
+                if isinstance(packages, list) and packages:
+                    items_html = "".join(
+                        f'<label class="apv-item">'
+                        f'<input type="checkbox" name="pkg_{vm_idx}_{act_idx}_{pi}" checked>'
+                        f'<span class="apv-pkg-name">{_esc(str(p.get("name", "?")))}</span>'
+                        f'<span class="apv-pkg-ver">'
+                        f'{_esc(str(p.get("current", "")))} → {_esc(str(p.get("target", "")))}'
+                        f'</span>'
+                        f'</label>'
+                        for pi, p in enumerate(packages)
+                        if isinstance(p, dict)
+                    )
+                    _sel_all = f"document.querySelectorAll('#{pkg_list_id} input').forEach(e=>e.checked=true)"
+                    _sel_none = f"document.querySelectorAll('#{pkg_list_id} input').forEach(e=>e.checked=false)"
+                    ctrl = (
+                        f'<div class="apv-action-ctrl">'
+                        f'<button type="button" class="apv-ctrl-btn" onclick="{_sel_all}">all</button>'
+                        f'<button type="button" class="apv-ctrl-btn" onclick="{_sel_none}">none</button>'
+                        f'</div>'
+                    )
+                    count_badge = f'<span class="apv-action-lbl">{len(packages)} packages</span>'
+                    actions_html.append(
+                        f'<div class="apv-action">'
+                        f'<div class="apv-action-hdr">'
+                        f'<span class="badge bk-inf">patching</span>'
+                        f'<span class="badge bk-neu">[EXACT]</span>'
+                        f'{count_badge}{ctrl}'
+                        f'</div>'
+                        f'<div class="apv-items" id="{pkg_list_id}">{items_html}</div>'
+                        f'</div>'
+                    )
+                else:
+                    actions_html.append(
+                        '<div class="apv-action">'
+                        '<div class="apv-action-hdr">'
+                        '<span class="badge bk-inf">patching</span>'
+                        '<span class="badge bk-warn">[CATEGORICAL]</span>'
+                        '</div>'
+                        '<div class="apv-cat-note">Package list unavailable — batch upgrade will run.</div>'
+                        '</div>'
+                    )
+
+            elif at == "service_restart":
+                params = action.get("params") or {}
+                unit = str(params.get("unit_name", "?")) if isinstance(params, dict) else "?"
+                svc_field = f"svc_{vm_idx}_{act_idx}"
+                actions_html.append(
+                    f'<div class="apv-action">'
+                    f'<div class="apv-action-hdr">'
+                    f'<span class="badge bk-warn">service_restart</span>'
+                    f'<span class="badge bk-neu">[EXACT]</span>'
+                    f'</div>'
+                    f'<div class="apv-items">'
+                    f'<label class="apv-item">'
+                    f'<input type="checkbox" name="{_esc(svc_field)}" checked>'
+                    f'<span class="apv-pkg-name">{_esc(unit)}</span>'
+                    f'<span class="apv-pkg-ver">systemd unit</span>'
+                    f'</label>'
+                    f'</div>'
+                    f'</div>'
+                )
+
+            else:
+                # Categorical actions — shown for information, always auto-included on approve
+                cat_badge = "bk-inf" if at in _CATEGORICAL_ACTIONS else "bk-neu"
+                actions_html.append(
+                    f'<div class="apv-action">'
+                    f'<div class="apv-action-hdr">'
+                    f'<span class="badge {cat_badge}">{_esc(at)}</span>'
+                    f'<span class="badge bk-neu">[CATEGORICAL]</span>'
+                    f'<span class="apv-action-lbl" style="margin-left:auto">auto-included</span>'
+                    f'</div>'
+                    f'</div>'
+                )
+
+        parts.append(f'<div class="apv-vm">{vm_hdr}{"".join(actions_html)}</div>')
+    return "".join(parts)
+
+
+def _render_approval_reasoning(ai_decisions: list[object]) -> str:
+    """Render the Decision Reasoning collapsible section from AI decision records."""
+    if not ai_decisions:
+        return (
+            '<details class="apv-reasoning">'
+            '<summary>Decision Reasoning</summary>'
+            '<div class="apv-reasoning-body">'
+            '<div class="apv-reasoning-empty">No AI decisions recorded for this batch.</div>'
+            '</div>'
+            '</details>'
+        )
+    rows: list[str] = []
+    for d in ai_decisions:
+        from errander.safety.ai_audit import AIDecision
+        assert isinstance(d, AIDecision)
+        source = "LLM" if d.outcome == "success" else f"Fallback ({d.outcome})"
+        source_badge = (
+            '<span class="badge bk-ok">LLM</span>'
+            if d.outcome == "success"
+            else f'<span class="badge bk-warn">{_esc(source)}</span>'
+        )
+        vm_label = f'<a class="id-a" href="/ui/vms/{_uq(d.vm_id)}">{_esc(d.vm_id)}</a>' if d.vm_id else "—"
+        detail_link = (
+            f'<a class="id-a" href="/ui/ai-decisions/{d.decision_id}">#{d.decision_id}</a>'
+            if d.decision_id else "—"
+        )
+        latency = f"{d.latency_ms:.0f} ms" if d.latency_ms is not None else "—"
+        rows.append(
+            f'<div class="apv-reasoning-row">'
+            f'<span class="apv-reasoning-key">{_esc(d.decision_type)}</span>'
+            f'<span class="apv-reasoning-val">'
+            f'{source_badge} &nbsp; VM: {vm_label} &nbsp; {_esc(d.model)} &nbsp; {_esc(latency)} &nbsp; {detail_link}'
+            f'</span>'
+            f'</div>'
+        )
+    return (
+        '<details class="apv-reasoning">'
+        '<summary>Decision Reasoning &nbsp;'
+        f'<span class="badge bk-neu">{len(ai_decisions)}</span>'
+        '</summary>'
+        f'<div class="apv-reasoning-body">{"".join(rows)}</div>'
+        '</details>'
+    )
+
 
 async def _ui_approvals(request: web.Request) -> web.Response:
     """GET /ui/approvals — list pending approvals and recent decisions."""
     manager: ApprovalManager | None = request.app.get(_APPROVAL_MANAGER_KEY)
     if manager is None:
         return _page("Approvals", '<div class="nc">Approval manager not connected.</div>')
+
+    ai_store: AIDecisionStore | None = request.app.get(_AI_DECISION_STORE_KEY)
 
     pending = manager.get_pending()
     history = manager.get_history()
@@ -1794,28 +2053,45 @@ async def _ui_approvals(request: web.Request) -> web.Response:
                 (datetime.now(tz=UTC) - p.posted_at).total_seconds()
             ) // 60
             channel = "also posted to Slack" if p.slack_message_ts else "UI only"
-            rpt = (
-                p.report[:700]
-                .replace("&", "&amp;")
-                .replace("<", "&lt;")
-                .replace(">", "&gt;")
-            )
+
+            # AI decision reasoning — query asynchronously
+            ai_decisions: list[object] = []
+            if ai_store is not None:
+                with contextlib.suppress(Exception):
+                    ai_decisions = list(await ai_store.get_decisions(batch_id=p.batch_id))
+
+            reasoning_html = _render_approval_reasoning(ai_decisions)
+
+            # Plan section — structured if vm_plans available, else raw text report
+            if p.vm_plans:
+                plan_html = _render_approval_plan(p.vm_plans, p.batch_id)
+            else:
+                rpt = (
+                    p.report[:1200]
+                    .replace("&", "&amp;")
+                    .replace("<", "&lt;")
+                    .replace(">", "&gt;")
+                )
+                plan_html = (
+                    f'<details class="apv-report" open>'
+                    f'<summary>Dry-run report</summary>'
+                    f'<pre class="apv-pre">{rpt}</pre>'
+                    f'</details>'
+                )
+
             cards.append(
                 f'<div class="apv">'
                 f'<div class="apv-id">{_esc(p.batch_id)}</div>'
-                f'<div class="apv-meta">{elapsed_min}m ago &nbsp;&bull;&nbsp; {channel}</div>'
-                f'<details class="apv-report">'
-                f'<summary>View dry-run report</summary>'
-                f'<pre class="apv-pre">{rpt}</pre>'
-                f'</details>'
-                f'<div class="apv-btns">'
+                f'<div class="apv-meta">{elapsed_min}m ago &nbsp;&bull;&nbsp; {_esc(channel)}</div>'
                 f'<form method="POST" action="/ui/approvals/{_uq(p.batch_id)}/approve">'
-                f'<button type="submit" class="btn btn-ok">&#10003; Approve</button>'
-                f'</form>'
-                f'<form method="POST" action="/ui/approvals/{_uq(p.batch_id)}/reject">'
-                f'<button type="submit" class="btn btn-no">&#10007; Reject</button>'
-                f'</form>'
+                f'{plan_html}'
+                f'{reasoning_html}'
+                f'<div class="apv-btns">'
+                f'<button type="submit" class="btn btn-ok">&#10003; Approve Selected</button>'
+                f'<button type="submit" formaction="/ui/approvals/{_uq(p.batch_id)}/reject"'
+                f' class="btn btn-no">&#10007; Reject All</button>'
                 f'</div>'
+                f'</form>'
                 f'</div>'
             )
         pending_section = (
@@ -1831,7 +2107,7 @@ async def _ui_approvals(request: web.Request) -> web.Response:
 
     # ── History ───────────────────────────────────────────────────────────────
     if history:
-        rows = [
+        rows_h = [
             [
                 f'<a class="id-a" href="/ui/batches/{_uq(h.batch_id)}">{_esc(h.batch_id)}</a>',
                 f'<span class="mono">{h.posted_at.strftime("%Y-%m-%d %H:%M:%S")}</span>',
@@ -1840,13 +2116,22 @@ async def _ui_approvals(request: web.Request) -> web.Response:
                     if h.approved
                     else '<span class="dec-no">&#10007; Rejected</span>'
                 ),
-                f'<span class="mono">{h.decided_by or "timeout"}</span>',
+                f'<span class="mono">{_esc(h.decided_by or "timeout")}</span>',
+                (
+                    f'<span class="mono" style="font-size:.62rem;color:var(--text-d)">'
+                    f'{len(h.approved_items)} item(s) selected</span>'
+                    if h.approved_items is not None
+                    else '<span style="color:var(--text-d);font-size:.65rem">all items</span>'
+                ),
             ]
             for h in history
         ]
         history_section = (
             _section("Recent Decisions", len(history))
-            + _table(["Batch ID", "Requested (UTC)", "Decision", "Decided by"], rows)
+            + _table(
+                ["Batch ID", "Requested (UTC)", "Decision", "Decided by", "Scope"],
+                rows_h,
+            )
         )
     else:
         history_section = (
@@ -1872,10 +2157,62 @@ async def _ui_approval_decide(request: web.Request) -> web.Response:
     batch_id = request.match_info["batch_id"]
     action = request.match_info["action"]  # "approve" | "reject"
     approved = action == "approve"
+    ui_username: str = request.app.get(_UI_USER_KEY, "") or "ui"
 
-    manager.decide(batch_id, approved=approved, user_id="ui")
+    approved_items: list[dict[str, object]] | None = None
+
+    if approved:
+        # Parse per-item selections from the form checkboxes.
+        # Reconstruct using the vm_plans stored on the pending approval.
+        pending_list = [p for p in manager.get_pending() if p.batch_id == batch_id]
+        pending_rec = pending_list[0] if pending_list else None
+
+        if pending_rec is not None and pending_rec.vm_plans:
+            data = await request.post()
+            approved_items = []
+            for vm_idx, plan in enumerate(pending_rec.vm_plans):
+                vm_id = str(plan.get("vm_id", ""))
+                raw_actions = plan.get("planned_actions")
+                for act_idx, action_dict in enumerate(
+                    raw_actions if isinstance(raw_actions, list) else []
+                ):
+                    at = str(action_dict.get("action_type", ""))
+                    if at == "patching":
+                        preview = action_dict.get("preview") or {}
+                        packages = preview.get("packages") if isinstance(preview, dict) else None
+                        approved_pkgs: list[dict[str, str]] = []
+                        for pi, pkg in enumerate(packages if isinstance(packages, list) else []):
+                            if isinstance(pkg, dict) and data.get(f"pkg_{vm_idx}_{act_idx}_{pi}") is not None:
+                                approved_pkgs.append({
+                                    "name": str(pkg.get("name", "")),
+                                    "current": str(pkg.get("current", "")),
+                                    "target": str(pkg.get("target", "")),
+                                })
+                        approved_items.append({
+                            "vm_id": vm_id,
+                            "action_type": "patching",
+                            "packages": list(approved_pkgs),
+                        })
+                    elif at == "service_restart":
+                        params = action_dict.get("params") or {}
+                        unit = str(params.get("unit_name", "")) if isinstance(params, dict) else ""
+                        if data.get(f"svc_{vm_idx}_{act_idx}") is not None:
+                            approved_items.append({
+                                "vm_id": vm_id,
+                                "action_type": "service_restart",
+                                "unit": unit,
+                            })
+                    else:
+                        # Categorical — auto-included on approve
+                        approved_items.append({"vm_id": vm_id, "action_type": at})
+
+    manager.decide(batch_id, approved=approved, user_id=ui_username, approved_items=approved_items)
     logger.info(
-        "UI %s for batch %s", "approved" if approved else "rejected", batch_id,
+        "UI %s for batch %s by %s%s",
+        "approved" if approved else "rejected",
+        batch_id,
+        ui_username,
+        f" ({len(approved_items)} item(s) selected)" if approved_items else "",
     )
     raise web.HTTPFound("/ui/approvals")
 

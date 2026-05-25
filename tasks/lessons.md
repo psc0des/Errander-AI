@@ -1,5 +1,29 @@
 # Errander-AI — Lessons Learned
 
+## 2026-05-25 — Threading a return value through the call stack requires updating every unpack site
+
+`await_dual_approval()` was changed from returning a 2-tuple `(bool, str | None)` to a 3-tuple `(bool, str | None, list | None)`. The code change was straightforward, but every test that unpacked the result with `approved, user = await await_dual_approval(...)` and every mock that returned `(True, "name")` silently broke. Seven test files needed updates across 15 call sites.
+
+**Why:** Python's tuple unpacking raises `ValueError: too many values to unpack` immediately — but tests that mock the return value at the wrong shape give no error until the unpacking site runs. A mock returning `(True, "name")` passes the mock layer fine; the unpacking in the caller is what fails.
+
+**How to apply:** When changing a function's return type from a N-tuple to an (N+1)-tuple: immediately grep for all `=` unpack sites (`approved, user = await func(`) AND all mock `.return_value = (` sites. Fix them in one pass before running tests. Use `approved, user, _ = await func(...)` to discard the new value at sites that don't need it.
+
+## 2026-05-25 — Initialize all local variables before if/elif/else chains in graph nodes
+
+`approval_gate_node` set `approved_items` inside an `elif` branch and the `else` branch. The dry-run path (`if dry_run:`) never entered either branch, so `approved_items` was referenced as unbound when the function returned. Python raises `UnboundLocalError: cannot access local variable 'approved_items'` at the return site, not at the assignment site.
+
+**Why:** Python's name analysis is static — if a variable is ever assigned in a function, reads of that name before any assignment raise `UnboundLocalError`. The variable isn't `None` by default just because it's a local.
+
+**How to apply:** At the top of any graph node function that conditionally sets a variable in some branches, initialize it to a safe default (`approved_items: list[dict[str, object]] | None = None`). This is especially important for nodes with `if dry_run / elif live / else` branching because the branches are often mutually exclusive and it's easy to miss the dry-run path.
+
+## 2026-05-25 — mypy strict rejects `dict(obj)` when `obj` is typed `object`
+
+`action.get("preview")` returns `object` (dict values are `object` in strict mode). Calling `dict(action.get("preview") or {})` triggers `No overload variant of "dict" matches argument type "object"`. The fix: add an `isinstance` guard first — `raw = action.get("preview") or {}; new = dict(raw) if isinstance(raw, dict) else {}`.
+
+**Why:** `dict()` has overloads that accept `dict[K, V]`, `Iterable[tuple[K, V]]`, or `**kwargs` — but not bare `object`. The `isinstance` check narrows the type to `dict` before the `dict()` call, which mypy accepts.
+
+**How to apply:** Whenever copying or iterating over a value fetched from a dict typed as `dict[str, object]`, add an `isinstance(val, dict)` guard before any dict-specific operations. Same for `list`: `if isinstance(val, list):` before iteration.
+
 ## 2026-05-25 — ERRANDER_UI_BIND must be in configure.sh from day one
 
 The web server bound to `127.0.0.1` by default, which is only reachable via SSH tunnel. This surprised the user who expected to access the UI over the network after starting the service. The fix was a one-liner in configure.sh, but it only helps new installs — existing `.env` files needed a manual edit.

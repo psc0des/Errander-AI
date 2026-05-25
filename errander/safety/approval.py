@@ -29,6 +29,9 @@ logger = logging.getLogger(__name__)
 #: How approval results are represented
 ApprovalResult = tuple[bool, str | None]  # (approved, approver_user_id)
 
+#: Extended result that also carries per-item approved objects (None = all approved, e.g. Slack path)
+BatchApprovalResult = tuple[bool, str | None, list[dict[str, object]] | None]
+
 
 # ---------------------------------------------------------------------------
 # request_approval / poll_approval (Slack-only, unchanged)
@@ -160,9 +163,15 @@ class PendingApproval:
     report: str
     posted_at: datetime
     slack_message_ts: str | None = None
+    # Structured per-VM plan data — used by the UI to render per-item checkboxes.
+    # None when registered from a path that doesn't carry vm_plans (e.g. tests).
+    vm_plans: list[dict[str, object]] | None = None
     # Set by ApprovalManager.decide() — None while pending
     approved: bool | None = field(default=None, init=False)
     decided_by: str | None = field(default=None, init=False)
+    # Set by decide() when the UI collected per-item selections.
+    # None = all planned items are approved (Slack path or legacy UI path).
+    approved_items: list[dict[str, object]] | None = field(default=None, init=False)
     # Signalled when a decision is recorded; used by wait_for_decision / await_dual_approval
     _event: asyncio.Event = field(default_factory=asyncio.Event, init=False, repr=False)
 
@@ -192,7 +201,7 @@ class ApprovalManager:
         )
 
         # In the HTTP handler (another coroutine, same event loop):
-        manager.decide(batch_id, approved=True, user_id="ui")
+        manager.decide(batch_id, approved=True, user_id="admin", approved_items=[...])
     """
 
     def __init__(self) -> None:
@@ -204,6 +213,7 @@ class ApprovalManager:
         batch_id: str,
         report: str,
         slack_message_ts: str | None = None,
+        vm_plans: list[dict[str, object]] | None = None,
     ) -> PendingApproval:
         """Register a new pending approval.  Returns the PendingApproval object."""
         approval = PendingApproval(
@@ -211,6 +221,7 @@ class ApprovalManager:
             report=report,
             posted_at=datetime.now(tz=UTC),
             slack_message_ts=slack_message_ts,
+            vm_plans=vm_plans,
         )
         self._pending[batch_id] = approval
         logger.info("Approval request registered for batch %s", batch_id)
@@ -221,17 +232,21 @@ class ApprovalManager:
         batch_id: str,
         approved: bool,
         user_id: str | None = None,
+        approved_items: list[dict[str, object]] | None = None,
     ) -> None:
         """Record a decision.  Idempotent — safe to call twice for same batch.
 
         Moves the approval from _pending → _history and signals any coroutines
         waiting in wait_for_decision() or await_dual_approval().
+
+        approved_items: per-item selections from the UI (None = all items approved).
         """
         approval = self._pending.pop(batch_id, None)
         if approval is None:
             return  # Already decided — no-op
         approval.approved = approved
         approval.decided_by = user_id
+        approval.approved_items = approved_items
         approval._event.set()
         self._history.append(approval)
         logger.info(
@@ -284,7 +299,8 @@ async def await_dual_approval(
     report: str,
     timeout_seconds: int = 1800,
     poll_interval_seconds: int = 30,
-) -> ApprovalResult:
+    vm_plans: list[dict[str, object]] | None = None,
+) -> BatchApprovalResult:
     """Race Slack reaction polling against a UI button click.
 
     Steps:
@@ -303,9 +319,12 @@ async def await_dual_approval(
         report:                Dry-run report to show operators.
         timeout_seconds:       Max wait before auto-reject (default 30 min).
         poll_interval_seconds: Slack reaction poll cadence (default 30 s).
+        vm_plans:              Structured per-VM plan data for per-item UI approval.
 
     Returns:
-        (approved: bool, approver_user_id: str | None)
+        (approved, approver_user_id, approved_items)
+        approved_items is None when the Slack channel decided (all items approved)
+        or when the operator approved all items without per-item selection.
     """
     wait_start = datetime.now(tz=UTC)
 
@@ -322,7 +341,7 @@ async def await_dual_approval(
             )
 
     # --- Step 2: register with manager ---
-    pending = manager.register(batch_id, report, slack_message_ts=slack_ts)
+    pending = manager.register(batch_id, report, slack_message_ts=slack_ts, vm_plans=vm_plans)
 
     # --- Step 3: concurrent tasks ---
 
@@ -369,9 +388,12 @@ async def await_dual_approval(
     # Record the decision (idempotent — UI handler may have already called decide())
     manager.decide(batch_id, approved, user_id)
 
+    # Read per-item selections set by decide() — None if Slack won or no selection made.
+    approved_items = pending.approved_items
+
     # Record approval wait duration (lazy import to avoid circular dependency)
     from errander.observability.metrics import APPROVAL_WAIT
     wait_seconds = (datetime.now(tz=UTC) - wait_start).total_seconds()
     APPROVAL_WAIT.observe(wait_seconds)
 
-    return approved, user_id
+    return approved, user_id, approved_items

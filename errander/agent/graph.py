@@ -38,7 +38,7 @@ from errander.execution.os_detection import detect_os
 from errander.models.actions import ACTION_RISK_TIERS, ActionStatus, ActionType, RiskTier
 from errander.models.events import AuditEvent, EventType
 from errander.observability.metrics import BATCH_DURATION
-from errander.safety.approval import ApprovalManager, await_dual_approval
+from errander.safety.approval import ApprovalManager, BatchApprovalResult, await_dual_approval
 from errander.scheduling.windows import (
     MaintenanceWindow,
     check_window_from_config,
@@ -196,6 +196,10 @@ class BatchGraphState(TypedDict, total=False):
     # Built from env_schema.actions at batch init time and used by plan_vm_node
     # to restrict prioritize_actions() to only actions the operator has opted in to.
     enabled_actions: list[str]
+
+    # Per-item approval selections from the UI (vm_id → approved packages list).
+    # None / missing = operator approved all items (Slack path or all-or-nothing UI).
+    operator_approved_packages: dict[str, list[dict[str, str]]]
 
 
 # --- Node functions ---
@@ -1360,6 +1364,29 @@ def _format_plan_for_approval(
     return "\n".join(lines)
 
 
+def _filter_patching_packages(
+    actions: list[dict[str, object]],
+    approved_pkgs: list[dict[str, str]],
+) -> list[dict[str, object]]:
+    """Return a copy of actions with patching preview filtered to operator-approved packages."""
+    approved_names = {p["name"] for p in approved_pkgs if p.get("name")}
+    result: list[dict[str, object]] = []
+    for action in actions:
+        if str(action.get("action_type", "")) == "patching" and approved_names:
+            raw_preview = action.get("preview") or {}
+            new_preview = dict(raw_preview) if isinstance(raw_preview, dict) else {}
+            packages = new_preview.get("packages")
+            if isinstance(packages, list):
+                new_preview["packages"] = [
+                    p for p in packages
+                    if isinstance(p, dict) and p.get("name") in approved_names
+                ]
+            result.append({**action, "preview": new_preview})
+        else:
+            result.append(action)
+    return result
+
+
 async def approval_gate_node(
     state: BatchGraphState,
     *,
@@ -1395,6 +1422,7 @@ async def approval_gate_node(
     plan_id = state.get("plan_id", "unknown")
     plan_hash = state.get("plan_hash", "")
     dry_run = state.get("dry_run", True)
+    approved_items: list[dict[str, object]] | None = None  # set by UI per-item approval path
 
     max_tier = _max_risk_tier_from_plans(vm_plans)
 
@@ -1492,16 +1520,19 @@ async def approval_gate_node(
             batch_id, env_policy, max_tier.value,
             " [deferred re-approval]" if is_deferred else "",
         )
-        approved, approver = await await_dual_approval(
+        _approval_result: BatchApprovalResult = await await_dual_approval(
             approval_manager, slack_client, batch_id, plan_summary,
             timeout_seconds=approval_timeout_seconds,
             poll_interval_seconds=approval_poll_interval_seconds,
+            vm_plans=vm_plans,
         )
+        approved, approver, approved_items = _approval_result
         logger.info(
-            "Batch %s %s by %s",
+            "Batch %s %s by %s%s",
             batch_id,
             "approved" if approved else "rejected",
             approver or "timeout",
+            f" (per-item selection: {len(approved_items)} action(s))" if approved_items else "",
         )
     else:
         approved = True
@@ -1557,7 +1588,20 @@ async def approval_gate_node(
             )
             return {"approved": True, "deferred": True}
 
-    return {"approved": approved, "deferred": False}
+    # Build per-VM approved package dict from UI per-item selections.
+    # Only populated when the UI collected per-item choices; None approved_items
+    # (Slack path) means all planned packages are approved and patching runs as-is.
+    op_pkgs: dict[str, list[dict[str, str]]] = {}
+    if approved_items:
+        for _item in approved_items:
+            if _item.get("action_type") == "patching" and isinstance(_item.get("packages"), list):
+                pkgs_raw = _item["packages"]
+                if isinstance(pkgs_raw, list):
+                    op_pkgs[str(_item["vm_id"])] = [
+                        p for p in pkgs_raw if isinstance(p, dict)
+                    ]
+
+    return {"approved": approved, "deferred": False, "operator_approved_packages": op_pkgs}
 
 
 async def verify_plan_hash_node(state: BatchGraphState) -> dict[str, Any]:
@@ -1889,6 +1933,20 @@ def make_wave_dispatcher(
             str(p["vm_id"]): list(p.get("planned_actions") or [])  # type: ignore[call-overload]
             for p in _effective_vm_plans(state)
         }
+
+        # Per-item package selections from UI — filter patching actions when present.
+        _raw_op_pkgs = state.get("operator_approved_packages") or {}
+        op_pkgs: dict[str, list[dict[str, str]]] = {
+            str(k): [p for p in v if isinstance(p, dict)]
+            for k, v in _raw_op_pkgs.items()
+            if isinstance(v, list)
+        }
+        if op_pkgs:
+            vm_id_to_approved_actions = {
+                vm_id: _filter_patching_packages(actions, op_pkgs[vm_id])
+                if vm_id in op_pkgs else actions
+                for vm_id, actions in vm_id_to_approved_actions.items()
+            }
 
         sends: list[Send] = []
         for t in wave_targets:

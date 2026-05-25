@@ -1,5 +1,20 @@
 # Errander-AI Command Log
 
+## Approval UI overhaul — per-item approval + decision reasoning (2026-05-25)
+
+```bash
+# Implement per-item approval cards, Decision Reasoning section, username fix
+# Changes: approval.py, graph.py, metrics.py + 4 test files (3-tuple unpack)
+uv run pytest tests/safety/test_approval.py tests/agent/test_graph.py tests/agent/test_plan_apply_flow.py tests/safety/test_deferred_artifact.py -q --tb=short
+# Fix UnboundLocalError in approval_gate_node (approved_items init) + mypy dict() overload + ruff F541/E501/SIM105
+uv run pytest -q --tb=short -x    # 126 tests passing
+uv run ruff check errander/safety/approval.py errander/agent/graph.py errander/observability/metrics.py
+uv run mypy errander/safety/approval.py errander/agent/graph.py errander/observability/metrics.py
+git add errander/safety/approval.py errander/agent/graph.py errander/observability/metrics.py tests/safety/test_approval.py tests/agent/test_graph.py tests/agent/test_plan_apply_flow.py tests/safety/test_deferred_artifact.py STATUS.md tasks/todo.md tasks/lessons.md docs/command-log.md
+git commit -m "feat: per-item approval UI, Decision Reasoning section, operator username in history"
+git push origin main
+```
+
 ## Doc sync — README stale sections + login + UI bind (2026-05-25)
 
 ```bash

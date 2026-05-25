@@ -178,7 +178,7 @@ class TestApprovalGatePolicies:
         mgr = self._make_manager_mock()
 
         with patch("errander.agent.graph.await_dual_approval", new_callable=AsyncMock) as mock_approval:
-            mock_approval.return_value = (True, "ops-team")
+            mock_approval.return_value = (True, "ops-team", None)
             result = await approval_gate_node(state, approval_manager=mgr)
 
         mock_approval.assert_awaited_once()
@@ -238,7 +238,7 @@ class TestApprovalGatePolicies:
         mgr = self._make_manager_mock()
 
         with patch("errander.agent.graph.await_dual_approval", new_callable=AsyncMock) as mock_approval:
-            mock_approval.return_value = (True, "ops-on-call")
+            mock_approval.return_value = (True, "ops-on-call", None)
             result = await approval_gate_node(
                 state, approval_manager=mgr, require_live_approval=True,
             )
@@ -258,7 +258,7 @@ class TestApprovalGatePolicies:
         mgr = self._make_manager_mock()
 
         with patch("errander.agent.graph.await_dual_approval", new_callable=AsyncMock) as mock_approval:
-            mock_approval.return_value = (True, "ops-team")
+            mock_approval.return_value = (True, "ops-team", None)
             await approval_gate_node(state, approval_manager=mgr)
 
         mock_approval.assert_awaited_once()
@@ -275,7 +275,7 @@ class TestApprovalGatePolicies:
         mgr = self._make_manager_mock()
 
         with patch("errander.agent.graph.await_dual_approval", new_callable=AsyncMock) as mock_approval:
-            mock_approval.return_value = (False, None)
+            mock_approval.return_value = (False, None, None)
             result = await approval_gate_node(state, approval_manager=mgr)
 
         mock_approval.assert_awaited_once()
@@ -328,7 +328,7 @@ class TestApprovalGatePolicies:
         mgr = self._make_manager_mock()
 
         with patch("errander.agent.graph.await_dual_approval", new_callable=AsyncMock) as mock_approval:
-            mock_approval.return_value = (True, "ops-on-call")
+            mock_approval.return_value = (True, "ops-on-call", None)
             result = await approval_gate_node(
                 state, approval_manager=mgr,
                 require_live_approval=False,      # caller tries to disable HITL

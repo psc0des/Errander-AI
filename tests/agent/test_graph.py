@@ -683,7 +683,7 @@ class TestApprovalGateDeferred:
                 patch("errander.agent.graph.await_dual_approval", new_callable=AsyncMock) as mock_approval,
             ):
                 mock_dt.now.return_value = monday_10am
-                mock_approval.return_value = (True, "test-approver")
+                mock_approval.return_value = (True, "test-approver", None)
                 result = await approval_gate_node(
                     state,
                     approval_manager=mgr,
@@ -746,7 +746,7 @@ class TestApprovalGateDeferred:
                 patch("errander.agent.graph.await_dual_approval", new_callable=AsyncMock) as mock_approval,
             ):
                 mock_dt.now.return_value = monday_10am
-                mock_approval.return_value = (True, "test-approver")
+                mock_approval.return_value = (True, "test-approver", None)
                 await approval_gate_node(
                     state,
                     approval_manager=mgr,
@@ -789,7 +789,7 @@ class TestApprovalGateDeferred:
                     patch("errander.agent.graph.await_dual_approval", new_callable=AsyncMock) as mock_approval,
                 ):
                     mock_dt.now.return_value = monday_10am
-                    mock_approval.return_value = (True, "test-approver")
+                    mock_approval.return_value = (True, "test-approver", None)
                     await approval_gate_node(
                         state,
                         approval_manager=mgr,

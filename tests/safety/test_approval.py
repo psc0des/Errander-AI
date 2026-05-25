@@ -357,7 +357,7 @@ class TestAwaitDualApproval:
 
         asyncio.create_task(_ui_decides())
 
-        approved, user = await await_dual_approval(
+        approved, user, _ = await await_dual_approval(
             manager, client, "b-ui", "report",
             timeout_seconds=5,
             poll_interval_seconds=0,
@@ -377,7 +377,7 @@ class TestAwaitDualApproval:
             {"name": APPROVE_REACTION, "users": ["U_SLACK"], "count": 1},
         ])
 
-        approved, user = await await_dual_approval(
+        approved, user, _ = await await_dual_approval(
             manager, client, "b-slack", "report",
             timeout_seconds=5,
             poll_interval_seconds=0,
@@ -397,7 +397,7 @@ class TestAwaitDualApproval:
         # Empty reactions — no decision
         client.get_reactions = AsyncMock(return_value=[])
 
-        approved, user = await await_dual_approval(
+        approved, user, _ = await await_dual_approval(
             manager, client, "b-timeout", "report",
             timeout_seconds=0,
             poll_interval_seconds=0,
@@ -419,7 +419,7 @@ class TestAwaitDualApproval:
 
         asyncio.create_task(_ui_decides())
 
-        approved, user = await await_dual_approval(
+        approved, user, _ = await await_dual_approval(
             manager, None, "b-no-slack", "report",
             timeout_seconds=5,
             poll_interval_seconds=0,
@@ -442,7 +442,7 @@ class TestAwaitDualApproval:
         asyncio.create_task(_ui_decides())
 
         # Should NOT raise — Slack error is logged, UI approval proceeds
-        approved, user = await await_dual_approval(
+        approved, user, _ = await await_dual_approval(
             manager, client, "b-slack-err", "report",
             timeout_seconds=5,
             poll_interval_seconds=0,
@@ -462,7 +462,7 @@ class TestAwaitDualApproval:
 
         asyncio.create_task(_ui_decides())
 
-        approved, user = await await_dual_approval(
+        approved, user, _ = await await_dual_approval(
             manager, None, "b-ui-only", "report",
             timeout_seconds=5,
             poll_interval_seconds=0,
@@ -500,7 +500,7 @@ class TestAwaitDualApproval:
             {"name": REJECT_REACTION, "users": ["U_NO"], "count": 1},
         ])
 
-        approved, user = await await_dual_approval(
+        approved, user, _ = await await_dual_approval(
             manager, client, "b-rej", "report",
             timeout_seconds=5, poll_interval_seconds=0,
         )

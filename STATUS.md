@@ -4,6 +4,24 @@
 2026-05-25
 
 ## Current Phase
+**Approval UI overhaul — per-item approval, decision reasoning, username fix, event badges (2026-05-25, COMPLETE).**
+
+### What changed
+- `errander/safety/approval.py` — `PendingApproval` gains `vm_plans` + `approved_items` fields; `decide()` accepts `approved_items`; `await_dual_approval` returns 3-tuple `(approved, user, approved_items)`
+- `errander/agent/graph.py` — `approval_gate_node` passes `vm_plans` to approval and builds `operator_approved_packages` dict; `dispatch_current_wave` filters patching package lists to only operator-selected packages before injecting into VMGraphState
+- `errander/observability/metrics.py` — per-item approval card UI with per-package checkboxes (select all/none); Decision Reasoning collapsible section showing LLM vs fallback per AI decision; `user_id="ui"` replaced by actual logged-in username; event badge map expanded to 35 event types; `bk-warn` CSS class added
+- 5 test files — mock return values updated from 2-tuple to 3-tuple; 126 tests pass
+
+### Files changed (2026-05-25 — approval UI overhaul)
+- `errander/safety/approval.py`
+- `errander/agent/graph.py`
+- `errander/observability/metrics.py`
+- `tests/safety/test_approval.py`
+- `tests/agent/test_graph.py`
+- `tests/agent/test_plan_apply_flow.py`
+- `tests/safety/test_deferred_artifact.py`
+
+## Previous Phase
 **Doc sync — README stale sections + login page + UI bind + systemd key fix (2026-05-25, COMPLETE).** Working tree clean.
 
 ### Files changed (2026-05-25 — doc sync)

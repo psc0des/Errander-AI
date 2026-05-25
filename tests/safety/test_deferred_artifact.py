@@ -157,7 +157,7 @@ async def test_approval_gate_defers_with_artifact(tmp_path: Path) -> None:
     from errander.safety.approval import ApprovalManager
 
     approval_manager = AsyncMock(spec=ApprovalManager)
-    approval_manager.await_approval = AsyncMock(return_value=(True, "alice"))
+    approval_manager.await_approval = AsyncMock(return_value=(True, "alice", None))
 
     vm_plans = [{"vm_id": "vm1", "planned_actions": [{"action_type": "patching", "risk_tier": "medium"}]}]
 
@@ -180,7 +180,7 @@ async def test_approval_gate_defers_with_artifact(tmp_path: Path) -> None:
             "errander.agent.graph.next_window_open",
             return_value=datetime.now(tz=UTC) + timedelta(hours=2),
         ),
-        patch("errander.agent.graph.await_dual_approval", new=AsyncMock(return_value=(True, "alice"))),
+        patch("errander.agent.graph.await_dual_approval", new=AsyncMock(return_value=(True, "alice", None))),
     ):
         await approval_gate_node(
             state,
@@ -234,7 +234,7 @@ async def test_approval_gate_deferred_audit_event(tmp_path: Path) -> None:
             "errander.agent.graph.next_window_open",
             return_value=datetime.now(tz=UTC) + timedelta(hours=2),
         ),
-        patch("errander.agent.graph.await_dual_approval", new=AsyncMock(return_value=(True, "bob"))),
+        patch("errander.agent.graph.await_dual_approval", new=AsyncMock(return_value=(True, "bob", None))),
     ):
         await approval_gate_node(
             state,

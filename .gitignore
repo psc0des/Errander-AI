@@ -63,3 +63,6 @@ demo/observability-demo-env/
 errander-*.png
 tmp_*.yaml
 approvals_text.txt
+
+# Demo deployment infrastructure (local only — contains real IPs/keys/configs)
+example/Infrastructure/

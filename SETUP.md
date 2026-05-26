@@ -115,7 +115,60 @@ The web UI and metrics endpoint run on port 9090. To access it from your laptop,
 
 ## Step 1 — Install the agent on the controller
 
-### Windows controller
+### Step 1a — Choose your controller user *(Linux only)*
+
+> **Windows:** skip to [Step 1b](#step-1b--clone-and-install) — the agent runs as your current Windows user.
+
+Before cloning the repo, decide which Linux user account will own and run the Errander-AI agent. Everything from here onwards — the SSH key, the repo, the SQLite database, the systemd service — belongs to this user.
+
+| Option | When to use |
+|---|---|
+| **Option A — your existing admin user** | Dev / single-operator / getting started fast |
+| **Option B — dedicated `errander-agent` user** | Production / shared controllers / clean separation |
+
+> **Two users, two machines — don't confuse them:**
+> - **Controller:** `errander-agent` (or your admin user) — runs the agent process, holds the SSH private key
+> - **Each target VM:** `errander` — a separate account created in Step 2 that receives SSH connections from the controller
+>
+> These are unrelated accounts on different machines. The names look similar but serve completely different roles.
+
+---
+
+**Option A — use your existing admin user**
+
+No user creation needed. The agent process needs only:
+
+| Resource | Required level |
+|---|---|
+| The cloned repo directory | Owner — read + write (for `errander.sqlite`, `known_hosts`, config) |
+| `~/.ssh/errander_prod` (created in Step 2) | `chmod 600`, owned by this user — SSH rejects keys with loose permissions |
+| Outbound network | Standard — no special OS permission needed (see [Network ports](#network-ports)) |
+
+**The agent never uses sudo on the controller.** All privileged work happens on target VMs over SSH. Continue to [Step 1b](#step-1b--clone-and-install) and run everything as your current user.
+
+---
+
+**Option B — create a dedicated `errander-agent` user**
+
+Run the following **as your admin user** (these commands need sudo):
+
+```bash
+# 1. Create the service account
+sudo useradd -m -s /bin/bash errander-agent
+sudo mkdir -p /home/errander-agent/.ssh
+sudo chmod 700 /home/errander-agent/.ssh
+sudo chown -R errander-agent:errander-agent /home/errander-agent/.ssh
+```
+
+`errander-agent` does **not** need sudo on the controller — do not add it to sudoers.
+
+Continue to Step 1b. The bootstrap and clone steps below will tell you when to switch to this user.
+
+---
+
+### Step 1b — Clone and install
+
+#### Windows controller
 
 **Recommended — run the bootstrap script from PowerShell.**
 It installs git (via winget), uv, and Python 3.12, clones the repo, and verifies the install. No admin rights required.
@@ -148,24 +201,43 @@ uv run python -c "import errander; print('OK')"
 
 </details>
 
-### Linux controller
+#### Linux controller
 
-**Recommended — run the bootstrap script.**
-It detects your distro (Ubuntu, Debian, RHEL, CentOS, Oracle Linux, Fedora),
-installs all prerequisites, and verifies the install.
+**Step 1 of 2 — run bootstrap as your admin user** (needs sudo to install system packages):
 
 ```bash
+# As your admin user (the one with sudo)
 git clone https://github.com/psc0des/Errander-AI.git errander
 bash errander/scripts/bootstrap.sh
 ```
 
-Once complete, **cd into the repo directory** before continuing:
+> **git clone asks for credentials?** This is a public repo — credentials should not be required for HTTPS clone. If you previously authenticated via GitHub CLI (`gh auth login`), run `gh auth setup-git` once to wire `gh`'s token into git's credential system, then retry the clone.
 
+The bootstrap script detects your distro (Ubuntu, Debian, RHEL, CentOS, Oracle Linux, Fedora), installs Python 3.12 + uv, and verifies the install.
+
+**Step 2 of 2 — move the repo to the right owner and switch user:**
+
+*Option A (admin user):*
 ```bash
 cd errander
+# Continue all remaining steps as this user
 ```
 
-**Skip to Step 2** — the script handles everything else in Step 1.
+*Option B (dedicated `errander-agent` user):*
+```bash
+# Move the cloned repo to errander-agent's home
+sudo mv errander /home/errander-agent/errander
+sudo chown -R errander-agent:errander-agent /home/errander-agent/errander
+
+# Switch to the service user — all remaining steps run as errander-agent
+sudo su - errander-agent
+cd /home/errander-agent/errander
+
+# Install Python dependencies as errander-agent
+uv sync --extra dev
+```
+
+**Skip to Step 2** — bootstrap has already handled everything else.
 
 <details>
 <summary>Manual installation (reference / fallback)</summary>
@@ -196,63 +268,6 @@ uv run python -c "import errander; print('OK')"
 
 ---
 
-## Step 1b — Create a controller user *(Linux controller only)*
-
-> **Skip this step if you are on Windows** — the agent runs as your Windows user account.
-
-Decide which Linux user account will own and run the Errander-AI agent on the controller. Two options:
-
-| Option | When to use | Notes |
-|---|---|---|
-| **Your existing admin user** | Dev / single-operator setups | Simplest — no extra setup. Use the account you already SSH in with. |
-| **Dedicated `errander-agent` user** | Production / shared controllers | Clean separation — the agent process, SSH key, and repo all belong to one service account. |
-
-**Option A — use your existing admin user (simplest)**
-
-No action needed. Continue to Step 2 and run all commands as your current user.
-
-The agent process needs only these permissions on the controller — nothing more:
-
-**Local filesystem**
-
-| What | Why | Required level |
-|---|---|---|
-| Read + write the repo directory | Config files, `errander.sqlite` audit DB, `known_hosts` | Owner of the cloned repo (standard if you cloned it) |
-| Read the SSH private key (`~/.ssh/errander_prod`) | Outbound SSH to target VMs | `chmod 600`, owned by this user — SSH refuses keys with loose permissions |
-
-**Network** — see the [Network ports](#network-ports) table in Prerequisites for the full list. In short: the controller needs outbound SSH to target VMs (port 22) and outbound HTTPS for Slack/LLM (port 443). The web UI listens on port 9090 inbound. Self-hosted vLLM adds outbound port 8000 to the GPU VM.
-
-**The agent does not need sudo on the controller.** It never runs privileged commands locally — all privileged work happens on target VMs over SSH (that is what Step 3's sudoers file covers). Your admin user typically has sudo, but the agent never uses it.
-
-**Option B — create a dedicated `errander-agent` user**
-
-Run on the controller as your admin user:
-
-```bash
-sudo useradd -m -s /bin/bash errander-agent
-sudo mkdir -p /home/errander-agent/.ssh
-sudo chmod 700 /home/errander-agent/.ssh
-sudo chown -R errander-agent:errander-agent /home/errander-agent/.ssh
-```
-
-Clone the repo into this user's home and give it ownership:
-
-```bash
-sudo -u errander-agent git clone https://github.com/psc0des/Errander-AI.git /home/errander-agent/errander
-```
-
-All remaining setup steps (Steps 2–9) must then be run **as `errander-agent`**:
-
-```bash
-sudo -u errander-agent bash        # switch to the service user
-# or: sudo su - errander-agent
-cd /home/errander-agent/errander
-```
-
-> **Note:** `errander-agent` does **not** need sudo on the controller. The agent only needs sudo on the *target* VMs (Step 3), which it accesses over SSH as the `errander` user.
-
----
-
 ## Step 2 — Set up SSH keys
 
 Errander-AI connects to target VMs using key-based SSH only. No passwords are ever used.
@@ -266,7 +281,7 @@ Your laptop → (SSH) → Master VM → (SSH, private IP) → Target VM
 
 ### On the Master VM
 
-> **Which user?** Run all commands in this step as the **same user who will run the Errander-AI agent** — typically your admin/deploy user (e.g. `azureuser`, `ubuntu`, `ec2-user`). Do **not** run as `root`. The `~` in `~/.ssh/errander_prod` expands to that user's home directory, and the agent process must be able to read the key file. If you generate the key as `root` but run the agent as `azureuser`, the agent cannot read `/root/.ssh/errander_prod` and every SSH connection will fail.
+> **Which user?** Run all commands in this step as the **controller user you chose in Step 1a** — your existing admin user (Option A) or `errander-agent` (Option B). Do **not** run as `root`. The `~` in `~/.ssh/errander_prod` expands to that user's home directory. If you generate the key as a different user than the one running the agent, the agent cannot read the key and every SSH connection will fail.
 
 **1. Generate the key pair**
 

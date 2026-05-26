@@ -81,8 +81,8 @@ Everything the controller needs to reach, and what needs to reach the controller
 | Slack API (`slack.com`) | 443 (HTTPS) | Optional | Only if Slack notifications are enabled. Outbound HTTPS is allowed by default |
 | Cloud LLM API (OpenAI / Groq / Azure AI Foundry) | 443 (HTTPS) | Optional | Only if using a cloud LLM provider. Outbound HTTPS is allowed by default |
 | Self-hosted vLLM (private IP, GPU VM) | 8000 (HTTP) | Optional | Only if using self-hosted vLLM. Same-VNet: needs NSG allow rule on the GPU VM inbound |
-| Prometheus (private IP) | 9090 (HTTP) | Optional | Only if Prometheus integration is enabled (`ERRANDER_PROMETHEUS_BASE_URL`) |
-| ELK / Elasticsearch (private IP) | 9200 (HTTP) | Optional | Only if ELK integration is enabled (`ERRANDER_ELK_BASE_URL`) |
+| Your existing Prometheus server (private IP) | 9090 (HTTP) | Optional | Errander reads metrics from a Prometheus instance you already have — it does not install or run Prometheus itself. Set `ERRANDER_PROMETHEUS_BASE_URL` to point at it |
+| Your existing ELK / Elasticsearch server (private IP) | 9200 (HTTP) | Optional | Errander reads logs from an Elasticsearch instance you already have — it does not install or run ELK itself. Set `ERRANDER_ELK_BASE_URL` to point at it |
 
 **Inbound to the controller**
 

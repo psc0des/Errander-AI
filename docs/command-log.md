@@ -1,5 +1,14 @@
 # Errander-AI Command Log
 
+## README — explicit v1 target scope table (2026-05-26)
+
+```bash
+# Edit README.md — add v1 target scope table to "What Errander-AI Is — and Is Not"
+git add README.md STATUS.md tasks/todo.md docs/command-log.md
+git commit -m "docs: add v1 target scope table — serverless/managed cloud/k8s explicitly out of scope"
+git push origin main
+```
+
 ## add-target.sh — add target VMs without re-running configure.sh (2026-05-26)
 
 ```bash

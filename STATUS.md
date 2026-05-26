@@ -4,6 +4,14 @@
 2026-05-26
 
 ## Current Phase
+**README — explicit v1 target scope table (serverless/managed cloud/k8s/PaaS) (2026-05-26, COMPLETE).**
+
+Added a "v1 target scope" table to the "What Errander-AI Is — and Is Not" section in README.md. Table lists 8 target categories with explicit ✅/❌ support status. Makes the SSH-only constraint visible to new users without requiring them to read CLAUDE.md or ask a colleague.
+
+### Files changed (2026-05-26 — scope table)
+- `README.md` — v1 target scope table after "is not" bullet list
+
+## Previous Phase
 **add-target.sh — add target VMs without re-running configure.sh (2026-05-26, COMPLETE).**
 
 New focused script for adding VMs to an existing installation. Leaves `.env` untouched. Parses inventory with PyYAML, shows current environments + VMs, prompts for host/name/os_family per new VM, optionally verifies SSH, appends correctly, writes back. SETUP.md gets a new "Adding target VMs after initial setup" section with a configure.sh vs add-target.sh decision table.

@@ -55,6 +55,23 @@ Errander-AI is **not**:
 - A kernel patching tool — kernel operations are hardcoded out of scope
 - An arbitrary-command runner — the action set is fixed and audited; the LLM never generates shell commands and never touches a terminal
 
+**v1 target scope — what it can and cannot reach:**
+
+Errander-AI connects to targets over SSH. The target must be a Linux host OS you can SSH into. This means:
+
+| Target type | v1 support | Notes |
+|---|---|---|
+| Linux VMs (Ubuntu / Debian / RHEL) | ✅ Fully supported | The primary use case |
+| Bare-metal Linux servers | ✅ Supported | Same SSH + sudoers model |
+| Docker containers (on a Linux VM) | ✅ Supported | Via the docker_hygiene sub-graph on the host |
+| **Serverless functions** (Lambda, Azure Functions, Cloud Run, GCF) | ❌ Not supported | No SSH surface — requires cloud provider API |
+| **Managed cloud services** (RDS, Azure SQL, DynamoDB, ElastiCache, Cosmos DB) | ❌ Not supported | No OS access — requires cloud SDK |
+| **Container orchestration** (Kubernetes, ECS, GKE, AKS) | ❌ Not supported | Requires Kubernetes API, not systemd + SSH |
+| **PaaS runtimes** (App Service, Cloud Run, Heroku dynos) | ❌ Not supported | No host OS access |
+| Windows VMs | ❌ Not supported | Action set assumes POSIX tools and apt/dnf/yum |
+
+If your fleet is primarily serverless or managed cloud services, v1 covers only the VMs that still exist alongside them. The supervised-agentic pattern (assess → approve → execute → audit) is architecturally sound for cloud resources, but the transport and action implementations would need cloud SDK integrations — that is v2+ scope, not a config flag.
+
 ---
 
 ## How It Works

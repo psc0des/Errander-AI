@@ -1,3 +1,11 @@
+## README — explicit v1 target scope table (2026-05-26, COMPLETE)
+
+- [x] Added "v1 target scope" table to "What Errander-AI Is — and Is Not" section
+- [x] 8 target categories: Linux VMs ✅, bare-metal ✅, Docker-on-VM ✅, serverless ❌, managed cloud ❌, k8s ❌, PaaS ❌, Windows ❌
+- [x] Closing paragraph: pattern is sound for cloud, but v2+ scope not a config flag
+
+---
+
 ## add-target.sh — add target VMs without re-running configure.sh (2026-05-26, COMPLETE)
 
 - [x] `errander/config/add_target.py` — interactive flow: show environments + VMs, pick env by number/name, prompt host/name/os_family, optional SSH verify, append + save

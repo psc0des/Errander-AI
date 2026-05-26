@@ -1,5 +1,13 @@
 # Errander-AI — Lessons Learned
 
+## 2026-05-26 — Re-running a full setup wizard to add one target is disruptive; use a focused script
+
+`configure.sh` is a 5-step wizard that overwrites `.env` and `inventory.yaml`. Re-running it just to add a VM forces the user through LLM credential re-entry, Slack config, Prometheus, ELK, and UI password prompts — any fat-fingered answer silently overwrites working config. The script has a partial guard ("Keep these VMs? Y/n") but doesn't prevent `.env` being rewritten.
+
+**Why:** The full wizard is designed for first-time setup where all fields are unknown. For a day-2 operation (add a VM), the only unknowns are: host, name, os_family. Everything else is already correct in `.env` and the environment block.
+
+**How to apply:** When a user asks "can I re-run X to do Y?", check whether X does more than Y requires. If so, build a focused script that does exactly Y and leaves everything else untouched. The pattern: thin bash wrapper → Python module → reads existing state, prompts for only the new data, writes back surgically.
+
 ## 2026-05-25 — Threading a return value through the call stack requires updating every unpack site
 
 `await_dual_approval()` was changed from returning a 2-tuple `(bool, str | None)` to a 3-tuple `(bool, str | None, list | None)`. The code change was straightforward, but every test that unpacked the result with `approved, user = await await_dual_approval(...)` and every mock that returned `(True, "name")` silently broke. Seven test files needed updates across 15 call sites.

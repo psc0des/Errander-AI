@@ -1,9 +1,19 @@
 # Errander-AI — Project Status
 
 ## Last Updated
-2026-05-25
+2026-05-26
 
 ## Current Phase
+**add-target.sh — add target VMs without re-running configure.sh (2026-05-26, COMPLETE).**
+
+New focused script for adding VMs to an existing installation. Leaves `.env` untouched. Parses inventory with PyYAML, shows current environments + VMs, prompts for host/name/os_family per new VM, optionally verifies SSH, appends correctly, writes back. SETUP.md gets a new "Adding target VMs after initial setup" section with a configure.sh vs add-target.sh decision table.
+
+### Files changed (2026-05-26 — add-target.sh)
+- `errander/config/add_target.py` (NEW) — interactive add-target flow
+- `scripts/add-target.sh` (NEW) — thin bash wrapper
+- `SETUP.md` — "Adding target VMs after initial setup" section before Step 6
+
+## Previous Phase
 **Approval UI overhaul — per-item approval, decision reasoning, username fix, event badges (2026-05-25, COMPLETE).**
 
 ### What changed

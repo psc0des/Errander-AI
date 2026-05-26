@@ -902,6 +902,42 @@ environments:
 
 ---
 
+## Adding target VMs after initial setup
+
+Once Errander-AI is configured, use `scripts/add-target.sh` to add new VMs without touching `.env` or re-running the full setup wizard.
+
+```bash
+bash scripts/add-target.sh
+```
+
+The script reads your existing `inventory.yaml`, shows your current environments and VMs, and walks you through adding new ones:
+
+1. Choose which environment to add to (shown with current VM count)
+2. Enter hostname/IP, VM name, and OS family for each new VM
+3. Optionally verify SSH connectivity immediately
+4. Writes the new VM block into `inventory.yaml` under the correct environment — your `.env` is never touched
+
+**After running the script**, complete the usual per-target setup on each new VM:
+
+| Step | Command / action |
+|---|---|
+| SSH setup | Create `errander` user + install public key — [Step 2](#step-2--set-up-ssh-keys) |
+| Sudo permissions | Grant passwordless sudo — [Step 3](#step-3--configure-target-vms-sudo-permissions) |
+| Docker hygiene *(if env uses it)* | Install wrappers — [Optional: Docker hygiene](#optional-docker-hygiene) |
+| Service restart *(if env uses it)* | Install wrapper + update allowlist — [Optional: Service restart](#optional-service-restart) |
+| Verify | `uv run python -m errander --check-targets <env>` |
+| Pin host key | `uv run python -m errander --bootstrap-known-hosts <env>` |
+
+> **When to use `configure.sh` vs `add-target.sh`**
+>
+> | Situation | Use |
+> |---|---|
+> | Adding VMs to an existing install | `bash scripts/add-target.sh` |
+> | Changing LLM, Slack, or UI credentials | `bash scripts/configure.sh` |
+> | First-time setup from scratch | `bash scripts/configure.sh` |
+
+---
+
 ## Step 6 — Verify everything
 
 Run these in order:

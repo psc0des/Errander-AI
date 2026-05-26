@@ -1,5 +1,16 @@
 # Errander-AI Command Log
 
+## add-target.sh — add target VMs without re-running configure.sh (2026-05-26)
+
+```bash
+# Verify add_target module imports cleanly
+uv run python -c "from errander.config.add_target import main; print('import OK')"
+# Stage and commit
+git add errander/config/add_target.py scripts/add-target.sh SETUP.md STATUS.md tasks/todo.md tasks/lessons.md docs/command-log.md
+git commit -m "feat: add-target.sh — add VMs to existing inventory without re-running configure.sh"
+git push origin main
+```
+
 ## Approval UI overhaul — per-item approval + decision reasoning (2026-05-25)
 
 ```bash

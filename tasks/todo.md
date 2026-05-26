@@ -1,3 +1,11 @@
+## add-target.sh — add target VMs without re-running configure.sh (2026-05-26, COMPLETE)
+
+- [x] `errander/config/add_target.py` — interactive flow: show environments + VMs, pick env by number/name, prompt host/name/os_family, optional SSH verify, append + save
+- [x] `scripts/add-target.sh` — thin bash wrapper (cd to repo root, guard for inventory.yaml, exec uv run)
+- [x] `SETUP.md` — "Adding target VMs after initial setup" section with configure.sh vs add-target.sh decision table
+
+---
+
 ## Approval UI overhaul — per-item approval + decision reasoning (2026-05-25, COMPLETE)
 
 - [x] `errander/safety/approval.py` — `BatchApprovalResult` 3-tuple type; `vm_plans` + `approved_items` on `PendingApproval`; updated `register()`, `decide()`, `await_dual_approval()`

@@ -196,6 +196,16 @@ Decide which Linux user account will own and run the Errander-AI agent on the co
 
 No action needed. Continue to Step 2 and run all commands as your current user.
 
+The agent process needs only these permissions on the controller — nothing more:
+
+| What | Why | Required level |
+|---|---|---|
+| Read + write the repo directory | Config files, `errander.sqlite` audit DB, `known_hosts` | Owner of the cloned repo (standard if you cloned it) |
+| Read the SSH private key (`~/.ssh/errander_prod`) | Outbound SSH to target VMs | File must be `chmod 600` and owned by this user |
+| Outbound network (HTTPS + SSH) | Slack API, LLM endpoint, SSH to target VMs | No special OS permission — standard for any user |
+
+**The agent does not need sudo on the controller.** It never runs privileged commands locally — all privileged work happens on target VMs over SSH (that is what Step 3's sudoers file covers). Your admin user typically has sudo, but the agent never uses it.
+
 **Option B — create a dedicated `errander-agent` user**
 
 Run on the controller as your admin user:

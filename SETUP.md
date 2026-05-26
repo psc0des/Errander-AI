@@ -71,12 +71,27 @@ missing binaries.
 
 ### Network ports
 
-| Connection | Port | Direction | Notes |
+Everything the controller needs to reach, and what needs to reach the controller:
+
+**Outbound from the controller (open by default on most cloud VMs)**
+
+| Destination | Port | Required? | Notes |
 |---|---|---|---|
-| Master VM → Target VM | 22 (SSH) | Outbound from Master | Azure: same-VNet VMs reach each other on port 22 by default — no NSG rule needed |
-| Master VM → LLM API | 443 (HTTPS) | Outbound from Master | Azure Foundry, OpenAI, Groq — outbound HTTPS is allowed by default |
-| Your laptop → Master VM | 22 (SSH) | Inbound to Master | Already open if you SSH to it today |
-| Your laptop → Master VM | 9090 (Web UI) | Inbound to Master | **Action required** — see Azure NSG note below |
+| Target VMs (private IP) | 22 (SSH) | **Required** | Same-VNet: allowed by default. Cross-VNet/peered: may need NSG rule |
+| Slack API (`slack.com`) | 443 (HTTPS) | Optional | Only if Slack notifications are enabled. Outbound HTTPS is allowed by default |
+| Cloud LLM API (OpenAI / Groq / Azure AI Foundry) | 443 (HTTPS) | Optional | Only if using a cloud LLM provider. Outbound HTTPS is allowed by default |
+| Self-hosted vLLM (private IP, GPU VM) | 8000 (HTTP) | Optional | Only if using self-hosted vLLM. Same-VNet: needs NSG allow rule on the GPU VM inbound |
+| Prometheus (private IP) | 9090 (HTTP) | Optional | Only if Prometheus integration is enabled (`ERRANDER_PROMETHEUS_BASE_URL`) |
+| ELK / Elasticsearch (private IP) | 9200 (HTTP) | Optional | Only if ELK integration is enabled (`ERRANDER_ELK_BASE_URL`) |
+
+**Inbound to the controller**
+
+| Source | Port | Required? | Notes |
+|---|---|---|---|
+| Your laptop | 22 (SSH) | **Required** | Already open if you SSH to the controller today |
+| Your laptop | 9090 (Web UI) | **Required** | Must be opened — see NSG note below |
+
+> **Summary for Azure NSG / firewall rules:** The only port you typically need to open is **inbound 9090** on the controller. Outbound is unrestricted by default. The only non-standard outbound rule needed is **TCP 8000 on the GPU VM's inbound** if using self-hosted vLLM.
 
 ### Azure NSG — open port 9090 on the Master VM
 
@@ -198,11 +213,14 @@ No action needed. Continue to Step 2 and run all commands as your current user.
 
 The agent process needs only these permissions on the controller — nothing more:
 
+**Local filesystem**
+
 | What | Why | Required level |
 |---|---|---|
 | Read + write the repo directory | Config files, `errander.sqlite` audit DB, `known_hosts` | Owner of the cloned repo (standard if you cloned it) |
-| Read the SSH private key (`~/.ssh/errander_prod`) | Outbound SSH to target VMs | File must be `chmod 600` and owned by this user |
-| Outbound network (HTTPS + SSH) | Slack API, LLM endpoint, SSH to target VMs | No special OS permission — standard for any user |
+| Read the SSH private key (`~/.ssh/errander_prod`) | Outbound SSH to target VMs | `chmod 600`, owned by this user — SSH refuses keys with loose permissions |
+
+**Network** — see the [Network ports](#network-ports) table in Prerequisites for the full list. In short: the controller needs outbound SSH to target VMs (port 22) and outbound HTTPS for Slack/LLM (port 443). The web UI listens on port 9090 inbound. Self-hosted vLLM adds outbound port 8000 to the GPU VM.
 
 **The agent does not need sudo on the controller.** It never runs privileged commands locally — all privileged work happens on target VMs over SSH (that is what Step 3's sudoers file covers). Your admin user typically has sudo, but the agent never uses it.
 

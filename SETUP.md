@@ -181,6 +181,50 @@ uv run python -c "import errander; print('OK')"
 
 ---
 
+## Step 1b — Create a controller user *(Linux controller only)*
+
+> **Skip this step if you are on Windows** — the agent runs as your Windows user account.
+
+Decide which Linux user account will own and run the Errander-AI agent on the controller. Two options:
+
+| Option | When to use | Notes |
+|---|---|---|
+| **Your existing admin user** | Dev / single-operator setups | Simplest — no extra setup. Use the account you already SSH in with. |
+| **Dedicated `errander-agent` user** | Production / shared controllers | Clean separation — the agent process, SSH key, and repo all belong to one service account. |
+
+**Option A — use your existing admin user (simplest)**
+
+No action needed. Continue to Step 2 and run all commands as your current user.
+
+**Option B — create a dedicated `errander-agent` user**
+
+Run on the controller as your admin user:
+
+```bash
+sudo useradd -m -s /bin/bash errander-agent
+sudo mkdir -p /home/errander-agent/.ssh
+sudo chmod 700 /home/errander-agent/.ssh
+sudo chown -R errander-agent:errander-agent /home/errander-agent/.ssh
+```
+
+Clone the repo into this user's home and give it ownership:
+
+```bash
+sudo -u errander-agent git clone https://github.com/psc0des/Errander-AI.git /home/errander-agent/errander
+```
+
+All remaining setup steps (Steps 2–9) must then be run **as `errander-agent`**:
+
+```bash
+sudo -u errander-agent bash        # switch to the service user
+# or: sudo su - errander-agent
+cd /home/errander-agent/errander
+```
+
+> **Note:** `errander-agent` does **not** need sudo on the controller. The agent only needs sudo on the *target* VMs (Step 3), which it accesses over SSH as the `errander` user.
+
+---
+
 ## Step 2 — Set up SSH keys
 
 Errander-AI connects to target VMs using key-based SSH only. No passwords are ever used.

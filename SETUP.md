@@ -194,14 +194,16 @@ Your laptop → (SSH) → Master VM → (SSH, private IP) → Target VM
 
 ### On the Master VM
 
+> **Which user?** Run all commands in this step as the **same user who will run the Errander-AI agent** — typically your admin/deploy user (e.g. `azureuser`, `ubuntu`, `ec2-user`). Do **not** run as `root`. The `~` in `~/.ssh/errander_prod` expands to that user's home directory, and the agent process must be able to read the key file. If you generate the key as `root` but run the agent as `azureuser`, the agent cannot read `/root/.ssh/errander_prod` and every SSH connection will fail.
+
 **1. Generate the key pair**
 
 ```bash
-# Run this on the Master VM
+# Run this on the Master VM — as the user who will run the Errander-AI agent (not root)
 ssh-keygen -t ed25519 -f ~/.ssh/errander_prod -C "errander-agent" -N ""
 ```
 
-This creates two files on the Master VM:
+This creates two files in that user's home directory on the Master VM:
 - `~/.ssh/errander_prod` — private key (stays on Master VM, never shared)
 - `~/.ssh/errander_prod.pub` — public key (installed on each target VM)
 

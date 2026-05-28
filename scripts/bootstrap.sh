@@ -202,7 +202,11 @@ else
     sudo chown -R "${SERVICE_USER}:${SERVICE_USER}" "$SERVICE_REPO"
     ok "ownership set to $SERVICE_USER"
 
-    # Rebuild the virtualenv as the service user (venv must point to their Python)
+    # Remove the venv created by admin — its symlinks point to root's Python path,
+    # which the service user cannot follow. uv will create a fresh one.
+    sudo rm -rf "$SERVICE_REPO/.venv"
+
+    # Rebuild the virtualenv as the service user
     warn "rebuilding virtualenv as $SERVICE_USER..."
     sudo -u "$SERVICE_USER" /usr/local/bin/uv sync --extra dev \
         --project "$SERVICE_REPO"

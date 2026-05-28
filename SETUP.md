@@ -220,7 +220,7 @@ The bootstrap script detects your distro (Ubuntu, Debian, RHEL, CentOS, Oracle L
 *Option A (admin user):*
 ```bash
 cd errander
-# Continue all remaining steps as this user
+# Bootstrap already ran uv sync --extra dev — continue all remaining steps as this user
 ```
 
 *Option B (dedicated `errander-agent` user):*
@@ -233,7 +233,8 @@ sudo chown -R errander-agent:errander-agent /home/errander-agent/errander
 sudo su - errander-agent
 cd /home/errander-agent/errander
 
-# Install Python dependencies as errander-agent
+# Re-sync: the venv was created under the admin user's Python path and must be
+# rebuilt for errander-agent. uv detects the broken symlinks and recreates it.
 uv sync --extra dev
 ```
 

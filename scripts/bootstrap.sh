@@ -135,10 +135,10 @@ else
 fi
 
 # ── 7. Install Python dependencies ───────────────────────────────────────────
-step "7/7" "Python dependencies  (uv sync)"
-warn "running uv sync..."
-uv sync
-ok "dependencies installed"
+step "7/7" "Python dependencies  (uv sync --extra dev)"
+warn "running uv sync --extra dev..."
+uv sync --extra dev
+ok "dependencies installed (including dev tools: pytest, ruff, mypy)"
 
 # Quick import check
 uv run python -c "import errander; print('OK')" \

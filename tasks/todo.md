@@ -1,3 +1,10 @@
+## bootstrap.sh — uv sync --extra dev (2026-05-28, COMPLETE)
+
+- [x] `scripts/bootstrap.sh` — `uv sync` → `uv sync --extra dev`
+- [x] `SETUP.md` — Option A comment; Option B venv re-link explanation
+
+---
+
 ## README — explicit v1 target scope table (2026-05-26, COMPLETE)
 
 - [x] Added "v1 target scope" table to "What Errander-AI Is — and Is Not" section

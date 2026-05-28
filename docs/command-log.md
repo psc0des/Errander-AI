@@ -1,5 +1,14 @@
 # Errander-AI Command Log
 
+## bootstrap.sh — uv sync --extra dev (2026-05-28)
+
+```bash
+# Change bootstrap.sh uv sync to include --extra dev; update SETUP.md comments
+git add scripts/bootstrap.sh SETUP.md STATUS.md tasks/todo.md docs/command-log.md
+git commit -m "chore: bootstrap installs dev deps (uv sync --extra dev) — no manual step for Option A"
+git push origin main
+```
+
 ## README — explicit v1 target scope table (2026-05-26)
 
 ```bash

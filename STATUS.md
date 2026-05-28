@@ -1,9 +1,18 @@
 # Errander-AI — Project Status
 
 ## Last Updated
-2026-05-26
+2026-05-28
 
 ## Current Phase
+**bootstrap.sh — uv sync --extra dev (2026-05-28, COMPLETE).**
+
+`bootstrap.sh` now runs `uv sync --extra dev` instead of plain `uv sync`, so Option A controller users (admin user path) never need to run a manual dependency install step. Option B (dedicated `errander-agent` user) still requires `uv sync --extra dev` after switching users because the venv created under the admin user has broken Python symlinks after the repo is moved; SETUP.md comment updated to explain this.
+
+### Files changed (2026-05-28 — bootstrap dev deps)
+- `scripts/bootstrap.sh` — `uv sync` → `uv sync --extra dev`
+- `SETUP.md` — Option A comment updated; Option B comment explains venv re-link reason
+
+## Previous Phase
 **README — explicit v1 target scope table (serverless/managed cloud/k8s/PaaS) (2026-05-26, COMPLETE).**
 
 Added a "v1 target scope" table to the "What Errander-AI Is — and Is Not" section in README.md. Table lists 8 target categories with explicit ✅/❌ support status. Makes the SSH-only constraint visible to new users without requiring them to read CLAUDE.md or ask a colleague.

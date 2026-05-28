@@ -115,60 +115,13 @@ The web UI and metrics endpoint run on port 9090. To access it from your laptop,
 
 ## Step 1 — Install the agent on the controller
 
-### Step 1a — Choose your controller user *(Linux only)*
-
-> **Windows:** skip to [Step 1b](#step-1b--clone-and-install) — the agent runs as your current Windows user.
-
-Before cloning the repo, decide which Linux user account will own and run the Errander-AI agent. Everything from here onwards — the SSH key, the repo, the SQLite database, the systemd service — belongs to this user.
-
-| Option | When to use |
-|---|---|
-| **Option A — your existing admin user** | Dev / single-operator / getting started fast |
-| **Option B — dedicated `errander-agent` user** | Production / shared controllers / clean separation |
-
 > **Two users, two machines — don't confuse them:**
-> - **Controller:** `errander-agent` (or your admin user) — runs the agent process, holds the SSH private key
-> - **Each target VM:** `errander` — a separate account created in Step 2 that receives SSH connections from the controller
+> - **Controller:** `errander-agent` — the service account bootstrap creates; runs the agent, holds the SSH private key
+> - **Each target VM:** `errander` — a separate account you create in Step 2 that receives SSH connections from the controller
 >
-> These are unrelated accounts on different machines. The names look similar but serve completely different roles.
+> These are unrelated accounts on different machines.
 
----
-
-**Option A — use your existing admin user**
-
-No user creation needed. The agent process needs only:
-
-| Resource | Required level |
-|---|---|
-| The cloned repo directory | Owner — read + write (for `errander.sqlite`, `known_hosts`, config) |
-| `~/.ssh/errander_prod` (created in Step 2) | `chmod 600`, owned by this user — SSH rejects keys with loose permissions |
-| Outbound network | Standard — no special OS permission needed (see [Network ports](#network-ports)) |
-
-**The agent never uses sudo on the controller.** All privileged work happens on target VMs over SSH. Continue to [Step 1b](#step-1b--clone-and-install) and run everything as your current user.
-
----
-
-**Option B — create a dedicated `errander-agent` user**
-
-Run the following **as your admin user** (these commands need sudo):
-
-```bash
-# 1. Create the service account
-sudo useradd -m -s /bin/bash errander-agent
-sudo mkdir -p /home/errander-agent/.ssh
-sudo chmod 700 /home/errander-agent/.ssh
-sudo chown -R errander-agent:errander-agent /home/errander-agent/.ssh
-```
-
-`errander-agent` does **not** need sudo on the controller — do not add it to sudoers.
-
-Continue to Step 1b. The bootstrap and clone steps below will tell you when to switch to this user.
-
----
-
-### Step 1b — Clone and install
-
-#### Windows controller
+### Windows controller
 
 **Recommended — run the bootstrap script from PowerShell.**
 It installs git (via winget), uv, and Python 3.12, clones the repo, and verifies the install. No admin rights required.
@@ -201,67 +154,65 @@ uv run python -c "import errander; print('OK')"
 
 </details>
 
-#### Linux controller
+### Linux controller
 
-**Step 1 of 2 — run bootstrap as your admin user** (needs sudo to install system packages):
+Run bootstrap **as your admin user** (needs sudo to install system packages and create the service account):
 
 ```bash
-# As your admin user (the one with sudo)
 git clone https://github.com/psc0des/Errander-AI.git errander
 bash errander/scripts/bootstrap.sh
 ```
 
-> **git clone asks for credentials?** This is a public repo — credentials should not be required for HTTPS clone. If you previously authenticated via GitHub CLI (`gh auth login`), run `gh auth setup-git` once to wire `gh`'s token into git's credential system, then retry the clone.
+> **git clone asks for credentials?** This is a public repo — no credentials needed for HTTPS clone. If you previously ran `gh auth login`, run `gh auth setup-git` once to wire the token into git's credential system, then retry.
 
-The bootstrap script detects your distro (Ubuntu, Debian, RHEL, CentOS, Oracle Linux, Fedora), installs Python 3.12 + uv, and verifies the install.
+Bootstrap does everything automatically:
+- Detects your distro (Ubuntu, Debian, RHEL, CentOS, Oracle Linux, Fedora)
+- Installs git, curl, uv, Python 3.12
+- Creates the `errander-agent` service user with a `.ssh` directory
+- Moves the repo to `/home/errander-agent/errander` and sets ownership
+- Installs Python dependencies as `errander-agent`
 
-**Step 2 of 2 — move the repo to the right owner and switch user:**
+When it finishes, switch to the service user:
 
-*Option A (admin user):*
 ```bash
-cd errander
-# Bootstrap already ran uv sync --extra dev — continue all remaining steps as this user
-```
-
-*Option B (dedicated `errander-agent` user):*
-```bash
-# Move the cloned repo to errander-agent's home
-sudo mv errander /home/errander-agent/errander
-sudo chown -R errander-agent:errander-agent /home/errander-agent/errander
-
-# Switch to the service user — all remaining steps run as errander-agent
 sudo su - errander-agent
-cd /home/errander-agent/errander
-
-# Re-sync: the venv was created under the admin user's Python path and must be
-# rebuilt for errander-agent. uv detects the broken symlinks and recreates it.
-uv sync --extra dev
+cd ~/errander
 ```
 
-**Skip to Step 2** — bootstrap has already handled everything else.
+**All remaining steps run as `errander-agent`.** Skip to Step 2.
 
 <details>
 <summary>Manual installation (reference / fallback)</summary>
 
 ```bash
-# Install pip and git
-sudo apt-get update && sudo apt-get install -y python3-pip git   # Ubuntu/Debian
-# sudo dnf install -y python3-pip git                            # RHEL/CentOS/Oracle
+# Install git and curl
+sudo apt-get update && sudo apt-get install -y git curl   # Ubuntu/Debian
+# sudo dnf install -y git curl                            # RHEL/CentOS/Oracle
 
 # Install uv (official installer — no PPA, works on all distros)
 curl -LsSf https://astral.sh/uv/install.sh | sh
 export PATH="$HOME/.local/bin:$PATH"
 echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
+sudo cp ~/.local/bin/uv /usr/local/bin/uv
 
 # Install Python 3.12 via uv
 uv python install 3.12
 
-# Clone and install
-git clone https://github.com/psc0des/Errander-AI.git errander
-cd errander
-uv sync --extra dev
+# Create service user
+sudo useradd -m -s /bin/bash errander-agent
+sudo mkdir -p /home/errander-agent/.ssh
+sudo chmod 700 /home/errander-agent/.ssh
+sudo chown -R errander-agent:errander-agent /home/errander-agent/.ssh
 
-# Verify
+# Clone, move, and install
+git clone https://github.com/psc0des/Errander-AI.git errander
+sudo mv errander /home/errander-agent/errander
+sudo chown -R errander-agent:errander-agent /home/errander-agent/errander
+sudo -u errander-agent /usr/local/bin/uv sync --extra dev --project /home/errander-agent/errander
+
+# Switch to service user
+sudo su - errander-agent
+cd ~/errander
 uv run python -c "import errander; print('OK')"
 ```
 

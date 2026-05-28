@@ -2,15 +2,25 @@
 # Errander-AI bootstrap script
 #
 # Detects your Linux distro, installs all prerequisites (git, curl, uv,
-# Python 3.12), clones the repo, runs uv sync, and verifies the install.
+# Python 3.12), clones the repo, creates the errander-agent service user,
+# and hands off the repo to that user.
 #
 # Supported distros: Ubuntu, Debian, RHEL, CentOS, Oracle Linux, Fedora
 #
-# Usage:
+# Usage (run as your admin user — needs sudo):
 #   git clone https://github.com/psc0des/Errander-AI.git errander
 #   bash errander/scripts/bootstrap.sh
+#
+# After bootstrap completes, switch to the service user:
+#   sudo su - errander-agent
+#   cd ~/errander
+#   bash scripts/configure.sh
 
 set -euo pipefail
+
+SERVICE_USER="errander-agent"
+SERVICE_HOME="/home/${SERVICE_USER}"
+SERVICE_REPO="${SERVICE_HOME}/errander"
 
 # ── colours ───────────────────────────────────────────────────────────────────
 GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; BOLD='\033[1m'; NC='\033[0m'
@@ -24,7 +34,7 @@ echo -e "${BOLD}Errander-AI — Bootstrap${NC}"
 echo "═══════════════════════════════════════════"
 
 # ── 0. Distro detection ───────────────────────────────────────────────────────
-step "0/7" "Detecting Linux distribution"
+step "0/8" "Detecting Linux distribution"
 
 [ -f /etc/os-release ] || fail "/etc/os-release not found — unsupported system"
 . /etc/os-release
@@ -55,7 +65,7 @@ _install() {
 }
 
 # ── 1. git ────────────────────────────────────────────────────────────────────
-step "1/7" "git"
+step "1/8" "git"
 if command -v git &>/dev/null; then
     ok "already installed  ($(git --version | awk '{print $3}'))"
 else
@@ -66,7 +76,7 @@ else
 fi
 
 # ── 2. curl ───────────────────────────────────────────────────────────────────
-step "2/7" "curl"
+step "2/8" "curl"
 if command -v curl &>/dev/null; then
     ok "already installed"
 else
@@ -76,7 +86,7 @@ else
 fi
 
 # ── 3. uv ─────────────────────────────────────────────────────────────────────
-step "3/7" "uv  (Python package + version manager)"
+step "3/8" "uv  (Python package + version manager)"
 export PATH="$HOME/.local/bin:$PATH"
 
 if command -v uv &>/dev/null; then
@@ -89,19 +99,18 @@ else
     ok "installed  ($(uv --version))"
 fi
 
-# Copy uv to /usr/local/bin so all users (e.g. errander-agent service user) can run it
+# Copy uv to /usr/local/bin so the service user can run it without PATH magic
 if [ ! -f /usr/local/bin/uv ]; then
     sudo cp "$HOME/.local/bin/uv" /usr/local/bin/uv \
         && ok "uv copied to /usr/local/bin  (available to all users)" \
-        || warn "could not copy uv to /usr/local/bin — service user may need to install uv separately"
+        || warn "could not copy uv to /usr/local/bin — continuing, but step 8 may fail"
 else
     ok "uv already present at /usr/local/bin"
 fi
 
 # ── 4. PATH persistence ───────────────────────────────────────────────────────
-step "4/7" "PATH  (~/.local/bin)"
+step "4/8" "PATH  (~/.local/bin)"
 
-# Pick the right shell RC file
 if [ -n "${ZSH_VERSION:-}" ]; then
     SHELL_RC="$HOME/.zshrc"
 elif [ -f "$HOME/.bashrc" ]; then
@@ -119,20 +128,21 @@ else
 fi
 
 # ── 5. Python 3.12 ────────────────────────────────────────────────────────────
-step "5/7" "Python 3.12"
+step "5/8" "Python 3.12"
 warn "installing via uv  (idempotent — safe to run again)..."
 uv python install 3.12
 ok "Python 3.12 ready"
 
 # ── 6. Clone repo ─────────────────────────────────────────────────────────────
-step "6/7" "Errander-AI repository"
+step "6/8" "Errander-AI repository"
 
 REPO_URL="https://github.com/psc0des/Errander-AI.git"
 INSTALL_DIR="${1:-errander}"
 
-# If we're already sitting inside the repo root, skip clone
 if [ -f "errander/__init__.py" ]; then
     ok "already inside the repo  ($(pwd))"
+elif [ -d "$SERVICE_REPO/errander/__init__.py" ] || [ -d "$SERVICE_REPO/.git" ]; then
+    ok "repo already at $SERVICE_REPO — skipping clone"
 elif [ -d "$INSTALL_DIR/.git" ]; then
     ok "repo already cloned at ./$INSTALL_DIR"
     cd "$INSTALL_DIR"
@@ -143,34 +153,78 @@ else
     ok "cloned"
 fi
 
-# ── 7. Install Python dependencies ───────────────────────────────────────────
-step "7/7" "Python dependencies  (uv sync --extra dev)"
-warn "running uv sync --extra dev..."
-uv sync --extra dev
-ok "dependencies installed (including dev tools: pytest, ruff, mypy)"
+REPO_ABS="$(pwd)"
 
-# Quick import check
+# ── 7. Install Python dependencies (as admin, caches packages) ───────────────
+step "7/8" "Python dependencies  (uv sync --extra dev)"
+
+if [ "$REPO_ABS" = "$SERVICE_REPO" ]; then
+    # Already owned by service user — sync as service user
+    warn "repo already at service location — syncing as $SERVICE_USER..."
+    sudo -u "$SERVICE_USER" /usr/local/bin/uv sync --extra dev
+else
+    # Sync as admin to pre-warm the package download (avoids re-downloading later)
+    warn "running uv sync --extra dev..."
+    uv sync --extra dev
+fi
+
 uv run python -c "import errander; print('OK')" \
     || fail "import check failed — re-run this script or check errors above"
 ok "import check passed"
 
+# ── 8. Service user setup ─────────────────────────────────────────────────────
+step "8/8" "Service user  (${SERVICE_USER})"
+
+if [ "$REPO_ABS" = "$SERVICE_REPO" ]; then
+    ok "repo already at $SERVICE_REPO — nothing to move"
+else
+    # Create the service user if it doesn't exist
+    if id "$SERVICE_USER" &>/dev/null; then
+        ok "$SERVICE_USER already exists"
+    else
+        sudo useradd -m -s /bin/bash "$SERVICE_USER"
+        ok "created user $SERVICE_USER"
+    fi
+
+    # Set up .ssh directory for the service user
+    sudo mkdir -p "${SERVICE_HOME}/.ssh"
+    sudo chmod 700 "${SERVICE_HOME}/.ssh"
+    sudo chown "${SERVICE_USER}:${SERVICE_USER}" "${SERVICE_HOME}/.ssh"
+    ok ".ssh directory ready"
+
+    # Move the repo into the service user's home
+    if [ -d "$SERVICE_REPO" ]; then
+        warn "$SERVICE_REPO already exists — skipping move"
+    else
+        sudo mv "$REPO_ABS" "$SERVICE_REPO"
+        ok "repo moved to $SERVICE_REPO"
+    fi
+    sudo chown -R "${SERVICE_USER}:${SERVICE_USER}" "$SERVICE_REPO"
+    ok "ownership set to $SERVICE_USER"
+
+    # Rebuild the virtualenv as the service user (venv must point to their Python)
+    warn "rebuilding virtualenv as $SERVICE_USER..."
+    sudo -u "$SERVICE_USER" /usr/local/bin/uv sync --extra dev \
+        --project "$SERVICE_REPO"
+    ok "virtualenv ready for $SERVICE_USER"
+fi
+
 # ── Done ──────────────════════════════════════════════════════════════════════
-REPO_ABS="$(pwd)"
 echo ""
 echo -e "${BOLD}═══════════════════════════════════════════${NC}"
 echo -e "${GREEN} Bootstrap complete!${NC}"
 echo ""
-echo "  Repo : $REPO_ABS"
-echo "  Shell: source $SHELL_RC  (to apply PATH in this session)"
+echo "  Service user : $SERVICE_USER"
+echo "  Repo         : $SERVICE_REPO"
 echo ""
-echo "  Next — follow SETUP.md from Step 2:"
-echo "    Step 2  SSH key setup (Master VM → Target VM)"
-echo "    Step 3  Target VM sudo permissions"
+echo "  Switch to the service user and continue setup:"
 echo ""
-echo "  Then run the interactive setup (covers Steps 4-5):"
-echo "    cd $REPO_ABS && bash scripts/configure.sh"
+echo -e "    ${BOLD}sudo su - ${SERVICE_USER}${NC}"
+echo -e "    ${BOLD}cd ~/errander${NC}"
 echo ""
-echo "    Step 6  Verify (inventory check + uv run pytest)"
-echo "    Step 7  First dry-run"
+echo "  Then run the interactive setup wizard:"
+echo -e "    ${BOLD}bash scripts/configure.sh${NC}"
+echo ""
+echo "  (configure.sh covers Steps 2-5 of SETUP.md)"
 echo -e "${BOLD}═══════════════════════════════════════════${NC}"
 echo ""

@@ -89,6 +89,15 @@ else
     ok "installed  ($(uv --version))"
 fi
 
+# Copy uv to /usr/local/bin so all users (e.g. errander-agent service user) can run it
+if [ ! -f /usr/local/bin/uv ]; then
+    sudo cp "$HOME/.local/bin/uv" /usr/local/bin/uv \
+        && ok "uv copied to /usr/local/bin  (available to all users)" \
+        || warn "could not copy uv to /usr/local/bin — service user may need to install uv separately"
+else
+    ok "uv already present at /usr/local/bin"
+fi
+
 # ── 4. PATH persistence ───────────────────────────────────────────────────────
 step "4/7" "PATH  (~/.local/bin)"
 

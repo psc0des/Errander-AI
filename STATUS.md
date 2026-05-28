@@ -4,13 +4,22 @@
 2026-05-28
 
 ## Current Phase
+**bootstrap creates errander-agent automatically — Option A/B removed (2026-05-28, COMPLETE).**
+
+Bootstrap now creates the `errander-agent` service user, moves the repo to `/home/errander-agent/errander`, sets ownership, copies `uv` to `/usr/local/bin` (so the service user can reach it), and rebuilds the venv as `errander-agent`. SETUP.md Step 1 is now a single `bash bootstrap.sh` + `sudo su - errander-agent` — no decision table, no manual user creation, no manual `uv sync`.
+
+### Files changed (2026-05-28 — bootstrap service user)
+- `scripts/bootstrap.sh` — step 8: create `errander-agent`, move repo, rebuild venv as service user; copy uv to `/usr/local/bin`; updated step count 7→8; updated Done banner
+- `SETUP.md` — Step 1a/1b/Option A/B collapsed into one Linux section with two commands
+
+## Previous Phase
 **bootstrap.sh — uv sync --extra dev (2026-05-28, COMPLETE).**
 
-`bootstrap.sh` now runs `uv sync --extra dev` instead of plain `uv sync`, so Option A controller users (admin user path) never need to run a manual dependency install step. Option B (dedicated `errander-agent` user) still requires `uv sync --extra dev` after switching users because the venv created under the admin user has broken Python symlinks after the repo is moved; SETUP.md comment updated to explain this.
+`bootstrap.sh` runs `uv sync --extra dev` so dev tools (pytest, ruff, mypy) are installed automatically. uv is also copied to `/usr/local/bin` so the `errander-agent` service user can reach it without needing `~/.local/bin` in PATH.
 
 ### Files changed (2026-05-28 — bootstrap dev deps)
-- `scripts/bootstrap.sh` — `uv sync` → `uv sync --extra dev`
-- `SETUP.md` — Option A comment updated; Option B comment explains venv re-link reason
+- `scripts/bootstrap.sh` — `uv sync` → `uv sync --extra dev`; copy uv to `/usr/local/bin`
+- `SETUP.md` — Option A/B comments updated (later fully removed in next phase)
 
 ## Previous Phase
 **README — explicit v1 target scope table (serverless/managed cloud/k8s/PaaS) (2026-05-26, COMPLETE).**

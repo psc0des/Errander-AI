@@ -1,5 +1,24 @@
 # Errander-AI Command Log
 
+## bootstrap creates errander-agent automatically (2026-05-28)
+
+```bash
+# Rewrite bootstrap.sh step 8: create errander-agent, move repo, rebuild venv as service user
+# Collapse SETUP.md Step 1 Option A/B into single two-command Linux section
+git add scripts/bootstrap.sh SETUP.md
+git commit -m "feat: bootstrap creates errander-agent automatically — remove Option A/B choice from SETUP.md"
+git push origin main
+```
+
+## bootstrap.sh — copy uv to /usr/local/bin (2026-05-28)
+
+```bash
+# Copy uv to /usr/local/bin after install so service users can reach it without ~/.local/bin in PATH
+git add scripts/bootstrap.sh
+git commit -m "fix: copy uv to /usr/local/bin in bootstrap so service users (errander-agent) can run it"
+git push origin main
+```
+
 ## bootstrap.sh — uv sync --extra dev (2026-05-28)
 
 ```bash

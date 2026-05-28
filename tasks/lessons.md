@@ -1,5 +1,19 @@
 # Errander-AI — Lessons Learned
 
+## 2026-05-28 — Be opinionated in bootstrap: create the service user, don't offer a choice
+
+When a bootstrap script has everything it needs to set up the recommended configuration (sudo access, service user creation), just do it. Offering Option A / Option B adds doc surface area and cognitive load for a choice that has a clear right answer (dedicated service user) for any real deployment. The wrong answer (admin user) only exists to shorten the getting-started path — but that path is already short enough with a single `bootstrap.sh`.
+
+**Why:** Users who hit "uv not found" after switching to `errander-agent` did so because Option B's manual steps were easy to get wrong. A script that always arrives at the right state is better than instructions that describe two paths.
+
+**How to apply:** When writing a bootstrap/install script, ask whether each fork in the decision tree can be collapsed by just doing the right thing automatically. If the script already has the required privileges and the "opinionated" path is reversible, take it. Leave the alternative as a `<details>` fallback for edge cases, not as a first-class option in the main flow.
+
+## 2026-05-28 — Service users don't inherit the admin user's ~/.local/bin; install shared tools to /usr/local/bin
+
+`uv` was installed to `~/.local/bin` of the admin user running bootstrap. After `sudo su - errander-agent`, `~/.local/bin` resolves to the service user's home — which is empty. The fix is to copy uv to `/usr/local/bin/uv` immediately after installing it, making it available to all users without PATH manipulation.
+
+**How to apply:** Any tool installed per-user (via `~/.local/bin`) that a service user will also need should be copied to `/usr/local/bin` in the bootstrap step. This includes uv, any CLI tools installed via `pipx` or `cargo install`, etc.
+
 ## 2026-05-26 — Re-running a full setup wizard to add one target is disruptive; use a focused script
 
 `configure.sh` is a 5-step wizard that overwrites `.env` and `inventory.yaml`. Re-running it just to add a VM forces the user through LLM credential re-entry, Slack config, Prometheus, ELK, and UI password prompts — any fat-fingered answer silently overwrites working config. The script has a partial guard ("Keep these VMs? Y/n") but doesn't prevent `.env` being rewritten.

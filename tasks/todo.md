@@ -1,7 +1,20 @@
+## bootstrap creates errander-agent automatically (2026-05-28, COMPLETE)
+
+- [x] `scripts/bootstrap.sh` — step 8: create `errander-agent`, `.ssh` dir, move repo, `chown`, rebuild venv as service user; copy uv to `/usr/local/bin`; step count 7→8; updated Done banner
+- [x] `SETUP.md` — collapse Step 1a/1b/Option A/B into single Linux section: `bash bootstrap.sh` + `sudo su - errander-agent`
+
+---
+
+## bootstrap.sh — uv to /usr/local/bin (2026-05-28, COMPLETE)
+
+- [x] `scripts/bootstrap.sh` — copy uv to `/usr/local/bin` after install so service user can reach it
+
+---
+
 ## bootstrap.sh — uv sync --extra dev (2026-05-28, COMPLETE)
 
 - [x] `scripts/bootstrap.sh` — `uv sync` → `uv sync --extra dev`
-- [x] `SETUP.md` — Option A comment; Option B venv re-link explanation
+- [x] `SETUP.md` — Option A/B comments (later fully removed)
 
 ---
 

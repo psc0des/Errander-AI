@@ -1,9 +1,17 @@
 # Errander-AI — Project Status
 
 ## Last Updated
-2026-05-28
+2026-05-29
 
 ## Current Phase
+**README — observability section rewrite: two-layer split + Prometheus on controller node (2026-05-29, COMPLETE).**
+
+Rewrote the README "Observability" section to document (1) the two-layer observability split — Layer A (`agent/decisions.py`, the reasoning) is watched via the AI Decisions UI / optional LangSmith, Layer B (`execution/`, the actions) via Prometheus + the audit trail; (2) explicit instructions for installing Prometheus **on the controller node** (the Agent VM) with a ready scrape-config pointing at the agent's local `/metrics`, plus the two distinct Prometheus relationships (Prometheus→Errander scrape vs. Errander→target node_exporter reads); (3) a port-collision warning (Prometheus and the agent UI both default to `:9090`); (4) LangSmith as an optional, off-by-default, **not-bundled** Layer-A tracer with the egress caveat. Verified against code first: `errander/execution/` has zero LLM imports (Layer B clean), and `start_metrics_server()` / `_metrics_handler` / the 10 metric singletons exist and are wired from `main.py`.
+
+### Files changed (2026-05-29 — README observability rewrite)
+- `README.md` — Observability section rewritten (two-layer table, Prometheus-on-controller install + scrape config, port-collision note, LangSmith optional subsection, audit-trail-is-authoritative framing)
+
+## Previous Phase
 **bootstrap creates errander-agent automatically — Option A/B removed (2026-05-28, COMPLETE).**
 
 Bootstrap now creates the `errander-agent` service user, moves the repo to `/home/errander-agent/errander`, sets ownership, copies `uv` to `/usr/local/bin` (so the service user can reach it), and rebuilds the venv as `errander-agent`. SETUP.md Step 1 is now a single `bash bootstrap.sh` + `sudo su - errander-agent` — no decision table, no manual user creation, no manual `uv sync`.

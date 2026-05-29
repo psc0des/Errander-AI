@@ -484,7 +484,18 @@ uv run python -m errander --run-now --env production --force --force-reason "eme
 
 ## Observability
 
+Errander-AI has two layers (see [`docs/AI-ARCHITECTURE.md`](docs/AI-ARCHITECTURE.md)), and each is observed differently. Knowing which tool answers which question keeps the audit trail authoritative and the reasoning debuggable:
+
+| Layer | What it is | The question it answers | What you watch it with |
+|-------|-----------|-------------------------|------------------------|
+| **Layer A — the brain** | LLM reasoning in `agent/decisions.py` — prioritizes, analyzes failures, writes reports. Never touches a VM. | *Why* did the agent choose this plan? | AI Decisions UI (`/ui/ai-decisions`); optionally LangSmith for richer LangGraph traces |
+| **Layer B — the hands** | Deterministic Python in `execution/` — SSH, commands, rollback. No LLM in this path. | *What* did the agent actually do? | **Prometheus metrics + the audit trail** |
+
+The key split: **the LLM's reasoning is not a record of what happened to your infrastructure** — a plan can be rejected at approval, and the LLM is deliberately kept out of execution. So the **audit trail is the source of truth for actions**, Prometheus is the source of truth for execution health, and LangSmith (if used) only ever observes Layer A.
+
 ### Prometheus Metrics
+
+The agent **exposes** its own metrics on `/metrics` (port 9090, Prometheus text exposition format). It does **not** bundle a Prometheus server — you run that yourself (see below).
 
 | Metric | Type | Description |
 |--------|------|-------------|
@@ -492,13 +503,50 @@ uv run python -m errander --run-now --env production --force --force-reason "eme
 | `errander_action_duration_seconds` | Histogram | Action execution time |
 | `errander_batch_duration_seconds` | Histogram | Batch total time |
 | `errander_ssh_errors_total` | Counter | SSH errors by VM and reason |
-| `errander_llm_requests_total` | Counter | LLM calls by outcome |
+| `errander_llm_requests_total` | Counter | LLM calls by outcome (`success` / `fallback` / `timeout` / `error`) |
 | `errander_approval_wait_seconds` | Histogram | Time waiting for approval |
 | `errander_vm_lock_held_seconds` | Histogram | Lock hold duration |
 
-### Audit Trail
+### Installing Prometheus on the controller node
 
-Every action is logged to SQLite with batch ID, VM ID, action type, status, timestamp, and metadata. Query via CLI:
+Prometheus runs **on the controller node** (the same Agent VM that runs Errander-AI). It scrapes the agent's local `/metrics` endpoint — no inbound traffic to the agent from outside the VPN, consistent with the private-by-design network model.
+
+There are **two distinct Prometheus relationships** in this system — keep them separate:
+
+1. **Prometheus → Errander** — Prometheus scrapes the agent's own `/metrics` (the table above). This is what you set up below.
+2. **Errander → Prometheus / node_exporter** — the agent *reads* host metrics from node_exporter on the **target VMs** (`observability/vm_metrics.py`, `integrations/prometheus.py`) to inform Layer A decisions. Configured per-target, separate from the scrape job below.
+
+Install Prometheus on the controller node and add a scrape job pointing at the agent (loopback, since they're co-located):
+
+```yaml
+# /etc/prometheus/prometheus.yml
+scrape_configs:
+  - job_name: errander-ai
+    static_configs:
+      - targets: ["localhost:9090"]   # the agent's /metrics on the controller node
+    metrics_path: /metrics
+```
+
+```bash
+# Debian/Ubuntu controller node
+sudo apt-get install -y prometheus
+sudo systemctl enable --now prometheus
+# Confirm the agent target is UP:  http://<controller-ip>:9090/targets  (Prometheus default port)
+```
+
+> **Port note:** Prometheus also defaults to `:9090`. Since both live on the controller node, either run the agent's Web UI/metrics on a different port or bind Prometheus to another port (e.g. `--web.listen-address=:9091`) to avoid a collision.
+
+Point Grafana (anywhere with network reach to Prometheus) at this Prometheus instance for dashboards.
+
+### AI Decision Observability (Layer A)
+
+**Built-in (no external dependency):** every LLM call is logged by `AIDecisionStore` — prompt hash, model, base URL, latency, and outcome (`success` / `fallback` / `no_llm`) — and is browsable in the Web UI at `/ui/ai-decisions`. This is enough to see when the LLM was used vs. when a hardcoded fallback kicked in, and why a plan was ordered the way it was.
+
+**Optional — LangSmith:** because the decision engine is LangGraph, [LangSmith](https://docs.smith.langchain.com/) attaches with no code changes via env vars (`LANGCHAIN_TRACING_V2=true`, `LANGCHAIN_API_KEY`, `LANGCHAIN_PROJECT`) and gives you full node/edge traces, latency breakdowns, token usage, and prompt-regression evals. It is **not bundled** and **off by default**. Note that LangSmith's default backend is LangChain's cloud — enabling it sends prompt contents (VM hostnames, log excerpts, package lists) off-network, which conflicts with the no-egress posture, so treat it as a **dev/staging** aid rather than a no-egress-prod dependency. It only ever observes Layer A; it must never be wired into the Layer B execution path.
+
+### Audit Trail (Layer B)
+
+The audit trail — not LangSmith, not Prometheus — is the **authoritative record of what happened to your infrastructure**. Every action is logged to SQLite before and after execution (one row per object for destructive actions) with batch ID, VM ID, action type, status, timestamp, and metadata. Query via CLI:
 
 ```bash
 uv run python -m errander --audit --batch-id batch-abc123

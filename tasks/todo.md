@@ -1,3 +1,15 @@
+## README — observability section rewrite (2026-05-29, COMPLETE)
+
+- [x] Verify against code first: grep `errander/execution/` for LLM refs (none → Layer B clean); confirm `start_metrics_server`, `_metrics_handler`, 10 metric singletons exist + wired from `main.py:2213`
+- [x] `README.md` — two-layer observability table (Layer A reasoning → AI Decisions UI / LangSmith; Layer B actions → Prometheus + audit)
+- [x] `README.md` — "Installing Prometheus on the controller node" subsection: scrape config (`localhost:9090`), install commands, two-relationships note (scrape vs. target node_exporter reads)
+- [x] `README.md` — port-collision warning (Prometheus + agent UI both default `:9090`)
+- [x] `README.md` — LangSmith optional subsection: off by default, not bundled, egress caveat, Layer-A-only
+- [x] `README.md` — audit trail framed as the authoritative record of actions
+- [x] Doc sync: STATUS.md, todo.md, lessons.md, command-log.md
+
+---
+
 ## bootstrap creates errander-agent automatically (2026-05-28, COMPLETE)
 
 - [x] `scripts/bootstrap.sh` — step 8: create `errander-agent`, `.ssh` dir, move repo, `chown`, rebuild venv as service user; copy uv to `/usr/local/bin`; step count 7→8; updated Done banner

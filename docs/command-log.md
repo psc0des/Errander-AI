@@ -1,5 +1,18 @@
 # Errander-AI Command Log
 
+## README — observability section rewrite (2026-05-29)
+
+```bash
+# Verify Layer A/B separation + Prometheus wiring against code before editing README
+#   Grep errander/execution/ for LLM refs → none (Layer B clean)
+#   Grep start_metrics_server / _metrics_handler / metric singletons → wired from main.py:2213
+# Edit README.md Observability section: two-layer table, Prometheus-on-controller install,
+#   scrape config, port-collision note, optional LangSmith subsection
+git add README.md STATUS.md tasks/todo.md tasks/lessons.md docs/command-log.md
+git commit -m "docs: README observability — two-layer split + install Prometheus on controller node"
+git push origin main
+```
+
 ## bootstrap creates errander-agent automatically (2026-05-28)
 
 ```bash

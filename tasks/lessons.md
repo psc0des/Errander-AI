@@ -1,5 +1,13 @@
 # Errander-AI — Lessons Learned
 
+## 2026-05-29 — A built exporter is not documented deployment: tell the user where to run Prometheus
+
+The agent has exposed `/metrics` (10 Prometheus metrics, wired from `main.py`) since early in the project, but the README never said *who scrapes it or where Prometheus runs*. The user — who built it — didn't remember it existed, and assumed there was no Prometheus support at all. The gap wasn't code; it was the missing deployment instruction: "install Prometheus on the controller node, point it at `localhost:9090/metrics`."
+
+**Why:** An exporter endpoint is half a feature. Without a documented scrape target, install step, and a note on the two distinct Prometheus relationships (agent-exposes-metrics vs. agent-reads-target-node_exporter), a reader can't tell whether monitoring is supported, partially built, or absent. The co-located `:9090` port collision (Prometheus default == agent UI default) is exactly the kind of footgun that only surfaces in docs, never in unit tests.
+
+**How to apply:** When a feature exposes an endpoint that an *external* system must consume (metrics, webhooks, health checks), the README must state: where the consumer runs, the exact config to wire it (scrape job, URL), and any port/host conflicts with co-located services. "The endpoint exists" in code ≠ "the integration is usable" for an operator. Verify the endpoint is actually wired (grep for the server-start call) before documenting it, so the doc reflects shipped reality, not intent.
+
 ## 2026-05-28 — Be opinionated in bootstrap: create the service user, don't offer a choice
 
 When a bootstrap script has everything it needs to set up the recommended configuration (sudo access, service user creation), just do it. Offering Option A / Option B adds doc surface area and cognitive load for a choice that has a clear right answer (dedicated service user) for any real deployment. The wrong answer (admin user) only exists to shorten the getting-started path — but that path is already short enough with a single `bootstrap.sh`.

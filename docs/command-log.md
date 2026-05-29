@@ -1,5 +1,20 @@
 # Errander-AI Command Log
 
+## docs/OBSERVABILITY.md — per-layer observability reference (2026-05-29)
+
+```bash
+# Ground the doc in code before writing (read, not edited):
+#   errander/models/events.py        — EventType enum (audit event categories)
+#   errander/safety/audit.py         — AuditStore.get_events()
+#   errander/safety/ai_audit.py      — AIDecisionStore.get_decisions/get_decision_by_id
+#   errander/main.py                 — --audit / --ai-decisions CLI flags
+#   docs/AI-ARCHITECTURE.md          — canonical two-layer model (align terminology)
+# Author docs/OBSERVABILITY.md; add pointers in CLAUDE.md + README.md
+git add docs/OBSERVABILITY.md CLAUDE.md README.md STATUS.md tasks/todo.md tasks/lessons.md docs/command-log.md
+git commit -m "docs: add OBSERVABILITY.md — per-layer observability (audit, AI decisions, Prometheus, LangSmith)"
+git push origin main
+```
+
 ## bootstrap — optional Prometheus install on controller node (2026-05-29)
 
 ```bash

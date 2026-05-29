@@ -1,3 +1,13 @@
+## docs/OBSERVABILITY.md — per-layer observability reference (2026-05-29, COMPLETE)
+
+- [x] Gather code facts: `EventType` list (`models/events.py`), `AuditStore.get_events` + `AIDecisionStore.get_decisions/get_decision_by_id` signatures, audit/ai-decision CLI flags (`main.py`), AIDecision fields
+- [x] `docs/OBSERVABILITY.md` (NEW) — 4-surface overview table; audit trail (Layer B); AI decision log (Layer A); Prometheus (Layer B + the llm_requests exception); LangSmith (Layer A, planned/not-wired, egress caveat); "For coding agents" section (code map + extension rules); cross-links
+- [x] `CLAUDE.md` — pointer in AI Safety Invariant section + doc-sync "update when relevant" list
+- [x] `README.md` — pointer atop Observability section
+- [x] Doc sync: STATUS.md, todo.md, lessons.md, command-log.md
+
+---
+
 ## bootstrap — optional Prometheus install on controller node (2026-05-29, COMPLETE)
 
 - [x] Decide approach (user delegated): binary+systemd (any distro, no Docker dep), Prometheus-only (no Grafana), opt-in prompt

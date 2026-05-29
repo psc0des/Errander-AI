@@ -1,5 +1,13 @@
 # Errander-AI — Lessons Learned
 
+## 2026-05-29 — Observability docs must name the layer AND the authority of each surface, not just list tools
+
+When documenting observability for a two-layer system, listing "we have Prometheus, audit logs, and (soon) LangSmith" is not enough — it invites the exact confusion the user had ("LangSmith sees the reasoning; the audit log sees the actions — can you explain?"). The doc has to state, per surface: which layer it observes, the one question it answers, and what it is *authoritative* for. The audit trail is authoritative for *what changed*; Prometheus for *aggregate health*; the AI decision log / LangSmith for *why*. A reasoning trace must never be treated as a record of what happened to infrastructure.
+
+**Why:** Operators and coding agents both reach for the wrong surface when the boundaries are implicit. Naming the authority of each surface is what prevents "the LLM decided X, so X happened" reasoning — which is exactly the failure the Layer A/B split exists to prevent.
+
+**How to apply:** Any observability/monitoring doc for this project leads with a table: surface · layer · question answered · authoritative-for · status. Document planned-but-unbuilt surfaces (LangSmith) with an explicit status banner and their design constraints, so they're built consistently later — but never imply they already exist. Ground every claim in code (event enum, store API, CLI flag) so the doc reflects shipped reality.
+
 ## 2026-05-29 — For "install X on any distro" automation, prefer the upstream static binary over the distro package
 
 Asked to make bootstrap install Prometheus across "any distro" with low overhead, the instinct is `apt-get install prometheus`. That's a trap: the `prometheus` apt package was removed on Ubuntu 23.04+ and never existed on RHEL/Rocky/Alma. Docker would work cross-distro but forces a Docker dependency onto the controller (the agent is a plain Python app and otherwise needs no Docker). The robust universal path is the **official static binary + a systemd unit** — identical on every distro, no package repo, no container runtime. This mirrors what the project's own `example/Prometheus/SETUP.md` already did for `node_exporter` (Option B binary install).

@@ -484,6 +484,8 @@ uv run python -m errander --run-now --env production --force --force-reason "eme
 
 ## Observability
 
+> **Full reference:** [`docs/OBSERVABILITY.md`](docs/OBSERVABILITY.md) — per-layer observability for operators and coding agents (audit trail, AI decision log, Prometheus, planned LangSmith).
+
 Errander-AI has two layers (see [`docs/AI-ARCHITECTURE.md`](docs/AI-ARCHITECTURE.md)), and each is observed differently. Knowing which tool answers which question keeps the audit trail authoritative and the reasoning debuggable:
 
 | Layer | What it is | The question it answers | What you watch it with |

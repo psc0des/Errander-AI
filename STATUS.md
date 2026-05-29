@@ -4,6 +4,16 @@
 2026-05-29
 
 ## Current Phase
+**docs/OBSERVABILITY.md — per-layer observability reference (2026-05-29, COMPLETE).**
+
+New canonical observability doc explaining the four surfaces and which layer each serves: **audit trail** (Layer B, authoritative record of actions — `AuditStore` + `EventType`, CLI `--audit`, `/ui/batches`), **AI decision log** (Layer A, built-in reasoning record — `AIDecisionStore`, CLI `--ai-decisions`, `/ui/ai-decisions`), **Prometheus metrics** (mostly Layer B execution health; the lone Layer-A exception is `errander_llm_requests_total`), and **LangSmith** (Layer A, documented as planned/not-yet-wired with the egress + Layer-A-only constraints). Written for both operators and coding agents — includes a "For coding agents" section mapping each surface to its code location and the rules for extending (new action → per-object audit events + metrics, never an LLM in execute; new LLM call → log via AIDecisionStore). Grounded in code: event types from `models/events.py`, store APIs from `safety/audit.py` + `safety/ai_audit.py`, CLI flags from `main.py`. CLAUDE.md gets a pointer in the AI Safety Invariant section + the doc-sync "update when relevant" list.
+
+### Files changed (2026-05-29 — OBSERVABILITY.md)
+- `docs/OBSERVABILITY.md` (NEW) — per-layer observability reference (audit trail, AI decision log, Prometheus, planned LangSmith) for operators + coding agents
+- `CLAUDE.md` — pointer to OBSERVABILITY.md in AI Safety Invariant section; added to doc-sync "update when relevant" list
+- `README.md` — pointer to OBSERVABILITY.md atop the Observability section
+
+## Previous Phase
 **bootstrap — optional Prometheus install on the controller node (2026-05-29, COMPLETE).**
 
 New `scripts/install-prometheus.sh` installs Prometheus on the controller node (the Agent VM) and wires it to scrape the agent's own `/metrics`. Distro-agnostic by design — downloads the official Prometheus static binary (no apt/dnf package, which is unreliable across distros), creates a `prometheus` system user + systemd unit, writes + `promtool`-validates a scrape config targeting `localhost:9090`, and starts the service on **port 9091** (the agent owns 9090 — collision avoided). Idempotent and runnable standalone. `bootstrap.sh` calls it behind an opt-in prompt (default No, skipped on non-interactive shells); step labels renumbered 8→9 and the Prometheus step runs before the service-user move so `$SCRIPT_DIR` is still valid. Decisions delegated by the user: binary-over-Docker (any distro, no extra dependency), Prometheus-only (no Grafana, low overhead), opt-in (fits users with existing monitoring).

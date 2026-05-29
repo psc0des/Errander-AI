@@ -183,7 +183,7 @@ Anything not on this whitelist requires human approval to clean.
 
 ## AI Safety Invariant (MANDATORY)
 
-Errander-AI uses a two-layer AI architecture. See `docs/AI-ARCHITECTURE.md` for the canonical model.
+Errander-AI uses a two-layer AI architecture. See `docs/AI-ARCHITECTURE.md` for the canonical model, and `docs/OBSERVABILITY.md` for how each layer is observed (audit trail = Layer B actions; AI decision log + LangSmith = Layer A reasoning; Prometheus = execution health).
 
 > **MCP belongs in the operator brain, not in the execution hands.**
 
@@ -357,6 +357,7 @@ Before every `git commit` + `git push`, update all files that are relevant to th
 - `docs/learning/XX-feature.md` — create one for every new feature implemented
 - `docs/LLM-PROVIDERS.md` — when LLM provider support changes
 - `docs/SECRETS.md` — when secrets management changes
+- `docs/OBSERVABILITY.md` — when an observability surface changes (audit events, metrics, AI decision log, LangSmith)
 
 ---
 

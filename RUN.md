@@ -339,6 +339,8 @@ uv run python -m errander --check-targets production
 
 The agent exposes metrics at `http://localhost:9090/metrics` in Prometheus format.
 
+> **Quick setup:** to install Prometheus on the controller node and auto-wire the scrape config below, run `bash scripts/install-prometheus.sh` (it listens on `:9091` to avoid the agent's `:9090`). See SETUP.md → "Monitoring the agent with Prometheus".
+
 ### Scrape config (`prometheus.yml`)
 
 ```yaml

@@ -1,3 +1,17 @@
+## bootstrap — optional Prometheus install on controller node (2026-05-29, COMPLETE)
+
+- [x] Decide approach (user delegated): binary+systemd (any distro, no Docker dep), Prometheus-only (no Grafana), opt-in prompt
+- [x] Confirm agent metrics port = 9090 (`settings.metrics_port`, `ERRANDER_METRICS_PORT`) → Prometheus must use a different port → 9091
+- [x] `scripts/install-prometheus.sh` (NEW) — arch detect, download official binary, `prometheus` user, /etc/prometheus + /var/lib/prometheus, scrape config (job `errander-agent` → localhost:9090/metrics), `promtool check`, systemd unit `--web.listen-address=:9091`, enable+start, health verify; idempotent; env overrides PROM_VERSION/AGENT_METRICS_PORT/PROM_PORT
+- [x] `scripts/bootstrap.sh` — `SCRIPT_DIR` at top (before cd); renumber step labels `/8`→`/9`; new opt-in step 8/9 (prompt, default No, skip on non-tty) calling install-prometheus.sh before the service-user move; Done banner points to standalone script
+- [x] `-f` guard (not `-x`) since invoked via `bash <script>`; confirmed sibling scripts are mode 100644 in git
+- [x] `bash -n` syntax check both scripts → OK
+- [x] `README.md` — install subsection recommends the script (binary, port 9091) instead of manual apt
+- [x] `SETUP.md` — bootstrap bullet + new "Monitoring the agent with Prometheus" section + two-directions disambiguation note
+- [x] Doc sync: STATUS.md, todo.md, lessons.md, command-log.md
+
+---
+
 ## README — observability section rewrite (2026-05-29, COMPLETE)
 
 - [x] Verify against code first: grep `errander/execution/` for LLM refs (none → Layer B clean); confirm `start_metrics_server`, `_metrics_handler`, 10 metric singletons exist + wired from `main.py:2213`

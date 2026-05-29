@@ -1,5 +1,27 @@
 # Errander-AI — Lessons Learned
 
+## 2026-05-29 — For "install X on any distro" automation, prefer the upstream static binary over the distro package
+
+Asked to make bootstrap install Prometheus across "any distro" with low overhead, the instinct is `apt-get install prometheus`. That's a trap: the `prometheus` apt package was removed on Ubuntu 23.04+ and never existed on RHEL/Rocky/Alma. Docker would work cross-distro but forces a Docker dependency onto the controller (the agent is a plain Python app and otherwise needs no Docker). The robust universal path is the **official static binary + a systemd unit** — identical on every distro, no package repo, no container runtime. This mirrors what the project's own `example/Prometheus/SETUP.md` already did for `node_exporter` (Option B binary install).
+
+**Why:** "Works on any distro" eliminates package-manager installs almost by definition — package availability and naming diverge across families and even across releases of the same family. A single self-contained binary sidesteps all of it. The cost (download URL, user, dirs, unit file) is a one-time script, not ongoing overhead.
+
+**How to apply:** When automating "install service X on any Linux," default to: detect arch (`uname -m` → amd64/arm64) → download the upstream release tarball → install binary to `/usr/local/bin` → create a system user + `/etc/X` + data dir → write a systemd unit → `daemon-reload && enable --now` → health-check. Pin the version in an overridable env var. Reach for the distro package only when you've confirmed it exists and is current on every target family.
+
+## 2026-05-29 — Co-located services with the same default port: pick the new one's port explicitly
+
+Prometheus' default listen port is `:9090` — which is exactly the Errander agent's UI+metrics port. Installing Prometheus on the same controller node with defaults would silently fail to bind (or the agent would). The installer hard-sets Prometheus to `:9091` via `--web.listen-address` and keeps the scrape *target* at `localhost:9090` (the agent). The two are different knobs: where Prometheus listens vs. what it scrapes.
+
+**Why:** Default ports are chosen in isolation by each project; collisions only appear when you co-locate. An installer that "just uses defaults" is a latent footgun on exactly the topology this project recommends (Prometheus on the controller node).
+
+**How to apply:** Whenever an install script adds a service onto a node that already runs something, enumerate the existing listeners and explicitly assign the newcomer a non-conflicting port via its config/flags — never rely on its default. Document the chosen port and make it overridable (`PROM_PORT`).
+
+## 2026-05-29 — Resolve a script's own dir before any `cd` if it calls sibling scripts
+
+`bootstrap.sh` `cd`s into the cloned repo (step 6) and later moves the repo to the service-user home (step 8). To call `install-prometheus.sh` reliably, it captures `SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"` at the very top — before any `cd` — and runs the Prometheus step *before* the repo move, so the resolved path is still valid. A relative `BASH_SOURCE` dereferenced after a `cd` would point at the wrong place.
+
+**How to apply:** Any script that (a) changes directory or relocates itself and (b) invokes sibling scripts must resolve `SCRIPT_DIR` from `${BASH_SOURCE[0]}` at the top, and order operations so sibling calls happen while that path still exists. Also: invoke siblings as `bash "$SCRIPT_DIR/x.sh"` and guard with `[ -f ]`, not `[ -x ]` — repo files are commonly mode 100644 in git (no exec bit), so an `-x` test would wrongly skip them.
+
 ## 2026-05-29 — A built exporter is not documented deployment: tell the user where to run Prometheus
 
 The agent has exposed `/metrics` (10 Prometheus metrics, wired from `main.py`) since early in the project, but the README never said *who scrapes it or where Prometheus runs*. The user — who built it — didn't remember it existed, and assumed there was no Prometheus support at all. The gap wasn't code; it was the missing deployment instruction: "install Prometheus on the controller node, point it at `localhost:9090/metrics`."

@@ -4,6 +4,18 @@
 2026-05-29
 
 ## Current Phase
+**bootstrap — optional Prometheus install on the controller node (2026-05-29, COMPLETE).**
+
+New `scripts/install-prometheus.sh` installs Prometheus on the controller node (the Agent VM) and wires it to scrape the agent's own `/metrics`. Distro-agnostic by design — downloads the official Prometheus static binary (no apt/dnf package, which is unreliable across distros), creates a `prometheus` system user + systemd unit, writes + `promtool`-validates a scrape config targeting `localhost:9090`, and starts the service on **port 9091** (the agent owns 9090 — collision avoided). Idempotent and runnable standalone. `bootstrap.sh` calls it behind an opt-in prompt (default No, skipped on non-interactive shells); step labels renumbered 8→9 and the Prometheus step runs before the service-user move so `$SCRIPT_DIR` is still valid. Decisions delegated by the user: binary-over-Docker (any distro, no extra dependency), Prometheus-only (no Grafana, low overhead), opt-in (fits users with existing monitoring).
+
+### Files changed (2026-05-29 — bootstrap Prometheus)
+- `scripts/install-prometheus.sh` (NEW) — distro-agnostic binary+systemd Prometheus installer, port 9091, scrapes agent on 9090
+- `scripts/bootstrap.sh` — `SCRIPT_DIR` resolution at top; step labels `/8`→`/9`; new opt-in step 8/9 calling install-prometheus.sh; Done banner points to the standalone script
+- `README.md` — Observability install subsection updated to recommend the script (binary, 9091) over manual apt
+- `SETUP.md` — bootstrap bullet for optional Prometheus; new "Monitoring the agent with Prometheus" section; disambiguation note on the two Prometheus directions
+- `RUN.md` — pointer to `install-prometheus.sh` in the Monitoring section
+
+## Previous Phase
 **README — observability section rewrite: two-layer split + Prometheus on controller node (2026-05-29, COMPLETE).**
 
 Rewrote the README "Observability" section to document (1) the two-layer observability split — Layer A (`agent/decisions.py`, the reasoning) is watched via the AI Decisions UI / optional LangSmith, Layer B (`execution/`, the actions) via Prometheus + the audit trail; (2) explicit instructions for installing Prometheus **on the controller node** (the Agent VM) with a ready scrape-config pointing at the agent's local `/metrics`, plus the two distinct Prometheus relationships (Prometheus→Errander scrape vs. Errander→target node_exporter reads); (3) a port-collision warning (Prometheus and the agent UI both default to `:9090`); (4) LangSmith as an optional, off-by-default, **not-bundled** Layer-A tracer with the egress caveat. Verified against code first: `errander/execution/` has zero LLM imports (Layer B clean), and `start_metrics_server()` / `_metrics_handler` / the 10 metric singletons exist and are wired from `main.py`.

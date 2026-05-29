@@ -22,6 +22,10 @@ SERVICE_USER="errander-agent"
 SERVICE_HOME="/home/${SERVICE_USER}"
 SERVICE_REPO="${SERVICE_HOME}/errander"
 
+# Resolve this script's own directory now, before any `cd`, so we can call
+# sibling scripts (e.g. install-prometheus.sh) even after changing directories.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 # ── colours ───────────────────────────────────────────────────────────────────
 GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; BOLD='\033[1m'; NC='\033[0m'
 ok()   { echo -e "  ${GREEN}✓${NC} $*"; }
@@ -34,7 +38,7 @@ echo -e "${BOLD}Errander-AI — Bootstrap${NC}"
 echo "═══════════════════════════════════════════"
 
 # ── 0. Distro detection ───────────────────────────────────────────────────────
-step "0/8" "Detecting Linux distribution"
+step "0/9" "Detecting Linux distribution"
 
 [ -f /etc/os-release ] || fail "/etc/os-release not found — unsupported system"
 . /etc/os-release
@@ -65,7 +69,7 @@ _install() {
 }
 
 # ── 1. git ────────────────────────────────────────────────────────────────────
-step "1/8" "git"
+step "1/9" "git"
 if command -v git &>/dev/null; then
     ok "already installed  ($(git --version | awk '{print $3}'))"
 else
@@ -76,7 +80,7 @@ else
 fi
 
 # ── 2. curl ───────────────────────────────────────────────────────────────────
-step "2/8" "curl"
+step "2/9" "curl"
 if command -v curl &>/dev/null; then
     ok "already installed"
 else
@@ -86,7 +90,7 @@ else
 fi
 
 # ── 3. uv ─────────────────────────────────────────────────────────────────────
-step "3/8" "uv  (Python package + version manager)"
+step "3/9" "uv  (Python package + version manager)"
 export PATH="$HOME/.local/bin:$PATH"
 
 if command -v uv &>/dev/null; then
@@ -109,7 +113,7 @@ else
 fi
 
 # ── 4. PATH persistence ───────────────────────────────────────────────────────
-step "4/8" "PATH  (~/.local/bin)"
+step "4/9" "PATH  (~/.local/bin)"
 
 if [ -n "${ZSH_VERSION:-}" ]; then
     SHELL_RC="$HOME/.zshrc"
@@ -128,13 +132,13 @@ else
 fi
 
 # ── 5. Python 3.12 ────────────────────────────────────────────────────────────
-step "5/8" "Python 3.12"
+step "5/9" "Python 3.12"
 warn "installing via uv  (idempotent — safe to run again)..."
 uv python install 3.12
 ok "Python 3.12 ready"
 
 # ── 6. Clone repo ─────────────────────────────────────────────────────────────
-step "6/8" "Errander-AI repository"
+step "6/9" "Errander-AI repository"
 
 REPO_URL="https://github.com/psc0des/Errander-AI.git"
 INSTALL_DIR="${1:-errander}"
@@ -156,7 +160,7 @@ fi
 REPO_ABS="$(pwd)"
 
 # ── 7. Install Python dependencies (as admin, caches packages) ───────────────
-step "7/8" "Python dependencies  (uv sync --extra dev)"
+step "7/9" "Python dependencies  (uv sync --extra dev)"
 
 if [ "$REPO_ABS" = "$SERVICE_REPO" ]; then
     # Already owned by service user — sync as service user
@@ -172,8 +176,27 @@ uv run python -c "import errander; print('OK')" \
     || fail "import check failed — re-run this script or check errors above"
 ok "import check passed"
 
-# ── 8. Service user setup ─────────────────────────────────────────────────────
-step "8/8" "Service user  (${SERVICE_USER})"
+# ── 8. Prometheus (optional, controller-node monitoring of the agent) ─────────
+step "8/9" "Prometheus  (optional — scrapes the agent on this controller node)"
+
+if [ -t 0 ] && [ -f "${SCRIPT_DIR}/install-prometheus.sh" ]; then
+    echo "  Installs Prometheus on THIS node (port 9091) to scrape the agent's"
+    echo "  own /metrics on port 9090. Skip if you already run monitoring."
+    read -r -p "  Install Prometheus on this controller node? [y/N] " _prom_ans || _prom_ans=""
+    if echo "${_prom_ans:-N}" | grep -qiE '^y'; then
+        bash "${SCRIPT_DIR}/install-prometheus.sh" \
+            && ok "Prometheus installed" \
+            || warn "Prometheus install failed — re-run later: bash scripts/install-prometheus.sh"
+    else
+        ok "skipped — run later with: bash scripts/install-prometheus.sh"
+    fi
+else
+    # Non-interactive shell (piped/CI) — never block; point to the standalone script.
+    ok "non-interactive — skipping. Install later: bash scripts/install-prometheus.sh"
+fi
+
+# ── 9. Service user setup ─────────────────────────────────────────────────────
+step "9/9" "Service user  (${SERVICE_USER})"
 
 if [ "$REPO_ABS" = "$SERVICE_REPO" ]; then
     ok "repo already at $SERVICE_REPO — nothing to move"
@@ -230,5 +253,9 @@ echo "  Then run the interactive setup wizard:"
 echo -e "    ${BOLD}bash scripts/configure.sh${NC}"
 echo ""
 echo "  (configure.sh covers Steps 2-5 of SETUP.md)"
+echo ""
+echo "  Monitoring (optional): if you skipped Prometheus above, install it"
+echo "  on this controller node anytime with:"
+echo -e "    ${BOLD}bash scripts/install-prometheus.sh${NC}"
 echo -e "${BOLD}═══════════════════════════════════════════${NC}"
 echo ""

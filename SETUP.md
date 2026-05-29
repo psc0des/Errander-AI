@@ -171,6 +171,7 @@ Bootstrap does everything automatically:
 - Creates the `errander-agent` service user with a `.ssh` directory
 - Moves the repo to `/home/errander-agent/errander` and sets ownership
 - Installs Python dependencies as `errander-agent`
+- **Optionally** installs Prometheus on this controller node to monitor the agent itself (opt-in prompt, default No — see [Monitoring the agent](#monitoring-the-agent-with-prometheus-optional) below)
 
 When it finishes, switch to the service user:
 
@@ -856,6 +857,8 @@ ERRANDER_SLACK_CHANNEL_ID=C0123456789
 
 ### Prometheus metrics *(optional)*
 
+> **Two different Prometheus relationships — don't confuse them.** This section is **Errander → Prometheus**: the agent *reads* target-VM metrics from a Prometheus *you already run*. The separate [Monitoring the agent](#monitoring-the-agent-with-prometheus-optional) section is **Prometheus → Errander**: a Prometheus on the controller that *scrapes the agent itself*.
+
 > **Skip if you don't have Prometheus.** The agent runs fully without it. Prometheus adds VM CPU, memory, and disk metrics to the `--ask` fleet analysis and daily probe digest.
 
 If you have a Prometheus instance scraping your VMs via `node_exporter`:
@@ -876,6 +879,25 @@ environments:
   staging:
     # no prometheus_url → uses global ERRANDER_PROMETHEUS_BASE_URL
 ```
+
+### Monitoring the agent with Prometheus *(optional)*
+
+> **This is the reverse direction from the section above.** Here a Prometheus running **on the controller node** scrapes the agent's own `/metrics` (action counts, durations, SSH errors, LLM outcomes, approval waits) — it monitors *Errander itself*, not your target VMs.
+
+`bootstrap.sh` offers this as an opt-in step (default No). To install it any time afterwards:
+
+```bash
+bash scripts/install-prometheus.sh
+```
+
+The script is **distro-agnostic** — it downloads the official Prometheus binary (no apt/dnf package required), creates a `prometheus` system user and systemd unit, writes a scrape config targeting the agent's local `/metrics`, and starts the service. It listens on **port 9091** so it doesn't collide with the agent's UI/metrics on **9090**.
+
+```bash
+# Override defaults if needed:
+PROM_PORT=9091 AGENT_METRICS_PORT=9090 PROM_VERSION=2.53.2 bash scripts/install-prometheus.sh
+```
+
+After it starts, open `http://<controller-ip>:9091/targets` — the `errander-agent` target shows **UP** once the agent is running. Point Grafana (from anywhere) at this Prometheus for dashboards.
 
 ### ELK / Elasticsearch log aggregation *(optional)*
 

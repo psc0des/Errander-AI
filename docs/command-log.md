@@ -1,5 +1,20 @@
 # Errander-AI Command Log
 
+## bootstrap — optional Prometheus install on controller node (2026-05-29)
+
+```bash
+# Confirm agent metrics port before choosing Prometheus port (avoid 9090 collision)
+#   settings.metrics_port default 9090 → Prometheus uses 9091
+# Author scripts/install-prometheus.sh (binary+systemd, distro-agnostic) +
+#   wire opt-in step into scripts/bootstrap.sh (renumber /8 → /9)
+bash -n scripts/bootstrap.sh           # syntax check → OK
+bash -n scripts/install-prometheus.sh  # syntax check → OK
+git ls-files -s scripts/bootstrap.sh   # confirm sibling scripts are mode 100644 (invoked via `bash`)
+git add scripts/install-prometheus.sh scripts/bootstrap.sh README.md SETUP.md RUN.md STATUS.md tasks/todo.md tasks/lessons.md docs/command-log.md
+git commit -m "feat: bootstrap optionally installs Prometheus on controller node to scrape the agent"
+git push origin main
+```
+
 ## README — observability section rewrite (2026-05-29)
 
 ```bash

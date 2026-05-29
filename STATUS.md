@@ -4,6 +4,14 @@
 2026-05-29
 
 ## Current Phase
+**Layer A Investigation Agent — implementation plan authored (2026-05-29, COMPLETE — plan only, not implemented).**
+
+Wrote `tasks/investigation-agent-implementation-plan.md` — a self-contained build plan for a future session (Sonnet) to implement the agentic, read-only investigation upgrade for the `--ask` path. The LLM gets read-only tools (Prometheus/ELK/audit/disk-history/vm-facts) and a bounded ReAct-style loop so it can compose queries on the fly, instead of receiving a fixed pre-gathered context. Strictly Layer A: read-only tools, recommendations only, never touches Layer B; scheduled batch (`prioritize_actions`) stays deterministic. Plan covers: pre-flight (read AI-ARCHITECTURE/OBSERVABILITY/CLAUDE invariant), the runtime decision (recommended: hand-rolled tool-calling loop on the existing OpenAI SDK to keep provider-agnostic + per-hop redaction/budget/audit control; alt: LangGraph create_react_agent), the tool set + safety rules, mandatory guardrails (Layer-A isolation test, budget/timeout, redaction every hop, per-step audit, unchanged AssistantResponse output, graceful fallback), wiring, 3-phase rollout, files checklist, definition of done, and risks. Grounded in `operator_assistant.py`, `integrations/llm.py`, `prometheus.py`, `elk.py`.
+
+### Files changed (2026-05-29 — investigation agent plan)
+- `tasks/investigation-agent-implementation-plan.md` (NEW) — build plan for the Layer A agentic investigation upgrade (not yet implemented)
+
+## Previous Phase
 **OBSERVABILITY.md — "What Errander can see" fixed signal menu (2026-05-29, COMPLETE).**
 
 Added a section documenting Errander's *inputs* (what it can observe about the fleet), the inverse of the four surfaces (how you observe Errander). Covers: the fixed menu of developer-built probes/queries (pending packages, disk usage+growth trend, reboot-required, service health, failed SSH logins, config drift, CPU/mem/load via Prometheus opt-in, host-level error logs via ELK opt-in); who writes the queries (developers, hardcoded templates, runtime fills only host/window/limit — LLM never composes, operator can't supply); two clarifications (disk *trend* is covered but via SSH-df→history→slope not Prometheus; log reading is system/host-level never app-specific); and what happens when a signal isn't on the menu (no improvisation, graceful degradation, adding a signal = reviewed code change not config/LLM). Notes the agentic Layer-A investigation upgrade is the one place that line moves, for `--ask` only. Grounded in `disk_trend.py`, `failed_logins.py`, `integrations/prometheus.py`, `integrations/elk.py`.

@@ -1,5 +1,15 @@
 # Errander-AI Command Log
 
+## Layer A Investigation Agent — implementation plan (2026-05-29)
+
+```bash
+# Read llm.py to ground the tool-calling design (AsyncOpenAI, complete() has no tools= yet)
+# Author tasks/investigation-agent-implementation-plan.md (plan only — no feature code)
+git add tasks/investigation-agent-implementation-plan.md STATUS.md tasks/todo.md docs/command-log.md
+git commit -m "docs: add Layer A investigation-agent implementation plan (for later Sonnet build)"
+git push origin main
+```
+
 ## OBSERVABILITY.md — "What Errander can see" fixed signal menu (2026-05-29)
 
 ```bash

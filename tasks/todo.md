@@ -1,3 +1,13 @@
+## Layer A Investigation Agent — implementation plan (2026-05-29, PLAN AUTHORED)
+
+- [x] Authored `tasks/investigation-agent-implementation-plan.md` — self-contained build plan for a future (Sonnet) session
+- [x] Grounded in code: `operator_assistant.py`, `integrations/llm.py` (OpenAI SDK, no tool-calling yet), `prometheus.py`, `elk.py`
+- [x] Locked decisions: Layer A only (read-only tools, recommendations only, never Layer B); batch planner stays deterministic; runtime = hand-rolled tool loop on existing OpenAI SDK (recommended) vs LangGraph create_react_agent (alt)
+- [ ] **NOT IMPLEMENTED** — hand off to Sonnet; tracked as future work
+- [x] Doc sync: STATUS.md, todo.md, command-log.md
+
+---
+
 ## OBSERVABILITY.md — "What Errander can see" fixed signal menu (2026-05-29, COMPLETE)
 
 - [x] Verified gathering mechanisms in code: `disk_trend.py` (df→history→slope), `failed_logins.py` (journald/auth.log), `integrations/prometheus.py` (3 fixed PromQL), `integrations/elk.py` (1 fixed host-aggregated ES query)

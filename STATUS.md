@@ -3,7 +3,28 @@
 ## Last Updated
 2026-05-29
 
+## Next Up — Planned features (NOT yet built)
+
+Two implementation plans are authored and waiting to be built, **in this order**:
+
+1. **Layer A Investigation Agent** → `tasks/investigation-agent-implementation-plan.md`
+   Agentic, read-only `--ask` investigation: LLM composes Prometheus/ELK/audit/disk/vm-facts queries on the fly. Strictly Layer A. **Build first** — it's the engine.
+2. **Dashboard Chat (SRE ops-console)** → `tasks/dashboard-chat-implementation-plan.md`
+   A `/ui/chat` quick-help console (patch status, CPU/mem, app health), multi-turn, on top of the investigation engine. Optional action handoff routes through the existing approval flow — chat never executes. **Build second** (depends on #1). "Chat assignment/ownership" is a later, separate team feature.
+
+> Status: **plans only, no feature code yet.** Intended for a later Sonnet build session. Each plan has a mandatory pre-flight + (for #2) a reconcile-against-as-built-engine step.
+
 ## Current Phase
+**Dashboard Chat — implementation plan authored (Plan B) + roadmap recorded (2026-05-29, COMPLETE — plan only, not implemented).**
+
+Wrote `tasks/dashboard-chat-implementation-plan.md` (Plan B): a dashboard `/ui/chat` SRE ops-console that reuses the Plan A investigation engine, adds multi-turn conversation state + a web UI surface, and (optionally, v1.1) an action handoff that routes through the existing approval flow — the chat never executes. Written at contract altitude (depends on the engine's *(question[+history]) → AssistantResponse* contract, not internals) with a mandatory reconcile-against-as-built-engine pre-flight step so it can't go stale before Plan A lands. Added a forward "Downstream" pointer in Plan A linking to Plan B. Recorded both plans in the new "Next Up" section above and in tasks/todo.md so they aren't forgotten. Boundary held throughout: chat = read-only Layer A console + approval-gated Layer B handoff; "chat assignment/ownership" explicitly deferred as a separate team feature.
+
+### Files changed (2026-05-29 — Plan B + roadmap)
+- `tasks/dashboard-chat-implementation-plan.md` (NEW) — dashboard chat build plan (depends on Plan A; not implemented)
+- `tasks/investigation-agent-implementation-plan.md` — added "Downstream" forward pointer to Plan B
+- `STATUS.md` — new "Next Up — Planned features" section (persistent roadmap)
+
+## Previous Phase
 **Layer A Investigation Agent — implementation plan authored (2026-05-29, COMPLETE — plan only, not implemented).**
 
 Wrote `tasks/investigation-agent-implementation-plan.md` — a self-contained build plan for a future session (Sonnet) to implement the agentic, read-only investigation upgrade for the `--ask` path. The LLM gets read-only tools (Prometheus/ELK/audit/disk-history/vm-facts) and a bounded ReAct-style loop so it can compose queries on the fly, instead of receiving a fixed pre-gathered context. Strictly Layer A: read-only tools, recommendations only, never touches Layer B; scheduled batch (`prioritize_actions`) stays deterministic. Plan covers: pre-flight (read AI-ARCHITECTURE/OBSERVABILITY/CLAUDE invariant), the runtime decision (recommended: hand-rolled tool-calling loop on the existing OpenAI SDK to keep provider-agnostic + per-hop redaction/budget/audit control; alt: LangGraph create_react_agent), the tool set + safety rules, mandatory guardrails (Layer-A isolation test, budget/timeout, redaction every hop, per-step audit, unchanged AssistantResponse output, graceful fallback), wiring, 3-phase rollout, files checklist, definition of done, and risks. Grounded in `operator_assistant.py`, `integrations/llm.py`, `prometheus.py`, `elk.py`.

@@ -1,3 +1,23 @@
+# ROADMAP — Planned features (NOT yet built)
+
+Build in this order. Plans only — no feature code yet. Intended for a later Sonnet session.
+
+- [ ] **1. Layer A Investigation Agent** — `tasks/investigation-agent-implementation-plan.md` (build first; it's the engine)
+- [ ] **2. Dashboard Chat (SRE ops-console)** — `tasks/dashboard-chat-implementation-plan.md` (build second; depends on #1; chat never executes — action handoff goes through approval)
+- [ ] _(later, separate)_ Chat assignment / ownership — only with multiple operators
+
+---
+
+## Dashboard Chat — implementation plan (Plan B) (2026-05-29, PLAN AUTHORED)
+
+- [x] Authored `tasks/dashboard-chat-implementation-plan.md` — contract-altitude plan depending on Plan A, with a reconcile-against-as-built-engine pre-flight step
+- [x] Scope: read-only `/ui/chat` ops-console (Layer A) + multi-turn conversation state + web UI; optional v1.1 action handoff via existing approval flow (chat never executes); assignment/ownership explicitly deferred
+- [x] Added "Downstream" forward pointer in Plan A; recorded roadmap in STATUS "Next Up" + this ROADMAP section
+- [ ] **NOT IMPLEMENTED** — hand off to Sonnet after Plan A is built
+- [x] Doc sync: STATUS.md, todo.md, command-log.md
+
+---
+
 ## Layer A Investigation Agent — implementation plan (2026-05-29, PLAN AUTHORED)
 
 - [x] Authored `tasks/investigation-agent-implementation-plan.md` — self-contained build plan for a future (Sonnet) session

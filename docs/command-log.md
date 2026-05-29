@@ -1,5 +1,15 @@
 # Errander-AI Command Log
 
+## Dashboard Chat — implementation plan (Plan B) + roadmap (2026-05-29)
+
+```bash
+# Author Plan B (depends on Plan A; contract-altitude + reconcile step); link from Plan A;
+# record persistent roadmap in STATUS "Next Up" + tasks/todo.md ROADMAP
+git add tasks/dashboard-chat-implementation-plan.md tasks/investigation-agent-implementation-plan.md STATUS.md tasks/todo.md docs/command-log.md
+git commit -m "docs: add dashboard-chat plan (Plan B) + record planned-features roadmap"
+git push origin main
+```
+
 ## Layer A Investigation Agent — implementation plan (2026-05-29)
 
 ```bash

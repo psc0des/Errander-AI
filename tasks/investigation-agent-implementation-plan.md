@@ -3,6 +3,8 @@
 > **Status:** proposed, not started. This is a build plan for a future implementation session (e.g. Sonnet). Read it top-to-bottom before writing code.
 >
 > **One-line goal:** upgrade the *open-ended* `--ask` investigation path so the LLM can **compose read-only queries on the fly** (Prometheus, ELK, audit, disk history, VM facts) instead of receiving a fixed, pre-gathered context — while staying strictly Layer A.
+>
+> **Downstream:** this engine is the foundation for the **dashboard chat** (`tasks/dashboard-chat-implementation-plan.md`, Plan B). Build this (Plan A) first; the chat is a surface on top of it. Keep the engine surface-agnostic — its contract is *(question [+ history]) → `AssistantResponse`* — so both `--ask` and a future chat can call it.
 
 ---
 

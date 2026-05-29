@@ -4,6 +4,14 @@
 2026-05-29
 
 ## Current Phase
+**OBSERVABILITY.md — built-in vs. bring-your-own boundary + tool-agnostic external tracing (2026-05-29, COMPLETE).**
+
+Reworked the OBSERVABILITY.md overview to lead with the **most important distinction**: what Errander **produces and owns** (built-in, in-network, always-on, system of record — audit trail, AI decision log, `/metrics` endpoint, structured JSON logs) vs. **bring-your-own external tools** (strongly recommended but NOT part of Errander, tool-agnostic — Prometheus/Grafana, LangSmith *or equivalent*, ELK/Loki). Added the structured-logs stream (previously omitted). Reframed the LangSmith section as "External Layer-A tracing — LangSmith *or equivalent*" with an explicit recommendation-not-dependency stance, plus a "what it adds vs. redundant/N/A for Errander" table (Traces/Run Types = new; LLM Calls = redundant; Cost&Tokens = conditional on cloud vs vLLM; Tools = N/A until tool-using Layer A; Feedback = future eval). Explicit guidance for coding agents: treat built-in as guaranteed, never assume/depend on an external tool, external tools observe but never participate in Layer B.
+
+### Files changed (2026-05-29 — observability boundary)
+- `docs/OBSERVABILITY.md` — new "built-in vs. bring-your-own" overview (two tables + golden rule + coding-agent note); logs added as a surface; LangSmith section made tool-agnostic with value/redundancy guidance
+
+## Previous Phase
 **docs/OBSERVABILITY.md — per-layer observability reference (2026-05-29, COMPLETE).**
 
 New canonical observability doc explaining the four surfaces and which layer each serves: **audit trail** (Layer B, authoritative record of actions — `AuditStore` + `EventType`, CLI `--audit`, `/ui/batches`), **AI decision log** (Layer A, built-in reasoning record — `AIDecisionStore`, CLI `--ai-decisions`, `/ui/ai-decisions`), **Prometheus metrics** (mostly Layer B execution health; the lone Layer-A exception is `errander_llm_requests_total`), and **LangSmith** (Layer A, documented as planned/not-yet-wired with the egress + Layer-A-only constraints). Written for both operators and coding agents — includes a "For coding agents" section mapping each surface to its code location and the rules for extending (new action → per-object audit events + metrics, never an LLM in execute; new LLM call → log via AIDecisionStore). Grounded in code: event types from `models/events.py`, store APIs from `safety/audit.py` + `safety/ai_audit.py`, CLI flags from `main.py`. CLAUDE.md gets a pointer in the AI Safety Invariant section + the doc-sync "update when relevant" list.

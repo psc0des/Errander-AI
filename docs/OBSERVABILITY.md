@@ -8,20 +8,37 @@ It builds directly on the two-layer safety model in [`AI-ARCHITECTURE.md`](AI-AR
 
 ---
 
-## The four surfaces at a glance
+## The most important distinction: built-in vs. bring-your-own
 
-| Surface | Layer | Question it answers | Authoritative for | Status |
+Errander draws a hard line between **what it produces and owns** and **what you point at it**. Get this wrong and you'll either trust a tool that isn't configured, or treat an external dashboard as the system of record. It is neither.
+
+**Built-in — Errander produces these. In-network, always-on, zero external dependency. These are the system of record.**
+
+| Surface | Layer | Question it answers | Authoritative for | Where |
 |---|---|---|---|---|
-| **Audit trail** | B (hands) | *What exactly did the agent do?* | **What changed on infrastructure** | ✅ built-in |
-| **AI decision log** | A (brain) | *Why did the agent recommend this?* | What the LLM was asked + answered | ✅ built-in |
-| **Prometheus metrics** | B (mostly) | *Is execution healthy / fast / frequent?* | Aggregate execution health | ✅ built-in (scraper opt-in) |
-| **LangSmith traces** | A (brain) | *How did the LangGraph reasoning flow, step by step?* | Rich Layer-A debugging + evals | 🔜 planned (after Prometheus) |
+| **Audit trail** | B (hands) | *What exactly did the agent do?* | **What changed on infrastructure** | `audit_events` table (SQLite) |
+| **AI decision log** | A (brain) | *Why did the agent recommend this?* | What the LLM was asked + answered | `ai_decisions` table (SQLite) |
+| **`/metrics` endpoint** | B (mostly) | *Is execution healthy / fast / frequent?* | (raw counters — see below) | HTTP `:9090/metrics` |
+| **Structured JSON logs** | both | *What was the play-by-play / diagnostics?* | nothing — diagnostics, may rotate away | stdout |
+
+**Bring-your-own — external tools you supply and run. Strongly recommended, but NOT part of Errander, tool-agnostic, and never the system of record. They are views/consumers layered on the built-ins.**
+
+| External tool (or equivalent) | Consumes / observes | Layer | Status |
+|---|---|---|---|
+| **Prometheus** (+ **Grafana**) | scrapes the `/metrics` endpoint | B (health) | ✅ supported; scraper opt-in (`scripts/install-prometheus.sh`) |
+| **LangSmith** *or any LangGraph tracer* | the Layer-A reasoning graph | A (brain) | 🔜 planned (after Prometheus); off by default |
+| **ELK / Loki / any log store** | ingests the stdout JSON logs | diagnostics | bring-your-own (see `example/ELK/`) |
+
+> **Strong recommendation, explicit non-ownership.** For deep Layer-A tracing and for log search, we *recommend* an external tool — LangSmith (or an equivalent of your choice) for reasoning traces, ELK/Loki for logs — but Errander does not bundle, require, or depend on any of them. Pick what fits your stack. If you run none of them, you lose **no authoritative data**: the audit trail and AI decision log are still complete and in-network.
 
 The golden rule of which-to-trust:
 
-- **"Did it happen, and what exactly?"** → **audit trail**. Never Prometheus, never LangSmith.
-- **"Is the fleet maintenance healthy in aggregate?"** → **Prometheus**.
-- **"Why did the LLM choose that?"** → **AI decision log** (built-in) or **LangSmith** (richer, planned).
+- **"Did it happen, and what exactly?"** → **audit trail** (built-in). Never Prometheus, never LangSmith, never a log dashboard.
+- **"Is the fleet maintenance healthy in aggregate?"** → **Prometheus** (external view of the built-in `/metrics`).
+- **"Why did the LLM choose that?"** → **AI decision log** (built-in, always there) or **LangSmith** (external, richer, planned).
+- **"What was the diagnostic play-by-play?"** → **structured logs** (built-in stream) → searchable via **ELK/Loki** (external).
+
+> **For coding agents (Claude/Opus/Sonnet):** treat the built-in column as *guaranteed to exist* — write to it, query it, rely on it. Treat the bring-your-own column as *may or may not be configured* — never assume a LangSmith/Prometheus/ELK is present, never make Errander depend on one, and never route Layer B execution data through an external tool. External tools observe; they never participate.
 
 ---
 
@@ -129,19 +146,31 @@ Distro-agnostic (official binary + systemd), listens on **`:9091`** to avoid the
 
 ---
 
-## 4. LangSmith — Layer A tracing (planned)
+## 4. External Layer-A tracing — LangSmith *or equivalent* (planned)
 
-> **Status: planned, not yet wired.** Target: integrate after the Prometheus path is settled. This section documents the intended design so it's built consistently.
+> **Status: planned, not yet wired. External, optional, bring-your-own.** Target: integrate after the Prometheus path is settled. This section documents the intended design so it's built consistently. LangSmith is the **reference** choice because the decision engine is LangGraph — but it is **a recommendation, not a dependency**, and any equivalent LangGraph/OpenTelemetry tracer of your choice is fine.
 
-Because the decision engine is **LangGraph**, [LangSmith](https://docs.smith.langchain.com/) attaches with no code changes via env vars (`LANGCHAIN_TRACING_V2=true`, `LANGCHAIN_API_KEY`, `LANGCHAIN_PROJECT`) and gives per-node/edge traces, latency breakdowns, token usage, and prompt-regression evals — a richer view of the same Layer-A reasoning the AI decision log records.
+Because the decision engine is **LangGraph**, [LangSmith](https://docs.smith.langchain.com/) attaches with no code changes via env vars (`LANGCHAIN_TRACING_V2=true`, `LANGCHAIN_API_KEY`, `LANGCHAIN_PROJECT`) and gives per-node/edge traces, latency breakdowns, token usage, and prompt-regression evals — a richer *view* of the same Layer-A reasoning the built-in AI decision log already records.
 
-**Design constraints (must hold when integrated):**
+### What it adds vs. what's redundant or N/A for Errander
 
-- **Layer A only.** LangSmith observes the brain. It must **never** be wired into the Layer B execution path — that path stays deterministic with no external tracer in the loop. (See the AI Safety Invariant.)
-- **Off by default, env-var gated.** On in dev/staging; a deliberate opt-in elsewhere.
+Errander's Layer A is deliberately narrow (a few structured LLM calls, no tool-using agent loop), so not every LangSmith panel is equally useful here. Right-size the investment:
+
+| LangSmith panel | Value to Errander | Why |
+|---|---|---|
+| **Traces** / **Run Types** | **High — genuinely new** | The visual node/edge trace tree is the main thing the built-in decision log can't show. Latency matters most on the self-hosted vLLM/T4 path (60s timeout). |
+| **Feedback Scores** | **Medium / future** | Pairs with the existing replay-eval (`--ai-eval-replay`) for prompt-regression. Requires you to attach feedback — not automatic. |
+| **LLM Calls** (count/latency) | **Low — redundant** | Already covered by `errander_llm_requests_total` (Prometheus) + `latency_ms`/`outcome` (AI decision log). |
+| **Cost & Tokens** | **Conditional** | Important on a **cloud LLM** (real $); near-irrelevant on **self-hosted vLLM** (your own GPU). |
+| **Tools** | **N/A today** | Current Layer-A calls return structured JSON; they don't call tools. Only relevant if Layer A later gains tool-using investigation (e.g. Prometheus/ELK MCP). |
+
+### Design constraints (must hold when integrated)
+
+- **Layer A only.** It observes the brain. It must **never** be wired into the Layer B execution path — that path stays deterministic with no external tracer in the loop. (See the AI Safety Invariant.)
+- **Off by default, env-var gated, swappable.** On in dev/staging; a deliberate opt-in elsewhere; replaceable with any equivalent tracer.
 - **Egress caveat.** LangSmith's default backend is LangChain's cloud — enabling it sends prompt contents (VM hostnames, log excerpts, package lists) off-network, which conflicts with the no-egress posture. Treat it as a **dev/staging** aid, not a no-egress-prod dependency.
 
-LangSmith complements, never replaces, the built-in AI decision log (which stays the in-network, always-on record).
+It complements, never replaces, the built-in AI decision log (which stays the in-network, always-on system of record).
 
 ---
 

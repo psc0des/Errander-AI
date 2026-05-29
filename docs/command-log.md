@@ -1,5 +1,16 @@
 # Errander-AI Command Log
 
+## OBSERVABILITY.md — built-in vs. bring-your-own boundary (2026-05-29)
+
+```bash
+# Rework OBSERVABILITY.md overview: built-in (owned, authoritative) vs.
+#   bring-your-own external tools (Prometheus/Grafana, LangSmith-or-equiv, ELK/Loki);
+#   add structured-logs surface; make LangSmith section tool-agnostic + value/N-A table
+git add docs/OBSERVABILITY.md STATUS.md tasks/todo.md tasks/lessons.md docs/command-log.md
+git commit -m "docs: OBSERVABILITY.md — built-in vs bring-your-own boundary, tool-agnostic external tracing"
+git push origin main
+```
+
 ## docs/OBSERVABILITY.md — per-layer observability reference (2026-05-29)
 
 ```bash

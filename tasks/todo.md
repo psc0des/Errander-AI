@@ -1,3 +1,13 @@
+## OBSERVABILITY.md — built-in vs. bring-your-own boundary (2026-05-29, COMPLETE)
+
+- [x] Reworked overview into two tables: **built-in** (audit trail, AI decision log, `/metrics`, structured logs — system of record) vs. **bring-your-own external** (Prometheus/Grafana, LangSmith-or-equivalent, ELK/Loki — recommended, not bundled, not authoritative)
+- [x] Added structured JSON logs as a surface (was missing)
+- [x] LangSmith section → "External Layer-A tracing — LangSmith *or equivalent*"; recommendation-not-dependency framing; value-vs-redundant/N/A table (Traces/Run Types high, LLM Calls redundant, Cost&Tokens conditional, Tools N/A, Feedback future)
+- [x] Coding-agent guidance: built-in = guaranteed/rely on it; external = never assume/depend; external observes, never participates in Layer B
+- [x] Doc sync: STATUS.md, todo.md, lessons.md, command-log.md
+
+---
+
 ## docs/OBSERVABILITY.md — per-layer observability reference (2026-05-29, COMPLETE)
 
 - [x] Gather code facts: `EventType` list (`models/events.py`), `AuditStore.get_events` + `AIDecisionStore.get_decisions/get_decision_by_id` signatures, audit/ai-decision CLI flags (`main.py`), AIDecision fields

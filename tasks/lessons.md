@@ -1,5 +1,13 @@
 # Errander-AI — Lessons Learned
 
+## 2026-05-29 — Separate "what the product owns" from "bring-your-own tools" in observability docs
+
+The user's instinct, after seeing LangSmith's dashboard, was the right one: external tools like LangSmith/ELK/Grafana should be documented as **strong recommendations for observing things, but explicitly not part of the solution**. The doc now leads with a built-in-vs-bring-your-own split: Errander *produces and owns* the audit trail, AI decision log, `/metrics` endpoint, and structured logs (in-network, always-on, system of record); external tools (Prometheus/Grafana, LangSmith-or-equivalent, ELK/Loki) are *views/consumers* you supply — recommended, swappable, never authoritative, and never in the Layer B path.
+
+**Why:** Without this line, two failure modes appear: (1) someone trusts a dashboard that was never configured, or treats Grafana/LangSmith as the record of what happened; (2) a coding agent makes Errander *depend* on an external tool, or routes execution data through one. Naming ownership + "external observes, never participates" closes both. It also keeps tool choice open — LangSmith is the reference, not a dependency; any equivalent tracer works.
+
+**How to apply:** In any observability/integration doc, present a two-column reality: **built-in (guaranteed, owned, authoritative)** vs. **bring-your-own (optional, recommended, tool-agnostic, non-authoritative)**. For coding agents, state the rule explicitly: rely on built-in, never assume/depend on external, external tools observe but never participate in execution. Right-size external tools to the actual architecture — e.g. LangSmith's "Tools" panel is N/A while Layer A has no tool-using loop; don't imply value that isn't there.
+
 ## 2026-05-29 — Observability docs must name the layer AND the authority of each surface, not just list tools
 
 When documenting observability for a two-layer system, listing "we have Prometheus, audit logs, and (soon) LangSmith" is not enough — it invites the exact confusion the user had ("LangSmith sees the reasoning; the audit log sees the actions — can you explain?"). The doc has to state, per surface: which layer it observes, the one question it answers, and what it is *authoritative* for. The audit trail is authoritative for *what changed*; Prometheus for *aggregate health*; the AI decision log / LangSmith for *why*. A reasoning trace must never be treated as a record of what happened to infrastructure.

@@ -1,5 +1,13 @@
 # Errander-AI — Lessons Learned
 
+## 2026-05-29 — Position the project as "supervised agentic AI" — not plain gen AI, not unqualified agentic
+
+The README led with "deterministic maintenance automation with an AI-assisted operator layer," which undersells it. Correct positioning (decided this session): **supervised agentic AI**. "Gen AI" undersells (implies a content generator; Errander acts on infrastructure). Unqualified "agentic AI" over-claims (implies the LLM autonomously executes — the exact thing Errander forbids). The accurate, differentiated label is *agentic* (assesses + orchestrates a fleet) *supervised* (mandatory human approval) with *generative AI bounded to Layer A*. For an SRE/infra audience, bounded autonomy + HITL is the trust pitch, not a weakness.
+
+**Why:** The label sets expectations. Over-claiming autonomy contradicts the core safety story (LLM banned from execution); under-claiming hides the real value (supervised fleet action, not text generation).
+
+**How to apply:** In docs/marketing, use "supervised agentic AI" (matches CLAUDE.md's own framing). When the gen-vs-agentic question comes up: "generative AI inside a supervised agentic architecture — gen AI is the brain; the system is agentic; the hands are deterministic and human-gated." Keep README/CLAUDE/docs consistent on this wording.
+
 ## 2026-05-29 — Document a system's INPUTS (what it can see), not just its outputs (how you observe it)
 
 Observability docs naturally describe outputs — metrics, logs, traces, audit. But users kept asking the inverse: "what can Errander actually *see* about my fleet, and what happens if it needs data nobody built a query for?" That's the **input** side — the fixed menu of probes/queries — and it wasn't documented anywhere. Added a "What Errander can see" section listing the signal menu, who authors the queries (developers, hardcoded; runtime fills only params), and the graceful-degradation behavior when a signal is off-menu (no improvisation; gap; adding a signal = reviewed code change).

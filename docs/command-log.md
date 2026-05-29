@@ -1,5 +1,16 @@
 # Errander-AI Command Log
 
+## README — reposition as supervised agentic AI + roadmap (2026-05-29)
+
+```bash
+# Reposition README opening (supervised agentic AI), name Layer A/B in intro,
+# fix stale "Docker pruning" → "Docker hygiene", add near-term Roadmap section
+git add README.md STATUS.md tasks/todo.md tasks/lessons.md docs/command-log.md
+git commit -m "docs: README — position as supervised agentic AI, name Layer A/B, add near-term roadmap"
+# Push all pending commits to origin
+git push origin main
+```
+
 ## Dashboard Chat — implementation plan (Plan B) + roadmap (2026-05-29)
 
 ```bash

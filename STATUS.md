@@ -15,6 +15,14 @@ Two implementation plans are authored and waiting to be built, **in this order**
 > Status: **plans only, no feature code yet.** Intended for a later Sonnet build session. Each plan has a mandatory pre-flight + (for #2) a reconcile-against-as-built-engine step.
 
 ## Current Phase
+**README — reposition as supervised agentic AI + name Layer A/B up front + near-term roadmap (2026-05-29, COMPLETE).**
+
+Fixed the README to tell the whole story per this session's conversations: (1) headline + opening repositioned from "deterministic maintenance automation" to **supervised agentic AI SRE platform** (agentic in fleet assessment/orchestration, supervised by mandatory human approval, generative AI bounded to the advisory Layer A); (2) the **two-layer architecture is now named in the intro** (Layer A brain / Layer B hands) instead of only in Design Principles; (3) fixed a stale "Docker pruning" → "Docker hygiene" in the opening; (4) added a **near-term Roadmap** (Layer A investigation agent, optional LangSmith tracing, dashboard chat) with pointers to the plan files, clearly marked planned/not-built, restructured the old "V2 Roadmap" under a new "## Roadmap" with Near-term + V2 subsections. Positioning decision from the gen-AI-vs-agentic discussion: call it supervised agentic AI, not plain "gen AI" (undersells) and not unqualified "agentic AI" (over-claims autonomy Errander deliberately rejects).
+
+### Files changed (2026-05-29 — README repositioning)
+- `README.md` — headline + opening (supervised agentic AI; docker hygiene fix); two-layer naming in intro; new "## Roadmap" with Near-term (investigation agent / LangSmith / dashboard chat) + V2
+
+## Previous Phase
 **Dashboard Chat — implementation plan authored (Plan B) + roadmap recorded (2026-05-29, COMPLETE — plan only, not implemented).**
 
 Wrote `tasks/dashboard-chat-implementation-plan.md` (Plan B): a dashboard `/ui/chat` SRE ops-console that reuses the Plan A investigation engine, adds multi-turn conversation state + a web UI surface, and (optionally, v1.1) an action handoff that routes through the existing approval flow — the chat never executes. Written at contract altitude (depends on the engine's *(question[+history]) → AssistantResponse* contract, not internals) with a mandatory reconcile-against-as-built-engine pre-flight step so it can't go stale before Plan A lands. Added a forward "Downstream" pointer in Plan A linking to Plan B. Recorded both plans in the new "Next Up" section above and in tasks/todo.md so they aren't forgotten. Boundary held throughout: chat = read-only Layer A console + approval-gated Layer B handoff; "chat assignment/ownership" explicitly deferred as a separate team feature.

@@ -1,8 +1,8 @@
 # Errander-AI
 
-**Deterministic maintenance automation with an AI-assisted operator layer for Linux fleets.**
+**Supervised agentic AI for Linux fleet maintenance — the LLM decides and explains, humans approve, deterministic code acts.**
 
-Errander-AI is a supervised maintenance agent for small-to-medium Linux fleets. It performs non-kernel patching, log rotation, Docker pruning, disk cleanup, and backup verification — with safety gates, rollback, idempotency, and full audit logging. Every live change requires human approval (Slack or Web UI). It runs on a single controller VM and manages any number of target servers over SSH.
+Errander-AI is a **supervised agentic AI SRE platform** for small-to-medium Linux fleets. It assesses each host, prioritizes what needs doing, and performs non-kernel patching, log rotation, Docker hygiene, disk cleanup, and backup verification — with safety gates, rollback, idempotency, and full audit logging. It runs on a single controller VM and manages any number of target servers over SSH. **Every live change requires human approval (Slack or Web UI) and is executed by deterministic Python — never by the LLM.**
 
 | Action | Default | Opt-in required | Risk tier |
 |---|---|---|---|
@@ -21,7 +21,7 @@ uv run python -m errander --restart-service production --unit nginx.service --vm
 uv run python -m errander --restart-service production --unit nginx.service --vm prod-web-01
 ```
 
-The AI layer prioritizes, explains, correlates, and summarizes maintenance work for operators. The execution layer is deterministic Python — the LLM is never in the path that actually changes infrastructure.
+Errander-AI is built on a **two-layer architecture**. **Layer A (the brain)** uses generative AI to prioritize, explain, correlate, and summarize maintenance for operators — it recommends, never acts. **Layer B (the hands)** is deterministic Python that gathers state and applies approved fixes — the LLM is never in the path that changes infrastructure. That is what *supervised agentic* means here: **agentic** in how it assesses and orchestrates a fleet, **supervised** by mandatory human approval, with **generative AI bounded to the advisory layer**. See [`docs/AI-ARCHITECTURE.md`](docs/AI-ARCHITECTURE.md) and [`docs/OBSERVABILITY.md`](docs/OBSERVABILITY.md).
 
 100% open source. Cloud-agnostic. No SaaS dependencies except Slack (optional).
 
@@ -616,7 +616,17 @@ uv run python -m errander --check-llm
 
 ---
 
-## V2 Roadmap
+## Roadmap
+
+### Near-term (planned — not yet built)
+
+These deepen the **agentic** side of the platform, all staying within the Layer A / Layer B safety model:
+
+- **Layer A investigation agent** — agentic, read-only `--ask`: the LLM composes Prometheus/ELK/audit queries on the fly to answer open-ended questions, instead of today's fixed query set. Stays strictly Layer A (read-only, recommends — never executes). See [`tasks/investigation-agent-implementation-plan.md`](tasks/investigation-agent-implementation-plan.md).
+- **LangSmith tracing (optional, bring-your-own)** — deep Layer-A observability for the LangGraph reasoning; off by default, never wired into Layer B. See [`docs/OBSERVABILITY.md`](docs/OBSERVABILITY.md).
+- **Dashboard chat (SRE ops-console)** — a `/ui/chat` quick-help console (patch status, CPU/mem, app health) on top of the investigation agent; multi-turn and read-only, with any action proposal routed through the **existing approval flow** — the chat never executes. See [`tasks/dashboard-chat-implementation-plan.md`](tasks/dashboard-chat-implementation-plan.md).
+
+### V2
 
 - PostgreSQL for audit trail (replace SQLite)
 - Valkey (BSD-licensed Redis fork) for distributed VM locking

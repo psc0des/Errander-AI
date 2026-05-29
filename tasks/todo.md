@@ -8,6 +8,16 @@ Build in this order. Plans only — no feature code yet. Intended for a later So
 
 ---
 
+## README — reposition as supervised agentic AI + roadmap (2026-05-29, COMPLETE)
+
+- [x] Headline + opening: "supervised agentic AI SRE platform" framing (was "deterministic maintenance automation"); fixed stale "Docker pruning" → "Docker hygiene"
+- [x] Named the two-layer architecture (Layer A brain / Layer B hands) in the intro, not just Design Principles
+- [x] New "## Roadmap" — Near-term (investigation agent, optional LangSmith, dashboard chat, with plan-file links) + V2 subsection
+- [x] Positioning decision captured: supervised agentic AI (not plain gen AI, not unqualified agentic)
+- [x] Doc sync: STATUS.md, todo.md, lessons.md, command-log.md
+
+---
+
 ## Dashboard Chat — implementation plan (Plan B) (2026-05-29, PLAN AUTHORED)
 
 - [x] Authored `tasks/dashboard-chat-implementation-plan.md` — contract-altitude plan depending on Plan A, with a reconcile-against-as-built-engine pre-flight step

@@ -1,3 +1,12 @@
+## README — "The two layers in one run" mapping (2026-05-29, COMPLETE)
+
+- [x] Added subsection to How It Works: step→layer table (SSH gather=B, Prometheus/ELK=B feeds A, recommend=A, approve=human, apply=B, summarize=A)
+- [x] "brain proposes → human approves → hands act" framing; noted Layer B runs twice per run
+- [x] Bridges the gap: explicit Layer A/B labels now connected to the workflow in README (was only in AI-ARCHITECTURE.md)
+- [x] Doc sync: STATUS.md, todo.md, lessons.md, command-log.md
+
+---
+
 ## OBSERVABILITY.md — built-in vs. bring-your-own boundary (2026-05-29, COMPLETE)
 
 - [x] Reworked overview into two tables: **built-in** (audit trail, AI decision log, `/metrics`, structured logs — system of record) vs. **bring-your-own external** (Prometheus/Grafana, LangSmith-or-equivalent, ELK/Loki — recommended, not bundled, not authoritative)

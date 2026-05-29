@@ -104,6 +104,27 @@ The flow:
 
 The LLM is a **brain in a jar** — it thinks, but it has no hands. The agent is the hands.
 
+### The two layers in one run
+
+That flow is exactly the **two-layer model** ([`docs/AI-ARCHITECTURE.md`](docs/AI-ARCHITECTURE.md)) in action. Mapping each step:
+
+| Step in a run | Who does it | Layer |
+|---|---|---|
+| SSH in, gather state (`df -h`, `apt list --upgradable`, `docker system df`) | deterministic Python | **B** — the hands, *reading* |
+| Pull Prometheus / ELK context (if opted in) | deterministic Python | **B** gathers → feeds **A** |
+| **Look at the state and recommend a prioritized plan** | the **LLM** (hardcoded fallback if down) | **A** — the brain |
+| Approve / reject (Slack reaction or Web UI) | **you** | — the boundary |
+| **Apply the approved fix** — execute, verify, roll back, audit | deterministic Python | **B** — the hands, *acting* |
+| Summarize what happened | the **LLM** | **A** — the brain |
+
+The shape to remember:
+
+- **Layer A (the brain)** *thinks and recommends* — it looks at gathered facts and proposes a plan. It **never** changes a VM.
+- **Layer B (the hands)** *gathers facts and applies fixes* — deterministic Python, only after you approve, with audit + rollback. **No LLM in this path.**
+- **You sit in the middle.** The brain proposes → you approve → the hands execute.
+
+So Layer B runs **twice** in a single maintenance run (gather facts → … → apply fix), with the Layer A recommendation and your approval in between. That gap — brain proposes, human approves, deterministic hands act — *is* the safety architecture.
+
 ### AI vs Pure Automation
 
 | Aspect | Pure Automation (Ansible) | Errander-AI |

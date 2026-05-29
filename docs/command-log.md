@@ -1,5 +1,14 @@
 # Errander-AI Command Log
 
+## README — "The two layers in one run" mapping (2026-05-29)
+
+```bash
+# Add step→layer mapping table to README "How It Works" (bridges concept + flow)
+git add README.md STATUS.md tasks/todo.md tasks/lessons.md docs/command-log.md
+git commit -m "docs: README — map each step of a run to Layer A / Layer B in How It Works"
+git push origin main
+```
+
 ## OBSERVABILITY.md — built-in vs. bring-your-own boundary (2026-05-29)
 
 ```bash

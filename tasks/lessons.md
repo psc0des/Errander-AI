@@ -1,5 +1,21 @@
 # Errander-AI — Lessons Learned
 
+## 2026-05-29 — Define a concept AND map it to the workflow in the same doc, or users won't connect them
+
+A user got confused about Layer A vs Layer B even though the README *did* explain it — because the README stated the concept ("AI layer vs execution layer") in one place and described the run flow (SSH → LLM prioritizes → execute) in another, but never labeled the flow steps with the layers. The crisp A/B definitions lived only in `docs/AI-ARCHITECTURE.md`. The fix was a step→layer table right in the flow section.
+
+**Why:** A definition and an example that aren't adjacent force the reader to do the join themselves — and they often can't, because they don't yet hold the concept firmly. The most teachable form is the abstract label sitting directly on the concrete step.
+
+**How to apply:** When documenting a layered/abstract architecture, don't rely on a separate concept section plus a separate walkthrough. Put the labels *on* the walkthrough (a "which layer does each step" table). If the canonical definition lives in a deeper doc, still surface the mapping wherever users land first.
+
+## 2026-05-29 — "Deterministic context-gathering" in Layer A is a trade-off, not a safety requirement
+
+A user asked why Layer A gathers Prometheus/ELK context via deterministic Python instead of letting the LLM pull it via MCP. The correct answer distinguishes two things: (1) the safety invariant only forbids LLM/MCP in **Layer B execution** — read-only MCP in Layer A is *explicitly allowed* by CLAUDE.md; (2) the current deterministic gather is an *engineering* choice (reproducibility, auditable `context_snapshot`, one-call cost/latency on T4, fallback parity, bounded redaction/budget, smaller injection surface), optimal for the *repeatable batch decision* but not for *open-ended investigation*, where an LLM-driven MCP tool loop is genuinely better.
+
+**Why:** Conflating "we don't let the LLM do this" with "the safety model forbids it" misleads. For reads in Layer A, nothing is forbidden — it's a cost/auditability/injection trade-off. The honest answer is "mixed": deterministic for `prioritize_actions`, agentic-MCP for `--ask` investigation.
+
+**How to apply:** When asked "why not let the LLM do X directly," first check whether the invariant actually forbids X (execution/mutation in Layer B) or whether it's a permitted-but-unbuilt Layer A option. Answer with the real trade-off table, and say plainly where the current design is optimal vs. where it's a defensible v1 with a known upgrade.
+
 ## 2026-05-29 — Separate "what the product owns" from "bring-your-own tools" in observability docs
 
 The user's instinct, after seeing LangSmith's dashboard, was the right one: external tools like LangSmith/ELK/Grafana should be documented as **strong recommendations for observing things, but explicitly not part of the solution**. The doc now leads with a built-in-vs-bring-your-own split: Errander *produces and owns* the audit trail, AI decision log, `/metrics` endpoint, and structured logs (in-network, always-on, system of record); external tools (Prometheus/Grafana, LangSmith-or-equivalent, ELK/Loki) are *views/consumers* you supply — recommended, swappable, never authoritative, and never in the Layer B path.

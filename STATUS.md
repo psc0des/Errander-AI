@@ -4,6 +4,14 @@
 2026-05-29
 
 ## Current Phase
+**README — "The two layers in one run" mapping in How It Works (2026-05-29, COMPLETE).**
+
+Added a subsection to README's "How It Works" that maps each step of a real run to Layer A / Layer B / human-approval, with a step table and the "brain proposes → human approves → hands act" framing. Closes the gap a user surfaced: README explained the *concept* (AI layer vs execution layer) and the *flow* separately, but never connected the workflow steps to the explicit Layer A/B labels — those lived only in `docs/AI-ARCHITECTURE.md`. Now the bridge is where users read first. Notes that Layer B runs twice per run (gather facts → apply fix) with the Layer A recommendation + approval in between.
+
+### Files changed (2026-05-29 — README two-layers-in-one-run)
+- `README.md` — "The two layers in one run" subsection in How It Works (step→layer table + brain/hands/approval framing)
+
+## Previous Phase
 **OBSERVABILITY.md — built-in vs. bring-your-own boundary + tool-agnostic external tracing (2026-05-29, COMPLETE).**
 
 Reworked the OBSERVABILITY.md overview to lead with the **most important distinction**: what Errander **produces and owns** (built-in, in-network, always-on, system of record — audit trail, AI decision log, `/metrics` endpoint, structured JSON logs) vs. **bring-your-own external tools** (strongly recommended but NOT part of Errander, tool-agnostic — Prometheus/Grafana, LangSmith *or equivalent*, ELK/Loki). Added the structured-logs stream (previously omitted). Reframed the LangSmith section as "External Layer-A tracing — LangSmith *or equivalent*" with an explicit recommendation-not-dependency stance, plus a "what it adds vs. redundant/N/A for Errander" table (Traces/Run Types = new; LLM Calls = redundant; Cost&Tokens = conditional on cloud vs vLLM; Tools = N/A until tool-using Layer A; Feedback = future eval). Explicit guidance for coding agents: treat built-in as guaranteed, never assume/depend on an external tool, external tools observe but never participate in Layer B.

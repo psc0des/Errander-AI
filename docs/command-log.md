@@ -1,5 +1,19 @@
 # Errander-AI Command Log
 
+## OBSERVABILITY.md — "What Errander can see" fixed signal menu (2026-05-29)
+
+```bash
+# Confirm gathering mechanisms before documenting (read, not edited):
+#   errander/execution/disk_trend.py      — df -B1 → VMDiskHistoryStore → slope
+#   errander/execution/failed_logins.py   — journald/auth.log failed SSH logins
+#   errander/integrations/prometheus.py   — 3 fixed PromQL (CPU/mem/load)
+#   errander/integrations/elk.py          — 1 fixed host-aggregated ES error query
+# Add "What Errander can see — the fixed signal menu (Layer A inputs)" section
+git add docs/OBSERVABILITY.md STATUS.md tasks/todo.md tasks/lessons.md docs/command-log.md
+git commit -m "docs: OBSERVABILITY.md — document the fixed signal menu (what Errander can see)"
+git push origin main
+```
+
 ## README — "The two layers in one run" mapping (2026-05-29)
 
 ```bash

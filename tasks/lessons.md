@@ -1,5 +1,13 @@
 # Errander-AI — Lessons Learned
 
+## 2026-05-29 — Document a system's INPUTS (what it can see), not just its outputs (how you observe it)
+
+Observability docs naturally describe outputs — metrics, logs, traces, audit. But users kept asking the inverse: "what can Errander actually *see* about my fleet, and what happens if it needs data nobody built a query for?" That's the **input** side — the fixed menu of probes/queries — and it wasn't documented anywhere. Added a "What Errander can see" section listing the signal menu, who authors the queries (developers, hardcoded; runtime fills only params), and the graceful-degradation behavior when a signal is off-menu (no improvisation; gap; adding a signal = reviewed code change).
+
+**Why:** The most common confusion about a bounded-capability agent is mistaking it for an open-ended one. Spelling out "here's exactly the menu; off-menu means no data, and only a code change adds to it" sets correct expectations and pre-empts "why didn't it just check X?" It also makes the deterministic-gather trade-off concrete (bounded/reproducible vs. can't-chase-novel-questions).
+
+**How to apply:** For any agent/tool with a fixed capability set, document the *input menu* as explicitly as the output surfaces: what it can observe, how each signal is gathered, what's NOT covered, and what happens at the boundary. State plainly that expanding the menu is a code change, not a runtime/LLM decision — unless/until an agentic layer is deliberately added.
+
 ## 2026-05-29 — Define a concept AND map it to the workflow in the same doc, or users won't connect them
 
 A user got confused about Layer A vs Layer B even though the README *did* explain it — because the README stated the concept ("AI layer vs execution layer") in one place and described the run flow (SSH → LLM prioritizes → execute) in another, but never labeled the flow steps with the layers. The crisp A/B definitions lived only in `docs/AI-ARCHITECTURE.md`. The fix was a step→layer table right in the flow section.

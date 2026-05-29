@@ -1,3 +1,12 @@
+## OBSERVABILITY.md — "What Errander can see" fixed signal menu (2026-05-29, COMPLETE)
+
+- [x] Verified gathering mechanisms in code: `disk_trend.py` (df→history→slope), `failed_logins.py` (journald/auth.log), `integrations/prometheus.py` (3 fixed PromQL), `integrations/elk.py` (1 fixed host-aggregated ES query)
+- [x] New section: signal-menu table (source/scope/needs); who writes queries (devs, hardcoded, runtime fills params only); disk-trend-is-SSH-not-Prometheus + logs-are-system/host-not-app clarifications; "signal not on the menu" behavior (no improvisation, graceful degradation, adding = code change)
+- [x] Cross-ref to agentic Layer-A investigation upgrade (the one place the line moves, `--ask` only)
+- [x] Doc sync: STATUS.md, todo.md, lessons.md, command-log.md
+
+---
+
 ## README — "The two layers in one run" mapping (2026-05-29, COMPLETE)
 
 - [x] Added subsection to How It Works: step→layer table (SSH gather=B, Prometheus/ELK=B feeds A, recommend=A, approve=human, apply=B, summarize=A)

@@ -174,6 +174,44 @@ It complements, never replaces, the built-in AI decision log (which stays the in
 
 ---
 
+## What Errander can see — the fixed signal menu (Layer A inputs)
+
+Everything above is about *observing Errander*. This section is the inverse: **what Errander can observe about your fleet**, and the hard limit on it.
+
+Errander gathers signals through a **fixed menu of developer-built probes and queries**. Each query is a hardcoded template written ahead of time; at runtime only **parameters** are filled in (the VM host from inventory, a time window, a result limit). **The LLM never composes a query, and the operator can't supply one** — there is no query language exposed.
+
+### The menu today
+
+| Signal | How it's gathered | Scope | Needs |
+|---|---|---|---|
+| Pending packages, OS facts | SSH discovery (`apt list --upgradable`, etc.) | per-VM | SSH |
+| Disk usage **+ growth trend** | SSH `df -B1` → recorded to `VMDiskHistoryStore` → slope computed (`disk_trend.py`) | per-mountpoint, over a trailing window | SSH |
+| Reboot-required | SSH probe (`reboot_check.py`) | per-VM | SSH |
+| Service health | systemd state via SSH (`service_check.py`) | system services | SSH |
+| Failed SSH logins | journald `ssh`/`sshd` + `/var/log/auth.log`,`secure` (`failed_logins.py`) | **system** (SSH auth) | SSH |
+| Config drift | baselines for `sudoers`, `authorized_keys`, `listening_ports`, `scheduled_jobs` | per-VM | SSH |
+| CPU / Memory / Load (point-in-time) | 3 fixed PromQL queries (`integrations/prometheus.py`) | per-VM | Prometheus opted in |
+| Top error/warn log patterns | 1 fixed Elasticsearch query, host-aggregated (`integrations/elk.py`) | **host-level, not app-specific** | ELK opted in |
+
+Two things this table makes explicit:
+
+- **Disk *trend* is covered — but not via Prometheus.** The Prometheus queries are CPU/mem/load point-in-time only; disk growth comes from the separate SSH-`df`→history→slope pipeline. Same kind of question ("how is disk trending?"), dedicated deterministic mechanism.
+- **Log reading is system / host level, never app-targeted.** ELK aggregates the top errors for the *whole host*; the SSH paths read *system* logs (SSH auth, systemd). There is **no** "tail app X's logfile" capability.
+
+### What happens when a signal isn't on the menu
+
+If a question needs data outside this menu — say, per-process disk I/O, network retransmits, or a specific application's logs — Errander does **not** improvise:
+
+1. **It will not generate a new query.** That's the deterministic design — reproducible and auditable, no surprises.
+2. **It proceeds with what it has.** Every probe degrades gracefully (SSH failure → `None`/`[]`, Prometheus/ELK failure → `[]`); a missing signal is simply absent, never a crash, never a block.
+3. **Adding a signal is a code change, not a config flag and not an LLM decision.** A developer writes a new probe/query (and for a new *action*, per CLAUDE.md: a new sub-graph + manifest + risk tier + rollback strategy). It's reviewed and tested, not composed on the fly.
+
+So Errander can only "see" what someone pre-built a probe for. This is a deliberate trade-off, not an oversight — it's what keeps the gathered context bounded, reproducible, redactable, and cheap (one LLM call, not a tool loop).
+
+> **The one place this line moves:** the planned **Layer-A investigation agent** (agentic MCP) would let the LLM *compose* read-only queries live (`query_prometheus(promql)`, `search_logs(...)`) — so it could chase a novel question like "is app X spewing errors?". That flexibility is appropriate for open-ended `--ask` investigation; the scheduled maintenance batch deliberately keeps the fixed menu. See §4 and `AI-ARCHITECTURE.md`.
+
+---
+
 ## For coding agents (Opus / Sonnet)
 
 When you add or change observability, classify it first — **"Is this Layer A or Layer B?"** — exactly as in [`AI-ARCHITECTURE.md`](AI-ARCHITECTURE.md). Then:

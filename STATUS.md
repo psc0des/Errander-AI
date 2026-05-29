@@ -4,6 +4,14 @@
 2026-05-29
 
 ## Current Phase
+**OBSERVABILITY.md — "What Errander can see" fixed signal menu (2026-05-29, COMPLETE).**
+
+Added a section documenting Errander's *inputs* (what it can observe about the fleet), the inverse of the four surfaces (how you observe Errander). Covers: the fixed menu of developer-built probes/queries (pending packages, disk usage+growth trend, reboot-required, service health, failed SSH logins, config drift, CPU/mem/load via Prometheus opt-in, host-level error logs via ELK opt-in); who writes the queries (developers, hardcoded templates, runtime fills only host/window/limit — LLM never composes, operator can't supply); two clarifications (disk *trend* is covered but via SSH-df→history→slope not Prometheus; log reading is system/host-level never app-specific); and what happens when a signal isn't on the menu (no improvisation, graceful degradation, adding a signal = reviewed code change not config/LLM). Notes the agentic Layer-A investigation upgrade is the one place that line moves, for `--ask` only. Grounded in `disk_trend.py`, `failed_logins.py`, `integrations/prometheus.py`, `integrations/elk.py`.
+
+### Files changed (2026-05-29 — signal menu)
+- `docs/OBSERVABILITY.md` — new "What Errander can see — the fixed signal menu (Layer A inputs)" section
+
+## Previous Phase
 **README — "The two layers in one run" mapping in How It Works (2026-05-29, COMPLETE).**
 
 Added a subsection to README's "How It Works" that maps each step of a real run to Layer A / Layer B / human-approval, with a step table and the "brain proposes → human approves → hands act" framing. Closes the gap a user surfaced: README explained the *concept* (AI layer vs execution layer) and the *flow* separately, but never connected the workflow steps to the explicit Layer A/B labels — those lived only in `docs/AI-ARCHITECTURE.md`. Now the bridge is where users read first. Notes that Layer B runs twice per run (gather facts → apply fix) with the Layer A recommendation + approval in between.

@@ -1,6 +1,6 @@
 # Errander-AI — Supervised Agentic AI SRE Platform
 
-A supervised agentic AI SRE platform that eliminates operational toil while keeping humans in control of live infrastructure changes. Performs secure patching (non-kernel), log rotation, Docker pruning, disk cleanup, and more — with safety gates, rollback, and full audit logging. Every live change requires human Slack approval.
+A supervised agentic AI SRE platform that eliminates operational toil while keeping humans in control of live infrastructure changes. Performs secure patching (non-kernel), log rotation, Docker hygiene (object-level approval), disk cleanup, backup verification, and operator-triggered service restart — with safety gates, rollback, and full audit logging. Every live change requires human Slack/Web UI approval.
 
 ## Stack (100% Open Source, Cloud-Agnostic)
 - Language: Python 3.12+

@@ -1,7 +1,16 @@
 # Errander-AI — Project Status
 
 ## Last Updated
-2026-05-29
+2026-06-02
+
+## Current Phase
+**SETUP.md + CLAUDE.md — LangSmith wiring docs + stale Docker pruning fix (2026-06-02, COMPLETE).**
+
+Three doc gaps closed ready for Prometheus test + LangSmith wiring session: (1) CLAUDE.md line 3 fixed — "Docker pruning" → "Docker hygiene (object-level approval)"; (2) SETUP.md now has a full **LangSmith section** (Layer A only, dev/staging, no code changes needed, setup steps, disable instructions, egress warning, what panels are useful/redundant) between the Prometheus and ELK sections; (3) `.env` template has the three `LANGCHAIN_*` vars commented out with egress warning; (4) env-var reference table has the three `LANGCHAIN_*` rows. Also fixed stale memory entries (project_state → 2507 tests; docker_hygiene_v11 → marked complete; post_review_planning → marked superseded) and added new observability/positioning memory. No code wiring yet — LangGraph auto-detects `LANGCHAIN_TRACING_V2=true` at startup (no Python changes needed).
+
+### Files changed (2026-06-02 — LangSmith docs + memory cleanup)
+- `CLAUDE.md` — "Docker pruning" → "Docker hygiene (object-level approval)"
+- `SETUP.md` — LangSmith section; LANGCHAIN_* vars in .env template; LANGCHAIN_* rows in env-var reference table
 
 ## Next Up — Planned features (NOT yet built)
 

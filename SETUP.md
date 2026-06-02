@@ -768,6 +768,13 @@ ERRANDER_UI_DATA_MODE=fixture
 # Run --bootstrap-known-hosts <env> to pin host keys, then set this to true
 ERRANDER_SSH_STRICT_HOST_KEYS=false
 # ERRANDER_SSH_KNOWN_HOSTS=~/.ssh/errander_known_hosts  # set automatically by --bootstrap-known-hosts
+
+# LangSmith — optional, Layer A tracing only (dev/staging).
+# Sends Layer-A prompt contents off-network to LangChain cloud — do NOT enable in no-egress prod.
+# Sign up at https://smith.langchain.com, create a project, copy your API key.
+# LANGCHAIN_TRACING_V2=true
+# LANGCHAIN_API_KEY=lsv2_pt_...
+# LANGCHAIN_PROJECT=errander-ai
 EOF
 ```
 
@@ -898,6 +905,31 @@ PROM_PORT=9091 AGENT_METRICS_PORT=9090 PROM_VERSION=2.53.2 bash scripts/install-
 ```
 
 After it starts, open `http://<controller-ip>:9091/targets` — the `errander-agent` target shows **UP** once the agent is running. Point Grafana (from anywhere) at this Prometheus for dashboards.
+
+### LangSmith tracing *(optional — Layer A only, dev/staging)*
+
+> **Skip for production.** LangSmith sends Layer-A prompt contents (VM hostnames, log excerpts, package lists) to LangChain's cloud. Enable it in dev/staging for debugging; never in a no-egress prod deployment. The built-in AI decision log (`/ui/ai-decisions`) is always-on and in-network — it covers the same reasoning record without egress.
+
+> **Layer A only.** LangSmith must never be wired into the Layer B execution path. It observes reasoning; it never participates in execution. See [`docs/OBSERVABILITY.md §4`](docs/OBSERVABILITY.md).
+
+LangSmith attaches to the LangGraph decision engine with **no code changes** — just three env vars. Because the LLM calls are currently single-shot (not a tool-using loop), the most valuable panels are **Traces** and **Run Types** (the node/edge execution path). LLM Calls is redundant with Prometheus; the Tools panel is empty until the investigation agent (Plan A) is built.
+
+**Setup:**
+1. Sign up at [smith.langchain.com](https://smith.langchain.com) and create a project (e.g. `errander-ai`).
+2. Copy your API key from Settings → API Keys.
+3. Add to `.env`:
+
+```bash
+LANGCHAIN_TRACING_V2=true
+LANGCHAIN_API_KEY=lsv2_pt_...       # your LangSmith API key
+LANGCHAIN_PROJECT=errander-ai       # your LangSmith project name
+```
+
+4. Restart the agent. Traces will appear in the LangSmith UI within seconds of the next batch or `--ask` run.
+
+**To disable:** remove the three vars from `.env` (or set `LANGCHAIN_TRACING_V2=false`) and restart. No code change needed.
+
+> **No code wiring needed.** LangGraph auto-detects `LANGCHAIN_TRACING_V2=true` at startup and registers a trace callback. Nothing inside Errander needs to change.
 
 ### ELK / Elasticsearch log aggregation *(optional)*
 
@@ -1293,6 +1325,9 @@ Point the Task Scheduler action at this `.bat` file instead.
 | `ERRANDER_INVENTORY_PATH` | No | `inventory.yaml` | Path to inventory file — used by the web UI in live mode to read VM identity |
 | `ERRANDER_SSH_STRICT_HOST_KEYS` | No | `true` | SSH host key policy. `false` = TOFU mode (WARNING logged per connection). Set `true` after running `--bootstrap-known-hosts` to enable strict verification. |
 | `ERRANDER_SSH_KNOWN_HOSTS` | No | — | Path to known_hosts file for SSH host key pinning. Set automatically by `--bootstrap-known-hosts` (default: `~/.ssh/errander_known_hosts`). Required when `ERRANDER_SSH_STRICT_HOST_KEYS=true`. |
+| `LANGCHAIN_TRACING_V2` | No | unset (off) | Set to `true` to enable LangSmith tracing of Layer-A LangGraph reasoning. **Dev/staging only** — sends prompt contents to LangChain cloud. Never enable in no-egress prod. |
+| `LANGCHAIN_API_KEY` | No | — | LangSmith API key (`lsv2_pt_...`). Required when `LANGCHAIN_TRACING_V2=true`. |
+| `LANGCHAIN_PROJECT` | No | `default` | LangSmith project name to group traces under (e.g. `errander-ai`). |
 
 ---
 

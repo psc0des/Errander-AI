@@ -17,6 +17,17 @@ Build in this order. Plans only — no feature code yet. Intended for a later So
 
 ---
 
+## SETUP.md — LangSmith wiring docs + env vars (2026-06-02, COMPLETE)
+
+- [x] CLAUDE.md line 3: "Docker pruning" → "Docker hygiene (object-level approval)"
+- [x] SETUP.md: new "LangSmith tracing (optional — Layer A only, dev/staging)" section (after Prometheus monitoring, before ELK) — setup steps, disable, egress warning, useful-vs-redundant panels note, "no code changes needed" callout
+- [x] SETUP.md .env template: three LANGCHAIN_* vars commented out with egress warning
+- [x] SETUP.md env-var table: LANGCHAIN_TRACING_V2, LANGCHAIN_API_KEY, LANGCHAIN_PROJECT rows
+- [x] Memory: updated project_state (2507 tests), docker_hygiene_v11 (marked complete), post_review_planning (marked superseded); added observability/positioning memory
+- [x] Doc sync: STATUS.md, todo.md, lessons.md, command-log.md
+
+---
+
 ## README — reposition as supervised agentic AI + roadmap (2026-05-29, COMPLETE)
 
 - [x] Headline + opening: "supervised agentic AI SRE platform" framing (was "deterministic maintenance automation"); fixed stale "Docker pruning" → "Docker hygiene"

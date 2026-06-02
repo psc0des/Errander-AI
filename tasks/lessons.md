@@ -1,5 +1,13 @@
 # Errander-AI — Lessons Learned
 
+## 2026-06-02 — Document optional integrations with three anchors: .env template + section + env-var table
+
+When adding optional env-var-gated integrations (LangSmith, Prometheus, ELK), documentation needs three anchors in SETUP.md — not one — or users miss it: (1) the **`.env` template** (commented-out vars so users know what to uncomment), (2) a **dedicated section** explaining setup, what to expect, how to disable, and any caveats, (3) the **env-var reference table** at the bottom. Missing any one of the three means either the user doesn't know the feature exists, can't find the vars to set, or can't look up what a var does.
+
+**Why:** The LangSmith gap was exactly this — design documented in OBSERVABILITY.md, but zero presence in SETUP.md. A user who'd never read OBSERVABILITY.md would never know LangSmith was supported.
+
+**How to apply:** For every optional env-var-gated integration, add all three anchors in the same commit. Template = "here it is, commented out." Section = "here's how to use it." Table = "here's what every var does." All three together, atomically.
+
 ## 2026-05-29 — Position the project as "supervised agentic AI" — not plain gen AI, not unqualified agentic
 
 The README led with "deterministic maintenance automation with an AI-assisted operator layer," which undersells it. Correct positioning (decided this session): **supervised agentic AI**. "Gen AI" undersells (implies a content generator; Errander acts on infrastructure). Unqualified "agentic AI" over-claims (implies the LLM autonomously executes — the exact thing Errander forbids). The accurate, differentiated label is *agentic* (assesses + orchestrates a fleet) *supervised* (mandatory human approval) with *generative AI bounded to Layer A*. For an SRE/infra audience, bounded autonomy + HITL is the trust pitch, not a weakness.

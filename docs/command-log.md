@@ -1,5 +1,16 @@
 # Errander-AI Command Log
 
+## SETUP.md — LangSmith wiring docs + env vars (2026-06-02)
+
+```bash
+# Add LangSmith section to SETUP.md (after Prometheus monitoring section, before ELK);
+# LANGCHAIN_* vars in .env template + env-var reference table;
+# fix CLAUDE.md "Docker pruning" → "Docker hygiene"
+git add SETUP.md CLAUDE.md STATUS.md tasks/todo.md tasks/lessons.md docs/command-log.md
+git commit -m "docs: SETUP.md — LangSmith wiring docs, .env template vars, env-var table"
+git push origin main
+```
+
 ## README — reposition as supervised agentic AI + roadmap (2026-05-29)
 
 ```bash

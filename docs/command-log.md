@@ -2771,3 +2771,8 @@ uv run pytest --tb=short -q  # 2485 passed
 uv run pytest tests/integrations/test_llm.py -v --tb=short  # 35 passed
 uv run ruff check --fix tests/integrations/test_llm.py  # fixed I001 import sort
 uv run pytest --tb=short -q  # 2496 passed
+
+# Web UI demo screenshots for README (2026-05-29)
+.venv/Scripts/python -c "import playwright"   # confirm Playwright available before writing capture script
+uv run python scripts/capture_ui_screenshots.py   # seed in-memory stores + serve UI on loopback + headless-Chromium screenshot 6 pages into docs/images/ (with baked-in DEMO banner)
+ls -lh docs/images/   # verify sizes — 6 PNGs, ~950 KB total

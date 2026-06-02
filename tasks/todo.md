@@ -8,6 +8,15 @@ Build in this order. Plans only — no feature code yet. Intended for a later So
 
 ---
 
+## README — Web UI demo screenshots (2026-05-29, COMPLETE)
+
+- [x] Write `scripts/capture_ui_screenshots.py` — seeds in-memory stores (audit, exact-object pending approval, AI decisions, inventory+overrides), serves on loopback, headless-Chromium screenshots 6 pages with baked-in DEMO banner
+- [x] Capture 6 PNGs into `docs/images/` (dashboard, approvals, ai-decisions, batches, batch-detail, inventory)
+- [x] Add `## Screenshots` section to README with demo-data disclaimer and per-image captions
+- [x] Doc sync: STATUS.md, todo.md, command-log.md
+
+---
+
 ## README — reposition as supervised agentic AI + roadmap (2026-05-29, COMPLETE)
 
 - [x] Headline + opening: "supervised agentic AI SRE platform" framing (was "deterministic maintenance automation"); fixed stale "Docker pruning" → "Docker hygiene"

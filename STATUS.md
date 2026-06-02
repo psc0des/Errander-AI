@@ -15,6 +15,16 @@ Two implementation plans are authored and waiting to be built, **in this order**
 > Status: **plans only, no feature code yet.** Intended for a later Sonnet build session. Each plan has a mandatory pre-flight + (for #2) a reconcile-against-as-built-engine step.
 
 ## Current Phase
+**README — add Web UI demo screenshots + reproducible capture script (2026-05-29, COMPLETE).**
+
+The README described the Web UI in detail but showed nothing. Added a `## Screenshots` section (right after the intro) with 6 captures tying each shot to a selling point (exact-object approval, Layer A AI-decision observability, audit trail). New script `scripts/capture_ui_screenshots.py` seeds in-memory stores (audit, an exact-object pending approval with per-package + service_restart plan, AI decisions, inventory + overrides), serves the UI on a loopback port, and drives headless Chromium (Playwright) to screenshot each page into `docs/images/`. Every image is **synthetic demo data** — fake fleet (`web-01/db-01/app-01` on `10.0.0.x`), fake LLM endpoint, no real IPs/tokens/Slack — and carries a baked-in red "DEMO DATA" banner injected at the top of the content column. README and script both state plainly the images are demo-only. Rerun: `uv run python scripts/capture_ui_screenshots.py`.
+
+### Files changed (2026-05-29 — Web UI screenshots)
+- `scripts/capture_ui_screenshots.py` (NEW) — seed + serve + headless-screenshot harness with DEMO banner injection
+- `docs/images/*.png` (NEW) — 6 Web UI screenshots (dashboard, approvals, ai-decisions, batches, batch detail, inventory)
+- `README.md` — new "## Screenshots" section with demo-data disclaimer
+
+## Previous Phase
 **README — reposition as supervised agentic AI + name Layer A/B up front + near-term roadmap (2026-05-29, COMPLETE).**
 
 Fixed the README to tell the whole story per this session's conversations: (1) headline + opening repositioned from "deterministic maintenance automation" to **supervised agentic AI SRE platform** (agentic in fleet assessment/orchestration, supervised by mandatory human approval, generative AI bounded to the advisory Layer A); (2) the **two-layer architecture is now named in the intro** (Layer A brain / Layer B hands) instead of only in Design Principles; (3) fixed a stale "Docker pruning" → "Docker hygiene" in the opening; (4) added a **near-term Roadmap** (Layer A investigation agent, optional LangSmith tracing, dashboard chat) with pointers to the plan files, clearly marked planned/not-built, restructured the old "V2 Roadmap" under a new "## Roadmap" with Near-term + V2 subsections. Positioning decision from the gen-AI-vs-agentic discussion: call it supervised agentic AI, not plain "gen AI" (undersells) and not unqualified "agentic AI" (over-claims autonomy Errander deliberately rejects).

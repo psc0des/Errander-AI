@@ -31,6 +31,32 @@ Errander-AI is built on a **two-layer architecture**. **Layer A (the brain)** us
 >
 > **MCP belongs in the operator brain, not in the execution hands.**
 
+## Screenshots
+
+> ⚠️ **All screenshots below use synthetic demo data** — a fake fleet (`web-01`, `db-01`, `app-01` on `10.0.0.x`), fake batches, and a fake LLM endpoint. No real hosts, IPs, tokens, or Slack workspace are shown. Each image carries a red **"DEMO DATA"** banner. Regenerate them anytime with `uv run python scripts/capture_ui_screenshots.py`.
+
+**Approval Queue — exact-object, human-in-the-loop.** Every live change is approved against the exact objects it will touch (per-package checkboxes, named systemd units), never a vague action category. Low-risk categorical actions are auto-included and honestly labelled.
+
+![Approval Queue with per-package and per-unit approval](docs/images/ui-approvals.png)
+
+**Fleet Dashboard.** At-a-glance event totals, recent batches, agent status, and the pending-approval count.
+
+![Fleet Dashboard](docs/images/ui-dashboard.png)
+
+**AI Decision log (Layer A observability).** Every LLM call is recorded — model, endpoint, latency, and whether it succeeded or fell back to the deterministic default — so you can always see *why* a plan was ordered the way it was.
+
+![AI Decision log](docs/images/ui-ai-decisions.png)
+
+**Batch history & per-batch event log.** Full audit trail, one row per action, including failures.
+
+| Batch history | Batch detail |
+|---|---|
+| ![Batch history](docs/images/ui-batches.png) | ![Batch detail event log](docs/images/ui-batch-detail.png) |
+
+**Inventory.** The fleet as Errander sees it, with per-VM enable/disable and ad-hoc additions.
+
+![Inventory](docs/images/ui-inventory.png)
+
 ## What Errander-AI Is — and Is Not
 
 Errander-AI is intentionally narrow. Knowing what it deliberately excludes is as important as knowing what it does.

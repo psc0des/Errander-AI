@@ -16,7 +16,6 @@ flowchart TB
   subgraph PUB["PUBLIC INTERNET — outbound HTTPS only, no inbound to agent"]
     OP["Operator<br/>laptop / mobile"]:::ext
     SLACK["Slack API<br/>#errander-approvals ✅/❌"]:::ext
-    LS["LangSmith / equivalent<br/>Layer A traces<br/>planned · optional · egress"]:::planned
   end
 
   subgraph VPN["VPN — PRIVATE NETWORK (no public IPs)"]
@@ -24,11 +23,14 @@ flowchart TB
 
     subgraph CTRL["Controller VM (Agent) — private"]
       WEB["Web UI + /metrics :9090"]:::infra
+      CHAT["Dashboard Chat /ui/chat<br/>· planned ·"]:::planned
       LA["LAYER A — Brain (LLM)<br/>prioritize · analyze · report · --ask<br/>recommends, never executes"]:::layerA
-      AG{"HUMAN APPROVAL GATE<br/>Slack / Web UI<br/>every live change"}:::appr
+      INV["Investigation Agent<br/>· planned ·<br/>agentic read-only · Prometheus · ELK · audit"]:::planned
+      CHATIF["Operator Chat Interface<br/>· planned ·<br/>answers /ui/chat"]:::planned
+      AG{"HUMAN APPROVAL GATE<br/>Slack ✅/❌ · Web UI<br/>every live change"}:::appr
       LB["LAYER B — Hands (deterministic, NO LLM)<br/>patching · disk_cleanup · log_rotation<br/>docker_hygiene · backup_verify · service_restart<br/>validate → execute → verify → rollback → audit"]:::layerB
-      DB[("Audit DB SQLite<br/>audit_events · ai_decisions")]:::store
-      PROM["Prometheus :9091<br/>scrapes agent /metrics<br/>monitors Errander itself"]:::infra
+      DB[("Audit DB SQLite<br/>audit_events · ai_decisions<br/>plan_snapshots")]:::store
+      PROM["Controller Prometheus :9091<br/>scrapes agent /metrics<br/>monitors Errander itself"]:::infra
     end
 
     subgraph TGT["Target VMs — Linux, private (SSH key-based)"]
@@ -37,15 +39,12 @@ flowchart TB
       VM3["app-01<br/>node_exporter :9100"]
     end
 
-    subgraph OBS["Observability — bring-your-own"]
-      GRAF["Grafana"]:::infra
-      ELK["ELK / Loki"]:::infra
+    subgraph OBS["Observability — bring-your-own · read-only · Layer A reads, Layer B never depends"]
+      GRAF["Grafana<br/>dashboards"]:::infra
+      FPROM["Fleet Prometheus<br/>target VM metrics<br/>BYO · optional"]:::infra
+      ELK["ELK / Loki<br/>target + agent logs<br/>BYO · optional"]:::infra
+      LS["LangSmith / equivalent<br/>Layer A traces<br/>BYO · optional · egress"]:::planned
     end
-  end
-
-  subgraph RM["ROADMAP — planned, build A then B"]
-    PA["Plan A — Investigation Agent<br/>agentic read-only query tools"]:::planned
-    PB["Plan B — Dashboard Chat /ui/chat<br/>action → approval (never executes)"]:::planned
   end
 
   %% --- core two-layer safety flow ---
@@ -55,13 +54,14 @@ flowchart TB
 
   %% --- Layer A reads ---
   LA -->|LLM completions| LLM
-  LA -.->|reads metrics + logs, opt-in| TGT
+  LA -.->|reads metrics + logs, opt-in| OBS
 
   %% --- audit ---
   LA -->|ai_decisions| DB
   LB -->|audit_events| DB
+  AG -->|plan_snapshots| DB
 
-  %% --- operators / slack ---
+  %% --- operators ---
   OP -->|approve / monitor| WEB
   OP -->|react ✅/❌| SLACK
   WEB <-->|outbound HTTPS| SLACK
@@ -69,12 +69,13 @@ flowchart TB
 
   %% --- observability ---
   PROM -->|scrape| WEB
-  GRAF -->|queries| PROM
-  LA -.->|traces, egress| LS
+  GRAF -->|queries| FPROM
+  FPROM -.->|scrapes| TGT
 
   %% --- planned wirings ---
-  PA -.->|upgrades| LA
-  PB -.->|adds /ui/chat| WEB
+  CHAT -.->|adds /ui/chat| WEB
+  INV -.->|upgrades| LA
+  CHATIF -.->|serves| CHAT
 ```
 
 ## Reading the diagram
@@ -82,6 +83,7 @@ flowchart TB
 - **Layer A (blue)** thinks and recommends — never touches a VM.
 - **Human approval gate (amber)** sits between thinking and acting — mandatory for every live change.
 - **Layer B (green)** is deterministic Python; the thick **SSH edge is the only path that changes a target VM**.
-- **Two Prometheus directions:** the controller-node Prometheus `:9091` *scrapes the agent* (monitors Errander); Layer A separately *reads target metrics/logs* (opt-in) to inform recommendations.
-- **Dashed purple** = planned (LangSmith tracing, Plan A investigation agent, Plan B dashboard chat).
+- **Two Prometheus instances:** the Controller Prometheus `:9091` *scrapes the agent* (monitors Errander itself); Fleet Prometheus separately *scrapes target node_exporters* `:9100` (opt-in, for Layer A to read when investigating fleet health).
+- **Dashed purple** = planned (Investigation Agent, Dashboard Chat, Operator Chat Interface, LangSmith tracing).
 - Everything inside **VPN** is private; the only outbound path is HTTPS to Slack (and optionally LangSmith).
+- **Observability lane** is bring-your-own and read-only — Layer A may read these sources; Layer B never depends on them.

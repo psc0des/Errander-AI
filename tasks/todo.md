@@ -8,11 +8,13 @@
 
 ---
 
-## System architecture diagram — executive presentation page (2026-06-03, COMPLETE)
+## Architecture diagram — draw.io polish + first commit of docs/diagrams/ (2026-06-03, COMPLETE)
 
-- [x] Rebuild `docs/diagrams/errander-view.html`: improved draw.io diagram (①–⑤ flow badges, APScheduler trigger, BLOCKED BY DESIGN panel, timeout annotation, rollback node) + executive HTML context (KPI masthead, principle banner, 5-step flow, risk tiers, automations table, blocked list, approval protocol, 6 safety guarantees, network topology, 15-item tech stack)
-- [x] Static server confirmed running on port 8766
-- [x] Doc sync: STATUS.md, todo.md; committed docs/diagrams/ for the first time
+- [x] Polish `docs/diagrams/errander-system-architecture.drawio`: planned indicators (dashed borders + "· planned ·" labels on Dashboard Chat, Investigation Agent, Operator Chat Interface); Slack outbound-HTTPS edge; Audit DB label cleanup; obs_note; no legend; full-width blocked bar
+- [x] Restore `docs/diagrams/errander-view.html` to draw.io embedded viewer (developer had replaced with broken custom HTML)
+- [x] Update `docs/diagrams/errander-system-architecture.md` (Mermaid): remove stale RM subgraph, fold planned components inline, add Fleet Prometheus + Operator Chat Interface, move LangSmith to OBS, update Reading section
+- [x] Static server on port 8767 (`python -m http.server 8767 --directory docs/diagrams`)
+- [x] Doc sync: STATUS.md, todo.md; first commit of docs/diagrams/
 
 ---
 

@@ -4,6 +4,16 @@
 2026-06-03
 
 ## Current Phase
+**Architecture diagram — draw.io polish + first commit of docs/diagrams/ (2026-06-03, COMPLETE).**
+
+Polished `errander-system-architecture.drawio` to be technically accurate and demo-ready: planned components (Dashboard Chat, Investigation Agent, Operator Chat Interface) marked with dashed borders and "· planned ·" labels; Slack API connected via clean outbound-HTTPS dashed line across the top; Audit DB arrows de-cluttered (labels removed, positions staggered); observability lane header shortened; obs_note added ("Layer A reads these sources · Layer B never depends on them"); footer legend removed; full-width blocked-by-design bar. Restored `errander-view.html` to the draw.io embedded viewer (a developer had replaced it with broken custom HTML). Updated `errander-system-architecture.md` (Mermaid GitHub render) to match: removed stale RM subgraph, folded planned components inline, added Fleet Prometheus and Operator Chat Interface, moved LangSmith to OBS subgraph. First commit of the entire `docs/diagrams/` directory.
+
+### Files changed (2026-06-03 — diagram polish + first commit)
+- `docs/diagrams/errander-system-architecture.drawio` — planned indicators (dashed borders + labels), Slack edge, Audit DB label cleanup, obs note, no legend, full-width blocked bar
+- `docs/diagrams/errander-view.html` — restored to draw.io embedded viewer (Python-regenerated from .drawio XML)
+- `docs/diagrams/errander-system-architecture.md` — Mermaid updated: planned components inline, Fleet Prometheus, LangSmith in OBS, updated "Reading" section
+
+## Previous Phase
 **Bootstrap refactor — clean two-phase install (2026-06-03, COMPLETE).**
 
 Split the old "clone → move at the end" bootstrap into two focused scripts: `bootstrap.sh` (admin/system only: git, curl, uv, Python 3.12, service user + .ssh) and `install.sh` (new, runs as `errander-agent`: uv sync, optional Prometheus, configure.sh). Fixed a concrete bug: configure.sh defaulted to `http://localhost:9090` for Prometheus but `install-prometheus.sh` installs on port 9091. SETUP.md and README.md updated to show the new two-step flow.
@@ -16,14 +26,12 @@ Split the old "clone → move at the end" bootstrap into two focused scripts: `b
 - `README.md` — bootstrap reference updated in two places
 
 ## Previous Phase
-**System architecture diagram — executive-ready presentation page (2026-06-03, COMPLETE).**
+**System architecture diagram — executive-ready presentation page (2026-06-03, superseded by polish pass above).**
 
-Rebuilt `docs/diagrams/errander-view.html` from a bare draw.io viewer into a self-explanatory architecture presentation page for stakeholder review. The draw.io diagram was improved (numbered flow badges ①–⑤, APScheduler trigger box, "BLOCKED BY DESIGN" red panel, 30-min timeout annotation, rollback node, step-labelled spine arrows). Surrounding the diagram: masthead with 4 KPIs, principle banner, 5-step end-to-end flow walkthrough, risk tiers (Low/Medium/High/Critical), automations table with all 6 tasks, blocked-by-design list with reasons, approval protocol walkthrough (including reject/timeout path), 6 safety guarantees, network topology zones, and 15-item tech stack grid. Static server on port 8766 (`python -m http.server 8766 --directory docs/diagrams`).
+Initial draw.io diagram + executive HTML context page. Replaced by the polish pass above (draw.io viewer restored, diagram corrected).
 
-### Files changed (2026-06-03 — architecture diagram)
-- `docs/diagrams/errander-view.html` — full rebuild: improved draw.io XML + rich executive context sections
-- `docs/diagrams/errander-system-architecture.drawio` — draw.io source (first commit)
-- `docs/diagrams/errander-system-architecture.md` — Mermaid reference (first commit)
+## Previous Phase
+**SETUP.md + CLAUDE.md — LangSmith wiring docs + stale Docker pruning fix (2026-06-02, COMPLETE).**
 
 ## Previous Phase
 **SETUP.md + CLAUDE.md — LangSmith wiring docs + stale Docker pruning fix (2026-06-02, COMPLETE).**

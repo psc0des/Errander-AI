@@ -1,123 +1,185 @@
-<mxfile host="app.diagrams.net" agent="Claude" version="24.0.0">
+<mxfile host="app.diagrams.net" agent="Claude">
   <diagram id="errander-arch" name="Errander-AI Target Architecture">
-    <mxGraphModel dx="1400" dy="900" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1360" pageHeight="900" math="0" shadow="0" background="#F8FAFC">
+    <mxGraphModel dx="2054" dy="1137" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1360" pageHeight="900" background="#F8FAFC" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
-
-        <mxCell id="title" value="Errander-AI — Target Production Architecture" style="text;html=1;align=left;verticalAlign=middle;fontFamily=Segoe UI;fontSize=22;fontStyle=1;fontColor=#0F172A;" vertex="1" parent="1">
-          <mxGeometry x="36" y="10" width="900" height="28" as="geometry" />
+        <mxCell id="title" parent="1" style="text;html=1;align=left;verticalAlign=middle;fontFamily=Segoe UI;fontSize=22;fontStyle=1;fontColor=#0F172A;" value="Errander-AI — Target Production Architecture" vertex="1">
+          <mxGeometry height="28" width="900" x="36" y="10" as="geometry" />
         </mxCell>
-        <mxCell id="subtitle" value="AI investigates. Human approves. Deterministic Python executes. SSH is the only mutation path. No public inbound webhooks." style="text;html=1;align=left;verticalAlign=middle;fontFamily=Segoe UI;fontSize=11;fontColor=#64748B;" vertex="1" parent="1">
-          <mxGeometry x="36" y="38" width="1010" height="16" as="geometry" />
+        <mxCell id="subtitle" parent="1" style="text;html=1;align=left;verticalAlign=middle;fontFamily=Segoe UI;fontSize=11;fontColor=#64748B;" value="AI investigates. Human approves. Deterministic Python executes. SSH is the only mutation path. No public inbound webhooks." vertex="1">
+          <mxGeometry height="16" width="1010" x="36" y="38" as="geometry" />
         </mxCell>
-
-        <!-- ===== LANE BACKGROUNDS ===== -->
-        <mxCell id="laneL1" value="" style="rounded=0;html=1;fillColor=#F8FAFC;strokeColor=#E5EAF0;" vertex="1" parent="1"><mxGeometry x="36" y="62" width="1300" height="84" as="geometry" /></mxCell>
-        <mxCell id="laneL2" value="" style="rounded=0;html=1;fillColor=#EFF6FF;strokeColor=#DCE9FB;" vertex="1" parent="1"><mxGeometry x="36" y="152" width="1300" height="148" as="geometry" /></mxCell>
-        <mxCell id="laneL3" value="" style="rounded=0;html=1;fillColor=#FFFBEB;strokeColor=#F2E9CF;" vertex="1" parent="1"><mxGeometry x="36" y="306" width="1300" height="160" as="geometry" /></mxCell>
-        <mxCell id="laneL4" value="" style="rounded=0;html=1;fillColor=#F0FDF4;strokeColor=#D6F0DE;" vertex="1" parent="1"><mxGeometry x="36" y="472" width="1300" height="150" as="geometry" /></mxCell>
-        <mxCell id="laneL5" value="" style="rounded=0;html=1;fillColor=#F8FAFC;strokeColor=#E5EAF0;" vertex="1" parent="1"><mxGeometry x="36" y="628" width="1300" height="84" as="geometry" /></mxCell>
-        <mxCell id="laneL6" value="" style="rounded=0;html=1;fillColor=#F1F5F9;strokeColor=#E1E8EF;" vertex="1" parent="1"><mxGeometry x="36" y="728" width="1300" height="112" as="geometry" /></mxCell>
-
-        <!-- Lane headers -->
-        <mxCell id="lblL1" value="Operator&#10;Experience" style="text;html=1;align=left;verticalAlign=middle;fontFamily=Segoe UI;fontStyle=1;fontSize=12;fontColor=#475569;" vertex="1" parent="1"><mxGeometry x="46" y="62" width="104" height="84" as="geometry" /></mxCell>
-        <mxCell id="lblL2" value="AI / Advisory&#10;(Layer A)" style="text;html=1;align=left;verticalAlign=middle;fontFamily=Segoe UI;fontStyle=1;fontSize=12;fontColor=#3A5E86;" vertex="1" parent="1"><mxGeometry x="46" y="152" width="104" height="148" as="geometry" /></mxCell>
-        <mxCell id="lblL3" value="Human&#10;Control" style="text;html=1;align=left;verticalAlign=middle;fontFamily=Segoe UI;fontStyle=1;fontSize=12;fontColor=#92710F;" vertex="1" parent="1"><mxGeometry x="46" y="306" width="104" height="160" as="geometry" /></mxCell>
-        <mxCell id="lblL4" value="Deterministic&#10;Execution (Layer B)" style="text;html=1;align=left;verticalAlign=middle;fontFamily=Segoe UI;fontStyle=1;fontSize=12;fontColor=#15803D;" vertex="1" parent="1"><mxGeometry x="46" y="472" width="104" height="150" as="geometry" /></mxCell>
-        <mxCell id="lblL5" value="Managed&#10;Infrastructure" style="text;html=1;align=left;verticalAlign=middle;fontFamily=Segoe UI;fontStyle=1;fontSize=12;fontColor=#475569;" vertex="1" parent="1"><mxGeometry x="46" y="628" width="104" height="84" as="geometry" /></mxCell>
-        <mxCell id="lblL6" value="Observability /&#10;Evaluation&#10;&#10;BYO ·&#10;read-only" style="text;html=1;align=left;verticalAlign=top;fontFamily=Segoe UI;fontStyle=1;fontSize=11;fontColor=#475569;spacingTop=6;" vertex="1" parent="1"><mxGeometry x="46" y="728" width="104" height="112" as="geometry" /></mxCell>
-
-        <!-- ===== CONTROLLER VM BOUNDARY ===== -->
-        <mxCell id="ctrlbox" value="" style="rounded=1;html=1;fillColor=none;strokeColor=#CBD5E1;dashed=1;dashPattern=6 4;strokeWidth=1;arcSize=2;" vertex="1" parent="1">
-          <mxGeometry x="342" y="70" width="794" height="554" as="geometry" />
+        <mxCell id="laneL1" parent="1" style="rounded=0;html=1;fillColor=#F8FAFC;strokeColor=#E5EAF0;" value="" vertex="1">
+          <mxGeometry height="84" width="1300" x="36" y="62" as="geometry" />
         </mxCell>
-        <mxCell id="ctrl_tab" value="Controller VM · Agent Host · private · no public IP" style="rounded=1;html=1;fillColor=#F1F5F9;strokeColor=#CBD5E1;strokeWidth=1;fontFamily=Segoe UI;fontStyle=2;fontSize=9;fontColor=#64748B;align=center;verticalAlign=middle;" vertex="1" parent="1">
-          <mxGeometry x="354" y="62" width="310" height="16" as="geometry" />
+        <mxCell id="laneL2" parent="1" style="rounded=0;html=1;fillColor=#EFF6FF;strokeColor=#DCE9FB;" value="" vertex="1">
+          <mxGeometry height="148" width="1300" x="36" y="152" as="geometry" />
         </mxCell>
-
-        <!-- ===== EXTERNAL LEFT ===== -->
-        <mxCell id="operator" value="Operator&#10;laptop / mobile" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#94A3B8;fontFamily=Segoe UI;fontSize=11;" vertex="1" parent="1"><mxGeometry x="176" y="78" width="150" height="50" as="geometry" /></mxCell>
-        <mxCell id="vllm" value="Private vLLM&#10;Layer A · no egress" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E6F0FB;strokeColor=#3D6CB0;fontFamily=Segoe UI;fontSize=10;align=center;verticalAlign=middle;" vertex="1" parent="1"><mxGeometry x="176" y="184" width="156" height="46" as="geometry" /></mxCell>
-        <mxCell id="cloudllm" value="Cloud LLM API&#10;optional · outbound HTTPS" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F1F5F9;strokeColor=#94A3B8;dashed=1;fontFamily=Segoe UI;fontSize=10;align=center;verticalAlign=middle;" vertex="1" parent="1"><mxGeometry x="176" y="240" width="156" height="50" as="geometry" /></mxCell>
-
-        <!-- ===== EXTERNAL RIGHT ===== -->
-        <mxCell id="slack" value="Slack API&#10;approvals channel&#10;outbound HTTPS only" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F1F5F9;strokeColor=#94A3B8;dashed=1;fontFamily=Segoe UI;fontSize=10;" vertex="1" parent="1"><mxGeometry x="1150" y="80" width="186" height="50" as="geometry" /></mxCell>
-
-        <!-- ===== CONTROLLER: L1 ===== -->
-        <mxCell id="webui" value="Web UI :9090&#10;approvals · dashboard" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#94A3B8;fontFamily=Segoe UI;fontSize=11;" vertex="1" parent="1"><mxGeometry x="366" y="80" width="180" height="46" as="geometry" /></mxCell>
-        <mxCell id="chat" value="Dashboard Chat&#10;/ui/chat&#10;· planned ·" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DBEAFE;strokeColor=#5A82B0;dashed=1;dashPattern=5 4;fontFamily=Segoe UI;fontSize=11;" vertex="1" parent="1"><mxGeometry x="566" y="80" width="158" height="46" as="geometry" /></mxCell>
-
-        <!-- ===== CONTROLLER: L2 Layer A ===== -->
-        <mxCell id="layerA" value="Layer A — advisory · LLM · read-only · NEVER executes" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DBEAFE;strokeColor=#5A82B0;verticalAlign=top;fontFamily=Segoe UI;fontStyle=1;fontSize=12;fontColor=#1E3A5F;align=center;spacingTop=6;arcSize=4;" vertex="1" parent="1"><mxGeometry x="366" y="168" width="540" height="124" as="geometry" /></mxCell>
-        <mxCell id="planner" value="Scheduled Planner&#10;&#10;fixed-signal context&#10;LLM recommendation&#10;deterministic fallback" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EAF2FD;strokeColor=#7FA0C8;fontFamily=Segoe UI;fontSize=10;align=center;verticalAlign=middle;" vertex="1" parent="1"><mxGeometry x="379" y="200" width="166" height="80" as="geometry" /></mxCell>
-        <mxCell id="agent" value="Investigation Agent&#10;· planned ·&#10;agentic read-only:&#10;Prometheus · ELK · audit" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EAF2FD;strokeColor=#7FA0C8;dashed=1;dashPattern=5 4;fontFamily=Segoe UI;fontSize=10;align=center;verticalAlign=middle;" vertex="1" parent="1"><mxGeometry x="555" y="200" width="170" height="80" as="geometry" /></mxCell>
-        <mxCell id="chatif" value="Operator Chat&#10;Interface&#10;· planned ·&#10;answers /ui/chat" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EAF2FD;strokeColor=#7FA0C8;dashed=1;dashPattern=5 4;fontFamily=Segoe UI;fontSize=10;align=center;verticalAlign=middle;" vertex="1" parent="1"><mxGeometry x="735" y="200" width="156" height="80" as="geometry" /></mxCell>
-
-        <!-- ===== CONTROLLER: L3 ===== -->
-        <mxCell id="appr" value="HUMAN APPROVAL GATE&#10;Slack ✅ / ❌  ·  Web UI  ·  every live change" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEF3C7;strokeColor=#B7791F;fontFamily=Segoe UI;fontSize=12;fontStyle=1;fontColor=#5A4410;align=center;verticalAlign=middle;arcSize=6;" vertex="1" parent="1"><mxGeometry x="402" y="361" width="330" height="50" as="geometry" /></mxCell>
-        <mxCell id="snapshot" value="Plan snapshot&#10;immutable · hashed" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEF8E7;strokeColor=#C2932F;fontFamily=Segoe UI;fontSize=10;align=center;verticalAlign=middle;" vertex="1" parent="1"><mxGeometry x="758" y="363" width="150" height="46" as="geometry" /></mxCell>
-
-        <!-- ===== CONTROLLER: L4 ===== -->
-        <mxCell id="layerB" value="LAYER B — deterministic execution engine&#10;patching · disk_cleanup · log_rotation · docker_hygiene · backup_verify · service_restart&#10;validate → execute → verify → rollback / compensate per action policy → audit&#10;no LLM · no MCP · no arbitrary shell" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DCFCE7;strokeColor=#15803D;fontFamily=Segoe UI;fontSize=11;fontStyle=1;fontColor=#14532D;align=center;verticalAlign=middle;arcSize=5;" vertex="1" parent="1"><mxGeometry x="366" y="486" width="520" height="84" as="geometry" /></mxCell>
-        <mxCell id="safety" value="safety gates: maintenance window · VM lock · sudo preflight&#10;plan hash · exact-object drift gates · per-object audit" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E9F9EF;strokeColor=#6FA56F;fontFamily=Segoe UI;fontSize=10;fontColor=#2E5E2E;align=center;verticalAlign=middle;" vertex="1" parent="1"><mxGeometry x="366" y="574" width="520" height="40" as="geometry" /></mxCell>
-        <mxCell id="auditdb" value="Audit DB&#10;audit_events&#10;ai_decisions&#10;plan_snapshots" style="shape=cylinder3;whiteSpace=wrap;html=1;fillColor=#ECEEF1;strokeColor=#7A828C;fontFamily=Segoe UI;fontSize=10;verticalAlign=middle;" vertex="1" parent="1"><mxGeometry x="948" y="484" width="156" height="108" as="geometry" /></mxCell>
-
-        <!-- ===== L5 MANAGED INFRASTRUCTURE ===== -->
-        <mxCell id="tgtzone" value="Target VMs — Linux, private · SSH key-based auth only" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F8FAFC;strokeColor=#94A3B8;verticalAlign=top;fontFamily=Segoe UI;fontStyle=1;fontSize=11;fontColor=#475569;align=center;spacingTop=4;arcSize=4;" vertex="1" parent="1"><mxGeometry x="366" y="642" width="520" height="72" as="geometry" /></mxCell>
-        <mxCell id="vm1" value="web-01 · Ubuntu&#10;node_exporter :9100" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#94A3B8;fontFamily=Segoe UI;fontSize=9;" vertex="1" parent="1"><mxGeometry x="380" y="668" width="155" height="38" as="geometry" /></mxCell>
-        <mxCell id="vm2" value="db-01 · RHEL&#10;node_exporter :9100" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#94A3B8;fontFamily=Segoe UI;fontSize=9;" vertex="1" parent="1"><mxGeometry x="545" y="668" width="155" height="38" as="geometry" /></mxCell>
-        <mxCell id="vm3" value="app-01 · Debian&#10;node_exporter :9100" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#94A3B8;fontFamily=Segoe UI;fontSize=9;" vertex="1" parent="1"><mxGeometry x="710" y="668" width="155" height="38" as="geometry" /></mxCell>
-
-        <!-- ===== L6 OBSERVABILITY / EVALUATION ===== -->
-        <mxCell id="obs_note" value="Layer A reads these sources · Layer B never depends on them" style="text;html=1;align=center;verticalAlign=middle;fontFamily=Segoe UI;fontSize=9;fontColor=#64748B;fontStyle=2;" vertex="1" parent="1"><mxGeometry x="376" y="730" width="640" height="12" as="geometry" /></mxCell>
-        <mxCell id="promctrl" value="Controller Prometheus :9091&#10;scrapes agent /metrics :9090&#10;monitors Errander" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F1F5F9;strokeColor=#94A3B8;fontFamily=Segoe UI;fontSize=9;align=center;verticalAlign=middle;" vertex="1" parent="1"><mxGeometry x="176" y="744" width="190" height="80" as="geometry" /></mxCell>
-        <mxCell id="grafana" value="Grafana&#10;dashboards" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F1F5F9;strokeColor=#94A3B8;dashed=1;fontFamily=Segoe UI;fontSize=9;align=center;verticalAlign=middle;" vertex="1" parent="1"><mxGeometry x="376" y="744" width="130" height="80" as="geometry" /></mxCell>
-        <mxCell id="fleetprom" value="Fleet Prometheus&#10;target VM metrics&#10;BYO / optional" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F1F5F9;strokeColor=#94A3B8;dashed=1;fontFamily=Segoe UI;fontSize=9;align=center;verticalAlign=middle;" vertex="1" parent="1"><mxGeometry x="516" y="744" width="160" height="80" as="geometry" /></mxCell>
-        <mxCell id="elk" value="ELK / Loki&#10;target + agent logs&#10;BYO / optional" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F1F5F9;strokeColor=#94A3B8;dashed=1;fontFamily=Segoe UI;fontSize=9;align=center;verticalAlign=middle;" vertex="1" parent="1"><mxGeometry x="686" y="744" width="160" height="80" as="geometry" /></mxCell>
-        <mxCell id="langsmith" value="LangSmith / Eval&#10;Layer A traces&#10;optional egress" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F1F5F9;strokeColor=#94A3B8;dashed=1;fontFamily=Segoe UI;fontSize=9;align=center;verticalAlign=middle;" vertex="1" parent="1"><mxGeometry x="856" y="744" width="160" height="80" as="geometry" /></mxCell>
-
-        <!-- ===== FOOTER ===== -->
-        <mxCell id="blocked" value="Blocked by design: kernel patching · arbitrary commands · AI self-approval · direct chat execution · app / db / cloud mutations" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FBE9E9;strokeColor=#E0AEA9;fontFamily=Segoe UI;fontSize=9;fontColor=#B5564E;align=center;verticalAlign=middle;arcSize=10;" vertex="1" parent="1"><mxGeometry x="176" y="848" width="1160" height="26" as="geometry" /></mxCell>
-
-        <!-- ============ EDGES ============ -->
-
-        <!-- MAIN SPINE — Layer A → Approval Gate → Layer B
-             Both arrows exit/enter at x=567 (appr center) so they travel
-             straight down. Pill badges sit ON the arrow path inside L3. -->
-        <mxCell id="e1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;strokeColor=#334155;strokeWidth=2;exitX=0.372;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="layerA" target="appr"><mxGeometry relative="1" as="geometry" /></mxCell>
-        <mxCell id="e2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;strokeColor=#15803D;strokeWidth=2;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.387;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="appr" target="layerB"><mxGeometry relative="1" as="geometry" /></mxCell>
-
-        <!-- Pill badge labels — sit ON the straight arrow paths inside Human Control lane -->
-        <mxCell id="lbl_rec" value="recommend" style="rounded=1;arcSize=50;whiteSpace=wrap;html=1;fillColor=#FEF3C7;strokeColor=#B7791F;fontFamily=Segoe UI;fontSize=10;fontStyle=1;fontColor=#5A4410;align=center;verticalAlign=middle;" vertex="1" parent="1"><mxGeometry x="517" y="316" width="100" height="20" as="geometry" /></mxCell>
-        <mxCell id="lbl_app" value="approved" style="rounded=1;arcSize=50;whiteSpace=wrap;html=1;fillColor=#DCFCE7;strokeColor=#15803D;fontFamily=Segoe UI;fontSize=10;fontStyle=1;fontColor=#14532D;align=center;verticalAlign=middle;" vertex="1" parent="1"><mxGeometry x="517" y="438" width="100" height="20" as="geometry" /></mxCell>
-
-        <mxCell id="e3" value="execute via SSH" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;fontFamily=Segoe UI;fontSize=11;fontStyle=1;strokeColor=#15803D;strokeWidth=4;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="safety" target="tgtzone"><mxGeometry relative="1" as="geometry" /></mxCell>
-
-        <!-- OPERATOR + LLM CONNECTIONS -->
-        <mxCell id="s_op_web" value="VPN / SSH tunnel" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;fontFamily=Segoe UI;fontSize=9;strokeColor=#94A3B8;fontColor=#94A3B8;strokeWidth=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="operator" target="webui"><mxGeometry relative="1" as="geometry" /></mxCell>
-        <mxCell id="s_chat_if" value="ask / answer" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;startArrow=block;fontFamily=Segoe UI;fontSize=9;strokeColor=#94A3B8;fontColor=#94A3B8;strokeWidth=1;exitX=0.5;exitY=1;entryX=0.7;entryY=0;" edge="1" parent="1" source="chat" target="chatif"><mxGeometry relative="1" as="geometry" /></mxCell>
-        <mxCell id="s_vllm_la" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#94A3B8;strokeWidth=1;exitX=1;exitY=0.5;entryX=0;entryY=0.35;" edge="1" parent="1" source="vllm" target="layerA"><mxGeometry relative="1" as="geometry" /></mxCell>
-        <mxCell id="s_cloud_la" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;dashed=1;strokeColor=#94A3B8;strokeWidth=1;exitX=1;exitY=0.5;entryX=0;entryY=0.7;" edge="1" parent="1" source="cloudllm" target="layerA"><mxGeometry relative="1" as="geometry" /></mxCell>
-
-        <!-- AUDIT DB -->
-        <mxCell id="s_la_db" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#94A3B8;strokeWidth=1;exitX=1;exitY=0.35;entryX=0;entryY=0.2;" edge="1" parent="1" source="layerA" target="auditdb"><mxGeometry relative="1" as="geometry" /></mxCell>
-        <mxCell id="s_appr_snap" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#94A3B8;strokeWidth=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="appr" target="snapshot"><mxGeometry relative="1" as="geometry" /></mxCell>
-        <mxCell id="s_snap_db" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#94A3B8;strokeWidth=1;exitX=1;exitY=0.5;entryX=0;entryY=0.45;" edge="1" parent="1" source="snapshot" target="auditdb"><mxGeometry relative="1" as="geometry" /></mxCell>
-        <mxCell id="s_lb_db" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#94A3B8;strokeWidth=1;exitX=1;exitY=0.6;entryX=0;entryY=0.72;" edge="1" parent="1" source="layerB" target="auditdb"><mxGeometry relative="1" as="geometry" /></mxCell>
-
-        <!-- Investigation Agent reads Observability — routed along far-right margin to avoid crossing swim lanes -->
-        <mxCell id="s_ag_obs" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=open;dashed=1;strokeColor=#94A3B8;strokeWidth=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="agent" target="elk">
+        <mxCell id="laneL3" parent="1" style="rounded=0;html=1;fillColor=#FFFBEB;strokeColor=#F2E9CF;" value="" vertex="1">
+          <mxGeometry height="160" width="1300" x="36" y="306" as="geometry" />
+        </mxCell>
+        <mxCell id="laneL4" parent="1" style="rounded=0;html=1;fillColor=#F0FDF4;strokeColor=#D6F0DE;" value="" vertex="1">
+          <mxGeometry height="150" width="1300" x="36" y="472" as="geometry" />
+        </mxCell>
+        <mxCell id="laneL5" parent="1" style="rounded=0;html=1;fillColor=#F8FAFC;strokeColor=#E5EAF0;" value="" vertex="1">
+          <mxGeometry height="84" width="1300" x="36" y="628" as="geometry" />
+        </mxCell>
+        <mxCell id="laneL6" parent="1" style="rounded=0;html=1;fillColor=#F1F5F9;strokeColor=#E1E8EF;" value="" vertex="1">
+          <mxGeometry height="112" width="1300" x="36" y="728" as="geometry" />
+        </mxCell>
+        <mxCell id="lblL1" parent="1" style="text;html=1;align=left;verticalAlign=middle;fontFamily=Segoe UI;fontStyle=1;fontSize=12;fontColor=#475569;" value="Operator&#xa;Experience" vertex="1">
+          <mxGeometry height="84" width="104" x="46" y="62" as="geometry" />
+        </mxCell>
+        <mxCell id="lblL2" parent="1" style="text;html=1;align=left;verticalAlign=middle;fontFamily=Segoe UI;fontStyle=1;fontSize=12;fontColor=#3A5E86;" value="AI / Advisory&#xa;(Layer A)" vertex="1">
+          <mxGeometry height="148" width="104" x="46" y="152" as="geometry" />
+        </mxCell>
+        <mxCell id="lblL3" parent="1" style="text;html=1;align=left;verticalAlign=middle;fontFamily=Segoe UI;fontStyle=1;fontSize=12;fontColor=#92710F;" value="Human&#xa;Control" vertex="1">
+          <mxGeometry height="160" width="104" x="46" y="306" as="geometry" />
+        </mxCell>
+        <mxCell id="lblL4" parent="1" style="text;html=1;align=left;verticalAlign=middle;fontFamily=Segoe UI;fontStyle=1;fontSize=12;fontColor=#15803D;" value="Deterministic&#xa;Execution (Layer B)" vertex="1">
+          <mxGeometry height="150" width="104" x="46" y="472" as="geometry" />
+        </mxCell>
+        <mxCell id="lblL5" parent="1" style="text;html=1;align=left;verticalAlign=middle;fontFamily=Segoe UI;fontStyle=1;fontSize=12;fontColor=#475569;" value="Managed&#xa;Infrastructure" vertex="1">
+          <mxGeometry height="84" width="104" x="46" y="628" as="geometry" />
+        </mxCell>
+        <mxCell id="lblL6" parent="1" style="text;html=1;align=left;verticalAlign=top;fontFamily=Segoe UI;fontStyle=1;fontSize=11;fontColor=#475569;spacingTop=6;" value="Observability /&#xa;Evaluation&#xa;&#xa;BYO ·&#xa;read-only" vertex="1">
+          <mxGeometry height="112" width="104" x="46" y="728" as="geometry" />
+        </mxCell>
+        <mxCell id="ctrlbox" parent="1" style="rounded=1;html=1;fillColor=none;strokeColor=#CBD5E1;dashed=1;dashPattern=6 4;strokeWidth=1;arcSize=2;" value="" vertex="1">
+          <mxGeometry height="554" width="794" x="342" y="70" as="geometry" />
+        </mxCell>
+        <mxCell id="ctrl_tab" parent="1" style="rounded=1;html=1;fillColor=#F1F5F9;strokeColor=#CBD5E1;strokeWidth=1;fontFamily=Segoe UI;fontStyle=2;fontSize=9;fontColor=#64748B;align=center;verticalAlign=middle;" value="Controller VM · Agent Host · private · no public IP" vertex="1">
+          <mxGeometry height="16" width="310" x="354" y="62" as="geometry" />
+        </mxCell>
+        <mxCell id="operator" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#94A3B8;fontFamily=Segoe UI;fontSize=11;" value="Operator&#xa;laptop / mobile" vertex="1">
+          <mxGeometry height="50" width="150" x="176" y="78" as="geometry" />
+        </mxCell>
+        <mxCell id="vllm" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E6F0FB;strokeColor=#3D6CB0;fontFamily=Segoe UI;fontSize=10;align=center;verticalAlign=middle;" value="Private vLLM&#xa;Layer A · no egress" vertex="1">
+          <mxGeometry height="46" width="156" x="176" y="184" as="geometry" />
+        </mxCell>
+        <mxCell id="cloudllm" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F1F5F9;strokeColor=#94A3B8;dashed=1;fontFamily=Segoe UI;fontSize=10;align=center;verticalAlign=middle;" value="Cloud LLM API&#xa;optional · outbound HTTPS" vertex="1">
+          <mxGeometry height="50" width="156" x="176" y="240" as="geometry" />
+        </mxCell>
+        <mxCell id="slack" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F1F5F9;strokeColor=#94A3B8;dashed=1;fontFamily=Segoe UI;fontSize=10;" value="Slack API&#xa;approvals channel&#xa;outbound HTTPS only" vertex="1">
+          <mxGeometry height="50" width="186" x="1150" y="80" as="geometry" />
+        </mxCell>
+        <mxCell id="webui" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#94A3B8;fontFamily=Segoe UI;fontSize=11;" value="Web UI :9090&#xa;approvals · dashboard" vertex="1">
+          <mxGeometry height="46" width="180" x="366" y="80" as="geometry" />
+        </mxCell>
+        <mxCell id="chat" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DBEAFE;strokeColor=#5A82B0;dashed=1;dashPattern=5 4;fontFamily=Segoe UI;fontSize=11;" value="Dashboard Chat&#xa;/ui/chat&#xa;· planned ·" vertex="1">
+          <mxGeometry height="46" width="158" x="566" y="80" as="geometry" />
+        </mxCell>
+        <mxCell id="layerA" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DBEAFE;strokeColor=#5A82B0;verticalAlign=top;fontFamily=Segoe UI;fontStyle=1;fontSize=12;fontColor=#1E3A5F;align=center;spacingTop=6;arcSize=4;" value="Layer A — advisory · LLM · read-only · NEVER executes" vertex="1">
+          <mxGeometry height="124" width="540" x="366" y="168" as="geometry" />
+        </mxCell>
+        <mxCell id="planner" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EAF2FD;strokeColor=#7FA0C8;fontFamily=Segoe UI;fontSize=10;align=center;verticalAlign=middle;" value="Scheduled Planner&#xa;&#xa;fixed-signal context&#xa;LLM recommendation&#xa;deterministic fallback" vertex="1">
+          <mxGeometry height="80" width="166" x="379" y="200" as="geometry" />
+        </mxCell>
+        <mxCell id="KLOeuawjz4hp-FIICmYs-3" edge="1" parent="1" source="agent" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;dashed=1;" target="elk">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
-              <mxPoint x="1240" y="295" />
-              <mxPoint x="1240" y="720" />
+              <mxPoint x="640" y="318" />
+              <mxPoint x="1296" y="318" />
+              <mxPoint x="1296" y="842" />
+              <mxPoint x="766" y="842" />
             </Array>
           </mxGeometry>
         </mxCell>
-
-        <!-- Web UI ↔ Slack (outbound HTTPS, arcs over title bar) -->
-        <mxCell id="s_web_slack" value="outbound HTTPS" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;startArrow=block;fontFamily=Segoe UI;fontSize=9;strokeColor=#94A3B8;fontColor=#94A3B8;strokeWidth=1;dashed=1;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="webui" target="slack">
+        <mxCell id="agent" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EAF2FD;strokeColor=#7FA0C8;dashed=1;dashPattern=5 4;fontFamily=Segoe UI;fontSize=10;align=center;verticalAlign=middle;" value="Investigation Agent&#xa;· planned ·&#xa;agentic read-only:&#xa;Prometheus · ELK · audit" vertex="1">
+          <mxGeometry height="80" width="170" x="555" y="200" as="geometry" />
+        </mxCell>
+        <mxCell id="chatif" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EAF2FD;strokeColor=#7FA0C8;dashed=1;dashPattern=5 4;fontFamily=Segoe UI;fontSize=10;align=center;verticalAlign=middle;" value="Operator Chat&#xa;Interface&#xa;· planned ·&#xa;answers /ui/chat" vertex="1">
+          <mxGeometry height="80" width="156" x="735" y="200" as="geometry" />
+        </mxCell>
+        <mxCell id="appr" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEF3C7;strokeColor=#B7791F;fontFamily=Segoe UI;fontSize=12;fontStyle=1;fontColor=#5A4410;align=center;verticalAlign=middle;arcSize=6;" value="HUMAN APPROVAL GATE&#xa;Slack ✅ / ❌  ·  Web UI  ·  every live change" vertex="1">
+          <mxGeometry height="50" width="330" x="402" y="361" as="geometry" />
+        </mxCell>
+        <mxCell id="snapshot" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEF8E7;strokeColor=#C2932F;fontFamily=Segoe UI;fontSize=10;align=center;verticalAlign=middle;" value="Plan snapshot&#xa;immutable · hashed" vertex="1">
+          <mxGeometry height="46" width="150" x="758" y="363" as="geometry" />
+        </mxCell>
+        <mxCell id="layerB" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DCFCE7;strokeColor=#15803D;fontFamily=Segoe UI;fontSize=11;fontStyle=1;fontColor=#14532D;align=center;verticalAlign=middle;arcSize=5;" value="LAYER B — deterministic execution engine&#xa;patching · disk_cleanup · log_rotation · docker_hygiene · backup_verify · service_restart&#xa;validate → execute → verify → rollback / compensate per action policy → audit&#xa;no LLM · no MCP · no arbitrary shell" vertex="1">
+          <mxGeometry height="84" width="520" x="366" y="486" as="geometry" />
+        </mxCell>
+        <mxCell id="safety" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E9F9EF;strokeColor=#6FA56F;fontFamily=Segoe UI;fontSize=10;fontColor=#2E5E2E;align=center;verticalAlign=middle;" value="safety gates: maintenance window · VM lock · sudo preflight&#xa;plan hash · exact-object drift gates · per-object audit" vertex="1">
+          <mxGeometry height="40" width="520" x="366" y="574" as="geometry" />
+        </mxCell>
+        <mxCell id="auditdb" parent="1" style="shape=cylinder3;whiteSpace=wrap;html=1;fillColor=#ECEEF1;strokeColor=#7A828C;fontFamily=Segoe UI;fontSize=10;verticalAlign=middle;" value="Audit DB&#xa;audit_events&#xa;ai_decisions&#xa;plan_snapshots" vertex="1">
+          <mxGeometry height="108" width="156" x="948" y="484" as="geometry" />
+        </mxCell>
+        <mxCell id="tgtzone" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F8FAFC;strokeColor=#94A3B8;verticalAlign=top;fontFamily=Segoe UI;fontStyle=1;fontSize=11;fontColor=#475569;align=center;spacingTop=4;arcSize=4;" value="Target VMs — Linux, private · SSH key-based auth only" vertex="1">
+          <mxGeometry height="72" width="520" x="366" y="642" as="geometry" />
+        </mxCell>
+        <mxCell id="vm1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#94A3B8;fontFamily=Segoe UI;fontSize=9;" value="web-01 · Ubuntu&#xa;node_exporter :9100" vertex="1">
+          <mxGeometry height="38" width="155" x="380" y="668" as="geometry" />
+        </mxCell>
+        <mxCell id="vm2" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#94A3B8;fontFamily=Segoe UI;fontSize=9;" value="db-01 · RHEL&#xa;node_exporter :9100" vertex="1">
+          <mxGeometry height="38" width="155" x="545" y="668" as="geometry" />
+        </mxCell>
+        <mxCell id="vm3" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#94A3B8;fontFamily=Segoe UI;fontSize=9;" value="app-01 · Debian&#xa;node_exporter :9100" vertex="1">
+          <mxGeometry height="38" width="155" x="710" y="668" as="geometry" />
+        </mxCell>
+        <mxCell id="obs_note" parent="1" style="text;html=1;align=center;verticalAlign=middle;fontFamily=Segoe UI;fontSize=9;fontColor=#64748B;fontStyle=2;" value="Layer A reads these sources · Layer B never depends on them" vertex="1">
+          <mxGeometry height="12" width="640" x="376" y="730" as="geometry" />
+        </mxCell>
+        <mxCell id="promctrl" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F1F5F9;strokeColor=#94A3B8;fontFamily=Segoe UI;fontSize=9;align=center;verticalAlign=middle;" value="Controller Prometheus :9091&#xa;scrapes agent /metrics :9090&#xa;monitors Errander" vertex="1">
+          <mxGeometry height="80" width="190" x="176" y="744" as="geometry" />
+        </mxCell>
+        <mxCell id="grafana" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F1F5F9;strokeColor=#94A3B8;dashed=1;fontFamily=Segoe UI;fontSize=9;align=center;verticalAlign=middle;" value="Grafana&#xa;dashboards" vertex="1">
+          <mxGeometry height="80" width="130" x="376" y="744" as="geometry" />
+        </mxCell>
+        <mxCell id="fleetprom" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F1F5F9;strokeColor=#94A3B8;dashed=1;fontFamily=Segoe UI;fontSize=9;align=center;verticalAlign=middle;" value="Fleet Prometheus&#xa;target VM metrics&#xa;BYO / optional" vertex="1">
+          <mxGeometry height="80" width="160" x="516" y="744" as="geometry" />
+        </mxCell>
+        <mxCell id="elk" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F1F5F9;strokeColor=#94A3B8;dashed=1;fontFamily=Segoe UI;fontSize=9;align=center;verticalAlign=middle;" value="ELK / Loki&#xa;target + agent logs&#xa;BYO / optional" vertex="1">
+          <mxGeometry height="80" width="160" x="686" y="744" as="geometry" />
+        </mxCell>
+        <mxCell id="langsmith" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F1F5F9;strokeColor=#94A3B8;dashed=1;fontFamily=Segoe UI;fontSize=9;align=center;verticalAlign=middle;" value="LangSmith / Eval&#xa;Layer A traces&#xa;optional egress" vertex="1">
+          <mxGeometry height="80" width="160" x="856" y="744" as="geometry" />
+        </mxCell>
+        <mxCell id="blocked" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FBE9E9;strokeColor=#E0AEA9;fontFamily=Segoe UI;fontSize=9;fontColor=#B5564E;align=center;verticalAlign=middle;arcSize=10;" value="Blocked by design: kernel patching · arbitrary commands · AI self-approval · direct chat execution · app / db / cloud mutations" vertex="1">
+          <mxGeometry height="26" width="1160" x="176" y="848" as="geometry" />
+        </mxCell>
+        <mxCell id="e1" edge="1" parent="1" source="layerA" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;strokeColor=#334155;strokeWidth=2;exitX=0.372;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" target="appr" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" edge="1" parent="1" source="appr" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;strokeColor=#15803D;strokeWidth=2;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.387;entryY=0;entryDx=0;entryDy=0;" target="layerB" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="lbl_rec" parent="1" style="rounded=1;arcSize=50;whiteSpace=wrap;html=1;fillColor=#FEF3C7;strokeColor=#B7791F;fontFamily=Segoe UI;fontSize=10;fontStyle=1;fontColor=#5A4410;align=center;verticalAlign=middle;" value="recommend" vertex="1">
+          <mxGeometry height="20" width="100" x="517" y="316" as="geometry" />
+        </mxCell>
+        <mxCell id="lbl_app" parent="1" style="rounded=1;arcSize=50;whiteSpace=wrap;html=1;fillColor=#DCFCE7;strokeColor=#15803D;fontFamily=Segoe UI;fontSize=10;fontStyle=1;fontColor=#14532D;align=center;verticalAlign=middle;" value="approved" vertex="1">
+          <mxGeometry height="20" width="100" x="517" y="438" as="geometry" />
+        </mxCell>
+        <mxCell id="e3" edge="1" parent="1" source="safety" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;fontFamily=Segoe UI;fontSize=11;fontStyle=1;strokeColor=#15803D;strokeWidth=4;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" target="tgtzone" value="execute via SSH">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="s_op_web" edge="1" parent="1" source="operator" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;fontFamily=Segoe UI;fontSize=9;strokeColor=#94A3B8;fontColor=#94A3B8;strokeWidth=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" target="webui" value="VPN / SSH tunnel">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="s_chat_if" edge="1" parent="1" source="chat" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;startArrow=block;fontFamily=Segoe UI;fontSize=9;strokeColor=#94A3B8;fontColor=#94A3B8;strokeWidth=1;exitX=0.5;exitY=1;entryX=0.7;entryY=0;" target="chatif" value="ask / answer">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="s_vllm_la" edge="1" parent="1" source="vllm" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#94A3B8;strokeWidth=1;exitX=1;exitY=0.5;entryX=0;entryY=0.35;" target="layerA" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="s_cloud_la" edge="1" parent="1" source="cloudllm" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;dashed=1;strokeColor=#94A3B8;strokeWidth=1;exitX=1;exitY=0.5;entryX=0;entryY=0.7;" target="layerA" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="s_la_db" edge="1" parent="1" source="layerA" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#94A3B8;strokeWidth=1;exitX=1;exitY=0.35;entryX=0;entryY=0.2;" target="auditdb" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="s_appr_snap" edge="1" parent="1" source="appr" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#94A3B8;strokeWidth=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" target="snapshot" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="s_snap_db" edge="1" parent="1" source="snapshot" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#94A3B8;strokeWidth=1;exitX=1;exitY=0.5;entryX=0;entryY=0.45;" target="auditdb" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="s_lb_db" edge="1" parent="1" source="layerB" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#94A3B8;strokeWidth=1;exitX=1;exitY=0.6;entryX=0;entryY=0.72;" target="auditdb" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="s_web_slack" edge="1" parent="1" source="webui" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;startArrow=block;fontFamily=Segoe UI;fontSize=9;strokeColor=#94A3B8;fontColor=#94A3B8;strokeWidth=1;dashed=1;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" target="slack" value="outbound HTTPS">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
               <mxPoint x="456" y="56" />
@@ -125,11 +187,12 @@
             </Array>
           </mxGeometry>
         </mxCell>
-
-        <!-- Fleet Prometheus scrapes target VMs -->
-        <mxCell id="s_fleet_tgt" value="scrape" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;dashed=1;fontFamily=Segoe UI;fontSize=9;strokeColor=#94A3B8;fontColor=#94A3B8;strokeWidth=1;exitX=0.5;exitY=0;entryX=0.6;entryY=1;" edge="1" parent="1" source="fleetprom" target="tgtzone"><mxGeometry relative="1" as="geometry" /></mxCell>
-        <mxCell id="s_graf_fleet" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;dashed=1;strokeColor=#94A3B8;strokeWidth=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="grafana" target="fleetprom"><mxGeometry relative="1" as="geometry" /></mxCell>
-
+        <mxCell id="s_fleet_tgt" edge="1" parent="1" source="fleetprom" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;dashed=1;fontFamily=Segoe UI;fontSize=9;strokeColor=#94A3B8;fontColor=#94A3B8;strokeWidth=1;exitX=0.5;exitY=0;entryX=0.6;entryY=1;" target="tgtzone" value="scrape">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="s_graf_fleet" edge="1" parent="1" source="grafana" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;dashed=1;strokeColor=#94A3B8;strokeWidth=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" target="fleetprom" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
       </root>
     </mxGraphModel>
   </diagram>

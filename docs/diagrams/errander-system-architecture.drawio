@@ -83,9 +83,12 @@
 
         <!-- ============ EDGES ============ -->
 
-        <!-- SPINE (main flow) -->
-        <mxCell id="e1" value="recommend" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;fontFamily=Segoe UI;fontSize=11;fontStyle=1;strokeColor=#334155;strokeWidth=2;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="layerA" target="appr"><mxGeometry relative="1" as="geometry" /></mxCell>
-        <mxCell id="e2" value="approve" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;fontFamily=Segoe UI;fontSize=11;fontStyle=1;strokeColor=#15803D;strokeWidth=2;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="appr" target="layerB"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <!-- SPINE (main flow) — labels removed; see lbl_rec / lbl_app pill badges below -->
+        <mxCell id="e1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;strokeColor=#334155;strokeWidth=2;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="layerA" target="appr"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;strokeColor=#15803D;strokeWidth=2;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="appr" target="layerB"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <!-- Pill badge labels — float inside Human Control lane, away from lane borders -->
+        <mxCell id="lbl_rec" value="recommend" style="rounded=1;arcSize=50;whiteSpace=wrap;html=1;fillColor=#FEF3C7;strokeColor=#B7791F;fontFamily=Segoe UI;fontSize=10;fontStyle=1;fontColor=#5A4410;align=center;verticalAlign=middle;" vertex="1" parent="1"><mxGeometry x="552" y="309" width="100" height="20" as="geometry" /></mxCell>
+        <mxCell id="lbl_app" value="approve" style="rounded=1;arcSize=50;whiteSpace=wrap;html=1;fillColor=#DCFCE7;strokeColor=#15803D;fontFamily=Segoe UI;fontSize=10;fontStyle=1;fontColor=#14532D;align=center;verticalAlign=middle;" vertex="1" parent="1"><mxGeometry x="554" y="400" width="94" height="20" as="geometry" /></mxCell>
         <mxCell id="e3" value="execute via SSH" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;fontFamily=Segoe UI;fontSize=11;fontStyle=1;strokeColor=#15803D;strokeWidth=4;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="safety" target="tgtzone"><mxGeometry relative="1" as="geometry" /></mxCell>
 
         <!-- OPERATOR + LLM CONNECTIONS -->

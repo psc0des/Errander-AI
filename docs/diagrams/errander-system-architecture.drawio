@@ -106,8 +106,15 @@
         <mxCell id="s_snap_db" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#94A3B8;strokeWidth=1;exitX=1;exitY=0.5;entryX=0;entryY=0.45;" edge="1" parent="1" source="snapshot" target="auditdb"><mxGeometry relative="1" as="geometry" /></mxCell>
         <mxCell id="s_lb_db" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#94A3B8;strokeWidth=1;exitX=1;exitY=0.6;entryX=0;entryY=0.72;" edge="1" parent="1" source="layerB" target="auditdb"><mxGeometry relative="1" as="geometry" /></mxCell>
 
-        <!-- Investigation Agent reads Observability -->
-        <mxCell id="s_ag_obs" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=open;dashed=1;strokeColor=#94A3B8;strokeWidth=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="agent" target="elk"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <!-- Investigation Agent reads Observability — routed along far-right margin to avoid crossing swim lanes -->
+        <mxCell id="s_ag_obs" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=open;dashed=1;strokeColor=#94A3B8;strokeWidth=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="agent" target="elk">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1240" y="295" />
+              <mxPoint x="1240" y="720" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
 
         <!-- Web UI ↔ Slack (outbound HTTPS, arcs over title bar) -->
         <mxCell id="s_web_slack" value="outbound HTTPS" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;startArrow=block;fontFamily=Segoe UI;fontSize=9;strokeColor=#94A3B8;fontColor=#94A3B8;strokeWidth=1;dashed=1;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="webui" target="slack">

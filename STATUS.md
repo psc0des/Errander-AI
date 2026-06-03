@@ -4,6 +4,18 @@
 2026-06-03
 
 ## Current Phase
+**Bootstrap refactor — clean two-phase install (2026-06-03, COMPLETE).**
+
+Split the old "clone → move at the end" bootstrap into two focused scripts: `bootstrap.sh` (admin/system only: git, curl, uv, Python 3.12, service user + .ssh) and `install.sh` (new, runs as `errander-agent`: uv sync, optional Prometheus, configure.sh). Fixed a concrete bug: configure.sh defaulted to `http://localhost:9090` for Prometheus but `install-prometheus.sh` installs on port 9091. SETUP.md and README.md updated to show the new two-step flow.
+
+### Files changed (2026-06-03 — bootstrap refactor)
+- `scripts/bootstrap.sh` — rewritten: system-only (0/5–5/5), no clone/move/sync; clears Done banner pointing to install.sh
+- `scripts/install.sh` — new: runs as errander-agent; uv sync + Prometheus prompt + exec configure.sh
+- `scripts/configure.sh` — fix Prometheus URL default: `localhost:9090` → `localhost:9091`
+- `SETUP.md` — Linux Step 1 rewritten for two-step flow; manual fallback updated (no sudo mv); Prometheus section updated
+- `README.md` — bootstrap reference updated in two places
+
+## Previous Phase
 **System architecture diagram — executive-ready presentation page (2026-06-03, COMPLETE).**
 
 Rebuilt `docs/diagrams/errander-view.html` from a bare draw.io viewer into a self-explanatory architecture presentation page for stakeholder review. The draw.io diagram was improved (numbered flow badges ①–⑤, APScheduler trigger box, "BLOCKED BY DESIGN" red panel, 30-min timeout annotation, rollback node, step-labelled spine arrows). Surrounding the diagram: masthead with 4 KPIs, principle banner, 5-step end-to-end flow walkthrough, risk tiers (Low/Medium/High/Critical), automations table with all 6 tasks, blocked-by-design list with reasons, approval protocol walkthrough (including reject/timeout path), 6 safety guarantees, network topology zones, and 15-item tech stack grid. Static server on port 8766 (`python -m http.server 8766 --directory docs/diagrams`).

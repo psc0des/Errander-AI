@@ -302,7 +302,7 @@ echo ""
 PROMETHEUS_BASE_URL=""
 case "${PROM_CHOICE,,}" in
   y|yes)
-    prompt_val "Prometheus URL (global default)" "http://localhost:9090"
+    prompt_val "Prometheus URL (global default)" "http://localhost:9091"
     PROMETHEUS_BASE_URL="$REPLY"
     ok "Prometheus configured: $PROMETHEUS_BASE_URL"
     ;;

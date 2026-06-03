@@ -1,3 +1,13 @@
+## Bootstrap refactor — two-phase install (2026-06-03, COMPLETE)
+
+- [x] `scripts/bootstrap.sh` — rewrite: system-only (distro, git, curl, uv, Python 3.12, service user + .ssh); remove clone/move/double-sync
+- [x] `scripts/install.sh` — new: runs as errander-agent; uv sync + Prometheus opt-in + exec configure.sh
+- [x] `scripts/configure.sh` — fix Prometheus URL default `9090` → `9091`
+- [x] `SETUP.md` — Linux Step 1 two-step flow; manual fallback updated; Prometheus line updated
+- [x] `README.md` — two bootstrap references updated
+
+---
+
 ## System architecture diagram — executive presentation page (2026-06-03, COMPLETE)
 
 - [x] Rebuild `docs/diagrams/errander-view.html`: improved draw.io diagram (①–⑤ flow badges, APScheduler trigger, BLOCKED BY DESIGN panel, timeout annotation, rollback node) + executive HTML context (KPI masthead, principle banner, 5-step flow, risk tiers, automations table, blocked list, approval protocol, 6 safety guarantees, network topology, 15-item tech stack)

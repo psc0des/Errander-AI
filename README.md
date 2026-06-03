@@ -394,7 +394,7 @@ uv sync
 uv run pytest
 ```
 
-> **New machine?** `scripts/bootstrap.sh` (Linux) or `scripts/bootstrap.ps1` (Windows) handles git, uv, and Python 3.12 installation automatically.
+> **New machine?** On Linux: `scripts/bootstrap.sh` (admin — system deps + service user) then `scripts/install.sh` (as `errander-agent` — deps + configure). On Windows: `scripts/bootstrap.ps1` handles everything automatically.
 
 ### Configure
 
@@ -565,7 +565,7 @@ There are **two distinct Prometheus relationships** in this system — keep them
 1. **Prometheus → Errander** — Prometheus scrapes the agent's own `/metrics` (the table above). This is what you set up below.
 2. **Errander → Prometheus / node_exporter** — the agent *reads* host metrics from node_exporter on the **target VMs** (`observability/vm_metrics.py`, `integrations/prometheus.py`) to inform Layer A decisions. Configured per-target, separate from the scrape job below.
 
-**Easiest — let the installer do it.** `bootstrap.sh` offers an opt-in Prometheus step, or run the standalone script anytime:
+**Easiest — let the installer do it.** `install.sh` offers an opt-in Prometheus step during setup, or run the standalone script anytime:
 
 ```bash
 bash scripts/install-prometheus.sh

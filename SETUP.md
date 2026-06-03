@@ -156,7 +156,9 @@ uv run python -c "import errander; print('OK')"
 
 ### Linux controller
 
-Run bootstrap **as your admin user** (needs sudo to install system packages and create the service account):
+Two steps: **admin** installs system deps and creates the service user, then **errander-agent** clones the repo and runs the app installer. Nothing is ever moved — the repo lives at `/home/errander-agent/errander` from the start.
+
+**Step A — System setup** (run as your admin user — needs sudo):
 
 ```bash
 git clone https://github.com/psc0des/Errander-AI.git errander
@@ -165,35 +167,35 @@ bash errander/scripts/bootstrap.sh
 
 > **git clone asks for credentials?** This is a public repo — no credentials needed for HTTPS clone. If you previously ran `gh auth login`, run `gh auth setup-git` once to wire the token into git's credential system, then retry.
 
-Bootstrap does everything automatically:
+`bootstrap.sh` does:
 - Detects your distro (Ubuntu, Debian, RHEL, CentOS, Oracle Linux, Fedora)
-- Installs git, curl, uv, Python 3.12
+- Installs git, curl, uv (at `/usr/local/bin`), Python 3.12
 - Creates the `errander-agent` service user with a `.ssh` directory
-- Moves the repo to `/home/errander-agent/errander` and sets ownership
-- Installs Python dependencies as `errander-agent`
-- **Optionally** installs Prometheus on this controller node to monitor the agent itself (opt-in prompt, default No — see [Monitoring the agent](#monitoring-the-agent-with-prometheus-optional) below)
 
-When it finishes, switch to the service user:
+**Step B — App install** (run as the service user):
 
 ```bash
 sudo su - errander-agent
+git clone https://github.com/psc0des/Errander-AI.git ~/errander
 cd ~/errander
+bash scripts/install.sh
 ```
 
-**All remaining steps run as `errander-agent`.** Skip to Step 2.
+`install.sh` installs Python dependencies (`uv sync --extra dev`), optionally installs Prometheus on this node (opt-in prompt — see [Monitoring the agent](#monitoring-the-agent-with-prometheus-optional) below), then launches `configure.sh` interactively.
+
+**All remaining steps run as `errander-agent`** (inside the `sudo su - errander-agent` session). Skip to Step 2.
 
 <details>
 <summary>Manual installation (reference / fallback)</summary>
 
 ```bash
-# Install git and curl
+# As admin: install system deps and create service user
 sudo apt-get update && sudo apt-get install -y git curl   # Ubuntu/Debian
 # sudo dnf install -y git curl                            # RHEL/CentOS/Oracle
 
 # Install uv (official installer — no PPA, works on all distros)
 curl -LsSf https://astral.sh/uv/install.sh | sh
 export PATH="$HOME/.local/bin:$PATH"
-echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
 sudo cp ~/.local/bin/uv /usr/local/bin/uv
 
 # Install Python 3.12 via uv
@@ -205,15 +207,17 @@ sudo mkdir -p /home/errander-agent/.ssh
 sudo chmod 700 /home/errander-agent/.ssh
 sudo chown -R errander-agent:errander-agent /home/errander-agent/.ssh
 
-# Clone, move, and install
-git clone https://github.com/psc0des/Errander-AI.git errander
-sudo mv errander /home/errander-agent/errander
-sudo chown -R errander-agent:errander-agent /home/errander-agent/errander
-sudo -u errander-agent /usr/local/bin/uv sync --extra dev --project /home/errander-agent/errander
+# Create service user and .ssh directory
+sudo useradd -m -s /bin/bash errander-agent
+sudo mkdir -p /home/errander-agent/.ssh
+sudo chmod 700 /home/errander-agent/.ssh
+sudo chown -R errander-agent:errander-agent /home/errander-agent/.ssh
 
-# Switch to service user
+# As errander-agent: clone directly to canonical location and install
 sudo su - errander-agent
+git clone https://github.com/psc0des/Errander-AI.git ~/errander
 cd ~/errander
+uv sync --extra dev
 uv run python -c "import errander; print('OK')"
 ```
 
@@ -891,7 +895,7 @@ environments:
 
 > **This is the reverse direction from the section above.** Here a Prometheus running **on the controller node** scrapes the agent's own `/metrics` (action counts, durations, SSH errors, LLM outcomes, approval waits) — it monitors *Errander itself*, not your target VMs.
 
-`bootstrap.sh` offers this as an opt-in step (default No). To install it any time afterwards:
+`install.sh` offers this as an opt-in step during setup (default No). To install it any time afterwards:
 
 ```bash
 bash scripts/install-prometheus.sh

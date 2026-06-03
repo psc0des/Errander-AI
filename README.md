@@ -394,7 +394,7 @@ uv sync
 uv run pytest
 ```
 
-> **New machine?** On Linux: `scripts/bootstrap.sh` (admin — system deps + service user) then `scripts/install.sh` (as `errander-agent` — deps + configure). On Windows: `scripts/bootstrap.ps1` handles everything automatically.
+> **New Linux controller?** One command as admin: `curl -fsSL https://raw.githubusercontent.com/psc0des/Errander-AI/main/scripts/bootstrap.sh | bash` — then `sudo su - errander-agent`, clone the repo, and run `bash scripts/install.sh`. On Windows: `scripts/bootstrap.ps1` handles everything automatically.
 
 ### Configure
 

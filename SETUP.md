@@ -156,18 +156,15 @@ uv run python -c "import errander; print('OK')"
 
 ### Linux controller
 
-Two steps: **admin** installs system deps and creates the service user, then **errander-agent** clones the repo and runs the app installer. Nothing is ever moved — the repo lives at `/home/errander-agent/errander` from the start.
+Two steps: **admin** installs system deps and creates the service user, then **errander-agent** clones the repo and configures the app. Only one `git clone` — done as the service user, directly to the canonical location.
 
 **Step A — System setup** (run as your admin user — needs sudo):
 
 ```bash
-git clone https://github.com/psc0des/Errander-AI.git errander
-bash errander/scripts/bootstrap.sh
+curl -fsSL https://raw.githubusercontent.com/psc0des/Errander-AI/main/scripts/bootstrap.sh | bash
 ```
 
-> **git clone asks for credentials?** This is a public repo — no credentials needed for HTTPS clone. If you previously ran `gh auth login`, run `gh auth setup-git` once to wire the token into git's credential system, then retry.
-
-`bootstrap.sh` does:
+`bootstrap.sh` is self-contained (no repo needed). It:
 - Detects your distro (Ubuntu, Debian, RHEL, CentOS, Oracle Linux, Fedora)
 - Installs git, curl, uv (at `/usr/local/bin`), Python 3.12
 - Creates the `errander-agent` service user with a `.ssh` directory
@@ -181,9 +178,16 @@ cd ~/errander
 bash scripts/install.sh
 ```
 
-`install.sh` installs Python dependencies (`uv sync --extra dev`), optionally installs Prometheus on this node (opt-in prompt — see [Monitoring the agent](#monitoring-the-agent-with-prometheus-optional) below), then launches `configure.sh` interactively.
+`install.sh` installs Python dependencies, optionally installs Prometheus on this node (opt-in prompt — see [Monitoring the agent](#monitoring-the-agent-with-prometheus-optional) below), then launches `configure.sh` interactively.
 
 **All remaining steps run as `errander-agent`** (inside the `sudo su - errander-agent` session). Skip to Step 2.
+
+> **Prefer to inspect bootstrap.sh before running it?** Clone it first:
+> ```bash
+> git clone https://github.com/psc0des/Errander-AI.git errander-setup
+> bash errander-setup/scripts/bootstrap.sh
+> rm -rf errander-setup   # admin clone no longer needed
+> ```
 
 <details>
 <summary>Manual installation (reference / fallback)</summary>

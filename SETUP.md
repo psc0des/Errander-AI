@@ -201,12 +201,6 @@ sudo cp ~/.local/bin/uv /usr/local/bin/uv
 # Install Python 3.12 via uv
 uv python install 3.12
 
-# Create service user
-sudo useradd -m -s /bin/bash errander-agent
-sudo mkdir -p /home/errander-agent/.ssh
-sudo chmod 700 /home/errander-agent/.ssh
-sudo chown -R errander-agent:errander-agent /home/errander-agent/.ssh
-
 # Create service user and .ssh directory
 sudo useradd -m -s /bin/bash errander-agent
 sudo mkdir -p /home/errander-agent/.ssh

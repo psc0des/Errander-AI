@@ -1,9 +1,19 @@
 # Errander-AI — Project Status
 
 ## Last Updated
-2026-06-02
+2026-06-03
 
 ## Current Phase
+**System architecture diagram — executive-ready presentation page (2026-06-03, COMPLETE).**
+
+Rebuilt `docs/diagrams/errander-view.html` from a bare draw.io viewer into a self-explanatory architecture presentation page for stakeholder review. The draw.io diagram was improved (numbered flow badges ①–⑤, APScheduler trigger box, "BLOCKED BY DESIGN" red panel, 30-min timeout annotation, rollback node, step-labelled spine arrows). Surrounding the diagram: masthead with 4 KPIs, principle banner, 5-step end-to-end flow walkthrough, risk tiers (Low/Medium/High/Critical), automations table with all 6 tasks, blocked-by-design list with reasons, approval protocol walkthrough (including reject/timeout path), 6 safety guarantees, network topology zones, and 15-item tech stack grid. Static server on port 8766 (`python -m http.server 8766 --directory docs/diagrams`).
+
+### Files changed (2026-06-03 — architecture diagram)
+- `docs/diagrams/errander-view.html` — full rebuild: improved draw.io XML + rich executive context sections
+- `docs/diagrams/errander-system-architecture.drawio` — draw.io source (first commit)
+- `docs/diagrams/errander-system-architecture.md` — Mermaid reference (first commit)
+
+## Previous Phase
 **SETUP.md + CLAUDE.md — LangSmith wiring docs + stale Docker pruning fix (2026-06-02, COMPLETE).**
 
 Three doc gaps closed ready for Prometheus test + LangSmith wiring session: (1) CLAUDE.md line 3 fixed — "Docker pruning" → "Docker hygiene (object-level approval)"; (2) SETUP.md now has a full **LangSmith section** (Layer A only, dev/staging, no code changes needed, setup steps, disable instructions, egress warning, what panels are useful/redundant) between the Prometheus and ELK sections; (3) `.env` template has the three `LANGCHAIN_*` vars commented out with egress warning; (4) env-var reference table has the three `LANGCHAIN_*` rows. Also fixed stale memory entries (project_state → 2507 tests; docker_hygiene_v11 → marked complete; post_review_planning → marked superseded) and added new observability/positioning memory. No code wiring yet — LangGraph auto-detects `LANGCHAIN_TRACING_V2=true` at startup (no Python changes needed).
@@ -12,16 +22,16 @@ Three doc gaps closed ready for Prometheus test + LangSmith wiring session: (1) 
 - `CLAUDE.md` — "Docker pruning" → "Docker hygiene (object-level approval)"
 - `SETUP.md` — LangSmith section; LANGCHAIN_* vars in .env template; LANGCHAIN_* rows in env-var reference table
 
-## Next Up — Planned features (NOT yet built)
+## Next Up — Roadmap (NOT yet built / verified — target/end-state)
 
-Two implementation plans are authored and waiting to be built, **in this order**:
+> The architecture diagram (`docs/diagrams/errander-system-architecture.drawio`) deliberately shows these as **target/end-state** components. That is the **vision** — they are **NOT implemented/verified yet.** Build/verify in this order:
 
-1. **Layer A Investigation Agent** → `tasks/investigation-agent-implementation-plan.md`
-   Agentic, read-only `--ask` investigation: LLM composes Prometheus/ELK/audit/disk/vm-facts queries on the fly. Strictly Layer A. **Build first** — it's the engine.
-2. **Dashboard Chat (SRE ops-console)** → `tasks/dashboard-chat-implementation-plan.md`
-   A `/ui/chat` quick-help console (patch status, CPU/mem, app health), multi-turn, on top of the investigation engine. Optional action handoff routes through the existing approval flow — chat never executes. **Build second** (depends on #1). "Chat assignment/ownership" is a later, separate team feature.
+1. **Prometheus test** — install script (`scripts/install-prometheus.sh`) + SETUP/README docs ✅ **done**; **NOT yet run or verified on a real controller** (statically validated only). _Pending:_ run the script, confirm `http://<controller>:9091/targets` shows `errander-agent` **UP**.
+2. **LangSmith wiring** — SETUP + OBSERVABILITY §4 docs, `.env` template + env-var table entries ✅ **done**; LangGraph auto-detects the env vars (likely no Python change). **NOT yet enabled/verified.** _Pending:_ set `LANGCHAIN_*` in a dev/staging run, confirm traces appear, add a `docs/learning/` doc.
+3. **Layer A Investigation Agent** — plan ✅ **done** (`tasks/investigation-agent-implementation-plan.md`); **implementation PENDING.** Build first — it's the engine.
+4. **Dashboard Chat (SRE ops-console)** — plan ✅ **done** (`tasks/dashboard-chat-implementation-plan.md`); **implementation PENDING.** After #3; start with its reconcile-against-as-built-engine step. Chat never executes — action handoff routes through the existing approval flow.
 
-> Status: **plans only, no feature code yet.** Intended for a later Sonnet build session. Each plan has a mandatory pre-flight + (for #2) a reconcile-against-as-built-engine step.
+> Status: **groundwork only** (plans + docs + install script + target diagram). No feature code for #3/#4; #1/#2 authored but **not executed/verified**. "Chat assignment / ownership" is a later, separate team feature.
 
 ## Current Phase
 **README — add Web UI demo screenshots + reproducible capture script (2026-05-29, COMPLETE).**

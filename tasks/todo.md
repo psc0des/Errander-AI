@@ -1,9 +1,19 @@
-# ROADMAP — Planned features (NOT yet built)
+## System architecture diagram — executive presentation page (2026-06-03, COMPLETE)
 
-Build in this order. Plans only — no feature code yet. Intended for a later Sonnet session.
+- [x] Rebuild `docs/diagrams/errander-view.html`: improved draw.io diagram (①–⑤ flow badges, APScheduler trigger, BLOCKED BY DESIGN panel, timeout annotation, rollback node) + executive HTML context (KPI masthead, principle banner, 5-step flow, risk tiers, automations table, blocked list, approval protocol, 6 safety guarantees, network topology, 15-item tech stack)
+- [x] Static server confirmed running on port 8766
+- [x] Doc sync: STATUS.md, todo.md; committed docs/diagrams/ for the first time
 
-- [ ] **1. Layer A Investigation Agent** — `tasks/investigation-agent-implementation-plan.md` (build first; it's the engine)
-- [ ] **2. Dashboard Chat (SRE ops-console)** — `tasks/dashboard-chat-implementation-plan.md` (build second; depends on #1; chat never executes — action handoff goes through approval)
+---
+
+# ROADMAP — NOT yet built / verified (target/end-state)
+
+The architecture diagram shows these as target components — that's the **vision**, NOT a completion claim. Build/verify in this order:
+
+- [ ] **1. Prometheus test** — script + docs DONE; **not yet run/verified on a real controller**. Run `scripts/install-prometheus.sh`; confirm `http://<controller>:9091/targets` shows `errander-agent` UP.
+- [ ] **2. LangSmith wiring** — SETUP/OBSERVABILITY docs + `.env`/env-var entries DONE; **not yet enabled/verified**. Set `LANGCHAIN_*` in dev/staging, confirm traces, add learning doc.
+- [ ] **3. Layer A Investigation Agent** — plan DONE (`tasks/investigation-agent-implementation-plan.md`); **implementation pending** (build first; it's the engine).
+- [ ] **4. Dashboard Chat (SRE ops-console)** — plan DONE (`tasks/dashboard-chat-implementation-plan.md`); **implementation pending** (after #3; reconcile step first; chat never executes — action handoff goes through approval).
 - [ ] _(later, separate)_ Chat assignment / ownership — only with multiple operators
 
 ---

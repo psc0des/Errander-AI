@@ -1,0 +1,856 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Errander-AI — System Architecture</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --blue:     #2563EB;
+      --blue-lt:  #DBEAFE;
+      --green:    #16A34A;
+      --green-lt: #DCFCE7;
+      --amber:    #D97706;
+      --amber-lt: #FEF3C7;
+      --red:      #DC2626;
+      --red-lt:   #FEE2E2;
+      --slate:    #334155;
+      --muted:    #64748B;
+    }
+
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: #F8FAFC;
+      color: #0F172A;
+      line-height: 1.5;
+    }
+
+    /* ── MASTHEAD ─────────────────────────────────── */
+    .masthead {
+      background: linear-gradient(135deg, #0F172A 0%, #1E293B 100%);
+      color: #fff;
+      padding: 36px 64px 30px;
+    }
+    .masthead-top {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      margin-bottom: 26px;
+      gap: 24px;
+    }
+    .masthead h1 {
+      font-size: 26px;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      margin-bottom: 8px;
+    }
+    .masthead .sub {
+      font-size: 14px;
+      color: #94A3B8;
+      max-width: 680px;
+      line-height: 1.65;
+    }
+    .version-badge {
+      background: #1E3A5F;
+      border: 1px solid #2563EB;
+      color: #93C5FD;
+      padding: 5px 14px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 700;
+      white-space: nowrap;
+      flex-shrink: 0;
+      align-self: flex-start;
+      margin-top: 4px;
+    }
+    .kpi-row {
+      display: flex;
+      gap: 52px;
+      flex-wrap: wrap;
+    }
+    .kpi .num {
+      font-size: 34px;
+      font-weight: 800;
+      color: #38BDF8;
+      line-height: 1;
+      margin-bottom: 4px;
+    }
+    .kpi .lbl {
+      font-size: 11px;
+      color: #64748B;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+    }
+
+    /* ── PRINCIPLE BANNER ─────────────────────────── */
+    .principle {
+      background: #1E293B;
+      border-left: 4px solid #38BDF8;
+      padding: 14px 64px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      flex-wrap: wrap;
+    }
+    .principle .pl { font-size: 14px; font-weight: 700; letter-spacing: 0.01em; }
+    .principle .sep { color: #38BDF8; font-size: 16px; margin: 0 6px; }
+
+    /* ── SECTION WRAPPER ──────────────────────────── */
+    .section { padding: 28px 64px; }
+    .section-hdr {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: #94A3B8;
+      margin-bottom: 14px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .section-hdr::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: #E2E8F0;
+    }
+
+    /* ── DIAGRAM ──────────────────────────────────── */
+    .diagram-wrap {
+      background: #fff;
+      border: 1px solid #E2E8F0;
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 1px 4px rgba(0,0,0,.06);
+    }
+    .diagram-legend {
+      display: flex;
+      gap: 28px;
+      flex-wrap: wrap;
+      align-items: center;
+      padding: 10px 20px;
+      background: #F8FAFC;
+      border-top: 1px solid #E2E8F0;
+      font-size: 11px;
+      color: #475569;
+    }
+    .legend-item { display: flex; align-items: center; gap: 7px; }
+    .legend-line { width: 26px; height: 2px; }
+    .legend-line.thick  { background: #15803D; height: 4px; }
+    .legend-line.solid  { background: #334155; }
+    .legend-line.dashed {
+      background: repeating-linear-gradient(90deg, #94A3B8 0 5px, transparent 5px 9px);
+    }
+    .legend-swatch {
+      width: 12px; height: 12px; border-radius: 2px;
+    }
+
+    /* ── 5-STEP FLOW ──────────────────────────────── */
+    .steps {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      background: #fff;
+      border: 1px solid #E2E8F0;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .step {
+      padding: 20px 18px;
+      border-right: 1px solid #E2E8F0;
+      position: relative;
+    }
+    .step:last-child { border-right: none; }
+    .step-num {
+      width: 30px; height: 30px;
+      border-radius: 50%;
+      font-size: 13px; font-weight: 700;
+      display: flex; align-items: center; justify-content: center;
+      margin-bottom: 10px;
+      flex-shrink: 0;
+    }
+    .step h3 { font-size: 13px; font-weight: 700; margin-bottom: 6px; }
+    .step p  { font-size: 12px; color: #475569; line-height: 1.6; }
+    .step .note {
+      margin-top: 8px;
+      font-size: 11px;
+      font-style: italic;
+      color: #94A3B8;
+    }
+    .step-arrow {
+      position: absolute;
+      right: -11px;
+      top: 50%;
+      transform: translateY(-50%);
+      z-index: 2;
+      font-size: 18px;
+      color: #CBD5E1;
+      background: #fff;
+      padding: 0 2px;
+      line-height: 1;
+    }
+
+    /* ── TWO-COLUMN SECTION ───────────────────────── */
+    .two-col {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+    }
+
+    /* ── CARD ─────────────────────────────────────── */
+    .card {
+      background: #fff;
+      border: 1px solid #E2E8F0;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .card-hdr {
+      padding: 13px 20px;
+      font-size: 13px;
+      font-weight: 700;
+      border-bottom: 1px solid #E2E8F0;
+    }
+
+    /* ── TABLE ────────────────────────────────────── */
+    table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+    th {
+      text-align: left;
+      padding: 8px 20px;
+      font-size: 10px; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.06em;
+      color: #94A3B8;
+      background: #F8FAFC;
+      border-bottom: 1px solid #E2E8F0;
+    }
+    td {
+      padding: 9px 20px;
+      border-bottom: 1px solid #F1F5F9;
+      vertical-align: middle;
+    }
+    tr:last-child td { border-bottom: none; }
+
+    .badge {
+      display: inline-flex; align-items: center;
+      padding: 2px 9px;
+      border-radius: 10px;
+      font-size: 10px; font-weight: 700;
+      white-space: nowrap;
+    }
+    .badge-auto   { background: #DCFCE7; color: #15803D; }
+    .badge-notify { background: #DBEAFE; color: #1E40AF; }
+    .badge-human  { background: #FEF3C7; color: #92400E; }
+    td .sub { color: #94A3B8; font-size: 11px; margin-left: 4px; }
+
+    /* ── BLOCKED LIST ─────────────────────────────── */
+    .blocked-list { list-style: none; }
+    .blocked-list li {
+      padding: 10px 20px;
+      border-bottom: 1px solid #FFF1F2;
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      font-size: 13px;
+      color: #374151;
+    }
+    .blocked-list li:last-child { border-bottom: none; }
+    .x-mark { color: #DC2626; font-weight: 700; font-size: 15px; flex-shrink: 0; }
+    .blocked-list li .why {
+      font-size: 11px; color: #9CA3AF; margin-top: 2px; line-height: 1.4;
+    }
+
+    /* ── SAFETY GUARANTEES ────────────────────────── */
+    .safety-wrap {
+      background: linear-gradient(135deg, #F0FDF4, #ECFDF5);
+      border-top: 2px solid #86EFAC;
+      border-bottom: 2px solid #86EFAC;
+      padding: 28px 64px;
+    }
+    .safety-title {
+      font-size: 14px; font-weight: 700; color: #15803D;
+      margin-bottom: 18px;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .guarantees {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px;
+    }
+    .guarantee {
+      background: #fff;
+      border: 1px solid #BBF7D0;
+      border-radius: 8px;
+      padding: 16px 18px;
+    }
+    .guarantee h3 {
+      font-size: 13px; font-weight: 700; color: #15803D;
+      margin-bottom: 6px;
+    }
+    .guarantee p { font-size: 12px; color: #374151; line-height: 1.55; }
+
+    /* ── APPROVAL FLOW ────────────────────────────── */
+    .appr-flow {
+      background: #fff;
+      border: 1px solid #E2E8F0;
+      border-radius: 8px;
+      padding: 24px 28px;
+    }
+    .appr-steps {
+      display: flex;
+      align-items: center;
+      gap: 0;
+      flex-wrap: wrap;
+      margin-top: 16px;
+    }
+    .appr-step {
+      flex: 1;
+      min-width: 150px;
+      background: #FFFBEB;
+      border: 1px solid #FDE68A;
+      border-radius: 6px;
+      padding: 12px 14px;
+    }
+    .appr-step .asnum {
+      font-size: 11px; font-weight: 700; color: #92400E;
+      text-transform: uppercase; letter-spacing: 0.05em;
+      margin-bottom: 4px;
+    }
+    .appr-step p { font-size: 11.5px; color: #374151; line-height: 1.5; }
+    .appr-arrow {
+      color: #D97706; font-size: 20px; padding: 0 8px; flex-shrink: 0;
+    }
+    .appr-reject {
+      background: #FEF2F2;
+      border-color: #FECACA;
+    }
+    .appr-reject .asnum { color: #991B1B; }
+
+    /* ── NETWORK TOPOLOGY ─────────────────────────── */
+    .topology {
+      background: #fff;
+      border: 1px solid #E2E8F0;
+      border-radius: 8px;
+      padding: 20px 24px;
+    }
+    .topo-row {
+      display: flex; gap: 16px; flex-wrap: wrap; margin-top: 14px;
+    }
+    .topo-zone {
+      flex: 1; min-width: 200px;
+      border: 1px solid #E2E8F0;
+      border-radius: 6px;
+      padding: 14px 16px;
+    }
+    .topo-zone.private { border-color: #93C5FD; background: #EFF6FF; }
+    .topo-zone.public  { border-color: #FCA5A5; background: #FFF1F2; }
+    .topo-zone.target  { border-color: #86EFAC; background: #F0FDF4; }
+    .topo-zone h4 { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px; }
+    .topo-zone.private h4 { color: #1D4ED8; }
+    .topo-zone.public  h4 { color: #991B1B; }
+    .topo-zone.target  h4 { color: #15803D; }
+    .topo-zone ul { list-style: none; font-size: 12px; color: #374151; }
+    .topo-zone ul li { padding: 3px 0; display: flex; align-items: center; gap: 6px; }
+    .topo-zone ul li::before { content: '·'; color: #94A3B8; }
+
+    /* ── TECH STACK ───────────────────────────────── */
+    .stack-grid {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 10px;
+    }
+    .stack-item {
+      background: #fff;
+      border: 1px solid #E2E8F0;
+      border-radius: 6px;
+      padding: 12px 14px;
+    }
+    .stack-lbl  { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #94A3B8; margin-bottom: 4px; }
+    .stack-val  { font-size: 13px; font-weight: 600; color: #0F172A; }
+    .stack-sub  { font-size: 11px; color: #64748B; margin-top: 2px; }
+
+    /* ── RISK TIERS ───────────────────────────────── */
+    .risk-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+    }
+    .risk-tier {
+      border-radius: 8px;
+      padding: 16px 18px;
+      border: 1px solid;
+    }
+    .risk-tier.low    { background: #F0FDF4; border-color: #86EFAC; }
+    .risk-tier.medium { background: #EFF6FF; border-color: #93C5FD; }
+    .risk-tier.high   { background: #FFFBEB; border-color: #FDE68A; }
+    .risk-tier.critical { background: #FEF2F2; border-color: #FECACA; }
+    .risk-tier h4     { font-size: 12px; font-weight: 700; margin-bottom: 6px; }
+    .risk-tier.low h4    { color: #15803D; }
+    .risk-tier.medium h4 { color: #1D4ED8; }
+    .risk-tier.high h4   { color: #92400E; }
+    .risk-tier.critical h4 { color: #991B1B; }
+    .risk-tier .actions { font-size: 12px; color: #374151; margin-bottom: 8px; line-height: 1.5; }
+    .risk-tier .approval { font-size: 11px; font-weight: 700; }
+    .risk-tier.low .approval    { color: #15803D; }
+    .risk-tier.medium .approval { color: #1D4ED8; }
+    .risk-tier.high .approval   { color: #92400E; }
+    .risk-tier.critical .approval { color: #991B1B; }
+
+    /* ── FOOTER ───────────────────────────────────── */
+    .footer {
+      background: #0F172A;
+      color: #475569;
+      padding: 18px 64px;
+      text-align: center;
+      font-size: 12px;
+    }
+    .footer strong { color: #94A3B8; }
+
+    /* ── PRINT ────────────────────────────────────── */
+    @media print {
+      .masthead { -webkit-print-color-adjust: exact; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ═══════════ MASTHEAD ═══════════════════════════════════ -->
+<div class="masthead">
+  <div class="masthead-top">
+    <div>
+      <h1>Errander-AI — Supervised Agentic AI SRE Platform</h1>
+      <div class="sub">
+        Eliminates repetitive infrastructure toil — OS patching, log rotation, Docker hygiene, disk cleanup,
+        backup verification, service restart — on a configurable schedule, while guaranteeing that
+        <strong style="color:#E2E8F0">no live infrastructure change happens without explicit human approval</strong>.
+        Cloud-agnostic. 100% open-source. No public inbound endpoints.
+      </div>
+    </div>
+    <div class="version-badge">v1.1 · Production-ready</div>
+  </div>
+  <div class="kpi-row">
+    <div class="kpi"><div class="num">6</div><div class="lbl">Automated SRE tasks</div></div>
+    <div class="kpi"><div class="num">100%</div><div class="lbl">Live changes require human approval</div></div>
+    <div class="kpi"><div class="num">0</div><div class="lbl">Public inbound endpoints</div></div>
+    <div class="kpi"><div class="num">Full</div><div class="lbl">Rollback on failure</div></div>
+  </div>
+</div>
+
+<!-- ═══════════ PRINCIPLE BANNER ══════════════════════════ -->
+<div class="principle">
+  <span class="pl" style="color:#38BDF8">① AI investigates &amp; proposes</span>
+  <span class="sep">→</span>
+  <span class="pl" style="color:#FBBF24">② Human reviews &amp; approves exact objects</span>
+  <span class="sep">→</span>
+  <span class="pl" style="color:#4ADE80">③ Deterministic Python executes via SSH</span>
+  <span class="sep">→</span>
+  <span class="pl" style="color:#E2E8F0">④ Per-object audit trail · Rollback on failure</span>
+</div>
+
+<!-- ═══════════ SYSTEM DIAGRAM ════════════════════════════ -->
+<div class="section">
+  <div class="section-hdr">System Architecture — Target Production Deployment</div>
+  <div class="diagram-wrap">
+    <div class="mxgraph" style="max-width:100%;" data-mxgraph="{&quot;highlight&quot;: &quot;#0000ff&quot;, &quot;nav&quot;: true, &quot;resize&quot;: true, &quot;toolbar&quot;: &quot;zoom layers lightbox&quot;, &quot;xml&quot;: &quot;&lt;mxfile host=\&quot;app.diagrams.net\&quot; agent=\&quot;Claude\&quot; version=\&quot;24.0.0\&quot;&gt;\n  &lt;diagram id=\&quot;errander-arch\&quot; name=\&quot;Errander-AI Target Architecture\&quot;&gt;\n    &lt;mxGraphModel dx=\&quot;1440\&quot; dy=\&quot;900\&quot; grid=\&quot;0\&quot; gridSize=\&quot;10\&quot; guides=\&quot;1\&quot; tooltips=\&quot;1\&quot; connect=\&quot;1\&quot; arrows=\&quot;1\&quot; fold=\&quot;1\&quot; page=\&quot;1\&quot; pageScale=\&quot;1\&quot; pageWidth=\&quot;1440\&quot; pageHeight=\&quot;870\&quot; math=\&quot;0\&quot; shadow=\&quot;0\&quot; background=\&quot;#F8FAFC\&quot;&gt;\n      &lt;root&gt;\n        &lt;mxCell id=\&quot;0\&quot; /&gt;\n        &lt;mxCell id=\&quot;1\&quot; parent=\&quot;0\&quot; /&gt;\n\n        &lt;mxCell id=\&quot;title\&quot; value=\&quot;Errander-AI — Two-Layer Safety Architecture\&quot; style=\&quot;text;html=1;align=left;verticalAlign=middle;fontFamily=Segoe UI;fontSize=20;fontStyle=1;fontColor=#0F172A;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;\n          &lt;mxGeometry x=\&quot;36\&quot; y=\&quot;10\&quot; width=\&quot;900\&quot; height=\&quot;28\&quot; as=\&quot;geometry\&quot; /&gt;\n        &lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;subtitle\&quot; value=\&quot;① Schedule → ② AI analyzes (Layer A) → ③ Human approves → ④ Deterministic execution (Layer B) → ⑤ Audit + rollback\&quot; style=\&quot;text;html=1;align=left;verticalAlign=middle;fontFamily=Segoe UI;fontSize=11;fontColor=#64748B;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;\n          &lt;mxGeometry x=\&quot;36\&quot; y=\&quot;38\&quot; width=\&quot;1200\&quot; height=\&quot;16\&quot; as=\&quot;geometry\&quot; /&gt;\n        &lt;/mxCell&gt;\n\n        &lt;!-- ===== LANE BACKGROUNDS ===== --&gt;\n        &lt;mxCell id=\&quot;laneL1\&quot; value=\&quot;\&quot; style=\&quot;rounded=0;html=1;fillColor=#F8FAFC;strokeColor=#E5EAF0;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;36\&quot; y=\&quot;62\&quot; width=\&quot;1380\&quot; height=\&quot;86\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;laneL2\&quot; value=\&quot;\&quot; style=\&quot;rounded=0;html=1;fillColor=#EFF6FF;strokeColor=#DCE9FB;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;36\&quot; y=\&quot;154\&quot; width=\&quot;1380\&quot; height=\&quot;146\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;laneL3\&quot; value=\&quot;\&quot; style=\&quot;rounded=0;html=1;fillColor=#FFFBEB;strokeColor=#F2E9CF;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;36\&quot; y=\&quot;306\&quot; width=\&quot;1380\&quot; height=\&quot;80\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;laneL4\&quot; value=\&quot;\&quot; style=\&quot;rounded=0;html=1;fillColor=#F0FDF4;strokeColor=#D6F0DE;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;36\&quot; y=\&quot;392\&quot; width=\&quot;1380\&quot; height=\&quot;150\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;laneL5\&quot; value=\&quot;\&quot; style=\&quot;rounded=0;html=1;fillColor=#F8FAFC;strokeColor=#E5EAF0;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;36\&quot; y=\&quot;548\&quot; width=\&quot;1380\&quot; height=\&quot;84\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;laneL6\&quot; value=\&quot;\&quot; style=\&quot;rounded=0;html=1;fillColor=#F1F5F9;strokeColor=#E1E8EF;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;36\&quot; y=\&quot;648\&quot; width=\&quot;1380\&quot; height=\&quot;118\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n\n        &lt;!-- Lane headers --&gt;\n        &lt;mxCell id=\&quot;lblL1\&quot; value=\&quot;Operator&amp;#10;Experience\&quot; style=\&quot;text;html=1;align=left;verticalAlign=middle;fontFamily=Segoe UI;fontStyle=1;fontSize=11;fontColor=#475569;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;42\&quot; y=\&quot;62\&quot; width=\&quot;104\&quot; height=\&quot;86\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;lblL2\&quot; value=\&quot;AI / Advisory&amp;#10;(Layer A)&amp;#10;&amp;#10;LLM-powered&amp;#10;reads-only&amp;#10;NEVER executes\&quot; style=\&quot;text;html=1;align=left;verticalAlign=middle;fontFamily=Segoe UI;fontStyle=1;fontSize=11;fontColor=#2563EB;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;42\&quot; y=\&quot;154\&quot; width=\&quot;104\&quot; height=\&quot;146\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;lblL3\&quot; value=\&quot;Human&amp;#10;Control\&quot; style=\&quot;text;html=1;align=left;verticalAlign=middle;fontFamily=Segoe UI;fontStyle=1;fontSize=11;fontColor=#92710F;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;42\&quot; y=\&quot;306\&quot; width=\&quot;104\&quot; height=\&quot;80\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;lblL4\&quot; value=\&quot;Deterministic&amp;#10;Execution&amp;#10;(Layer B)&amp;#10;&amp;#10;No LLM&amp;#10;No AI-generated&amp;#10;commands\&quot; style=\&quot;text;html=1;align=left;verticalAlign=middle;fontFamily=Segoe UI;fontStyle=1;fontSize=11;fontColor=#15803D;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;42\&quot; y=\&quot;392\&quot; width=\&quot;104\&quot; height=\&quot;150\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;lblL5\&quot; value=\&quot;Target&amp;#10;Infrastructure\&quot; style=\&quot;text;html=1;align=left;verticalAlign=middle;fontFamily=Segoe UI;fontStyle=1;fontSize=11;fontColor=#475569;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;42\&quot; y=\&quot;548\&quot; width=\&quot;104\&quot; height=\&quot;84\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;lblL6\&quot; value=\&quot;Observability&amp;#10;(BYO · read-only)\&quot; style=\&quot;text;html=1;align=left;verticalAlign=top;fontFamily=Segoe UI;fontStyle=1;fontSize=11;fontColor=#475569;spacingTop=6;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;42\&quot; y=\&quot;648\&quot; width=\&quot;104\&quot; height=\&quot;118\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n\n        &lt;!-- ===== STEP NUMBER BADGES ===== --&gt;\n        &lt;mxCell id=\&quot;step1\&quot; value=\&quot;①\&quot; style=\&quot;ellipse;html=1;fillColor=#EFF6FF;strokeColor=#3B82F6;fontFamily=Segoe UI;fontStyle=1;fontSize=14;fontColor=#2563EB;align=center;verticalAlign=middle;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;156\&quot; y=\&quot;91\&quot; width=\&quot;28\&quot; height=\&quot;28\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;step2\&quot; value=\&quot;②\&quot; style=\&quot;ellipse;html=1;fillColor=#EFF6FF;strokeColor=#3B82F6;fontFamily=Segoe UI;fontStyle=1;fontSize=14;fontColor=#2563EB;align=center;verticalAlign=middle;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;156\&quot; y=\&quot;220\&quot; width=\&quot;28\&quot; height=\&quot;28\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;step3\&quot; value=\&quot;③\&quot; style=\&quot;ellipse;html=1;fillColor=#FEF3C7;strokeColor=#D97706;fontFamily=Segoe UI;fontStyle=1;fontSize=14;fontColor=#92400E;align=center;verticalAlign=middle;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;156\&quot; y=\&quot;333\&quot; width=\&quot;28\&quot; height=\&quot;28\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;step4\&quot; value=\&quot;④\&quot; style=\&quot;ellipse;html=1;fillColor=#F0FDF4;strokeColor=#16A34A;fontFamily=Segoe UI;fontStyle=1;fontSize=14;fontColor=#15803D;align=center;verticalAlign=middle;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;156\&quot; y=\&quot;460\&quot; width=\&quot;28\&quot; height=\&quot;28\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;step5\&quot; value=\&quot;⑤\&quot; style=\&quot;ellipse;html=1;fillColor=#F0FDF4;strokeColor=#16A34A;fontFamily=Segoe UI;fontStyle=1;fontSize=14;fontColor=#15803D;align=center;verticalAlign=middle;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;156\&quot; y=\&quot;577\&quot; width=\&quot;28\&quot; height=\&quot;28\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n\n        &lt;!-- ===== CONTROLLER VM BOUNDARY ===== --&gt;\n        &lt;mxCell id=\&quot;ctrlbox\&quot; value=\&quot;\&quot; style=\&quot;rounded=1;html=1;fillColor=none;strokeColor=#CBD5E1;dashed=1;dashPattern=6 4;strokeWidth=1;arcSize=2;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;\n          &lt;mxGeometry x=\&quot;195\&quot; y=\&quot;70\&quot; width=\&quot;890\&quot; height=\&quot;468\&quot; as=\&quot;geometry\&quot; /&gt;\n        &lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;ctrl_tab\&quot; value=\&quot;Controller VM · Agent Host · private · no public IP\&quot; style=\&quot;rounded=1;html=1;fillColor=#F1F5F9;strokeColor=#CBD5E1;strokeWidth=1;fontFamily=Segoe UI;fontStyle=2;fontSize=9;fontColor=#64748B;align=center;verticalAlign=middle;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;\n          &lt;mxGeometry x=\&quot;207\&quot; y=\&quot;62\&quot; width=\&quot;300\&quot; height=\&quot;16\&quot; as=\&quot;geometry\&quot; /&gt;\n        &lt;/mxCell&gt;\n\n        &lt;!-- ===== EXTERNAL LEFT ===== --&gt;\n        &lt;mxCell id=\&quot;operator\&quot; value=\&quot;Operator&amp;#10;laptop / mobile\&quot; style=\&quot;rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#94A3B8;fontFamily=Segoe UI;fontSize=11;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;36\&quot; y=\&quot;152\&quot; width=\&quot;150\&quot; height=\&quot;50\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n\n        &lt;!-- LLM options stacked left --&gt;\n        &lt;mxCell id=\&quot;vllm\&quot; value=\&quot;Private vLLM&amp;#10;Layer A only · no egress&amp;#10;Qwen3-8B-AWQ (16 GB GPU)\&quot; style=\&quot;rounded=1;whiteSpace=wrap;html=1;fillColor=#E6F0FB;strokeColor=#3D6CB0;fontFamily=Segoe UI;fontSize=10;align=center;verticalAlign=middle;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;36\&quot; y=\&quot;414\&quot; width=\&quot;148\&quot; height=\&quot;54\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;cloudllm\&quot; value=\&quot;Cloud LLM API&amp;#10;(OpenAI / Anthropic / Groq)&amp;#10;optional · outbound HTTPS\&quot; style=\&quot;rounded=1;whiteSpace=wrap;html=1;fillColor=#F1F5F9;strokeColor=#94A3B8;dashed=1;fontFamily=Segoe UI;fontSize=10;align=center;verticalAlign=middle;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;36\&quot; y=\&quot;478\&quot; width=\&quot;148\&quot; height=\&quot;54\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n\n        &lt;!-- ===== EXTERNAL RIGHT: Slack ===== --&gt;\n        &lt;mxCell id=\&quot;slack\&quot; value=\&quot;Slack API&amp;#10;#errander-approvals&amp;#10;✅ approve / ❌ reject&amp;#10;outbound HTTPS only\&quot; style=\&quot;rounded=1;whiteSpace=wrap;html=1;fillColor=#ECFDF5;strokeColor=#6EE7B7;fontFamily=Segoe UI;fontSize=10;align=center;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;1100\&quot; y=\&quot;80\&quot; width=\&quot;180\&quot; height=\&quot;60\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n\n        &lt;!-- ===== BLOCKED BY DESIGN (right column) ===== --&gt;\n        &lt;mxCell id=\&quot;blocked_design\&quot; value=\&quot;&lt;b&gt;BLOCKED BY DESIGN&lt;/b&gt;&amp;#10;&amp;#10;✗ Kernel patching&amp;#10;✗ AI self-approval&amp;#10;✗ Arbitrary shell commands&amp;#10;✗ Database / app mutations&amp;#10;✗ Bulk category approvals&amp;#10;✗ Public inbound webhooks&amp;#10;✗ Cloud provider API calls\&quot; style=\&quot;rounded=1;whiteSpace=wrap;html=1;fillColor=#FEF2F2;strokeColor=#EF4444;strokeWidth=2;fontFamily=Segoe UI;fontSize=10;fontColor=#7F1D1D;align=left;verticalAlign=top;spacingTop=6;spacingLeft=10;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;\n          &lt;mxGeometry x=\&quot;1100\&quot; y=\&quot;154\&quot; width=\&quot;180\&quot; height=\&quot;200\&quot; as=\&quot;geometry\&quot; /&gt;\n        &lt;/mxCell&gt;\n\n        &lt;!-- ===== CONTROLLER LANE 1: Operator Interface ===== --&gt;\n        &lt;mxCell id=\&quot;webui\&quot; value=\&quot;Web UI :9090&amp;#10;approvals · dashboard\&quot; style=\&quot;rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#94A3B8;fontFamily=Segoe UI;fontSize=11;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;210\&quot; y=\&quot;78\&quot; width=\&quot;175\&quot; height=\&quot;50\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;sched\&quot; value=\&quot;APScheduler&amp;#10;nightly · weekly · configurable&amp;#10;maintenance windows enforced\&quot; style=\&quot;rounded=1;whiteSpace=wrap;html=1;fillColor=#E0F2FE;strokeColor=#7DB8D4;fontFamily=Segoe UI;fontSize=9;align=center;verticalAlign=middle;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;500\&quot; y=\&quot;78\&quot; width=\&quot;196\&quot; height=\&quot;50\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;chat\&quot; value=\&quot;Dashboard Chat&amp;#10;/ui/chat · roadmap\&quot; style=\&quot;rounded=1;whiteSpace=wrap;html=1;fillColor=#DBEAFE;strokeColor=#5A82B0;dashed=1;fontFamily=Segoe UI;fontSize=10;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;720\&quot; y=\&quot;82\&quot; width=\&quot;155\&quot; height=\&quot;42\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n\n        &lt;!-- ===== CONTROLLER LANE 2: Layer A ===== --&gt;\n        &lt;mxCell id=\&quot;layerA\&quot; value=\&quot;Layer A — Advisory · LLM-powered · read-only · NEVER executes infrastructure changes\&quot; style=\&quot;rounded=1;whiteSpace=wrap;html=1;fillColor=#DBEAFE;strokeColor=#5A82B0;verticalAlign=top;fontFamily=Segoe UI;fontStyle=1;fontSize=12;fontColor=#1E3A5F;align=center;spacingTop=6;arcSize=4;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;210\&quot; y=\&quot;168\&quot; width=\&quot;660\&quot; height=\&quot;124\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;planner\&quot; value=\&quot;Scheduled Planner&amp;#10;&amp;#10;reads Prometheus metrics&amp;#10;+ audit history&amp;#10;LLM recommendation&amp;#10;+ deterministic fallback\&quot; style=\&quot;rounded=1;whiteSpace=wrap;html=1;fillColor=#EAF2FD;strokeColor=#7FA0C8;fontFamily=Segoe UI;fontSize=10;align=center;verticalAlign=middle;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;222\&quot; y=\&quot;198\&quot; width=\&quot;178\&quot; height=\&quot;82\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;agent\&quot; value=\&quot;Investigation Agent&amp;#10;&amp;#10;agentic read-only tools:&amp;#10;Prometheus · ELK · audit trail&amp;#10;CVE feeds · runbooks\&quot; style=\&quot;rounded=1;whiteSpace=wrap;html=1;fillColor=#EAF2FD;strokeColor=#7FA0C8;fontFamily=Segoe UI;fontSize=10;align=center;verticalAlign=middle;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;416\&quot; y=\&quot;198\&quot; width=\&quot;178\&quot; height=\&quot;82\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;chatif\&quot; value=\&quot;Operator Chat&amp;#10;&amp;#10;answers operator questions&amp;#10;surfaces insights&amp;#10;proposes actions · no exec\&quot; style=\&quot;rounded=1;whiteSpace=wrap;html=1;fillColor=#EAF2FD;strokeColor=#7FA0C8;fontFamily=Segoe UI;fontSize=10;align=center;verticalAlign=middle;dashed=1;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;610\&quot; y=\&quot;198\&quot; width=\&quot;178\&quot; height=\&quot;82\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n\n        &lt;!-- ===== CONTROLLER LANE 3: Human Gate ===== --&gt;\n        &lt;mxCell id=\&quot;appr\&quot; value=\&quot;HUMAN APPROVAL GATE&amp;#10;Slack ✅/❌ reaction · Web UI button · required before EVERY live change\&quot; style=\&quot;rounded=1;whiteSpace=wrap;html=1;fillColor=#FEF3C7;strokeColor=#B7791F;fontFamily=Segoe UI;fontSize=12;fontStyle=1;fontColor=#5A4410;align=center;verticalAlign=middle;arcSize=6;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;210\&quot; y=\&quot;318\&quot; width=\&quot;390\&quot; height=\&quot;52\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;timeout_note\&quot; value=\&quot;30-min timeout → auto-REJECT&amp;#10;Exact object IDs required · no bulk approvals\&quot; style=\&quot;text;html=1;align=center;verticalAlign=middle;fontFamily=Segoe UI;fontSize=9;fontColor=#92400E;fontStyle=2;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;614\&quot; y=\&quot;316\&quot; width=\&quot;230\&quot; height=\&quot;42\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;snapshot\&quot; value=\&quot;Plan snapshot&amp;#10;immutable · hashed\&quot; style=\&quot;rounded=1;whiteSpace=wrap;html=1;fillColor=#FEF8E7;strokeColor=#C2932F;fontFamily=Segoe UI;fontSize=10;align=center;verticalAlign=middle;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;856\&quot; y=\&quot;318\&quot; width=\&quot;150\&quot; height=\&quot;46\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n\n        &lt;!-- ===== CONTROLLER LANE 4: Layer B ===== --&gt;\n        &lt;mxCell id=\&quot;layerB\&quot; value=\&quot;LAYER B — Deterministic Execution Engine (no LLM · no AI-generated shell · no MCP tool calls)&amp;#10;OS patching · disk_cleanup · log_rotation · docker_hygiene · backup_verify · service_restart&amp;#10;validate plan hash → acquire VM lock → execute approved objects → verify per-object → rollback on failure → audit\&quot; style=\&quot;rounded=1;whiteSpace=wrap;html=1;fillColor=#DCFCE7;strokeColor=#15803D;fontFamily=Segoe UI;fontSize=11;fontStyle=1;fontColor=#14532D;align=center;verticalAlign=middle;arcSize=5;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;210\&quot; y=\&quot;406\&quot; width=\&quot;630\&quot; height=\&quot;80\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;safety\&quot; value=\&quot;safety gates: maintenance window · VM lock · sudo preflight · plan hash drift check (approval vs execution) · per-object re-validation\&quot; style=\&quot;rounded=1;whiteSpace=wrap;html=1;fillColor=#E9F9EF;strokeColor=#6FA56F;fontFamily=Segoe UI;fontSize=10;fontColor=#2E5E2E;align=center;verticalAlign=middle;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;210\&quot; y=\&quot;492\&quot; width=\&quot;630\&quot; height=\&quot;40\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;rollback\&quot; value=\&quot;Rollback&amp;#10;on failure&amp;#10;(patching · docker)\&quot; style=\&quot;rounded=1;whiteSpace=wrap;html=1;fillColor=#DCFCE7;strokeColor=#86EFAC;fontFamily=Segoe UI;fontSize=9;fontColor=#15803D;align=center;verticalAlign=middle;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;856\&quot; y=\&quot;410\&quot; width=\&quot;130\&quot; height=\&quot;50\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n\n        &lt;!-- Audit DB --&gt;\n        &lt;mxCell id=\&quot;auditdb\&quot; value=\&quot;Audit DB&amp;#10;audit_events&amp;#10;ai_decisions&amp;#10;plan_snapshots\&quot; style=\&quot;shape=cylinder3;whiteSpace=wrap;html=1;fillColor=#ECEEF1;strokeColor=#7A828C;fontFamily=Segoe UI;fontSize=10;verticalAlign=middle;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;1000\&quot; y=\&quot;400\&quot; width=\&quot;148\&quot; height=\&quot;108\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n\n        &lt;!-- ===== LANE 5: TARGET VMs ===== --&gt;\n        &lt;mxCell id=\&quot;tgtzone\&quot; value=\&quot;Target VMs — Linux, private · SSH key-based auth only · never passwords\&quot; style=\&quot;rounded=1;whiteSpace=wrap;html=1;fillColor=#F8FAFC;strokeColor=#94A3B8;verticalAlign=top;fontFamily=Segoe UI;fontStyle=1;fontSize=11;fontColor=#475569;align=center;spacingTop=4;arcSize=4;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;210\&quot; y=\&quot;560\&quot; width=\&quot;630\&quot; height=\&quot;68\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;vm1\&quot; value=\&quot;web-01 · Ubuntu&amp;#10;node_exporter :9100\&quot; style=\&quot;rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#94A3B8;fontFamily=Segoe UI;fontSize=9;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;224\&quot; y=\&quot;582\&quot; width=\&quot;180\&quot; height=\&quot;36\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;vm2\&quot; value=\&quot;db-01 · RHEL&amp;#10;node_exporter :9100\&quot; style=\&quot;rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#94A3B8;fontFamily=Segoe UI;fontSize=9;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;415\&quot; y=\&quot;582\&quot; width=\&quot;180\&quot; height=\&quot;36\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;vm3\&quot; value=\&quot;app-01 · Debian&amp;#10;node_exporter :9100\&quot; style=\&quot;rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#94A3B8;fontFamily=Segoe UI;fontSize=9;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;606\&quot; y=\&quot;582\&quot; width=\&quot;180\&quot; height=\&quot;36\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n\n        &lt;!-- ===== LANE 6: OBSERVABILITY ===== --&gt;\n        &lt;mxCell id=\&quot;obs_note\&quot; value=\&quot;Layer A reads these sources to inform recommendations · Layer B never depends on them\&quot; style=\&quot;text;html=1;align=center;verticalAlign=middle;fontFamily=Segoe UI;fontSize=9;fontColor=#64748B;fontStyle=2;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;210\&quot; y=\&quot;650\&quot; width=\&quot;660\&quot; height=\&quot;12\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;promctrl\&quot; value=\&quot;Controller Prometheus :9091&amp;#10;scrapes agent /metrics :9090&amp;#10;monitors Errander itself\&quot; style=\&quot;rounded=1;whiteSpace=wrap;html=1;fillColor=#F1F5F9;strokeColor=#94A3B8;fontFamily=Segoe UI;fontSize=9;align=center;verticalAlign=middle;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;36\&quot; y=\&quot;664\&quot; width=\&quot;160\&quot; height=\&quot;80\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;grafana\&quot; value=\&quot;Grafana&amp;#10;dashboards\&quot; style=\&quot;rounded=1;whiteSpace=wrap;html=1;fillColor=#F1F5F9;strokeColor=#94A3B8;dashed=1;fontFamily=Segoe UI;fontSize=9;align=center;verticalAlign=middle;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;210\&quot; y=\&quot;664\&quot; width=\&quot;130\&quot; height=\&quot;80\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;fleetprom\&quot; value=\&quot;Fleet Prometheus&amp;#10;target VM metrics&amp;#10;BYO · optional\&quot; style=\&quot;rounded=1;whiteSpace=wrap;html=1;fillColor=#F1F5F9;strokeColor=#94A3B8;dashed=1;fontFamily=Segoe UI;fontSize=9;align=center;verticalAlign=middle;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;352\&quot; y=\&quot;664\&quot; width=\&quot;148\&quot; height=\&quot;80\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;elk\&quot; value=\&quot;ELK / Loki&amp;#10;target + agent logs&amp;#10;BYO · optional\&quot; style=\&quot;rounded=1;whiteSpace=wrap;html=1;fillColor=#F1F5F9;strokeColor=#94A3B8;dashed=1;fontFamily=Segoe UI;fontSize=9;align=center;verticalAlign=middle;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;512\&quot; y=\&quot;664\&quot; width=\&quot;148\&quot; height=\&quot;80\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;langsmith\&quot; value=\&quot;LangSmith / Eval&amp;#10;Layer A traces&amp;#10;optional egress\&quot; style=\&quot;rounded=1;whiteSpace=wrap;html=1;fillColor=#F1F5F9;strokeColor=#94A3B8;dashed=1;fontFamily=Segoe UI;fontSize=9;align=center;verticalAlign=middle;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;672\&quot; y=\&quot;664\&quot; width=\&quot;148\&quot; height=\&quot;80\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n\n        &lt;!-- ============ EDGES ============ --&gt;\n\n        &lt;!-- MAIN SPINE --&gt;\n        &lt;mxCell id=\&quot;e1\&quot; value=\&quot;② proposes plan\&quot; style=\&quot;edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;fontFamily=Segoe UI;fontSize=11;fontStyle=1;strokeColor=#334155;strokeWidth=2;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;\&quot; edge=\&quot;1\&quot; parent=\&quot;1\&quot; source=\&quot;layerA\&quot; target=\&quot;appr\&quot;&gt;&lt;mxGeometry relative=\&quot;1\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;e2\&quot; value=\&quot;③ approved\&quot; style=\&quot;edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;fontFamily=Segoe UI;fontSize=11;fontStyle=1;strokeColor=#D97706;strokeWidth=2;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;\&quot; edge=\&quot;1\&quot; parent=\&quot;1\&quot; source=\&quot;appr\&quot; target=\&quot;layerB\&quot;&gt;&lt;mxGeometry relative=\&quot;1\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;e3\&quot; value=\&quot;④ execute via SSH (ONLY mutation path)\&quot; style=\&quot;edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;fontFamily=Segoe UI;fontSize=11;fontStyle=1;strokeColor=#15803D;strokeWidth=4;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;\&quot; edge=\&quot;1\&quot; parent=\&quot;1\&quot; source=\&quot;safety\&quot; target=\&quot;tgtzone\&quot;&gt;&lt;mxGeometry relative=\&quot;1\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n\n        &lt;!-- APScheduler fires --&gt;\n        &lt;mxCell id=\&quot;e_sched_plan\&quot; value=\&quot;① triggers\&quot; style=\&quot;edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;fontFamily=Segoe UI;fontSize=9;strokeColor=#7DB8D4;strokeWidth=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;\&quot; edge=\&quot;1\&quot; parent=\&quot;1\&quot; source=\&quot;sched\&quot; target=\&quot;planner\&quot;&gt;&lt;mxGeometry relative=\&quot;1\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n\n        &lt;!-- Operator connections --&gt;\n        &lt;mxCell id=\&quot;s_op_web\&quot; value=\&quot;VPN / SSH tunnel\&quot; style=\&quot;edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;fontFamily=Segoe UI;fontSize=9;strokeColor=#94A3B8;fontColor=#94A3B8;strokeWidth=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;\&quot; edge=\&quot;1\&quot; parent=\&quot;1\&quot; source=\&quot;operator\&quot; target=\&quot;webui\&quot;&gt;&lt;mxGeometry relative=\&quot;1\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;s_op_slack\&quot; value=\&quot;react ✅/❌\&quot; style=\&quot;edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;fontFamily=Segoe UI;fontSize=9;strokeColor=#94A3B8;fontColor=#94A3B8;strokeWidth=1;dashed=1;\&quot; edge=\&quot;1\&quot; parent=\&quot;1\&quot; source=\&quot;operator\&quot; target=\&quot;slack\&quot;&gt;&lt;mxGeometry relative=\&quot;1\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;s_chat_if\&quot; value=\&quot;ask / answer\&quot; style=\&quot;edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;startArrow=block;fontFamily=Segoe UI;fontSize=9;strokeColor=#94A3B8;fontColor=#94A3B8;strokeWidth=1;dashed=1;\&quot; edge=\&quot;1\&quot; parent=\&quot;1\&quot; source=\&quot;chat\&quot; target=\&quot;chatif\&quot;&gt;&lt;mxGeometry relative=\&quot;1\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n\n        &lt;!-- LLM connections --&gt;\n        &lt;mxCell id=\&quot;s_vllm_la\&quot; value=\&quot;\&quot; style=\&quot;edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#3D6CB0;strokeWidth=1;exitX=1;exitY=0.5;entryX=0;entryY=0.4;\&quot; edge=\&quot;1\&quot; parent=\&quot;1\&quot; source=\&quot;vllm\&quot; target=\&quot;layerA\&quot;&gt;&lt;mxGeometry relative=\&quot;1\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;s_cloud_la\&quot; value=\&quot;\&quot; style=\&quot;edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;dashed=1;strokeColor=#94A3B8;strokeWidth=1;exitX=1;exitY=0.5;entryX=0;entryY=0.65;\&quot; edge=\&quot;1\&quot; parent=\&quot;1\&quot; source=\&quot;cloudllm\&quot; target=\&quot;layerA\&quot;&gt;&lt;mxGeometry relative=\&quot;1\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n\n        &lt;!-- Slack polling --&gt;\n        &lt;mxCell id=\&quot;s_web_slack\&quot; value=\&quot;poll reactions (outbound HTTPS)\&quot; style=\&quot;edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;startArrow=block;fontFamily=Segoe UI;fontSize=9;strokeColor=#6EE7B7;fontColor=#6EE7B7;strokeWidth=1;\&quot; edge=\&quot;1\&quot; parent=\&quot;1\&quot; source=\&quot;webui\&quot; target=\&quot;slack\&quot;&gt;&lt;mxGeometry relative=\&quot;1\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;s_webui_appr\&quot; value=\&quot;decision\&quot; style=\&quot;edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;fontFamily=Segoe UI;fontSize=9;strokeColor=#94A3B8;fontColor=#94A3B8;strokeWidth=1;\&quot; edge=\&quot;1\&quot; parent=\&quot;1\&quot; source=\&quot;webui\&quot; target=\&quot;appr\&quot;&gt;&lt;mxGeometry relative=\&quot;1\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n\n        &lt;!-- Audit DB --&gt;\n        &lt;mxCell id=\&quot;s_la_db\&quot; value=\&quot;ai_decisions\&quot; style=\&quot;edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;fontFamily=Segoe UI;fontSize=9;strokeColor=#94A3B8;strokeWidth=1;exitX=1;exitY=0.3;entryX=0;entryY=0.2;\&quot; edge=\&quot;1\&quot; parent=\&quot;1\&quot; source=\&quot;layerA\&quot; target=\&quot;auditdb\&quot;&gt;&lt;mxGeometry relative=\&quot;1\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;s_appr_snap\&quot; value=\&quot;\&quot; style=\&quot;edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#94A3B8;strokeWidth=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;\&quot; edge=\&quot;1\&quot; parent=\&quot;1\&quot; source=\&quot;appr\&quot; target=\&quot;snapshot\&quot;&gt;&lt;mxGeometry relative=\&quot;1\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;s_snap_db\&quot; value=\&quot;\&quot; style=\&quot;edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#94A3B8;strokeWidth=1;exitX=1;exitY=0.5;entryX=0;entryY=0.45;\&quot; edge=\&quot;1\&quot; parent=\&quot;1\&quot; source=\&quot;snapshot\&quot; target=\&quot;auditdb\&quot;&gt;&lt;mxGeometry relative=\&quot;1\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;s_lb_db\&quot; value=\&quot;audit_events\&quot; style=\&quot;edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;fontFamily=Segoe UI;fontSize=9;strokeColor=#15803D;strokeWidth=1;exitX=1;exitY=0.6;entryX=0;entryY=0.72;\&quot; edge=\&quot;1\&quot; parent=\&quot;1\&quot; source=\&quot;layerB\&quot; target=\&quot;auditdb\&quot;&gt;&lt;mxGeometry relative=\&quot;1\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n\n        &lt;!-- Observability reads --&gt;\n        &lt;mxCell id=\&quot;s_ag_obs\&quot; value=\&quot;reads (optional)\&quot; style=\&quot;edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=open;dashed=1;fontFamily=Segoe UI;fontSize=9;strokeColor=#94A3B8;strokeWidth=1;fontColor=#94A3B8;exitX=0.5;exitY=1;entryX=0.5;entryY=0;\&quot; edge=\&quot;1\&quot; parent=\&quot;1\&quot; source=\&quot;agent\&quot; target=\&quot;elk\&quot;&gt;&lt;mxGeometry relative=\&quot;1\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;s_fleet_tgt\&quot; value=\&quot;scrape\&quot; style=\&quot;edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;dashed=1;fontFamily=Segoe UI;fontSize=9;strokeColor=#94A3B8;fontColor=#94A3B8;strokeWidth=1;exitX=0.5;exitY=0;entryX=0.6;entryY=1;\&quot; edge=\&quot;1\&quot; parent=\&quot;1\&quot; source=\&quot;fleetprom\&quot; target=\&quot;tgtzone\&quot;&gt;&lt;mxGeometry relative=\&quot;1\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;s_graf_fleet\&quot; value=\&quot;\&quot; style=\&quot;edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;dashed=1;strokeColor=#94A3B8;strokeWidth=1;\&quot; edge=\&quot;1\&quot; parent=\&quot;1\&quot; source=\&quot;grafana\&quot; target=\&quot;fleetprom\&quot;&gt;&lt;mxGeometry relative=\&quot;1\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;s_prom_ctrl\&quot; value=\&quot;reads Layer A\&quot; style=\&quot;edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=open;dashed=1;fontFamily=Segoe UI;fontSize=9;strokeColor=#94A3B8;fontColor=#94A3B8;strokeWidth=1;\&quot; edge=\&quot;1\&quot; parent=\&quot;1\&quot; source=\&quot;planner\&quot; target=\&quot;fleetprom\&quot;&gt;&lt;mxGeometry relative=\&quot;1\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n\n      &lt;/root&gt;\n    &lt;/mxGraphModel&gt;\n  &lt;/diagram&gt;\n&lt;/mxfile&gt;\n&quot;}"></div>
+    <div class="diagram-legend">
+      <div class="legend-item"><div class="legend-line thick"></div> SSH — only path that mutates a target VM</div>
+      <div class="legend-item"><div class="legend-line solid"></div> Primary control / data flow</div>
+      <div class="legend-item"><div class="legend-line dashed"></div> Optional / read-only / bring-your-own</div>
+      <div class="legend-item" style="margin-left:auto;">
+        <div class="legend-swatch" style="background:#DBEAFE;border:1px solid #5A82B0"></div> Layer A (AI · advisory only)
+      </div>
+      <div class="legend-item">
+        <div class="legend-swatch" style="background:#DCFCE7;border:1px solid #15803D"></div> Layer B (deterministic execution)
+      </div>
+      <div class="legend-item">
+        <div class="legend-swatch" style="background:#FEF3C7;border:1px solid #B7791F"></div> Human approval gate
+      </div>
+      <div class="legend-item">
+        <div class="legend-swatch" style="background:#FEF2F2;border:1px solid #EF4444"></div> Blocked by design
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ HOW IT WORKS — 5 STEPS ════════════════════ -->
+<div class="section" style="padding-top:0">
+  <div class="section-hdr">How a maintenance batch works — end to end</div>
+  <div class="steps">
+
+    <div class="step">
+      <div class="step-num" style="background:#EFF6FF;color:#2563EB;">①</div>
+      <h3 style="color:#2563EB">Schedule fires</h3>
+      <p>APScheduler triggers a maintenance batch on the configured cadence. The agent first checks maintenance windows — it refuses to run outside the allowed time range, and requires <code>--force</code> with a mandatory reason to override.</p>
+      <div class="note">Configurable: nightly, weekly, or on-demand via CLI</div>
+      <div class="step-arrow">›</div>
+    </div>
+
+    <div class="step">
+      <div class="step-num" style="background:#EFF6FF;color:#2563EB;">②</div>
+      <h3 style="color:#2563EB">AI analyzes &amp; proposes</h3>
+      <p>Layer A (LLM-powered) reads Prometheus metrics, ELK logs, and audit history across all target VMs. It produces a prioritized maintenance plan with per-VM action recommendations. Falls back to deterministic rules if the LLM is unavailable — the agent is never blocked.</p>
+      <div class="note">AI proposes only. Never executes anything.</div>
+      <div class="step-arrow">›</div>
+    </div>
+
+    <div class="step">
+      <div class="step-num" style="background:#FEF9C3;color:#92400E;">③</div>
+      <h3 style="color:#D97706">Human approves</h3>
+      <p>The operator receives a Slack message (or Web UI alert) listing <strong>exact objects</strong> to be changed — image SHA hashes, package names with version, file paths. Reacts ✅ to approve or ❌ to reject. The plan snapshot is hashed and stored before execution begins.</p>
+      <div class="note">30-min timeout → auto-REJECT. Bulk category approvals are rejected.</div>
+      <div class="step-arrow">›</div>
+    </div>
+
+    <div class="step">
+      <div class="step-num" style="background:#F0FDF4;color:#15803D;">④</div>
+      <h3 style="color:#15803D">Deterministic execution</h3>
+      <p>Layer B re-validates the plan hash (drift detection between approval and execution time), acquires a VM-level lock, then executes only the approved exact objects via SSH. No LLM, no AI-generated shell commands in the execution path. Any state drift since approval aborts that object's action.</p>
+      <div class="note">Plan hash mismatch = immediate abort. No silent proceeding.</div>
+      <div class="step-arrow">›</div>
+    </div>
+
+    <div class="step">
+      <div class="step-num" style="background:#F0FDF4;color:#15803D;">⑤</div>
+      <h3 style="color:#15803D">Audit &amp; rollback</h3>
+      <p>Every changed object gets its own immutable audit record with timestamp, actor, before/after state, and outcome — never one record per batch. On failure, Layer B triggers rollback per action policy (patching: full package-list restore). Critical alert fired if rollback itself fails.</p>
+      <div class="note">Per-object audit · compliance-ready trail</div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ═══════════ RISK TIERS ════════════════════════════════ -->
+<div class="section" style="padding-top:0">
+  <div class="section-hdr">Risk tiers — what gets automated vs. what requires human sign-off</div>
+  <div class="risk-grid">
+    <div class="risk-tier low">
+      <h4>Low risk — Automatic</h4>
+      <div class="actions">Disk cleanup (/tmp · apt cache · journal)<br>Log rotation (compress + rotate)<br>Backup verification (integrity check)</div>
+      <div class="approval">✓ Categorical approval · non-destructive · whitelist-bounded paths only</div>
+    </div>
+    <div class="risk-tier medium">
+      <h4>Medium risk — Log + Notify</h4>
+      <div class="actions">Docker hygiene (exact-object: image SHA · container IDs · volume names)<br>OS patching (non-kernel · package list snapshot + rollback)</div>
+      <div class="approval">⚑ Exact-object approval · per-object audit · drift gate</div>
+    </div>
+    <div class="risk-tier high">
+      <h4>High risk — Slack Approval</h4>
+      <div class="actions">Service restart (operator-triggered only in v1 · allowlisted units + target /etc/errander/restart-allowlist)</div>
+      <div class="approval">⚠ Human Slack approval required in all policy tiers</div>
+    </div>
+    <div class="risk-tier critical">
+      <h4>Critical — Blocked forever</h4>
+      <div class="actions">Kernel patching · arbitrary shell commands · data deletion · database/app mutations · cloud API calls</div>
+      <div class="approval">✗ Never automated · not configurable · hardcoded off</div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ AUTOMATIONS + BLOCKED ═════════════════════ -->
+<div class="section" style="padding-top:0">
+  <div class="two-col">
+
+    <!-- AUTOMATIONS TABLE -->
+    <div class="card">
+      <div class="card-hdr" style="background:#F0FDF4;color:#15803D;">
+        ✓ 6 automated SRE tasks — v1 scope
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>Task</th>
+            <th>Description</th>
+            <th>Approval</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>disk_cleanup</strong></td>
+            <td>/tmp · apt/yum cache · journal vacuum<span class="sub">whitelist-bounded only</span></td>
+            <td><span class="badge badge-auto">Auto</span></td>
+          </tr>
+          <tr>
+            <td><strong>log_rotation</strong></td>
+            <td>Compress + rotate logs<span class="sub">data preserved</span></td>
+            <td><span class="badge badge-auto">Auto</span></td>
+          </tr>
+          <tr>
+            <td><strong>backup_verify</strong></td>
+            <td>Integrity check on backup files<span class="sub">read-only</span></td>
+            <td><span class="badge badge-auto">Auto</span></td>
+          </tr>
+          <tr>
+            <td><strong>docker_hygiene</strong></td>
+            <td>Remove dangling images, exited containers, unused volumes<span class="sub">exact SHA IDs in approval</span></td>
+            <td><span class="badge badge-notify">Log + notify</span></td>
+          </tr>
+          <tr>
+            <td><strong>patching</strong></td>
+            <td>Non-kernel OS package updates<span class="sub">full package snapshot + rollback</span></td>
+            <td><span class="badge badge-notify">Log + notify</span></td>
+          </tr>
+          <tr>
+            <td><strong>service_restart</strong></td>
+            <td>Restart allowlisted systemd units<span class="sub">operator-triggered only</span></td>
+            <td><span class="badge badge-human">Slack approval</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- BLOCKED LIST -->
+    <div class="card">
+      <div class="card-hdr" style="background:#FFF1F2;color:#DC2626;">
+        ✗ Blocked by design — hardcoded off, not configurable
+      </div>
+      <ul class="blocked-list">
+        <li>
+          <span class="x-mark">✗</span>
+          <div>
+            <div><strong>Kernel patching</strong></div>
+            <div class="why">Risk of unbootable VM — requires human-driven change window. Never automated.</div>
+          </div>
+        </li>
+        <li>
+          <span class="x-mark">✗</span>
+          <div>
+            <div><strong>AI self-approval</strong></div>
+            <div class="why">The AI that proposes a plan cannot approve it. Human sign-off is mandatory for every live change — this is a protocol-level constraint, not a policy setting.</div>
+          </div>
+        </li>
+        <li>
+          <span class="x-mark">✗</span>
+          <div>
+            <div><strong>Arbitrary or AI-generated shell commands</strong></div>
+            <div class="why">Only pre-approved, audited command templates execute. No LLM-generated shell in Layer B — ever.</div>
+          </div>
+        </li>
+        <li>
+          <span class="x-mark">✗</span>
+          <div>
+            <div><strong>Database, application, or cloud mutations</strong></div>
+            <div class="why">Errander manages Linux host maintenance only. App runtimes, databases, and cloud APIs are explicitly out of scope.</div>
+          </div>
+        </li>
+        <li>
+          <span class="x-mark">✗</span>
+          <div>
+            <div><strong>Bulk / category approvals</strong></div>
+            <div class="why">Approval must reference exact object IDs. "Approve Docker cleanup" is rejected — "Approve removal of image sha256:abc…" is required.</div>
+          </div>
+        </li>
+        <li>
+          <span class="x-mark">✗</span>
+          <div>
+            <div><strong>Public inbound endpoints or webhooks</strong></div>
+            <div class="why">The agent VM has no public IP. All communication is outbound HTTPS to Slack only — no attack surface.</div>
+          </div>
+        </li>
+      </ul>
+    </div>
+
+  </div>
+</div>
+
+<!-- ═══════════ HOW APPROVAL WORKS ══════════════════════ -->
+<div class="section" style="padding-top:0">
+  <div class="section-hdr">How the approval protocol works</div>
+  <div class="appr-flow">
+    <p style="font-size:13px;color:#374151;margin-bottom:4px;">
+      Every live infrastructure change — regardless of risk tier — must complete this sequence. The protocol is enforced in code, not policy.
+    </p>
+    <div class="appr-steps">
+      <div class="appr-step">
+        <div class="asnum">Step 1</div>
+        <p><strong>Plan generated</strong><br>Layer A assembles a plan listing exact objects: image SHA256s, package names + versions, file paths. Plan is hashed and snapshot saved to Audit DB.</p>
+      </div>
+      <div class="appr-arrow">→</div>
+      <div class="appr-step">
+        <div class="asnum">Step 2</div>
+        <p><strong>Operator notified</strong><br>Slack message posted to #errander-approvals with full object list and signed Web UI link. Operator sees exactly what will change.</p>
+      </div>
+      <div class="appr-arrow">→</div>
+      <div class="appr-step">
+        <div class="asnum">Step 3</div>
+        <p><strong>React ✅ or ❌</strong><br>Operator reacts in Slack or clicks approve/reject in Web UI. Agent polls every 30 seconds. 30-minute silence → auto-REJECT. No action taken.</p>
+      </div>
+      <div class="appr-arrow">→</div>
+      <div class="appr-step">
+        <div class="asnum">Step 4</div>
+        <p><strong>Drift re-check</strong><br>At execution time, Layer B re-validates the plan hash and re-queries each approved object's current state. Any drift since approval → abort that object's action, not silent proceed.</p>
+      </div>
+      <div class="appr-arrow">→</div>
+      <div class="appr-step">
+        <div class="asnum">Step 5</div>
+        <p><strong>Execute + audit</strong><br>Only approved exact objects are acted on. Each removed or changed object gets its own audit record. Rollback fires on first failure.</p>
+      </div>
+      <div class="appr-arrow" style="color:#DC2626">↙</div>
+      <div class="appr-step appr-reject">
+        <div class="asnum">Reject / timeout</div>
+        <p><strong>No action taken</strong><br>Rejection or timeout is recorded in Audit DB. No changes made to any VM. Operator can re-trigger on next schedule.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ SAFETY GUARANTEES ════════════════════════ -->
+<div class="safety-wrap">
+  <div class="safety-title">
+    Safety guarantees — engineered into the platform, not configurable away
+  </div>
+  <div class="guarantees">
+    <div class="guarantee">
+      <h3>Exact-object approval</h3>
+      <p>Approval artifacts must name exact object IDs (image SHA, package name + version, file path) — not action categories. The platform rejects vague bulk approvals at the protocol level.</p>
+    </div>
+    <div class="guarantee">
+      <h3>Double drift-gate</h3>
+      <p>Snapshot hash checked between approval and execution (plan-level). Each approved object re-queried on the VM at execution time (object-level). Any mismatch aborts that object — never proceeds silently.</p>
+    </div>
+    <div class="guarantee">
+      <h3>VM-level locking</h3>
+      <p>Each target VM is locked before any execution. Concurrent batches cannot race. Lock is always released on completion, failure, or timeout — never leaked.</p>
+    </div>
+    <div class="guarantee">
+      <h3>No LLM in execution path</h3>
+      <p>Layer B is pure deterministic Python. No LLM calls, no AI-generated commands, no MCP tool calls. LLM outage cannot affect in-flight execution.</p>
+    </div>
+    <div class="guarantee">
+      <h3>Full rollback on failure</h3>
+      <p>Patching snapshots the full package manifest before touching anything. Docker re-pull path defined. On failure, agent rolls back. Critical alert fired if rollback itself fails.</p>
+    </div>
+    <div class="guarantee">
+      <h3>Per-object audit trail</h3>
+      <p>Every changed or attempted object gets its own immutable audit record. Batch-level records do not substitute. Compliance-ready — records include before/after state and execution actor.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ NETWORK TOPOLOGY ══════════════════════════ -->
+<div class="section">
+  <div class="section-hdr">Network topology — no public attack surface</div>
+  <div class="topology">
+    <p style="font-size:13px;color:#374151;">The agent VM has no public IP. Every outbound connection is HTTPS to Slack only. SSH to target VMs is within the VPN. No inbound traffic is ever expected or accepted.</p>
+    <div class="topo-row">
+      <div class="topo-zone private">
+        <h4>VPN — Private Network</h4>
+        <ul>
+          <li>Controller VM (agent host) — no public IP</li>
+          <li>Target VMs (web-01, db-01, app-01, …)</li>
+          <li>Self-hosted vLLM endpoint (optional GPU VM)</li>
+          <li>Prometheus + Grafana monitoring VM (optional)</li>
+          <li>ELK / Loki log aggregation (optional)</li>
+        </ul>
+      </div>
+      <div class="topo-zone public">
+        <h4>Public Internet — outbound only</h4>
+        <ul>
+          <li>Slack API — approval polling (outbound HTTPS)</li>
+          <li>Cloud LLM API — optional alternative to vLLM</li>
+          <li>LangSmith — optional Layer A trace egress</li>
+        </ul>
+      </div>
+      <div class="topo-zone target">
+        <h4>SSH — Only Mutation Path</h4>
+        <ul>
+          <li>Key-based auth only · never passwords</li>
+          <li>SSH is the single channel Layer B uses to change a VM</li>
+          <li>All commands are pre-approved templates — no LLM-generated shell</li>
+          <li>Connection pool managed by asyncssh</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ TECH STACK ════════════════════════════════ -->
+<div class="section" style="padding-top:0">
+  <div class="section-hdr">Technology at a glance — 100% open-source · cloud-agnostic · no SaaS except Slack</div>
+  <div class="stack-grid">
+    <div class="stack-item">
+      <div class="stack-lbl">Language</div>
+      <div class="stack-val">Python 3.12+</div>
+      <div class="stack-sub">Async-first · strict mypy</div>
+    </div>
+    <div class="stack-item">
+      <div class="stack-lbl">Agent framework</div>
+      <div class="stack-val">LangGraph</div>
+      <div class="stack-sub">State-machine workflows</div>
+    </div>
+    <div class="stack-item">
+      <div class="stack-lbl">LLM (Layer A)</div>
+      <div class="stack-val">Any OpenAI-compat</div>
+      <div class="stack-sub">vLLM self-hosted or cloud API</div>
+    </div>
+    <div class="stack-item">
+      <div class="stack-lbl">Reference model</div>
+      <div class="stack-val">Qwen3-8B-AWQ</div>
+      <div class="stack-sub">Apache 2.0 · 16 GB VRAM GPU</div>
+    </div>
+    <div class="stack-item">
+      <div class="stack-lbl">SSH</div>
+      <div class="stack-val">asyncssh</div>
+      <div class="stack-sub">Key-based auth · connection pool</div>
+    </div>
+    <div class="stack-item">
+      <div class="stack-lbl">Approval channel</div>
+      <div class="stack-val">Slack API</div>
+      <div class="stack-sub">Outbound HTTPS · reaction polling</div>
+    </div>
+    <div class="stack-item">
+      <div class="stack-lbl">Scheduler</div>
+      <div class="stack-val">APScheduler</div>
+      <div class="stack-sub">Built-in · maintenance windows</div>
+    </div>
+    <div class="stack-item">
+      <div class="stack-lbl">Metrics</div>
+      <div class="stack-val">Prometheus + Grafana</div>
+      <div class="stack-sub">Agent /metrics :9090</div>
+    </div>
+    <div class="stack-item">
+      <div class="stack-lbl">Audit DB (v1)</div>
+      <div class="stack-val">SQLite</div>
+      <div class="stack-sub">→ PostgreSQL in v2</div>
+    </div>
+    <div class="stack-item">
+      <div class="stack-lbl">Package manager</div>
+      <div class="stack-val">uv</div>
+      <div class="stack-sub">Lockfile-based · reproducible</div>
+    </div>
+    <div class="stack-item">
+      <div class="stack-lbl">Target OS</div>
+      <div class="stack-val">Linux VMs</div>
+      <div class="stack-sub">Ubuntu · RHEL · Debian</div>
+    </div>
+    <div class="stack-item">
+      <div class="stack-lbl">AI tracing (opt)</div>
+      <div class="stack-val">LangSmith</div>
+      <div class="stack-sub">Layer A traces · optional egress</div>
+    </div>
+    <div class="stack-item">
+      <div class="stack-lbl">Observability (opt)</div>
+      <div class="stack-val">ELK / Loki</div>
+      <div class="stack-sub">BYO · agent reads, never writes</div>
+    </div>
+    <div class="stack-item">
+      <div class="stack-lbl">Queue / lock (v2)</div>
+      <div class="stack-val">Valkey</div>
+      <div class="stack-sub">BSD-licensed Redis fork</div>
+    </div>
+    <div class="stack-item">
+      <div class="stack-lbl">Secrets (v2)</div>
+      <div class="stack-val">HashiCorp Vault</div>
+      <div class="stack-sub">v1 uses env vars</div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ FOOTER ════════════════════════════════════ -->
+<div class="footer">
+  <strong>Errander-AI</strong> · Open-source · Cloud-agnostic · No SaaS dependencies except Slack ·
+  No public inbound endpoints · Every live change requires explicit human approval ·
+  Layer A investigates · Layer B executes · Humans control the gate between them
+</div>
+
+<script type="text/javascript" src="https://viewer.diagrams.net/js/viewer-static.min.js"></script>
+</body>
+</html>

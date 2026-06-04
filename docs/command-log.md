@@ -1,5 +1,19 @@
 # Errander-AI Command Log
 
+## Grafana monitoring stack (2026-06-05)
+
+```bash
+# Add Grafana install script, provisioning files, dashboard JSON, update bootstrap.sh
+git add scripts/install-grafana.sh scripts/bootstrap.sh SETUP.md deploy/grafana/
+git commit -m "feat: add Grafana install + pre-provisioned Errander dashboard to monitoring stack"
+git push
+
+# Doc sync: README, OBSERVABILITY, STATUS, todo, command-log
+git add README.md docs/OBSERVABILITY.md STATUS.md tasks/todo.md docs/command-log.md
+git commit -m "docs: doc sync — Grafana monitoring stack"
+git push
+```
+
 ## Bootstrap refactor v2 — zero-sudo install.sh + Windows doc split (2026-06-04)
 
 ```bash

@@ -1,9 +1,24 @@
 # Errander-AI — Project Status
 
 ## Last Updated
-2026-06-04
+2026-06-05
 
 ## Current Phase
+**Grafana monitoring stack — auto-provisioned dashboard (2026-06-05, COMPLETE).**
+
+Added Grafana to the monitoring stack alongside Prometheus. `scripts/install-grafana.sh` installs Grafana via the official package repo (APT/YUM), auto-provisions the Prometheus datasource and the **Errander-AI Fleet Operations** dashboard (10 panels built against exact metric names from `metrics.py`), generates a random admin password via `grafana-cli`, and prints it once. `bootstrap.sh` now combines Prometheus + Grafana into a single "Install monitoring stack?" prompt. Access via SSH tunnel — no firewall rule needed for `:3000`.
+
+### Files changed (2026-06-05 — Grafana monitoring stack)
+- `scripts/install-grafana.sh` — new: installs Grafana OSS via official package repo, provisions datasource + dashboard, sets random admin password
+- `deploy/grafana/provisioning/datasources/errander.yml` — new: Prometheus datasource → localhost:9091
+- `deploy/grafana/provisioning/dashboards/errander.yml` — new: dashboard provider config
+- `deploy/grafana/dashboards/errander.json` — new: 10-panel Fleet Operations dashboard (exact metric names from metrics.py)
+- `scripts/bootstrap.sh` — Prometheus + Grafana combined into single monitoring stack prompt
+- `SETUP.md` — monitoring section updated (Grafana URL, SSH tunnel for :3000, combined install)
+- `README.md` — tech stack table + Prometheus section updated to reflect Grafana
+- `docs/OBSERVABILITY.md` — Prometheus+Grafana row updated (install scripts, auto-provisioned)
+
+## Previous Phase
 **Bootstrap refactor — zero-sudo install.sh + Windows doc split (2026-06-04, COMPLETE).**
 
 Two UX fixes in one session:

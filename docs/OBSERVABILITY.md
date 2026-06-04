@@ -25,7 +25,7 @@ Errander draws a hard line between **what it produces and owns** and **what you 
 
 | External tool (or equivalent) | Consumes / observes | Layer | Status |
 |---|---|---|---|
-| **Prometheus** (+ **Grafana**) | scrapes the `/metrics` endpoint | B (health) | ✅ supported; scraper opt-in (`scripts/install-prometheus.sh`) |
+| **Prometheus** (+ **Grafana**) | scrapes the `/metrics` endpoint | B (health) | ✅ supported; `bootstrap.sh` prompts for both, or run `scripts/install-prometheus.sh` + `scripts/install-grafana.sh`; Grafana dashboard auto-provisioned |
 | **LangSmith** *or any LangGraph tracer* | the Layer-A reasoning graph | A (brain) | 🔜 planned (after Prometheus); off by default |
 | **ELK / Loki / any log store** | ingests the stdout JSON logs | diagnostics | bring-your-own (see `example/ELK/`) |
 

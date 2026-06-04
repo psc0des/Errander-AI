@@ -1,3 +1,17 @@
+## Grafana monitoring stack — auto-provisioned dashboard (2026-06-05, COMPLETE)
+
+- [x] `scripts/install-grafana.sh` — new: Grafana OSS via official APT/YUM repo, datasource + dashboard provisioning, random admin password via grafana-cli, SSH tunnel access instructions
+- [x] `deploy/grafana/provisioning/datasources/errander.yml` — Prometheus datasource config
+- [x] `deploy/grafana/provisioning/dashboards/errander.yml` — dashboard provider config
+- [x] `deploy/grafana/dashboards/errander.json` — 10-panel Fleet Operations dashboard (exact metric names from metrics.py: actions by type/status, batch duration p50/p95, LLM health/fallback, SSH errors, approval wait p50/p95)
+- [x] `scripts/bootstrap.sh` — Prometheus + Grafana combined into single "Install monitoring stack?" prompt
+- [x] `SETUP.md` — monitoring section updated
+- [x] `README.md` — tech stack table + Prometheus section updated
+- [x] `docs/OBSERVABILITY.md` — Prometheus+Grafana row updated
+- [x] Doc sync: STATUS.md, todo.md, command-log.md
+
+---
+
 ## Bootstrap refactor v2 — zero-sudo install.sh + Windows doc split (2026-06-04, COMPLETE)
 
 - [x] `SETUP-Win-Controller.md` — new file: all Windows controller steps extracted from SETUP.md

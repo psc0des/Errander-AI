@@ -143,10 +143,14 @@ fi
 step "6/6" "Clone repo  →  ${REPO_DIR}"
 
 if [ -d "${REPO_DIR}/.git" ]; then
-    warn "repo already present — pulling latest..."
-    sudo -u "$SERVICE_USER" git -C "$REPO_DIR" pull --ff-only 2>/dev/null \
-        && ok "repo updated at ${REPO_DIR}" \
-        || { ok "repo already up to date at ${REPO_DIR}"; }
+    warn "repo present — fetching latest..."
+    if sudo -u "$SERVICE_USER" git -C "$REPO_DIR" fetch origin main \
+    && sudo -u "$SERVICE_USER" git -C "$REPO_DIR" reset --hard origin/main; then
+        ok "repo updated to latest at ${REPO_DIR}"
+    else
+        warn "repo update failed — scripts may be outdated"
+        warn "to fix: sudo -u ${SERVICE_USER} git -C ${REPO_DIR} pull"
+    fi
 else
     warn "cloning as ${SERVICE_USER}..."
     sudo -u "$SERVICE_USER" git clone "$REPO_URL" "$REPO_DIR" \

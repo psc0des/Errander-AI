@@ -137,8 +137,8 @@ curl -fsSL https://raw.githubusercontent.com/psc0des/Errander-AI/main/scripts/bo
 - Detects your distro (Ubuntu, Debian, RHEL, CentOS, Oracle Linux, Fedora)
 - Installs git, curl, uv (at `/usr/local/bin`), Python 3.12
 - Creates the `errander-agent` service user with a `.ssh` directory
-- Clones the repo into `/home/errander-agent/errander`
-- Optionally installs Prometheus on this controller node (prompted interactively)
+- Clones the repo into `/home/errander-agent/errander` (pulls latest on re-runs)
+- Optionally installs Prometheus + Grafana monitoring stack (single prompt, both use official release tarballs — no package manager, no interactive dialogs)
 
 **Step B — App install** (run as the service user — no sudo required):
 

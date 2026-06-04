@@ -857,24 +857,33 @@ environments:
     # no prometheus_url → uses global ERRANDER_PROMETHEUS_BASE_URL
 ```
 
-### Monitoring the agent with Prometheus *(optional)*
+### Monitoring stack: Prometheus + Grafana *(optional)*
 
-> **This is the reverse direction from the section above.** Here a Prometheus running **on the controller node** scrapes the agent's own `/metrics` (action counts, durations, SSH errors, LLM outcomes, approval waits) — it monitors *Errander itself*, not your target VMs.
+> **This is the reverse direction from the section above.** Here Prometheus running **on the controller node** scrapes the agent's own `/metrics` (action counts, durations, SSH errors, LLM outcomes, approval waits), and Grafana visualises it — monitoring *Errander itself*, not your target VMs.
 
-`bootstrap.sh` prompts for this during Step A. To install it at any time afterwards:
+`bootstrap.sh` prompts for both during Step A. To install them at any time afterwards:
 
 ```bash
-bash scripts/install-prometheus.sh
+sudo bash scripts/install-prometheus.sh   # Prometheus on :9091
+sudo bash scripts/install-grafana.sh      # Grafana on :3000 with pre-built dashboard
 ```
 
-The script is **distro-agnostic** — it downloads the official Prometheus binary (no apt/dnf package required), creates a `prometheus` system user and systemd unit, writes a scrape config targeting the agent's local `/metrics`, and starts the service. It listens on **port 9091** so it doesn't collide with the agent's UI/metrics on **9090**.
+**What you get:**
+- Prometheus scrapes `/metrics` every 15 s, listens on **:9091**
+- Grafana is pre-provisioned with the **Errander-AI Fleet Operations** dashboard (no manual setup) — action success rates, batch durations, LLM health, SSH errors, approval wait times
+- Admin credentials printed once by `install-grafana.sh` — change them after first login
+
+**Access via SSH tunnel** (no firewall rules needed):
+```bash
+ssh -L 9091:localhost:9091 -L 3000:localhost:3000 <user>@<controller-ip>
+```
+Then open `http://localhost:3000` (Grafana) or `http://localhost:9091/targets` (Prometheus).
 
 ```bash
 # Override defaults if needed:
 PROM_PORT=9091 AGENT_METRICS_PORT=9090 PROM_VERSION=2.53.2 bash scripts/install-prometheus.sh
+GF_PORT=3000 bash scripts/install-grafana.sh
 ```
-
-After it starts, open `http://<controller-ip>:9091/targets` — the `errander-agent` target shows **UP** once the agent is running. Point Grafana (from anywhere) at this Prometheus for dashboards.
 
 ### LangSmith tracing *(optional — Layer A only, dev/staging)*
 

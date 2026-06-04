@@ -151,31 +151,54 @@ else
     ok "cloned to ${REPO_DIR}"
 fi
 
-# ── Prometheus  (optional) ────────────────────────────────────────────────────
+# ── Monitoring stack: Prometheus + Grafana  (optional) ───────────────────────
 echo ""
-echo -e "${BOLD}[optional]${NC} Prometheus  (controller-node monitoring)"
+echo -e "${BOLD}[optional]${NC} Monitoring stack  (Prometheus + Grafana)"
 
-if systemctl is-active prometheus &>/dev/null 2>&1; then
-    ok "Prometheus already running — skipping"
+_prom_running=false
+_graf_running=false
+systemctl is-active prometheus    &>/dev/null 2>&1 && _prom_running=true
+systemctl is-active grafana-server &>/dev/null 2>&1 && _graf_running=true
+
+if $_prom_running && $_graf_running; then
+    ok "Prometheus + Grafana already running — skipping"
 else
-    echo "  Installs Prometheus on THIS controller (port 9091) to scrape the"
-    echo "  agent's own /metrics (port 9090). Skip if you already run"
-    echo "  monitoring elsewhere or want to set it up later."
+    echo "  Installs Prometheus (:9091) to scrape the agent's /metrics (:9090)"
+    echo "  and Grafana (:3000) with the Errander-AI Fleet Operations dashboard"
+    echo "  pre-provisioned. Access both via SSH tunnel — no firewall rules needed."
+    echo "  Skip to set up later: sudo bash scripts/install-prometheus.sh"
+    echo "                        sudo bash scripts/install-grafana.sh"
     echo ""
-    _prom_ans=""
+    _mon_ans=""
     if [ -e /dev/tty ]; then
-        read -r -p "  Install Prometheus now? [y/N] " _prom_ans </dev/tty || _prom_ans=""
+        read -r -p "  Install monitoring stack (Prometheus + Grafana)? [y/N] " _mon_ans </dev/tty || _mon_ans=""
     else
-        warn "non-interactive session — skipping. Run later: sudo bash ${REPO_DIR}/scripts/install-prometheus.sh"
+        warn "non-interactive session — skipping monitoring stack"
+        warn "run later: sudo bash ${REPO_DIR}/scripts/install-prometheus.sh"
+        warn "           sudo bash ${REPO_DIR}/scripts/install-grafana.sh"
     fi
 
-    if echo "${_prom_ans:-N}" | grep -qiE '^y'; then
-        warn "installing Prometheus..."
-        bash "${REPO_DIR}/scripts/install-prometheus.sh" \
-            && ok "Prometheus installed — open http://localhost:9091/targets after the agent starts" \
-            || warn "install failed — run later: sudo bash ${REPO_DIR}/scripts/install-prometheus.sh"
+    if echo "${_mon_ans:-N}" | grep -qiE '^y'; then
+        if ! $_prom_running; then
+            warn "installing Prometheus..."
+            bash "${REPO_DIR}/scripts/install-prometheus.sh" \
+                && ok "Prometheus installed" \
+                || warn "Prometheus install failed — run later: sudo bash ${REPO_DIR}/scripts/install-prometheus.sh"
+        else
+            ok "Prometheus already running — skipping"
+        fi
+
+        if ! $_graf_running; then
+            warn "installing Grafana..."
+            bash "${REPO_DIR}/scripts/install-grafana.sh" \
+                || warn "Grafana install failed — run later: sudo bash ${REPO_DIR}/scripts/install-grafana.sh"
+        else
+            ok "Grafana already running — skipping"
+        fi
     else
-        ok "skipped — run later: sudo bash ${REPO_DIR}/scripts/install-prometheus.sh"
+        ok "skipped — run later:"
+        ok "  sudo bash ${REPO_DIR}/scripts/install-prometheus.sh"
+        ok "  sudo bash ${REPO_DIR}/scripts/install-grafana.sh"
     fi
 fi
 

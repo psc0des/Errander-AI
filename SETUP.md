@@ -563,11 +563,23 @@ Note them down — you'll paste them into your `.env` in Step 5.
 
 #### Azure AI Foundry *(if you have an Azure subscription)*
 
-1. In the Azure portal, go to your **AI Foundry resource** → **Keys and Endpoint**
-2. Copy the **Endpoint URL** and one of the **Keys**
-3. Note your **deployment name** (the name you gave the model in Foundry — e.g. `gpt-4o-mini-deploy`, not the model ID)
+Azure AI Foundry has two URL formats depending on how your resource was created:
 
-Your three values:
+**New Foundry project endpoint** (Azure AI Foundry portal — recommended):
+1. Open your project in [Azure AI Foundry portal](https://ai.azure.com)
+2. Go to **Settings → API keys** — copy a key
+3. The endpoint is shown on the project overview page
+
+```
+BASE_URL  = https://<hub>.services.ai.azure.com/api/projects/<project>/v1/   ← trailing / required
+MODEL     = <your-deployment-name>                                              ← name you gave the deployment
+API_KEY   = <key from project Settings → API keys>
+```
+
+**Classic Azure OpenAI resource** (Azure portal → Azure OpenAI service):
+1. Go to your **Azure OpenAI resource** → **Keys and Endpoint**
+2. Copy the **Endpoint URL** and one of the **Keys**
+
 ```
 BASE_URL  = https://<your-resource>.cognitiveservices.azure.com/openai/v1/   ← trailing / required
 MODEL     = <your-deployment-name>                                             ← deployment name, not model ID

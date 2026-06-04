@@ -76,7 +76,7 @@
         <mxCell id="planner" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EAF2FD;strokeColor=#7FA0C8;fontFamily=Segoe UI;fontSize=10;align=center;verticalAlign=middle;" value="Scheduled Planner&#xa;&#xa;fixed-signal context&#xa;LLM recommendation&#xa;deterministic fallback" vertex="1">
           <mxGeometry height="80" width="166" x="379" y="200" as="geometry" />
         </mxCell>
-        <mxCell id="KLOeuawjz4hp-FIICmYs-3" edge="1" parent="1" source="agent" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;dashed=1;" target="elk">
+        <mxCell id="KLOeuawjz4hp-FIICmYs-3" edge="1" parent="1" source="agent" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;dashed=1;" target="target">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
               <mxPoint x="640" y="318" />
@@ -110,32 +110,32 @@
         <mxCell id="tgtzone" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F8FAFC;strokeColor=#94A3B8;verticalAlign=top;fontFamily=Segoe UI;fontStyle=1;fontSize=11;fontColor=#475569;align=center;spacingTop=4;arcSize=4;" value="Target VMs — Linux, private · SSH key-based auth only" vertex="1">
           <mxGeometry height="72" width="520" x="366" y="642" as="geometry" />
         </mxCell>
-        <mxCell id="vm1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#94A3B8;fontFamily=Segoe UI;fontSize=9;" value="web-01 · Ubuntu&#xa;node_exporter :9100" vertex="1">
+        <mxCell id="vm1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#94A3B8;fontFamily=Segoe UI;fontSize=9;" value="web-01 · Ubuntu&#xa;node_exporter :9100 · optional" vertex="1">
           <mxGeometry height="38" width="155" x="380" y="668" as="geometry" />
         </mxCell>
-        <mxCell id="vm2" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#94A3B8;fontFamily=Segoe UI;fontSize=9;" value="db-01 · RHEL&#xa;node_exporter :9100" vertex="1">
+        <mxCell id="vm2" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#94A3B8;fontFamily=Segoe UI;fontSize=9;" value="db-01 · RHEL&#xa;node_exporter :9100 · optional" vertex="1">
           <mxGeometry height="38" width="155" x="545" y="668" as="geometry" />
         </mxCell>
-        <mxCell id="vm3" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#94A3B8;fontFamily=Segoe UI;fontSize=9;" value="app-01 · Debian&#xa;node_exporter :9100" vertex="1">
+        <mxCell id="vm3" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#94A3B8;fontFamily=Segoe UI;fontSize=9;" value="app-01 · Debian&#xa;node_exporter :9100 · optional" vertex="1">
           <mxGeometry height="38" width="155" x="710" y="668" as="geometry" />
         </mxCell>
-        <mxCell id="obs_note" parent="1" style="text;html=1;align=center;verticalAlign=middle;fontFamily=Segoe UI;fontSize=9;fontColor=#64748B;fontStyle=2;" value="Layer A reads these sources · Layer B never depends on them" vertex="1">
-          <mxGeometry height="12" width="640" x="376" y="730" as="geometry" />
+        <mxCell id="grp1bg" parent="1" style="rounded=1;arcSize=4;html=1;fillColor=#EFF6FF;strokeColor=#BFDBFE;strokeWidth=1;verticalAlign=top;fontFamily=Segoe UI;fontStyle=2;fontSize=8;fontColor=#3A5E86;align=center;spacingTop=3;" value="Errander Observability" vertex="1">
+          <mxGeometry height="104" width="476" x="158" y="730" as="geometry" />
+        </mxCell>
+        <mxCell id="grp2bg" parent="1" style="rounded=1;arcSize=4;html=1;fillColor=#F8FAFC;strokeColor=#CBD5E1;strokeWidth=1;verticalAlign=top;fontFamily=Segoe UI;fontStyle=2;fontSize=8;fontColor=#64748B;align=center;spacingTop=3;" value="Target Fleet" vertex="1">
+          <mxGeometry height="104" width="232" x="644" y="730" as="geometry" />
         </mxCell>
         <mxCell id="promctrl" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F1F5F9;strokeColor=#94A3B8;fontFamily=Segoe UI;fontSize=9;align=center;verticalAlign=middle;" value="Controller Prometheus :9091&#xa;scrapes agent /metrics :9090&#xa;monitors Errander" vertex="1">
-          <mxGeometry height="80" width="190" x="176" y="744" as="geometry" />
+          <mxGeometry height="74" width="152" x="165" y="748" as="geometry" />
         </mxCell>
         <mxCell id="grafana" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F1F5F9;strokeColor=#94A3B8;dashed=1;fontFamily=Segoe UI;fontSize=9;align=center;verticalAlign=middle;" value="Grafana&#xa;dashboards" vertex="1">
-          <mxGeometry height="80" width="130" x="376" y="744" as="geometry" />
-        </mxCell>
-        <mxCell id="fleetprom" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F1F5F9;strokeColor=#94A3B8;dashed=1;fontFamily=Segoe UI;fontSize=9;align=center;verticalAlign=middle;" value="Fleet Prometheus&#xa;target VM metrics&#xa;BYO / optional" vertex="1">
-          <mxGeometry height="80" width="160" x="516" y="744" as="geometry" />
-        </mxCell>
-        <mxCell id="elk" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F1F5F9;strokeColor=#94A3B8;dashed=1;fontFamily=Segoe UI;fontSize=9;align=center;verticalAlign=middle;" value="ELK / Loki&#xa;target + agent logs&#xa;BYO / optional" vertex="1">
-          <mxGeometry height="80" width="160" x="686" y="744" as="geometry" />
+          <mxGeometry height="74" width="120" x="325" y="748" as="geometry" />
         </mxCell>
         <mxCell id="langsmith" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F1F5F9;strokeColor=#94A3B8;dashed=1;fontFamily=Segoe UI;fontSize=9;align=center;verticalAlign=middle;" value="LangSmith / Eval&#xa;Layer A traces&#xa;optional egress" vertex="1">
-          <mxGeometry height="80" width="160" x="856" y="744" as="geometry" />
+          <mxGeometry height="74" width="172" x="453" y="748" as="geometry" />
+        </mxCell>
+        <mxCell id="target" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F1F5F9;strokeColor=#94A3B8;dashed=1;fontFamily=Segoe UI;fontSize=9;align=center;verticalAlign=middle;" value="Target&#xa;Prometheus · ELK / Loki&#xa;BYO / optional" vertex="1">
+          <mxGeometry height="74" width="212" x="660" y="748" as="geometry" />
         </mxCell>
         <mxCell id="blocked" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FBE9E9;strokeColor=#E0AEA9;fontFamily=Segoe UI;fontSize=9;fontColor=#B5564E;align=center;verticalAlign=middle;arcSize=10;" value="Blocked by design: kernel patching · arbitrary commands · AI self-approval · direct chat execution · app / db / cloud mutations" vertex="1">
           <mxGeometry height="26" width="1160" x="176" y="848" as="geometry" />
@@ -187,10 +187,7 @@
             </Array>
           </mxGeometry>
         </mxCell>
-        <mxCell id="s_fleet_tgt" edge="1" parent="1" source="fleetprom" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;dashed=1;fontFamily=Segoe UI;fontSize=9;strokeColor=#94A3B8;fontColor=#94A3B8;strokeWidth=1;exitX=0.5;exitY=0;entryX=0.6;entryY=1;" target="tgtzone" value="scrape">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="s_graf_fleet" edge="1" parent="1" source="grafana" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;dashed=1;strokeColor=#94A3B8;strokeWidth=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" target="fleetprom" value="">
+        <mxCell id="s_fleet_tgt" edge="1" parent="1" source="target" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;dashed=1;fontFamily=Segoe UI;fontSize=9;strokeColor=#94A3B8;fontColor=#94A3B8;strokeWidth=1;exitX=0.5;exitY=0;entryX=0.76;entryY=1;" target="tgtzone" value="scrape">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
       </root>

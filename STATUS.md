@@ -1,17 +1,17 @@
 # Errander-AI — Project Status
 
 ## Last Updated
-2026-06-03
+2026-06-04
 
 ## Current Phase
-**Architecture diagram — draw.io polish + first commit of docs/diagrams/ (2026-06-03, COMPLETE).**
+**Architecture diagram — L6 Observability redesign + end-to-end fact-check (2026-06-04, COMPLETE).**
 
-Polished `errander-system-architecture.drawio` to be technically accurate and demo-ready: planned components (Dashboard Chat, Investigation Agent, Operator Chat Interface) marked with dashed borders and "· planned ·" labels; Slack API connected via clean outbound-HTTPS dashed line across the top; Audit DB arrows de-cluttered (labels removed, positions staggered); observability lane header shortened; obs_note added ("Layer A reads these sources · Layer B never depends on them"); footer legend removed; full-width blocked-by-design bar. Restored `errander-view.html` to the draw.io embedded viewer (a developer had replaced it with broken custom HTML). Updated `errander-system-architecture.md` (Mermaid GitHub render) to match: removed stale RM subgraph, folded planned components inline, added Fleet Prometheus and Operator Chat Interface, moved LangSmith to OBS subgraph. First commit of the entire `docs/diagrams/` directory.
+Split the L6 Observability lane into two visual groups: Set 1 "Errander Observability" (Controller Prometheus, Grafana, LangSmith) and Set 2 "Target Fleet" (consolidated Target box: Prometheus · ELK/Loki · BYO). Merged the old Fleet Prometheus + ELK boxes into a single "Target" box as agreed. Moved LangSmith from the far right into Set 1 alongside the Errander-side tools. Rerouted the Investigation Agent dotted arrow to point at the new Target box. Ran end-to-end fact-check against codebase: fixed the one real error found (node_exporter :9100 shown as always-present on VMs — now correctly marked "optional" since `node_exporter: bool = False` in models/vm.py). Added diagram link + description to README Architecture section.
 
-### Files changed (2026-06-03 — diagram polish + first commit)
-- `docs/diagrams/errander-system-architecture.drawio` — planned indicators (dashed borders + labels), Slack edge, Audit DB label cleanup, obs note, no legend, full-width blocked bar
-- `docs/diagrams/errander-view.html` — restored to draw.io embedded viewer (Python-regenerated from .drawio XML)
-- `docs/diagrams/errander-system-architecture.md` — Mermaid updated: planned components inline, Fleet Prometheus, LangSmith in OBS, updated "Reading" section
+### Files changed (2026-06-04 — L6 redesign + fact-check)
+- `docs/diagrams/errander-system-architecture.drawio` — L6 split into two groups, Target box merged, LangSmith repositioned, node_exporter marked optional, Investigation Agent edge retargeted
+- `docs/diagrams/errander-view.html` — regenerated from updated .drawio
+- `README.md` — Architecture section: added visual diagram link and viewer instructions
 
 ## Previous Phase
 **Bootstrap refactor — clean two-phase install (2026-06-03, COMPLETE).**

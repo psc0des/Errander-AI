@@ -210,7 +210,7 @@ Your laptop → (SSH) → Master VM → (SSH, private IP) → Target VM
 
 ### On the Master VM
 
-> **Which user?** Run all commands in this step as the **controller user you chose in Step 1a** — your existing admin user (Option A) or `errander-agent` (Option B). Do **not** run as `root`. The `~` in `~/.ssh/errander_prod` expands to that user's home directory. If you generate the key as a different user than the one running the agent, the agent cannot read the key and every SSH connection will fail.
+> **Which user?** On **Linux**: run all commands in this step as `errander-agent` — the service user `bootstrap.sh` created. On **Windows**: run in Git Bash as your own user (see [SETUP-Win-Controller.md](SETUP-Win-Controller.md)). Do **not** run as `root`. The `~` in `~/.ssh/errander_prod` expands to that user's home directory. If you generate the key as a different user than the one running the agent, the agent cannot read the key and every SSH connection will fail.
 
 **1. Generate the key pair**
 

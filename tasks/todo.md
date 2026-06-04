@@ -1,3 +1,13 @@
+## Bootstrap refactor v2 — zero-sudo install.sh + Windows doc split (2026-06-04, COMPLETE)
+
+- [x] `SETUP-Win-Controller.md` — new file: all Windows controller steps extracted from SETUP.md
+- [x] `SETUP.md` — Windows sections removed; Step 1 Linux updated (Step B loses git clone; bootstrap handles it); Prometheus monitoring note updated
+- [x] `scripts/bootstrap.sh` — step 6 added (clone repo as errander-agent); Prometheus opt-in added (uses `read </dev/tty` for curl|bash compat); step count updated; done banner updated
+- [x] `scripts/install.sh` — Prometheus step removed; simplified to 2 steps (uv sync + configure.sh); zero sudo
+- [x] Doc sync: STATUS.md, todo.md, lessons.md, command-log.md
+
+---
+
 ## Bootstrap refactor — two-phase install (2026-06-03, COMPLETE)
 
 - [x] `scripts/bootstrap.sh` — rewrite: system-only (distro, git, curl, uv, Python 3.12, service user + .ssh); remove clone/move/double-sync

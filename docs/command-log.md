@@ -1,5 +1,24 @@
 # Errander-AI Command Log
 
+## Bootstrap refactor v2 — zero-sudo install.sh + Windows doc split (2026-06-04)
+
+```bash
+# Split Windows steps from SETUP.md into SETUP-Win-Controller.md
+git add SETUP.md SETUP-Win-Controller.md
+git commit -m "docs: split Windows controller steps into SETUP-Win-Controller.md"
+git push
+
+# Refactor bootstrap.sh (clone + Prometheus) and simplify install.sh (zero sudo)
+git add scripts/bootstrap.sh scripts/install.sh SETUP.md
+git commit -m "feat: bootstrap handles clone + Prometheus; install.sh is zero-sudo"
+git push
+
+# Doc sync: STATUS.md, todo.md, lessons.md, command-log.md
+git add STATUS.md tasks/todo.md tasks/lessons.md docs/command-log.md
+git commit -m "docs: doc sync — bootstrap v2 + Windows split session notes"
+git push
+```
+
 ## SETUP.md — LangSmith wiring docs + env vars (2026-06-02)
 
 ```bash

@@ -1,5 +1,23 @@
 # Errander-AI — Lessons Learned
 
+## 2026-06-04 — Service accounts must never need sudo; system-level tasks belong in the admin phase
+
+`errander-agent` was prompted for a sudo password mid-install because `install.sh` (running as the service user) called `sudo bash install-prometheus.sh`. The service account has no sudo — and it shouldn't. Giving a service account that SSHes into production VMs any sudo access to the controller creates an unnecessary privilege escalation path.
+
+The fix is architectural: each phase's scope must match the user it runs as. Admin phase (`bootstrap.sh`) owns all system-level ops — package installs, service user creation, binary installs, systemd units, repo clone, and Prometheus. Service-user phase (`install.sh`) owns only app-level ops that require no elevated privileges.
+
+**Why:** A sudo prompt mid-install is a signal that work is in the wrong phase, not a reason to grant the service user sudo.
+
+**How to apply:** When designing a multi-phase install: list every action, ask "does this require sudo?" If yes → admin phase. Never add a `sudo` call to a script intended for a service account. If you find one, move the operation.
+
+## 2026-06-04 — `read` prompts in `curl | bash` scripts require `</dev/tty`
+
+When a script runs via `curl -fsSL url | bash`, bash's stdin is the piped script text, not the terminal. A plain `read -p "..." ans` gets EOF immediately. Fix: `read -r -p "..." ans </dev/tty` reads from the terminal device regardless of stdin wiring.
+
+**Why:** `curl | bash` is the standard one-liner install pattern. `/dev/tty` is the POSIX-standard solution and works on all Linux distros.
+
+**How to apply:** Any interactive `read` in a script that may run via `curl | bash` must use `</dev/tty`. Guard with `[ -e /dev/tty ]` and default to skip/N for non-interactive fallback.
+
 ## 2026-06-02 — Document optional integrations with three anchors: .env template + section + env-var table
 
 When adding optional env-var-gated integrations (LangSmith, Prometheus, ELK), documentation needs three anchors in SETUP.md — not one — or users miss it: (1) the **`.env` template** (commented-out vars so users know what to uncomment), (2) a **dedicated section** explaining setup, what to expect, how to disable, and any caveats, (3) the **env-var reference table** at the bottom. Missing any one of the three means either the user doesn't know the feature exists, can't find the vars to set, or can't look up what a var does.

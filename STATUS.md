@@ -4,6 +4,21 @@
 2026-06-04
 
 ## Current Phase
+**Bootstrap refactor — zero-sudo install.sh + Windows doc split (2026-06-04, COMPLETE).**
+
+Two UX fixes in one session:
+
+1. **Windows step split:** All Windows controller steps removed from `SETUP.md` and moved into a new `SETUP-Win-Controller.md`. `SETUP.md` is now Linux-only with two pointer lines directing Windows users to the new file. Eliminates the mental overhead of reading OS-specific branches when on Linux.
+
+2. **Bootstrap refactor — zero-sudo install.sh:** `errander-agent` was being prompted for a sudo password mid-install when opting into Prometheus. Root cause: `install.sh` called `sudo bash install-prometheus.sh` but `errander-agent` has no sudo. Fix: moved the repo clone and Prometheus opt-in into `bootstrap.sh` (admin phase), where sudo is already available. `install.sh` is now two steps — `uv sync` + `configure.sh` — with zero sudo, ever. The Prometheus prompt uses `read </dev/tty` so it works correctly in `curl | bash` sessions.
+
+### Files changed (2026-06-04 — bootstrap refactor + Windows split)
+- `SETUP-Win-Controller.md` — new: all Windows controller steps (install, env, PowerShell run commands, Task Scheduler service, SSH troubleshooting)
+- `SETUP.md` — Windows sections removed; Step 1 Linux updated (no git clone in Step B; bootstrap now handles it); Prometheus monitoring note updated
+- `scripts/bootstrap.sh` — added step 6 (clone repo as errander-agent) + optional Prometheus prompt (`</dev/tty`); updated step count 5→6; updated done banner
+- `scripts/install.sh` — Prometheus step removed; simplified to 2 steps (uv sync + configure.sh); zero sudo
+
+## Previous Phase
 **Architecture diagram — L6 Observability redesign + end-to-end fact-check (2026-06-04, COMPLETE).**
 
 Split the L6 Observability lane into two visual groups: Set 1 "Errander Observability" (Controller Prometheus, Grafana, LangSmith) and Set 2 "Target Fleet" (consolidated Target box: Prometheus · ELK/Loki · BYO). Merged the old Fleet Prometheus + ELK boxes into a single "Target" box as agreed. Moved LangSmith from the far right into Set 1 alongside the Errander-side tools. Rerouted the Investigation Agent dotted arrow to point at the new Target box. Ran end-to-end fact-check against codebase: fixed the one real error found (node_exporter :9100 shown as always-present on VMs — now correctly marked "optional" since `node_exporter: bool = False` in models/vm.py). Added diagram link + description to README Architecture section.

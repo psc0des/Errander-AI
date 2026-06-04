@@ -1,5 +1,17 @@
 # Errander-AI Command Log
 
+## teardown.sh + doc sync (2026-06-05)
+
+```bash
+git add scripts/teardown.sh SETUP.md README.md
+git commit -m "feat: add teardown.sh — full uninstall for clean re-testing"
+git push
+
+git add STATUS.md tasks/todo.md docs/command-log.md
+git commit -m "docs: doc sync — teardown.sh"
+git push
+```
+
 ## Grafana tarball rewrite — distro-agnostic, zero interactive prompts (2026-06-05)
 
 ```bash

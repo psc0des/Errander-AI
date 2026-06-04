@@ -381,6 +381,8 @@ example/
 
 ## Quick Start
 
+> **To uninstall / start fresh:** `sudo bash scripts/teardown.sh` (or `curl -fsSL .../teardown.sh | bash`) — removes Grafana, Prometheus, the `errander-agent` user + repo, and uv. See [SETUP.md — Starting fresh](SETUP.md#starting-fresh--teardown).
+
 ### Prerequisites
 
 - Python 3.12+

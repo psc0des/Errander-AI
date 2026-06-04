@@ -1,3 +1,12 @@
+## teardown.sh — full uninstall for clean re-testing (2026-06-05, COMPLETE)
+
+- [x] `scripts/teardown.sh` — new: removes Grafana, Prometheus, errander-agent user+home, uv; confirmation prompt; curl-runnable; handles partial installs
+- [x] `SETUP.md` — "Starting fresh / teardown" section added before Troubleshooting
+- [x] `README.md` — teardown callout in Quick Start
+- [x] Doc sync: STATUS.md, todo.md, command-log.md
+
+---
+
 ## Grafana install — tarball rewrite (2026-06-05, COMPLETE)
 
 - [x] `scripts/install-grafana.sh` — rewritten: official OSS tarball (no apt/yum), handles Grafana 10+ and 9.x binary layouts, removes broken apt/rpm installs, zero interactive prompts, all distros

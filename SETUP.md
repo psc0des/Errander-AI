@@ -1207,6 +1207,20 @@ journalctl -u errander -f
 
 ---
 
+## Starting fresh / teardown
+
+To fully uninstall everything bootstrap installed (for re-testing or decommissioning):
+
+```bash
+sudo bash scripts/teardown.sh
+# or without a local copy:
+curl -fsSL https://raw.githubusercontent.com/psc0des/Errander-AI/main/scripts/teardown.sh | bash
+```
+
+Type `yes` at the prompt. Removes: Grafana, Prometheus, the `errander-agent` user + home (repo, `.env`, `inventory.yaml`), and `uv` from `/usr/local/bin`. Does **not** remove git, curl, or Python 3.12.
+
+---
+
 ## Troubleshooting
 
 **SSH connection fails**

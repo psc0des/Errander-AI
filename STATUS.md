@@ -4,6 +4,16 @@
 2026-06-05
 
 ## Current Phase
+**teardown.sh — full uninstall script for clean re-testing (2026-06-05, COMPLETE).**
+
+New `scripts/teardown.sh` reverses everything bootstrap.sh, install-prometheus.sh, and install-grafana.sh did: stops and removes Grafana + Prometheus services/binaries/config/data, removes the errander-agent user + home (repo, .env, inventory.yaml), removes uv from /usr/local/bin, and cleans up any leftover needrestart/apt/yum repo files. Requires `yes` confirmation. Runnable via `curl | bash` without a local clone. Also added pointer to teardown in SETUP.md and README.md.
+
+### Files changed (2026-06-05 — teardown.sh)
+- `scripts/teardown.sh` — new: full uninstall, prompts for confirmation, handles partial installs
+- `SETUP.md` — new "Starting fresh / teardown" section before Troubleshooting
+- `README.md` — teardown callout added to Quick Start
+
+## Previous Phase
 **Grafana install — rewritten to tarball (distro-agnostic, zero interactive prompts) (2026-06-05, COMPLETE).**
 
 Replaced the apt-based Grafana install with the official OSS tarball approach (same pattern as Prometheus). Root cause: `apt-get install grafana` triggers `needrestart` and `debconf` interactive dialogs that freeze SSH terminals like MobaXterm. The tarball approach has no package manager involvement, works identically on Ubuntu/Debian/RHEL/Rocky/Fedora/any systemd distro, and never shows any interactive dialogs. Also handles partial/interrupted installs by detecting and removing broken apt/rpm Grafana before installing. Both `install-prometheus.sh` and `install-grafana.sh` now use the same pattern.

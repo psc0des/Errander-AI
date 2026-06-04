@@ -198,6 +198,20 @@ http://localhost:9090/ui
 
 ---
 
+## Starting fresh
+
+`scripts/teardown.sh` is Linux-only and does not apply to a Windows controller. To start fresh on Windows, delete the cloned folder and re-run Step 1:
+
+```powershell
+Remove-Item -Recurse -Force errander
+git clone https://github.com/psc0des/Errander-AI.git errander
+powershell -ExecutionPolicy Bypass -File errander\scripts\bootstrap.ps1
+```
+
+If you also want to remove uv and Python 3.12: uninstall Python from **Add or remove programs**, and delete `%USERPROFILE%\.local\bin\uv.exe` and `%USERPROFILE%\.local\share\uv\`.
+
+---
+
 ## Troubleshooting
 
 **SSH connection fails**

@@ -64,15 +64,16 @@ else
     warn "adding Grafana OSS package repo..."
 
     if [ "$PKG_MANAGER" = "apt" ]; then
-        sudo apt-get install -y -q apt-transport-https software-properties-common wget gnupg 2>/dev/null || true
+        export DEBIAN_FRONTEND=noninteractive
+        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -q apt-transport-https software-properties-common wget gnupg 2>/dev/null || true
         sudo mkdir -p /etc/apt/keyrings
         wget -q -O - https://apt.grafana.com/gpg.key \
             | gpg --dearmor \
             | sudo tee /etc/apt/keyrings/grafana.gpg > /dev/null
         echo "deb [signed-by=/etc/apt/keyrings/grafana.gpg] https://apt.grafana.com stable main" \
             | sudo tee /etc/apt/sources.list.d/grafana.list > /dev/null
-        sudo apt-get update -q
-        sudo apt-get install -y -q grafana
+        sudo DEBIAN_FRONTEND=noninteractive apt-get update -q
+        sudo DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a apt-get install -y -q grafana
     else
         sudo tee /etc/yum.repos.d/grafana.repo > /dev/null <<'EOF'
 [grafana]

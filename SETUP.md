@@ -148,9 +148,9 @@ cd ~/errander
 bash scripts/install.sh
 ```
 
-`install.sh` installs Python dependencies then launches `configure.sh` interactively.
+`install.sh` installs Python dependencies and prints the next steps. It does **not** launch the configuration wizard — that is a deliberate separate step so you can set up SSH keys and target VMs first.
 
-**All remaining steps run as `errander-agent`** (inside the `sudo su - errander-agent` session). Skip to Step 2.
+**All remaining steps run as `errander-agent`** (inside the `sudo su - errander-agent` session). Continue to Step 2.
 
 > **Prefer to inspect bootstrap.sh before running it?** Clone it first — bootstrap.sh skips any step already done:
 > ```bash

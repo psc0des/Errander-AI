@@ -195,8 +195,8 @@ done
 ok "Grafana is up on :${GF_PORT}"
 
 # ── set admin password ────────────────────────────────────────────────────────
-GF_ADMIN_PASS="$(tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 20 2>/dev/null \
-    || date +%s%N | sha256sum | head -c 20)"
+GF_ADMIN_PASS="$(set +o pipefail; LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom 2>/dev/null | head -c 20)"
+[ -z "$GF_ADMIN_PASS" ] && GF_ADMIN_PASS="$(date +%s | sha256sum | head -c 20)"
 
 sudo -u "$GF_USER" ${GF_CLI_CMD} \
     --config="${GF_CONF_DIR}/grafana.ini" \

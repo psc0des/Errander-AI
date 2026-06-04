@@ -65,7 +65,11 @@ else
 
     if [ "$PKG_MANAGER" = "apt" ]; then
         export DEBIAN_FRONTEND=noninteractive
-        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -q apt-transport-https software-properties-common wget gnupg 2>/dev/null || true
+        sudo mkdir -p /etc/needrestart/conf.d
+        echo "\$nrconf{restart} = 'a';" \
+            | sudo tee /etc/needrestart/conf.d/50-errander.conf > /dev/null 2>&1 || true
+        sudo DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a \
+            apt-get install -y -q apt-transport-https software-properties-common wget gnupg 2>/dev/null || true
         sudo mkdir -p /etc/apt/keyrings
         wget -q -O - https://apt.grafana.com/gpg.key \
             | gpg --dearmor \

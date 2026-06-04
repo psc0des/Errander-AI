@@ -125,7 +125,7 @@ The web UI and metrics endpoint run on port 9090. To access it from your laptop,
 
 ### Linux controller
 
-Two steps: **admin** installs system deps and creates the service user, then **errander-agent** clones the repo and configures the app. Only one `git clone` — done as the service user, directly to the canonical location.
+Two steps: **admin** handles all system-level setup (including cloning the repo), then **errander-agent** installs dependencies and configures the agent. No sudo required after Step A.
 
 **Step A — System setup** (run as your admin user — needs sudo):
 
@@ -133,29 +133,29 @@ Two steps: **admin** installs system deps and creates the service user, then **e
 curl -fsSL https://raw.githubusercontent.com/psc0des/Errander-AI/main/scripts/bootstrap.sh | bash
 ```
 
-`bootstrap.sh` is self-contained (no repo needed). It:
+`bootstrap.sh` is self-contained — no repo needed before running. It:
 - Detects your distro (Ubuntu, Debian, RHEL, CentOS, Oracle Linux, Fedora)
 - Installs git, curl, uv (at `/usr/local/bin`), Python 3.12
 - Creates the `errander-agent` service user with a `.ssh` directory
+- Clones the repo into `/home/errander-agent/errander`
+- Optionally installs Prometheus on this controller node (prompted interactively)
 
-**Step B — App install** (run as the service user):
+**Step B — App install** (run as the service user — no sudo required):
 
 ```bash
 sudo su - errander-agent
-git clone https://github.com/psc0des/Errander-AI.git ~/errander
 cd ~/errander
 bash scripts/install.sh
 ```
 
-`install.sh` installs Python dependencies, optionally installs Prometheus on this node (opt-in prompt — see [Monitoring the agent](#monitoring-the-agent-with-prometheus-optional) below), then launches `configure.sh` interactively.
+`install.sh` installs Python dependencies then launches `configure.sh` interactively.
 
 **All remaining steps run as `errander-agent`** (inside the `sudo su - errander-agent` session). Skip to Step 2.
 
-> **Prefer to inspect bootstrap.sh before running it?** Clone it first:
+> **Prefer to inspect bootstrap.sh before running it?** Clone it first — bootstrap.sh skips any step already done:
 > ```bash
 > git clone https://github.com/psc0des/Errander-AI.git errander-setup
 > bash errander-setup/scripts/bootstrap.sh
-> rm -rf errander-setup   # admin clone no longer needed
 > ```
 
 <details>
@@ -180,9 +180,14 @@ sudo mkdir -p /home/errander-agent/.ssh
 sudo chmod 700 /home/errander-agent/.ssh
 sudo chown -R errander-agent:errander-agent /home/errander-agent/.ssh
 
-# As errander-agent: clone directly to canonical location and install
+# Clone repo as service user
+sudo -u errander-agent git clone https://github.com/psc0des/Errander-AI.git /home/errander-agent/errander
+
+# Optional: install Prometheus now (or run later)
+# sudo bash /home/errander-agent/errander/scripts/install-prometheus.sh
+
+# As errander-agent: install deps and configure
 sudo su - errander-agent
-git clone https://github.com/psc0des/Errander-AI.git ~/errander
 cd ~/errander
 uv sync --extra dev
 uv run python -c "import errander; print('OK')"
@@ -856,7 +861,7 @@ environments:
 
 > **This is the reverse direction from the section above.** Here a Prometheus running **on the controller node** scrapes the agent's own `/metrics` (action counts, durations, SSH errors, LLM outcomes, approval waits) — it monitors *Errander itself*, not your target VMs.
 
-`install.sh` offers this as an opt-in step during setup (default No). To install it any time afterwards:
+`bootstrap.sh` prompts for this during Step A. To install it at any time afterwards:
 
 ```bash
 bash scripts/install-prometheus.sh

@@ -145,10 +145,10 @@ curl -fsSL https://raw.githubusercontent.com/psc0des/Errander-AI/main/scripts/bo
 ```bash
 sudo su - errander-agent
 cd ~/errander
-bash scripts/install.sh
+bash scripts/configure.sh
 ```
 
-`install.sh` installs Python dependencies and prints the next steps. It does **not** launch the configuration wizard — that is a deliberate separate step so you can set up SSH keys and target VMs first.
+`configure.sh` first installs Python dependencies (`uv sync`), then walks through the interactive setup — LLM credentials, target VMs, optional Slack. Run it once you have completed Steps 2–3 and have your LLM endpoint details ready. Re-run it any time to change settings.
 
 **All remaining steps run as `errander-agent`** (inside the `sudo su - errander-agent` session). Continue to Step 2.
 

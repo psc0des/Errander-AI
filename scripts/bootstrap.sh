@@ -14,7 +14,7 @@
 # When it finishes, Phase 2 runs as the service user (no sudo required):
 #   sudo su - errander-agent
 #   cd ~/errander
-#   bash scripts/install.sh
+#   bash scripts/configure.sh
 #
 # Supported distros: Ubuntu, Debian, RHEL, CentOS, Oracle Linux, Fedora
 # Idempotent — safe to re-run.
@@ -236,7 +236,7 @@ echo "  Phase 2 — switch to the service user and configure the app:"
 echo ""
 echo -e "    ${BOLD}sudo su - ${SERVICE_USER}${NC}"
 echo -e "    ${BOLD}cd ~/errander${NC}"
-echo -e "    ${BOLD}bash scripts/install.sh${NC}"
+echo -e "    ${BOLD}bash scripts/configure.sh${NC}"
 echo ""
 echo -e "${BOLD}═══════════════════════════════════════════${NC}"
 echo ""

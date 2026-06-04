@@ -1,15 +1,17 @@
 #!/usr/bin/env bash
 # Errander-AI interactive configuration script
 #
-# Prompts for LLM credentials, target VMs, SSH key, and optional Slack,
-# then writes .env + inventory.yaml and verifies the LLM connection.
+# Installs Python dependencies and walks through interactive setup:
+# LLM credentials, target VMs, optional Slack — then writes .env +
+# inventory.yaml and verifies the LLM connection.
 #
 # Prerequisites:
 #   - bootstrap.sh must have already run (uv, Python 3.12, repo cloned)
+#   - SSH keys set up (Step 2) and target VMs configured (Step 3) before running
 #   - Have your LLM endpoint URL, model name, and API key ready
 #
-# Usage (from inside the errander/ repo root):
-#   bash scripts/configure.sh
+# Usage (run as errander-agent from inside the repo root):
+#   cd ~/errander && bash scripts/configure.sh
 
 set -euo pipefail
 
@@ -56,16 +58,21 @@ echo ""
 echo "  Have your LLM endpoint URL, model name, and API key ready."
 echo ""
 
-# ── 0. Sanity checks ──────────────────────────────────────────────────────────
-step "0/5" "Checking prerequisites"
+# ── 0. Prerequisites + Python dependencies ───────────────────────────────────
+step "0/5" "Prerequisites + Python dependencies"
 
 [ -f "errander/__init__.py" ] \
-    || fail "Run this from the repo root: cd errander && bash scripts/configure.sh"
+    || fail "Run this from the repo root: cd ~/errander && bash scripts/configure.sh"
 command -v uv &>/dev/null \
-    || fail "uv not found — run scripts/bootstrap.sh first"
+    || fail "uv not found — run scripts/bootstrap.sh first (as your admin user)"
 
-ok "Running from repo root"
 ok "uv found  ($(uv --version))"
+
+warn "running uv sync --extra dev..."
+uv sync --extra dev
+uv run python -c "import errander; print('OK')" \
+    || fail "import check failed — check errors above"
+ok "Python dependencies ready"
 
 # ── 1. LLM ───────────────────────────────────────────────────────────────────
 step "1/5" "LLM configuration"

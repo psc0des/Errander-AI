@@ -142,19 +142,33 @@ fi
 # ── 6. Clone repo as service user ─────────────────────────────────────────────
 step "6/6" "Clone repo  →  ${REPO_DIR}"
 
+_clone_repo() {
+    sudo -u "$SERVICE_USER" git clone "$REPO_URL" "$REPO_DIR" \
+        || fail "git clone failed — check network access and that the repo is public"
+}
+
 if [ -d "${REPO_DIR}/.git" ]; then
-    warn "repo present — fetching latest..."
-    if sudo -u "$SERVICE_USER" git -C "$REPO_DIR" fetch origin main \
-    && sudo -u "$SERVICE_USER" git -C "$REPO_DIR" reset --hard origin/main; then
+    warn "repo present — updating to latest..."
+    _updated=false
+    if sudo -H -u "$SERVICE_USER" git -C "$REPO_DIR" fetch origin main 2>&1 \
+    && sudo -H -u "$SERVICE_USER" git -C "$REPO_DIR" reset --hard origin/main 2>&1; then
+        _updated=true
         ok "repo updated to latest at ${REPO_DIR}"
-    else
-        warn "repo update failed — scripts may be outdated"
-        warn "to fix: sudo -u ${SERVICE_USER} git -C ${REPO_DIR} pull"
+    fi
+
+    if ! $_updated; then
+        warn "git update failed — re-cloning (preserving .env + inventory.yaml)..."
+        sudo cp "${REPO_DIR}/.env"           /tmp/_errander_env.bak 2>/dev/null || true
+        sudo cp "${REPO_DIR}/inventory.yaml" /tmp/_errander_inv.bak 2>/dev/null || true
+        sudo rm -rf "$REPO_DIR"
+        _clone_repo
+        sudo mv /tmp/_errander_env.bak       "${REPO_DIR}/.env"           2>/dev/null || true
+        sudo mv /tmp/_errander_inv.bak       "${REPO_DIR}/inventory.yaml" 2>/dev/null || true
+        ok "re-cloned at ${REPO_DIR}"
     fi
 else
     warn "cloning as ${SERVICE_USER}..."
-    sudo -u "$SERVICE_USER" git clone "$REPO_URL" "$REPO_DIR" \
-        || fail "git clone failed — check network access and that the repo is public"
+    _clone_repo
     ok "cloned to ${REPO_DIR}"
 fi
 

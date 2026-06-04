@@ -143,7 +143,10 @@ fi
 step "6/6" "Clone repo  →  ${REPO_DIR}"
 
 if [ -d "${REPO_DIR}/.git" ]; then
-    ok "repo already present at ${REPO_DIR}"
+    warn "repo already present — pulling latest..."
+    sudo -u "$SERVICE_USER" git -C "$REPO_DIR" pull --ff-only 2>/dev/null \
+        && ok "repo updated at ${REPO_DIR}" \
+        || { ok "repo already up to date at ${REPO_DIR}"; }
 else
     warn "cloning as ${SERVICE_USER}..."
     sudo -u "$SERVICE_USER" git clone "$REPO_URL" "$REPO_DIR" \

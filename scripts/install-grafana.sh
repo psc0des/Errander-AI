@@ -1,29 +1,27 @@
 #!/usr/bin/env bash
 # Errander-AI — install Grafana on the controller node
 #
-# Installs Grafana OSS via the official Grafana package repo (APT or YUM),
-# provisions a Prometheus datasource pointing at localhost:9091, and loads
-# the pre-built Errander-AI Fleet Operations dashboard.
+# Downloads the official Grafana OSS release tarball — no package manager,
+# zero interactive prompts, works identically on Ubuntu, Debian, RHEL,
+# Rocky, Fedora, and any other Linux distro.
 #
-# This script is called automatically by scripts/bootstrap.sh when the operator
-# opts into the monitoring stack. It can also be run standalone at any time:
-#
+# Usage (run as a user with sudo):
 #   sudo bash scripts/install-grafana.sh
 #
-# Requires install-prometheus.sh to have been run first (Prometheus on :9091).
-# Distro-agnostic: Ubuntu, Debian, RHEL, CentOS, Rocky, Alma, Fedora.
-# Idempotent — safe to re-run.
-#
 # Overridable env vars:
-#   GF_PORT=3000        (Grafana listen port)
+#   GF_VERSION=11.4.0   GF_PORT=3000
+#
+# Idempotent — safe to re-run.
 
 set -euo pipefail
 
+GF_VERSION="${GF_VERSION:-11.4.0}"
 GF_PORT="${GF_PORT:-3000}"
 GF_USER="grafana"
-GF_CONF_DIR="/etc/grafana"
-GF_DATA_DIR="/var/lib/grafana"
-GF_DASHBOARD_DIR="${GF_DATA_DIR}/dashboards"
+GF_HOME="/usr/share/grafana"           # web assets + default conf
+GF_CONF_DIR="/etc/grafana"             # custom config + provisioning
+GF_DATA_DIR="/var/lib/grafana"         # SQLite DB, dashboards, plugins
+GF_LOGS_DIR="/var/log/grafana"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
@@ -41,124 +39,183 @@ echo "════════════════════════�
 command -v curl &>/dev/null || fail "curl is required but not installed"
 command -v sudo &>/dev/null || fail "sudo is required but not installed"
 
-[ -d "$DEPLOY_DIR" ] || fail "deploy/grafana/ not found at ${DEPLOY_DIR} — run from inside the Errander-AI repo"
+[ -d "$DEPLOY_DIR" ] || fail "deploy/grafana/ not found at ${DEPLOY_DIR} — run from inside the repo"
 
-# ── distro detection ──────────────────────────────────────────────────────────
-[ -f /etc/os-release ] || fail "/etc/os-release not found — unsupported system"
-. /etc/os-release
-ID_ALL="${ID:-} ${ID_LIKE:-}"
-
-if echo "$ID_ALL" | grep -qiE 'ubuntu|debian'; then
-    PKG_MANAGER="apt"
-elif echo "$ID_ALL" | grep -qiE 'rhel|centos|fedora|oracle|ol\b'; then
-    PKG_MANAGER=$(command -v dnf &>/dev/null && echo "dnf" || echo "yum")
-else
-    fail "Unsupported distribution: '${ID:-unknown}'"
+# ── already running? ──────────────────────────────────────────────────────────
+if systemctl is-active grafana-server &>/dev/null 2>&1; then
+    ok "Grafana already running — skipping"
+    exit 0
 fi
-ok "distro: ${NAME:-unknown}  →  package manager: ${PKG_MANAGER}"
 
-# ── install grafana via official package repo ─────────────────────────────────
-if command -v grafana-server &>/dev/null && systemctl is-enabled grafana-server &>/dev/null 2>&1; then
-    ok "Grafana already installed — skipping package install"
+# ── remove any partial apt/rpm install that may have been interrupted ─────────
+if command -v dpkg &>/dev/null && dpkg -s grafana &>/dev/null 2>&1; then
+    warn "removing interrupted apt-installed Grafana..."
+    sudo DEBIAN_FRONTEND=noninteractive apt-get remove -y grafana 2>/dev/null || true
+elif command -v rpm &>/dev/null && rpm -q grafana &>/dev/null 2>&1; then
+    warn "removing interrupted rpm-installed Grafana..."
+    sudo rpm -e grafana 2>/dev/null || true
+fi
+sudo systemctl stop  grafana-server 2>/dev/null || true
+sudo systemctl reset-failed grafana-server 2>/dev/null || true
+
+# ── arch detection ────────────────────────────────────────────────────────────
+case "$(uname -m)" in
+    x86_64)        ARCH="amd64" ;;
+    aarch64|arm64) ARCH="arm64" ;;
+    armv7l)        ARCH="armv7" ;;
+    *) fail "unsupported CPU architecture: $(uname -m)" ;;
+esac
+ok "architecture: ${ARCH}  ·  Grafana v${GF_VERSION}"
+
+# ── download + extract ────────────────────────────────────────────────────────
+TARBALL="grafana-${GF_VERSION}.linux-${ARCH}.tar.gz"
+URL="https://dl.grafana.com/oss/release/${TARBALL}"
+TMP_DIR="$(mktemp -d)"
+trap 'rm -rf "$TMP_DIR"' EXIT
+
+warn "downloading ${URL}"
+curl -fLsS "$URL" -o "${TMP_DIR}/${TARBALL}" \
+    || fail "download failed — check GF_VERSION=${GF_VERSION} and network access to dl.grafana.com"
+tar -xzf "${TMP_DIR}/${TARBALL}" -C "$TMP_DIR"
+
+SRC_DIR=$(find "$TMP_DIR" -maxdepth 1 -type d -name "grafana-*" | head -1)
+[ -d "$SRC_DIR" ] || fail "grafana directory not found in extracted tarball"
+ok "downloaded and extracted"
+
+# ── system user + dirs ────────────────────────────────────────────────────────
+if id "$GF_USER" &>/dev/null; then
+    ok "user ${GF_USER} already exists"
 else
-    warn "adding Grafana OSS package repo..."
+    sudo useradd --system --no-create-home --shell /usr/sbin/nologin "$GF_USER" 2>/dev/null \
+        || sudo useradd -rs /bin/false "$GF_USER"
+    ok "created system user ${GF_USER}"
+fi
 
-    if [ "$PKG_MANAGER" = "apt" ]; then
-        export DEBIAN_FRONTEND=noninteractive
-        sudo mkdir -p /etc/needrestart/conf.d
-        echo "\$nrconf{restart} = 'a';" \
-            | sudo tee /etc/needrestart/conf.d/50-errander.conf > /dev/null 2>&1 || true
-        sudo DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a \
-            apt-get install -y -q apt-transport-https software-properties-common wget gnupg 2>/dev/null || true
-        sudo mkdir -p /etc/apt/keyrings
-        wget -q -O - https://apt.grafana.com/gpg.key \
-            | gpg --dearmor \
-            | sudo tee /etc/apt/keyrings/grafana.gpg > /dev/null
-        echo "deb [signed-by=/etc/apt/keyrings/grafana.gpg] https://apt.grafana.com stable main" \
-            | sudo tee /etc/apt/sources.list.d/grafana.list > /dev/null
-        sudo DEBIAN_FRONTEND=noninteractive apt-get update -q
-        sudo DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a apt-get install -y -q grafana
-    else
-        sudo tee /etc/yum.repos.d/grafana.repo > /dev/null <<'EOF'
-[grafana]
-name=grafana
-baseurl=https://rpm.grafana.com
-repo_gpgcheck=1
-enabled=1
-gpgcheck=1
-gpgkey=https://rpm.grafana.com/gpg.key
-sslverify=1
-sslcacert=/etc/pki/tls/certs/ca-bundle.crt
+sudo mkdir -p "${GF_HOME}" "${GF_CONF_DIR}/provisioning" "${GF_DATA_DIR}" "${GF_LOGS_DIR}"
+sudo chown -R "${GF_USER}:${GF_USER}" "${GF_DATA_DIR}" "${GF_LOGS_DIR}"
+ok "dirs ready: ${GF_HOME}  ${GF_CONF_DIR}  ${GF_DATA_DIR}"
+
+# ── install binary + web assets ───────────────────────────────────────────────
+# Grafana 10+ ships a single 'grafana' binary (grafana server / grafana cli).
+# Grafana 9.x and below ships 'grafana-server' + 'grafana-cli' separately.
+if [ -f "${SRC_DIR}/bin/grafana" ]; then
+    sudo install -m 0755 "${SRC_DIR}/bin/grafana" /usr/sbin/grafana
+    GF_SERVER_CMD="/usr/sbin/grafana server"
+    GF_CLI_CMD="/usr/sbin/grafana cli"
+elif [ -f "${SRC_DIR}/bin/grafana-server" ]; then
+    sudo install -m 0755 "${SRC_DIR}/bin/grafana-server" /usr/sbin/grafana-server
+    sudo install -m 0755 "${SRC_DIR}/bin/grafana-cli"    /usr/sbin/grafana-cli 2>/dev/null || true
+    GF_SERVER_CMD="/usr/sbin/grafana-server"
+    GF_CLI_CMD="/usr/sbin/grafana-cli"
+else
+    fail "grafana binary not found in ${SRC_DIR}/bin/"
+fi
+
+# Web assets and default config must live at GF_HOME for the UI to work
+sudo cp -r "${SRC_DIR}/public" "${GF_HOME}/"
+sudo cp -r "${SRC_DIR}/conf"   "${GF_HOME}/"
+ok "installed binary + web assets to ${GF_HOME}"
+
+# ── grafana.ini ───────────────────────────────────────────────────────────────
+sudo tee "${GF_CONF_DIR}/grafana.ini" > /dev/null <<EOF
+[server]
+protocol  = http
+http_port = ${GF_PORT}
+
+[paths]
+data         = ${GF_DATA_DIR}
+logs         = ${GF_LOGS_DIR}
+plugins      = ${GF_DATA_DIR}/plugins
+provisioning = ${GF_CONF_DIR}/provisioning
+
+[users]
+allow_sign_up = false
+
+[log]
+mode  = console
+level = warn
 EOF
-        sudo "$PKG_MANAGER" install -y grafana
-    fi
-
-    ok "grafana package installed"
-fi
-
-# ── configure listen port (if non-default) ────────────────────────────────────
-if [ "$GF_PORT" != "3000" ]; then
-    sudo sed -i "s/^;*http_port = .*/http_port = ${GF_PORT}/" "${GF_CONF_DIR}/grafana.ini"
-    ok "Grafana listen port set to :${GF_PORT}"
-else
-    ok "Grafana listen port: :${GF_PORT} (default)"
-fi
+sudo chown "${GF_USER}:${GF_USER}" "${GF_CONF_DIR}/grafana.ini"
+ok "wrote ${GF_CONF_DIR}/grafana.ini  (listen :${GF_PORT})"
 
 # ── provisioning: datasource ──────────────────────────────────────────────────
 sudo mkdir -p "${GF_CONF_DIR}/provisioning/datasources"
 sudo cp "${DEPLOY_DIR}/provisioning/datasources/errander.yml" \
         "${GF_CONF_DIR}/provisioning/datasources/errander.yml"
-sudo chown -R "${GF_USER}:${GF_USER}" "${GF_CONF_DIR}/provisioning/datasources/" 2>/dev/null || \
-    sudo chown -R root:root "${GF_CONF_DIR}/provisioning/datasources/"
+sudo chown -R "${GF_USER}:${GF_USER}" "${GF_CONF_DIR}/provisioning"
 ok "provisioned datasource: Prometheus → http://localhost:9091"
 
 # ── provisioning: dashboard provider ─────────────────────────────────────────
 sudo mkdir -p "${GF_CONF_DIR}/provisioning/dashboards"
 sudo cp "${DEPLOY_DIR}/provisioning/dashboards/errander.yml" \
         "${GF_CONF_DIR}/provisioning/dashboards/errander.yml"
-sudo chown -R "${GF_USER}:${GF_USER}" "${GF_CONF_DIR}/provisioning/dashboards/" 2>/dev/null || \
-    sudo chown -R root:root "${GF_CONF_DIR}/provisioning/dashboards/"
-ok "provisioned dashboard provider: /var/lib/grafana/dashboards"
+ok "provisioned dashboard provider"
 
 # ── dashboard JSON ─────────────────────────────────────────────────────────────
-sudo mkdir -p "$GF_DASHBOARD_DIR"
-sudo cp "${DEPLOY_DIR}/dashboards/errander.json" "${GF_DASHBOARD_DIR}/errander.json"
-sudo chown -R "${GF_USER}:${GF_USER}" "$GF_DASHBOARD_DIR" 2>/dev/null || \
-    sudo chown -R root:root "$GF_DASHBOARD_DIR"
+sudo mkdir -p "${GF_DATA_DIR}/dashboards"
+sudo cp "${DEPLOY_DIR}/dashboards/errander.json" "${GF_DATA_DIR}/dashboards/errander.json"
+sudo chown -R "${GF_USER}:${GF_USER}" "${GF_DATA_DIR}/dashboards"
 ok "dashboard JSON installed: Errander-AI Fleet Operations"
 
-# ── start service ─────────────────────────────────────────────────────────────
+# ── systemd unit ──────────────────────────────────────────────────────────────
+sudo tee /etc/systemd/system/grafana-server.service > /dev/null <<EOF
+[Unit]
+Description=Grafana (Errander-AI controller node)
+Documentation=https://grafana.com/docs/grafana/latest/
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+User=${GF_USER}
+Group=${GF_USER}
+Type=simple
+ExecStart=${GF_SERVER_CMD} \\
+  --config=${GF_CONF_DIR}/grafana.ini \\
+  --homepath=${GF_HOME}
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+EOF
+ok "wrote /etc/systemd/system/grafana-server.service"
+
 sudo systemctl daemon-reload
 sudo systemctl enable --now grafana-server
 ok "grafana-server enabled + started"
 
-# ── wait for startup and set admin password ───────────────────────────────────
+# ── wait for startup ──────────────────────────────────────────────────────────
 warn "waiting for Grafana to initialise..."
 _tries=0
 until curl -fsS "http://localhost:${GF_PORT}/api/health" >/dev/null 2>&1; do
     _tries=$((_tries + 1))
-    [ "$_tries" -gt 20 ] && fail "Grafana did not start after 20 seconds — check: sudo systemctl status grafana-server"
+    [ "$_tries" -gt 30 ] && fail "Grafana did not start after 30s — check: sudo journalctl -u grafana-server --no-pager -n 30"
     sleep 1
 done
 ok "Grafana is up on :${GF_PORT}"
 
-GF_ADMIN_PASS="$(tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 20 || true)"
-[ -z "$GF_ADMIN_PASS" ] && GF_ADMIN_PASS="$(date +%s | sha256sum | head -c 20)"
+# ── set admin password ────────────────────────────────────────────────────────
+GF_ADMIN_PASS="$(tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 20 2>/dev/null \
+    || date +%s%N | sha256sum | head -c 20)"
 
-sudo grafana-cli --homepath /usr/share/grafana admin reset-admin-password "$GF_ADMIN_PASS" >/dev/null 2>&1 \
-    || sudo grafana-cli admin reset-admin-password "$GF_ADMIN_PASS" >/dev/null 2>&1 \
-    || { warn "grafana-cli password reset failed — default admin/admin is active, change it immediately"; GF_ADMIN_PASS="admin"; }
+sudo -u "$GF_USER" ${GF_CLI_CMD} \
+    --config="${GF_CONF_DIR}/grafana.ini" \
+    --homepath="${GF_HOME}" \
+    admin reset-admin-password "$GF_ADMIN_PASS" >/dev/null 2>&1 \
+    || { warn "password reset failed — default admin/admin is active, change after login"
+         GF_ADMIN_PASS="admin"; }
 
 ok "admin password set"
 
-# ── verify ─────────────────────────────────────────────────────────────────────
-if curl -fsS -u "admin:${GF_ADMIN_PASS}" "http://localhost:${GF_PORT}/api/org" >/dev/null 2>&1; then
+# ── verify ────────────────────────────────────────────────────────────────────
+if curl -fsS -u "admin:${GF_ADMIN_PASS}" \
+        "http://localhost:${GF_PORT}/api/org" >/dev/null 2>&1; then
     ok "Grafana API authenticated successfully"
 else
-    warn "API auth check failed — service is up but password may need manual reset"
+    warn "API auth check failed — service is up, try logging in with admin / ${GF_ADMIN_PASS}"
 fi
 
-# ── done ───────────────────────────────────────────────────────────────────────
+# ── done ──────────────────────────────────────────────────────────────────────
 echo ""
 echo -e "${BOLD}═══════════════════════════════════════════${NC}"
 echo -e "${GREEN} Grafana installed on the controller node.${NC}"

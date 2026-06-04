@@ -58,20 +58,9 @@ fi
 
 ok "$DISTRO_DISPLAY  →  package manager: $PKG_MANAGER"
 
-# ── suppress interactive prompts for all apt operations ───────────────────────
-# needrestart pops a "which daemons to restart?" dialog that blocks SSH sessions.
-# Configure it system-wide to restart automatically before any apt install runs.
-if [ "$PKG_MANAGER" = "apt" ]; then
-    export DEBIAN_FRONTEND=noninteractive
-    sudo mkdir -p /etc/needrestart/conf.d
-    echo "\$nrconf{restart} = 'a';" \
-        | sudo tee /etc/needrestart/conf.d/50-errander.conf > /dev/null 2>&1 || true
-fi
-
 _install() {
     case "$PKG_MANAGER" in
-        apt) sudo DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a \
-                 apt-get install -y -q "$@" 2>&1 \
+        apt) sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -q "$@" 2>&1 \
                  | grep -v "^Reading\|^Building\|^Unpacking\|^Setting\|^Processing" || true ;;
         dnf) sudo dnf install -y -q "$@" ;;
         yum) sudo yum install -y -q "$@" ;;

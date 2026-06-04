@@ -4,6 +4,16 @@
 2026-06-05
 
 ## Current Phase
+**Grafana install — rewritten to tarball (distro-agnostic, zero interactive prompts) (2026-06-05, COMPLETE).**
+
+Replaced the apt-based Grafana install with the official OSS tarball approach (same pattern as Prometheus). Root cause: `apt-get install grafana` triggers `needrestart` and `debconf` interactive dialogs that freeze SSH terminals like MobaXterm. The tarball approach has no package manager involvement, works identically on Ubuntu/Debian/RHEL/Rocky/Fedora/any systemd distro, and never shows any interactive dialogs. Also handles partial/interrupted installs by detecting and removing broken apt/rpm Grafana before installing. Both `install-prometheus.sh` and `install-grafana.sh` now use the same pattern.
+
+### Files changed (2026-06-05 — Grafana tarball rewrite)
+- `scripts/install-grafana.sh` — complete rewrite: tarball download + binary install + systemd unit; handles Grafana 10+ (`grafana server`) and 9.x (`grafana-server`) binary layouts; cleans up broken apt/rpm installs; zero interactive prompts on all distros
+- `scripts/bootstrap.sh` — removed needrestart workaround (no longer needed); `_install()` keeps `DEBIAN_FRONTEND=noninteractive` for bootstrap's own git/curl installs
+- `README.md` — updated monitoring description to say tarball, not package repo
+
+## Previous Phase
 **Grafana monitoring stack — auto-provisioned dashboard (2026-06-05, COMPLETE).**
 
 Added Grafana to the monitoring stack alongside Prometheus. `scripts/install-grafana.sh` installs Grafana via the official package repo (APT/YUM), auto-provisions the Prometheus datasource and the **Errander-AI Fleet Operations** dashboard (10 panels built against exact metric names from `metrics.py`), generates a random admin password via `grafana-cli`, and prints it once. `bootstrap.sh` now combines Prometheus + Grafana into a single "Install monitoring stack?" prompt. Access via SSH tunnel — no firewall rule needed for `:3000`.

@@ -1,5 +1,15 @@
 # Errander-AI — Lessons Learned
 
+## 2026-06-05 — Never use a package manager in an automated install script intended for SSH sessions
+
+`apt-get install grafana` triggered a `needrestart` ncurses dialog asking "which daemons should be restarted?" — this completely froze MobaXterm and any SSH client that doesn't support terminal UI. `DEBIAN_FRONTEND=noninteractive` and `NEEDRESTART_MODE=a` are partial fixes but not reliable across all Ubuntu versions and package combinations.
+
+The correct pattern for any service that ships an official release tarball: **download the binary tarball directly, extract, install to /usr/local/bin or /usr/sbin, write a systemd unit**. This is what Prometheus does, and it's what Grafana should do. Zero package manager, zero interactive prompts, identical behaviour on every distro.
+
+**Why:** Package managers are designed for interactive use. Their post-install hooks (needrestart, debconf, tzdata) assume a terminal that can render ncurses dialogs. SSH sessions — especially in Windows clients like MobaXterm — often can't, and the session freezes with no way to dismiss the dialog.
+
+**How to apply:** Before choosing a package manager install for a service in any Errander script: check if the project ships an official static binary or tarball. If yes, use it. The pattern is always: `curl download → tar extract → install binary → create system user + dirs → write systemd unit → systemctl enable --now`. Both `install-prometheus.sh` and `install-grafana.sh` follow this pattern — use them as the reference.
+
 ## 2026-06-04 — Service accounts must never need sudo; system-level tasks belong in the admin phase
 
 `errander-agent` was prompted for a sudo password mid-install because `install.sh` (running as the service user) called `sudo bash install-prometheus.sh`. The service account has no sudo — and it shouldn't. Giving a service account that SSHes into production VMs any sudo access to the controller creates an unnecessary privilege escalation path.

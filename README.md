@@ -576,7 +576,7 @@ sudo bash scripts/install-prometheus.sh   # Prometheus on :9091
 sudo bash scripts/install-grafana.sh      # Grafana on :3000 (dashboard auto-provisioned)
 ```
 
-`install-prometheus.sh` installs the official Prometheus binary (works on any distro), creates a system user + systemd unit, scrapes `/metrics` on port 9090, listens on **:9091**. `install-grafana.sh` uses the official Grafana package repo, provisions the Prometheus datasource and the Errander dashboard automatically, and prints the admin password once.
+`install-prometheus.sh` and `install-grafana.sh` both use the **official release tarballs** (no package manager, no apt/yum, zero interactive prompts) — the same binary download + systemd unit approach, works identically on any distro. Grafana auto-provisions the Prometheus datasource and the Errander dashboard and prints the admin password once.
 
 **Access via SSH tunnel** (no firewall rule for :9091 or :3000 needed):
 ```bash

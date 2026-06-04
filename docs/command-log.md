@@ -1,5 +1,20 @@
 # Errander-AI Command Log
 
+## Grafana tarball rewrite — distro-agnostic, zero interactive prompts (2026-06-05)
+
+```bash
+# Rewrite install-grafana.sh: official tarball instead of apt package repo
+# Also: bootstrap git-update fixes (fetch+reset+re-clone fallback)
+git add scripts/install-grafana.sh scripts/bootstrap.sh README.md
+git commit -m "fix: replace apt-based Grafana install with official tarball — zero interactive prompts, all distros"
+git push
+
+# Doc sync
+git add STATUS.md tasks/todo.md tasks/lessons.md docs/command-log.md
+git commit -m "docs: doc sync — Grafana tarball rewrite"
+git push
+```
+
 ## Grafana monitoring stack (2026-06-05)
 
 ```bash

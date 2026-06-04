@@ -1,3 +1,12 @@
+## Grafana install — tarball rewrite (2026-06-05, COMPLETE)
+
+- [x] `scripts/install-grafana.sh` — rewritten: official OSS tarball (no apt/yum), handles Grafana 10+ and 9.x binary layouts, removes broken apt/rpm installs, zero interactive prompts, all distros
+- [x] `scripts/bootstrap.sh` — removed needrestart workaround; kept DEBIAN_FRONTEND=noninteractive on _install()
+- [x] `README.md` — updated monitoring description: tarball, not package repo
+- [x] Doc sync: STATUS.md, todo.md, lessons.md, command-log.md
+
+---
+
 ## Grafana monitoring stack — auto-provisioned dashboard (2026-06-05, COMPLETE)
 
 - [x] `scripts/install-grafana.sh` — new: Grafana OSS via official APT/YUM repo, datasource + dashboard provisioning, random admin password via grafana-cli, SSH tunnel access instructions

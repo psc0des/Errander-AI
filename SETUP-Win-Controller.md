@@ -98,11 +98,19 @@ ERRANDER_SSH_STRICT_HOST_KEYS=false
 
 ### Create your inventory
 
-Same as Linux — follow [SETUP.md Step 5](SETUP.md#step-5--configure-the-agent) for inventory, Slack, Prometheus, LangSmith, and ELK setup.
+Same as Linux — follow [SETUP.md Step 5](SETUP.md#step-5--configure-the-agent) for inventory, Slack, LangSmith, and ELK setup.
 
 > **SSH key path in inventory.yaml:** Use the Git Bash-style path (`~/.ssh/errander_prod`) or the Windows native path (`C:\Users\you\.ssh\errander_prod`) — both work.
 
 > **configure.sh on Windows:** `configure.sh` runs in **Git Bash**. Open Git Bash and run `bash scripts/configure.sh` from inside the `errander/` folder. Alternatively, create `.env` and `inventory.yaml` manually as shown above.
+
+### Monitoring (Prometheus + Grafana)
+
+`scripts/install-prometheus.sh` and `scripts/install-grafana.sh` are Linux Bash scripts — they do not run natively on Windows.
+
+The agent still exposes `/metrics` on port 9090 (cross-platform). To monitor a Windows controller, point an existing Prometheus instance at `http://<controller-ip>:9090/metrics`, then point Grafana at that Prometheus. The pre-built dashboard JSON is at `deploy/grafana/dashboards/errander.json` — import it manually into your Grafana instance.
+
+If you want the full automated stack, the simplest path is to run Prometheus + Grafana on a small Linux VM (or WSL2) and scrape the Windows controller's `:9090` endpoint from there.
 
 ---
 

@@ -33,7 +33,7 @@ Step-by-step instructions for getting Errander-AI running from scratch.
 
 | Machine | What runs there |
 |---|---|
-| **Master VM / Controller** | Errander-AI agent, SQLite, web UI — a Linux VM or your Windows PC |
+| **Master VM / Controller** | Errander-AI agent, SQLite, web UI — a Linux VM (Windows controller: see [SETUP-Win-Controller.md](SETUP-Win-Controller.md)) |
 | **Target VMs** | The Linux VMs being maintained — Ubuntu 20.04+, Debian 11+, RHEL 8+ |
 | **LLM endpoint** *(optional)* | Any OpenAI-compatible API: a cloud API (Azure AI Foundry, OpenAI, Groq, etc.), a local LLM on the controller (Ollama, LM Studio), or a self-hosted vLLM on a dedicated GPU VM (16 GB VRAM recommended) |
 
@@ -115,44 +115,13 @@ The web UI and metrics endpoint run on port 9090. To access it from your laptop,
 
 ## Step 1 — Install the agent on the controller
 
+> **Windows controller?** See [SETUP-Win-Controller.md](SETUP-Win-Controller.md).
+
 > **Two users, two machines — don't confuse them:**
 > - **Controller:** `errander-agent` — the service account bootstrap creates; runs the agent, holds the SSH private key
 > - **Each target VM:** `errander` — a separate account you create in Step 2 that receives SSH connections from the controller
 >
 > These are unrelated accounts on different machines.
-
-### Windows controller
-
-**Recommended — run the bootstrap script from PowerShell.**
-It installs git (via winget), uv, and Python 3.12, clones the repo, and verifies the install. No admin rights required.
-
-```powershell
-git clone https://github.com/psc0des/Errander-AI.git errander
-powershell -ExecutionPolicy Bypass -File errander\scripts\bootstrap.ps1
-```
-
-Once complete, **skip to Step 2** — the script handles everything in Step 1.
-
-> **git not installed yet?** Download it from [git-scm.com/download/win](https://git-scm.com/download/win), install, reopen PowerShell, then run the commands above.
-
-<details>
-<summary>Manual installation (reference / fallback)</summary>
-
-```powershell
-# 1. Install Python 3.12 from python.org (check "Add Python to PATH" during install)
-# 2. Install uv
-pip install uv
-
-# 3. Clone and install
-git clone https://github.com/psc0des/Errander-AI.git errander
-cd errander
-uv sync --extra dev
-
-# 4. Verify
-uv run python -c "import errander; print('OK')"
-```
-
-</details>
 
 ### Linux controller
 
@@ -531,7 +500,7 @@ Approve the plan in `#errander-approvals` with ✅. The wrapper captures pre/pos
 
 Once you have your LLM endpoint URL, model name, and API key ready, run the interactive setup script from inside the `errander/` directory:
 
-**Linux / Git Bash (Windows):**
+**Linux:**
 ```bash
 bash scripts/configure.sh
 ```
@@ -542,8 +511,6 @@ It will prompt you for LLM credentials, target VMs, verify your SSH key path (cr
 > - [Optional: Docker hygiene](#optional-docker-hygiene) — install `errander-docker-assess-v2` and `errander-docker-remove-v2` wrappers
 > - [Optional: Service restart](#optional-service-restart) — install `errander-systemctl-restart` wrapper and configure the allowlist
 
-> **Windows note:** `configure.sh` runs in Git Bash (installed with Git for Windows). Open **Git Bash** (not PowerShell) and run the command above from inside the `errander\` folder.
->
 > **Prefer to configure manually?** Follow Steps 4–6 below instead.
 
 ---
@@ -780,8 +747,6 @@ ERRANDER_SSH_STRICT_HOST_KEYS=false
 EOF
 ```
 
-**Windows** — create `.env` with a text editor (Notepad, VS Code, etc.) using the same content as above.
-
 > Never commit `.env` — it is already in `.gitignore`.
 
 ### Create your inventory
@@ -797,9 +762,7 @@ Minimal example for a single dev VM:
 environments:
   dev:
     ssh_user: errander
-    ssh_key_path: ~/.ssh/errander_prod     # Linux / Windows Git Bash path
-    # Windows native path also works:
-    # ssh_key_path: C:\Users\you\.ssh\errander_prod
+    ssh_key_path: ~/.ssh/errander_prod
     approval_policy: relaxed
     maintenance_window: "08:00-20:00"
     maintenance_days: [monday, tuesday, wednesday, thursday, friday]
@@ -1049,14 +1012,6 @@ uv run python -m errander --check-inventory
 
 The agent loads `.env` automatically at startup — no manual sourcing needed. The only exception is `--check-inventory`, which runs before the app initialises (step 1 above, already covered).
 
-> **Windows PowerShell only** — PowerShell's environment isolation means `.env` values set inside a `uv run` subprocess are not visible to the parent shell for *subsequent* commands. If you chain commands in a single PowerShell session and need vars visible to PowerShell itself (not just errander), load them once:
-> ```powershell
-> Get-Content .env | Where-Object { $_ -notmatch "^#" -and $_ -ne "" } | ForEach-Object {
->     $parts = $_ -split "=", 2
->     [System.Environment]::SetEnvironmentVariable($parts[0], $parts[1], "Process")
-> }
-> ```
-
 **3. Verify LLM connectivity**
 
 If you ran `configure.sh`, this was already done. Re-verify any time with:
@@ -1139,17 +1094,7 @@ Replace `<your-env-name>` with the environment name from your `inventory.yaml` (
 
 The agent loads `.env` automatically.
 
-**Linux / Git Bash:**
 ```bash
-uv run python -m errander --run-now --env <your-env-name> --inventory inventory.yaml --dry-run --force --force-reason "initial dry-run validation"
-```
-
-**Windows PowerShell:**
-```powershell
-Get-Content .env | Where-Object { $_ -notmatch "^#" -and $_ -ne "" } | ForEach-Object {
-    $parts = $_ -split "=", 2
-    [System.Environment]::SetEnvironmentVariable($parts[0], $parts[1], "Process")
-}
 uv run python -m errander --run-now --env <your-env-name> --inventory inventory.yaml --dry-run --force --force-reason "initial dry-run validation"
 ```
 
@@ -1168,7 +1113,6 @@ What happens:
 Once dry-run looks correct, run live for each environment you want to execute against.
 `--env` targets one environment at a time — run once per env, or in parallel across terminals:
 
-**Linux / Git Bash:**
 ```bash
 # Single environment
 uv run python -m errander --run-now --env dr --inventory inventory.yaml --live
@@ -1176,15 +1120,6 @@ uv run python -m errander --run-now --env dr --inventory inventory.yaml --live
 # Multiple environments (run in separate terminals, or background each)
 uv run python -m errander --run-now --env prod --inventory inventory.yaml --live
 uv run python -m errander --run-now --env staging --inventory inventory.yaml --live
-```
-
-**Windows PowerShell:**
-```powershell
-Get-Content .env | Where-Object { $_ -notmatch "^#" -and $_ -ne "" } | ForEach-Object {
-    $parts = $_ -split "=", 2
-    [System.Environment]::SetEnvironmentVariable($parts[0], $parts[1], "Process")
-}
-uv run python -m errander --run-now --env dr --inventory inventory.yaml --live
 ```
 
 Real commands execute on the target VMs. Each environment gets its own Slack approval message — approve or reject them independently.
@@ -1195,7 +1130,7 @@ Real commands execute on the target VMs. Each environment gets its own Slack app
 
 In service mode (no `--run-now`, no `--env`), Errander runs as a long-lived daemon and executes **all environments** defined in `inventory.yaml` according to each environment's `maintenance_window` schedule. No `--env` flag needed — the scheduler picks up every environment automatically.
 
-### Linux controller — systemd
+### systemd service *(Linux)*
 
 Run this from inside the `errander/` directory — it auto-fills your username and install path:
 
@@ -1256,31 +1191,6 @@ Then open `http://localhost:9090/ui` in your browser. No firewall changes needed
 journalctl -u errander -f
 ```
 
-### Windows controller — Task Scheduler
-
-1. Open **Task Scheduler** → **Create Basic Task**
-2. Name: `Errander-AI`
-3. Trigger: **At startup** (or a specific time)
-4. Action: **Start a program**
-   - Program: `C:\Users\<you>\errander\.venv\Scripts\python.exe`
-   - Arguments: `-m errander --inventory C:\Users\<you>\errander\inventory.yaml --config C:\Users\<you>\errander\settings.yaml`
-   - Start in: `C:\Users\<you>\errander`
-5. Under **Properties** → **General** → check **Run whether user is logged on or not**
-6. Add env vars under **Properties** → create a wrapper `.bat` file that sets them first:
-
-```bat
-@echo off
-set ERRANDER_LLM_BASE_URL=http://10.0.1.5:8000/v1
-set ERRANDER_SLACK_BOT_TOKEN=xoxb-your-token-here
-set ERRANDER_SLACK_CHANNEL_ID=C0123456789
-set ERRANDER_AUDIT_DB_URL=C:\Users\<you>\errander\errander.sqlite
-C:\Users\<you>\errander\.venv\Scripts\python.exe -m errander ^
-  --inventory C:\Users\<you>\errander\inventory.yaml ^
-  --config C:\Users\<you>\errander\settings.yaml
-```
-
-Point the Task Scheduler action at this `.bat` file instead.
-
 ---
 
 ## Troubleshooting
@@ -1289,7 +1199,6 @@ Point the Task Scheduler action at this `.bat` file instead.
 - Test manually: `ssh -i ~/.ssh/errander_prod errander@<vm-ip> "echo ok"`
 - Confirm the public key is in `~errander/.ssh/authorized_keys` on the target
 - Check `sshd` is running: `sudo systemctl status sshd`
-- On Windows: confirm key file permissions are restricted to your user only
 
 **`--check-llm` says UNREACHABLE**
 - Cloud API (OpenAI / Groq / Azure): confirm your API key is correct and `ERRANDER_LLM_BASE_URL` matches the provider's endpoint exactly

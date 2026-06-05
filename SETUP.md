@@ -812,9 +812,11 @@ Set `ERRANDER_UI_DATA_MODE=live` in `.env` when running against real VMs. Also s
 
 The UI covers:
 - `/ui/` — batch run history, event log, pending approvals
+- `/ui/monitoring` — **built-in monitoring dashboard**: action trends, approval funnel, safety signals, duration averages, live Prometheus counters (no external tools needed)
 - `/ui/approvals` — approve or reject pending maintenance plans (replaces Slack when no token is set)
 - `/ui/settings` — change LLM/approval settings at runtime (no restart required)
 - `/ui/inventory` — disable YAML VMs or add ad-hoc VMs before the next run
+- `/ui/ai-decisions` — AI decision log (LLM calls, outcomes, latencies)
 
 Settings changed via the UI are stored in SQLite. Precedence chain:
 ```
@@ -870,6 +872,8 @@ environments:
 ```
 
 ### Monitoring stack: Prometheus + Grafana *(optional)*
+
+> **Built-in first.** The web UI at `/ui/monitoring` already shows action trends, approval funnel, safety signals, and duration averages with no external tools. Prometheus + Grafana add **time-series retention** and **alerting** on top — useful if you want historical charts past 30 days or paging on error rates.
 
 > **This is the reverse direction from the section above.** Here Prometheus running **on the controller node** scrapes the agent's own `/metrics` (action counts, durations, SSH errors, LLM outcomes, approval waits), and Grafana visualises it — monitoring *Errander itself*, not your target VMs.
 
@@ -1289,11 +1293,13 @@ Once the agent is running, the following endpoints are exposed on the metrics po
 | URL | What it shows |
 |---|---|
 | `http://<controller>:9090/ui` | Dashboard — recent batches, event counts, VM history |
+| `http://<controller>:9090/ui/monitoring` | **Built-in monitoring** — action trends, approval funnel, safety signals, duration averages |
 | `http://<controller>:9090/ui/batches` | Full batch history |
 | `http://<controller>:9090/ui/approvals` | Pending approvals — Approve/Reject buttons |
 | `http://<controller>:9090/ui/settings` | Runtime LLM/approval settings (no restart required) |
 | `http://<controller>:9090/ui/inventory` | Disable YAML VMs or add ad-hoc VMs before the next run |
-| `http://<controller>:9090/metrics` | Prometheus metrics (scrape this with Prometheus) |
+| `http://<controller>:9090/ui/ai-decisions` | AI decision log — LLM calls, outcomes, latencies |
+| `http://<controller>:9090/metrics` | Prometheus metrics endpoint (scrape with external Prometheus) |
 | `http://<controller>:9090/health` | Liveness check — `{"status":"ok"}` |
 
 ---

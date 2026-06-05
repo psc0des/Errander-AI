@@ -146,21 +146,36 @@ llm:
 different models (gpt-4o-mini, Llama-3.3-70B, Phi-4, Mistral-Large, DeepSeek, etc.) behind
 the same agent code to compare cost vs. output quality. Data stays in your Azure tenant.
 
-Foundry exposes two endpoint shapes depending on the model. The agent uses the stock OpenAI
-SDK, so pick the URL form that matches your deployment.
+Foundry exposes three endpoint shapes. The agent uses the stock OpenAI SDK — pick the URL
+form that matches your resource type.
 
-### F1: Azure OpenAI models (gpt-4o, gpt-4o-mini, gpt-4.1, o-series)
+### F1a: New Foundry project endpoint *(recommended — created via ai.azure.com)*
 
-Use the **v1 preview** endpoint — it's OpenAI-compatible with no code changes:
+Projects created in the Azure AI Foundry portal use this format:
 
 ```env
-ERRANDER_LLM_BASE_URL=https://<your-resource>.openai.azure.com/openai/v1/
+ERRANDER_LLM_BASE_URL=https://<hub>.services.ai.azure.com/api/projects/<project>/v1/
+ERRANDER_LLM_MODEL=<your-deployment-name>
+ERRANDER_LLM_API_KEY=<key from project Settings → API keys>
+```
+
+Find these at: [ai.azure.com](https://ai.azure.com) → your project → **Settings → API keys**.
+The endpoint is shown on the project overview page — copy it verbatim and add a trailing `/`.
+
+### F1b: Classic Azure OpenAI resource *(Azure portal → Azure OpenAI service)*
+
+Older resources created directly in the Azure portal use this format:
+
+```env
+ERRANDER_LLM_BASE_URL=https://<your-resource>.cognitiveservices.azure.com/openai/v1/
 ERRANDER_LLM_MODEL=<your-deployment-name>
 ERRANDER_LLM_API_KEY=<key from "Keys and Endpoint" blade>
 ```
 
+Find these at: Azure portal → your **Azure OpenAI** resource → **Keys and Endpoint**.
+
 ```yaml
-# settings.yaml
+# settings.yaml (same for F1a and F1b)
 llm:
   model: "<your-deployment-name>"   # the deployment name you chose, NOT the model ID
   temperature: 0.1
@@ -171,7 +186,7 @@ llm:
 Notes:
 - `ERRANDER_LLM_MODEL` must be the **deployment name** you set in Foundry, not the
   underlying model (`gpt-4o-mini`).
-- The trailing slash on the base URL matters.
+- The trailing slash on the base URL matters for both formats.
 - Recommended starter deployment: `gpt-4o-mini` — cheap, fast, sufficient for structured JSON.
   Move to `gpt-4o` or `gpt-4.1` if reasoning quality on incident analysis is too low.
 

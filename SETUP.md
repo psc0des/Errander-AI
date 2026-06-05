@@ -140,15 +140,16 @@ curl -fsSL https://raw.githubusercontent.com/psc0des/Errander-AI/main/scripts/bo
 - Clones the repo into `/home/errander-agent/errander` (pulls latest on re-runs)
 - Optionally installs Prometheus + Grafana monitoring stack (single prompt, both use official release tarballs — no package manager, no interactive dialogs)
 
-**Step B — App install** (run as the service user — no sudo required):
+**Step B — Install dependencies** (run as the service user — no sudo required):
 
 ```bash
 sudo su - errander-agent
 cd ~/errander
-bash scripts/configure.sh
+uv sync --extra dev
+uv run python -c "import errander; print('OK')"
 ```
 
-`configure.sh` first installs Python dependencies (`uv sync`), then walks through the interactive setup — LLM credentials, target VMs, optional Slack. Run it once you have completed Steps 2–3 and have your LLM endpoint details ready. Re-run it any time to change settings.
+This installs Python packages only. **Do not run `configure.sh` yet** — it needs your SSH key path (Step 2) and target VM list (Step 3). Come back to configure once those are done.
 
 **All remaining steps run as `errander-agent`** (inside the `sudo su - errander-agent` session). Continue to Step 2.
 

@@ -1,3 +1,13 @@
+## Controller Monitoring page — /ui/monitoring with Chart.js (2026-06-05, COMPLETE)
+
+- [x] `errander/safety/audit.py` — `get_monitoring_stats()`: 30-day summary, 7-day daily, 30-day by-type SQL aggregations
+- [x] `errander/observability/metrics.py` — monitoring CSS, `_ACTION_COLORS`, `_read_prom_counters()`, `_build_chart_json()`, `_ui_monitoring()` handler
+- [x] Sidebar nav entry + active state detection in `_page()`
+- [x] Route `/ui/monitoring` registered in `start_metrics_server()`
+- [x] 2506 tests passing, mypy clean, ruff clean (pre-existing issues only)
+
+---
+
 ## teardown.sh — full uninstall for clean re-testing (2026-06-05, COMPLETE)
 
 - [x] `scripts/teardown.sh` — new: removes Grafana, Prometheus, errander-agent user+home, uv; confirmation prompt; curl-runnable; handles partial installs

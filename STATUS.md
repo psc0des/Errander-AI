@@ -4,6 +4,15 @@
 2026-06-05
 
 ## Current Phase
+**Controller Monitoring page — built-in `/ui/monitoring` with Chart.js visualizations (2026-06-05, COMPLETE).**
+
+Adds a `Monitoring` nav item and `/ui/monitoring` page to the Errander web UI. Two data sources: (1) audit DB aggregate queries for persistent history (30-day summary + 7-day daily breakdown); (2) in-process Prometheus counter reads for live stats since last restart. Charts rendered with Chart.js 4.4 via CDN (agent VM never fetches; operator browser does). No Prometheus+Grafana install required to see metrics — the built-in page replaces them for most operators.
+
+### Files changed (2026-06-05 — Controller Monitoring)
+- `errander/safety/audit.py` — new `get_monitoring_stats()` method (3 SQL aggregations: 30-day summary, 7-day daily breakdown, 30-day by-type totals)
+- `errander/observability/metrics.py` — monitoring CSS, `_ACTION_COLORS` constant, `_read_prom_counters()` helper, `_build_chart_json()` helper, `_ui_monitoring()` handler, sidebar nav entry, route registration
+
+## Previous Phase
 **teardown.sh — full uninstall script for clean re-testing (2026-06-05, COMPLETE).**
 
 New `scripts/teardown.sh` reverses everything bootstrap.sh, install-prometheus.sh, and install-grafana.sh did: stops and removes Grafana + Prometheus services/binaries/config/data, removes the errander-agent user + home (repo, .env, inventory.yaml), removes uv from /usr/local/bin, and cleans up any leftover needrestart/apt/yum repo files. Requires `yes` confirmation. Runnable via `curl | bash` without a local clone. Also added pointer to teardown in SETUP.md and README.md.

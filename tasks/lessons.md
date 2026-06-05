@@ -1,5 +1,9 @@
 # Errander-AI — Lessons Learned
 
+## 2026-06-05 — When dict[str, object] is the return type, use isinstance guards — not type: ignore[arg-type]
+
+mypy strict mode won't accept `int(d.get("key", 0))` when the dict type is `dict[str, object]` — the error is `call-overload`, not `arg-type`, so suppression comments are wrong and mypy flags them as unused. The clean pattern: extract to a variable, guard with `isinstance(v, int)`, then use directly. Or write a small `_oint(d, key)` helper at the call site. Never suppress with wrong error codes.
+
 ## 2026-06-05 — Never use a package manager in an automated install script intended for SSH sessions
 
 `apt-get install grafana` triggered a `needrestart` ncurses dialog asking "which daemons should be restarted?" — this completely froze MobaXterm and any SSH client that doesn't support terminal UI. `DEBIAN_FRONTEND=noninteractive` and `NEEDRESTART_MODE=a` are partial fixes but not reliable across all Ubuntu versions and package combinations.

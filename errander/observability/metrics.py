@@ -152,6 +152,17 @@ BATCHES_INTERRUPTED_TOTAL = Counter(
     registry=REGISTRY,
 )
 
+# Action type → chart color (used by monitoring page charts)
+_ACTION_COLORS: dict[str, str] = {
+    "disk_cleanup":    "#4f46e5",
+    "log_rotation":    "#8a4cfc",
+    "docker_hygiene":  "#0891b2",
+    "patching":        "#d97706",
+    "backup_verify":   "#15803d",
+    "service_restart": "#dc2626",
+}
+_DEFAULT_ACTION_COLORS = ["#4f46e5", "#8a4cfc", "#0891b2", "#d97706", "#15803d", "#dc2626", "#94a3b8"]
+
 
 # ---------------------------------------------------------------------------
 # Design system
@@ -569,6 +580,19 @@ background:var(--blue-bg);color:var(--primary)}
   border-radius:6px;padding:.55rem .85rem;
   font-family:var(--mono);font-size:.75rem;margin-bottom:1rem;
 }
+
+/* ── MONITORING PAGE ─────────────────────────────── */
+.mon-grid{display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1.5rem}
+.chart-wrap{background:var(--surface-lowest);border-radius:10px;padding:1.25rem 1.5rem;box-shadow:var(--shadow-sm)}
+.chart-title{font-family:var(--mono);font-size:.68rem;color:var(--text-d);letter-spacing:.08em;text-transform:uppercase;margin-bottom:.9rem}
+.chart-canvas{max-height:220px}
+.mon-prom-grid{display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1.5rem}
+.prom-kv{display:flex;justify-content:space-between;align-items:center;
+  padding:.3rem 0;border-bottom:1px solid var(--outline)}
+.prom-kv:last-child{border-bottom:none}
+.prom-key{font-family:var(--mono);font-size:.72rem;color:var(--text-m)}
+.prom-val{font-family:var(--mono);font-size:.78rem;font-weight:600;color:var(--text)}
+@media(max-width:700px){.mon-grid,.mon-prom-grid{grid-template-columns:1fr}}
 """
 
 # ---------------------------------------------------------------------------
@@ -669,6 +693,8 @@ def _page(
         nav["glossary"] = " on"
     elif t.startswith("ai decision"):
         nav["ai-decisions"] = " on"
+    elif t == "monitoring":
+        nav["monitoring"] = " on"
 
     refresh_tag = f'<meta http-equiv="refresh" content="{refresh}">' if refresh else ""
     badge = (
@@ -715,6 +741,9 @@ def _page(
     </a>
     <a href="/ui/ai-decisions" class="sb-a{nav.get('ai-decisions','')}">
       <span class="sb-ico" aria-hidden="true">&#9670;</span>AI Decisions
+    </a>
+    <a href="/ui/monitoring" class="sb-a{nav.get('monitoring','')}">
+      <span class="sb-ico" aria-hidden="true">&#9650;</span>Monitoring
     </a>
     <div class="sb-divider"></div>
     <a href="/metrics" target="_blank" class="sb-a sb-ext">
@@ -2667,6 +2696,337 @@ async def _ui_ai_decision_detail(request: web.Request) -> web.Response:
 
 
 # ---------------------------------------------------------------------------
+# Monitoring page helpers
+# ---------------------------------------------------------------------------
+
+def _read_prom_counters() -> dict[str, object]:
+    """Read current in-memory Prometheus counter values (since last agent restart).
+
+    Reads directly from the registry objects — no HTTP, no text parsing.
+    Values reset to zero on agent process restart.
+    """
+    def _by_label(counter: Counter, label: str) -> dict[str, float]:
+        result: dict[str, float] = {}
+        for mf in counter.collect():
+            for s in mf.samples:
+                if s.name.endswith("_total"):
+                    k = s.labels.get(label, "unknown")
+                    result[k] = result.get(k, 0.0) + s.value
+        return result
+
+    def _total(counter: Counter) -> float:
+        return sum(
+            s.value
+            for mf in counter.collect()
+            for s in mf.samples
+            if s.name.endswith("_total")
+        )
+
+    return {
+        "actions_by_status": _by_label(ACTIONS_TOTAL, "status"),
+        "llm_by_outcome": _by_label(LLM_REQUESTS_TOTAL, "outcome"),
+        "ssh_errors_total": int(_total(SSH_ERRORS_TOTAL)),
+        "agent_starts": int(_total(AGENT_STARTS_TOTAL)),
+        "batches_interrupted": int(_total(BATCHES_INTERRUPTED_TOTAL)),
+    }
+
+
+def _build_chart_json(
+    daily: list[dict[str, object]],
+    by_type: list[dict[str, object]],
+) -> str:
+    """Transform audit DB rows into Chart.js-ready JSON.
+
+    Returns a JSON string with ``bar`` (stacked bar, last 7 days by action type)
+    and ``donut`` (action type breakdown, 30 days) sub-objects.
+    """
+    import json
+    from datetime import date, timedelta
+
+    # Generate last-7-days label list
+    today = date.today()
+    day_labels = [(today - timedelta(days=i)).isoformat() for i in range(6, -1, -1)]
+
+    # Index daily rows: (day, action_type) → {ok, fail}
+    daily_map: dict[tuple[str, str], dict[str, object]] = {}
+    for r in daily:
+        daily_map[(str(r["day"]), str(r["action_type"]))] = r
+
+    action_types = sorted({str(r["action_type"]) for r in daily})
+
+    bar_datasets: list[dict[str, object]] = []
+    any_failures = False
+    for i, at in enumerate(action_types):
+        color = _ACTION_COLORS.get(at, _DEFAULT_ACTION_COLORS[i % len(_DEFAULT_ACTION_COLORS)])
+        ok_data = [
+            int(v) if isinstance((v := daily_map.get((d, at), {}).get("ok", 0)), int) else 0
+            for d in day_labels
+        ]
+        fail_data = [
+            int(v) if isinstance((v := daily_map.get((d, at), {}).get("fail", 0)), int) else 0
+            for d in day_labels
+        ]
+        bar_datasets.append({
+            "label": at,
+            "data": ok_data,
+            "backgroundColor": color,
+            "stack": "s",
+            "borderRadius": 2,
+        })
+        if any(fail_data):
+            any_failures = True
+            bar_datasets.append({
+                "label": f"{at} ✗",
+                "data": fail_data,
+                "backgroundColor": "#fca5a5",
+                "stack": "s",
+                "borderRadius": 2,
+            })
+
+    bar_data: dict[str, object] = {"labels": day_labels, "datasets": bar_datasets}
+
+    # Doughnut — 30-day by type
+    donut_labels = [str(r["action_type"]) for r in by_type]
+    donut_values = [
+        (int(r["ok"]) if isinstance(r["ok"], int) else 0)
+        + (int(r["fail"]) if isinstance(r["fail"], int) else 0)
+        for r in by_type
+    ]
+    donut_colors = [
+        _ACTION_COLORS.get(str(r["action_type"]), "#94a3b8")
+        for r in by_type
+    ]
+    donut_data: dict[str, object] = {
+        "labels": donut_labels,
+        "datasets": [{
+            "data": donut_values,
+            "backgroundColor": donut_colors,
+            "borderWidth": 0,
+            "hoverOffset": 4,
+        }],
+    }
+
+    return json.dumps({"bar": bar_data, "donut": donut_data, "hasFailures": any_failures})
+
+
+async def _ui_monitoring(request: web.Request) -> web.Response:
+    """GET /ui/monitoring — controller monitoring: audit DB trends + live process counters."""
+    audit: AuditStore | None = request.app.get(_AUDIT_STORE_KEY)
+    manager: ApprovalManager | None = request.app.get(_APPROVAL_MANAGER_KEY)
+    pending_count = len(manager.get_pending()) if manager is not None else 0
+
+    if audit is not None:
+        stats = await audit.get_monitoring_stats()
+    else:
+        stats = {"summary": {}, "daily": [], "by_type": []}
+
+    def _oint(d: dict[str, object], key: str) -> int:
+        v = d.get(key, 0)
+        return v if isinstance(v, int) else 0
+
+    def _ofloat(d: dict[str, object], key: str) -> float:
+        v = d.get(key, 0.0)
+        return float(v) if isinstance(v, (int, float)) else 0.0
+
+    summary_raw = stats.get("summary", {})
+    summary: dict[str, object] = summary_raw if isinstance(summary_raw, dict) else {}
+    daily_raw = stats.get("daily", [])
+    daily: list[dict[str, object]] = daily_raw if isinstance(daily_raw, list) else []
+    by_type_raw = stats.get("by_type", [])
+    by_type: list[dict[str, object]] = by_type_raw if isinstance(by_type_raw, list) else []
+
+    total = _oint(summary, "total_actions")
+    succeeded = _oint(summary, "succeeded")
+    failed = _oint(summary, "failed")
+    success_rate = _ofloat(summary, "success_rate")
+    active_vms = _oint(summary, "active_vms")
+    total_batches = _oint(summary, "total_batches")
+
+    rate_cls = "cg" if success_rate >= 95 else "ca" if success_rate >= 80 else "cr"
+    cards = (
+        '<div class="cards">'
+        f'<div class="card ca"><div class="card-lbl">Total Actions</div>'
+        f'<div class="card-num ca">{total}</div>'
+        f'<div class="card-sub">last 30 days</div></div>'
+
+        f'<div class="card {rate_cls}"><div class="card-lbl">Success Rate</div>'
+        f'<div class="card-num {rate_cls}">{success_rate}%</div>'
+        f'<div class="card-sub">{succeeded} ok &middot; {failed} failed</div></div>'
+
+        f'<div class="card cb"><div class="card-lbl">Active VMs</div>'
+        f'<div class="card-num">{active_vms}</div>'
+        f'<div class="card-sub">distinct targets touched</div></div>'
+
+        f'<div class="card"><div class="card-lbl">Batches Run</div>'
+        f'<div class="card-num">{total_batches}</div>'
+        f'<div class="card-sub">last 30 days</div></div>'
+        '</div>'
+    )
+
+    chart_json = _build_chart_json(daily, by_type)
+    charts = (
+        _section("Audit Trail — Last 7 Days")
+        + '<div class="mon-grid">'
+        + '<div class="chart-wrap">'
+        + '<div class="chart-title">Actions by Day</div>'
+        + '<canvas id="monBar" class="chart-canvas"></canvas>'
+        + '</div>'
+        + '<div class="chart-wrap">'
+        + '<div class="chart-title">Action Type Breakdown &mdash; 30 days</div>'
+        + '<canvas id="monDonut" class="chart-canvas"></canvas>'
+        + '</div>'
+        + '</div>'
+    )
+
+    # Live process counters from Prometheus registry
+    prom = _read_prom_counters()
+    _ps = prom.get("actions_by_status", {})
+    llm_outcomes: dict[str, float] = _ps if isinstance(_ps, dict) else {}
+    _pl = prom.get("llm_by_outcome", {})
+    llm_rows: dict[str, float] = _pl if isinstance(_pl, dict) else {}
+    _ssh = prom.get("ssh_errors_total", 0)
+    ssh_errors = _ssh if isinstance(_ssh, int) else 0
+    _as = prom.get("agent_starts", 0)
+    agent_starts = _as if isinstance(_as, int) else 0
+    _bi = prom.get("batches_interrupted", 0)
+    batches_interrupted = _bi if isinstance(_bi, int) else 0
+
+    llm_kv_html = ""
+    for outcome, count in sorted(llm_rows.items()):
+        out_cls = "bk-ok" if outcome == "success" else "bk-warn" if outcome == "fallback" else "bk-err"
+        llm_kv_html += (
+            f'<div class="prom-kv">'
+            f'<span class="prom-key"><span class="badge {out_cls}">{_esc(outcome)}</span></span>'
+            f'<span class="prom-val">{int(count)}</span>'
+            f'</div>'
+        )
+    if not llm_kv_html:
+        llm_kv_html = '<div class="prom-kv"><span class="prom-key" style="color:var(--text-d)">no data yet</span></div>'
+
+    action_kv_html = ""
+    for status, count in sorted(llm_outcomes.items()):
+        st_cls = "bk-ok" if status == "success" else "bk-err"
+        action_kv_html += (
+            f'<div class="prom-kv">'
+            f'<span class="prom-key"><span class="badge {st_cls}">{_esc(status)}</span></span>'
+            f'<span class="prom-val">{int(count)}</span>'
+            f'</div>'
+        )
+    if not action_kv_html:
+        action_kv_html = (
+            '<div class="prom-kv">'
+            '<span class="prom-key" style="color:var(--text-d)">no data yet</span>'
+            '</div>'
+        )
+
+    ssh_color = "color:var(--red)" if ssh_errors > 0 else "color:var(--green)"
+    bi_color = "color:var(--amber)" if batches_interrupted > 0 else "color:var(--text-d)"
+
+    live_counters = (
+        _section("Live Process Counters — since last restart")
+        + '<div class="mon-prom-grid">'
+        + '<div class="chart-wrap">'
+        + '<div class="chart-title">LLM Requests by Outcome</div>'
+        + llm_kv_html
+        + '</div>'
+        + '<div class="chart-wrap">'
+        + '<div class="chart-title">Actions by Status</div>'
+        + action_kv_html
+        + '</div>'
+        + '</div>'
+        + '<div class="mon-prom-grid">'
+        + '<div class="chart-wrap">'
+        + '<div class="chart-title">Agent Health</div>'
+        + '<div class="prom-kv"><span class="prom-key">Agent restarts</span>'
+        + f'<span class="prom-val">{agent_starts}</span></div>'
+        + '<div class="prom-kv"><span class="prom-key">SSH errors</span>'
+        + f'<span class="prom-val" style="{ssh_color}">{ssh_errors}</span></div>'
+        + '<div class="prom-kv"><span class="prom-key">Interrupted batches</span>'
+        + f'<span class="prom-val" style="{bi_color}">{batches_interrupted}</span></div>'
+        + '</div>'
+        + '<div class="chart-wrap">'
+        + '<div class="chart-title">Data Sources</div>'
+        + '<div class="prom-kv"><span class="prom-key">Stat cards</span>'
+        + '<span class="prom-val" style="color:var(--text-d);font-size:.68rem">audit DB · 30d</span></div>'
+        + '<div class="prom-kv"><span class="prom-key">Charts</span>'
+        + '<span class="prom-val" style="color:var(--text-d);font-size:.68rem">audit DB · 7d / 30d</span></div>'
+        + '<div class="prom-kv"><span class="prom-key">Live counters</span>'
+        + '<span class="prom-val" style="color:var(--text-d);font-size:.68rem">Prometheus · since restart</span></div>'
+        + '</div>'
+        + '</div>'
+    )
+
+    # Chart.js CDN + init script (double-brace JS braces in f-string)
+    chart_init = f"""
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+(function() {{
+  var d = {chart_json};
+  var fontFamily = "'JetBrains Mono', monospace";
+  var textD = "#777587";
+
+  var barEl = document.getElementById('monBar');
+  if (barEl) {{
+    if (d.bar && d.bar.datasets && d.bar.datasets.length > 0) {{
+      new Chart(barEl, {{
+        type: 'bar',
+        data: d.bar,
+        options: {{
+          responsive: true,
+          maintainAspectRatio: true,
+          plugins: {{
+            legend: {{
+              position: 'bottom',
+              labels: {{ font: {{ size: 10, family: fontFamily }}, boxWidth: 10, color: textD }}
+            }}
+          }},
+          scales: {{
+            x: {{ stacked: true, ticks: {{
+              font: {{ size: 9, family: fontFamily }}, color: textD
+            }} }},
+            y: {{ stacked: true, beginAtZero: true, ticks: {{
+              stepSize: 1, font: {{ size: 9, family: fontFamily }}, color: textD
+            }} }}
+          }}
+        }}
+      }});
+    }} else {{
+      barEl.parentElement.innerHTML +=
+        '<div class="empty" style="margin-top:.5rem">No actions in the last 7 days.</div>';
+    }}
+  }}
+
+  var doEl = document.getElementById('monDonut');
+  if (doEl) {{
+    if (d.donut && d.donut.datasets && d.donut.datasets[0].data.some(function(v) {{ return v > 0; }})) {{
+      new Chart(doEl, {{
+        type: 'doughnut',
+        data: d.donut,
+        options: {{
+          responsive: true,
+          maintainAspectRatio: true,
+          cutout: '62%',
+          plugins: {{
+            legend: {{
+              position: 'bottom',
+              labels: {{ font: {{ size: 10, family: fontFamily }}, boxWidth: 10, color: textD }}
+            }}
+          }}
+        }}
+      }});
+    }} else {{
+      doEl.parentElement.innerHTML +=
+        '<div class="empty" style="margin-top:.5rem">No actions in the last 30 days.</div>';
+    }}
+  }}
+}})();
+</script>"""
+
+    body = cards + charts + live_counters + chart_init
+    return _page("Monitoring", body, refresh=60, pending_count=pending_count, request=request)
+
+
+# ---------------------------------------------------------------------------
 # Server lifecycle
 # ---------------------------------------------------------------------------
 
@@ -2706,6 +3066,7 @@ async def start_metrics_server(
     - POST /ui/docker-hygiene/approve            — Submit approval / rejection
     - GET  /ui/ai-decisions                      — AI decision audit list
     - GET  /ui/ai-decisions/{id}                 — Full detail for one AI decision
+    - GET  /ui/monitoring                        — Controller monitoring (audit trends + live process counters)
 
     Args:
         port: Port to listen on (default 9090).
@@ -2780,6 +3141,7 @@ async def start_metrics_server(
     app.router.add_post("/ui/docker-hygiene/approve", _ui_hygiene_approve_post)
     app.router.add_get("/ui/ai-decisions", _ui_ai_decisions)
     app.router.add_get(r"/ui/ai-decisions/{decision_id:\d+}", _ui_ai_decision_detail)
+    app.router.add_get("/ui/monitoring", _ui_monitoring)
 
     runner = web.AppRunner(app, access_log=None)
     await runner.setup()

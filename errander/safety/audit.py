@@ -245,6 +245,108 @@ class AuditStore:
             })
         return result
 
+    async def get_monitoring_stats(
+        self,
+        daily_days: int = 7,
+        summary_days: int = 30,
+    ) -> dict[str, object]:
+        """Return aggregated stats for the monitoring page.
+
+        Returns a dict with three keys:
+
+        * ``summary`` — totals over the last *summary_days* days
+        * ``daily`` — per-day, per-action-type breakdown over *daily_days* days
+        * ``by_type`` — per-action-type totals over *summary_days* days, sorted by volume
+        """
+        from datetime import timedelta
+
+        db = self._ensure_connected()
+        now = datetime.now(UTC)
+        summary_cutoff = (now - timedelta(days=summary_days)).isoformat()
+        daily_cutoff = (now - timedelta(days=daily_days)).isoformat()
+
+        # 30-day summary totals
+        s_rows = await db.execute_fetchall(
+            """
+            SELECT
+                SUM(CASE WHEN event_type = 'action_completed' THEN 1 ELSE 0 END) AS succeeded,
+                SUM(CASE WHEN event_type = 'action_failed'    THEN 1 ELSE 0 END) AS failed,
+                COUNT(DISTINCT CASE WHEN vm_id IS NOT NULL AND vm_id != '' THEN vm_id END) AS active_vms,
+                COUNT(DISTINCT batch_id) AS total_batches
+            FROM audit_events
+            WHERE action_type IS NOT NULL AND action_type != ''
+              AND timestamp >= ?
+            """,
+            (summary_cutoff,),
+        )
+        s = next(iter(s_rows), None)
+        succeeded = int(s[0] or 0) if s else 0
+        failed = int(s[1] or 0) if s else 0
+        total = succeeded + failed
+        success_rate = round(100.0 * succeeded / total, 1) if total > 0 else 0.0
+        summary: dict[str, object] = {
+            "total_actions": total,
+            "succeeded": succeeded,
+            "failed": failed,
+            "success_rate": success_rate,
+            "active_vms": int(s[2] or 0) if s else 0,
+            "total_batches": int(s[3] or 0) if s else 0,
+        }
+
+        # Daily breakdown (last daily_days days)
+        d_rows = await db.execute_fetchall(
+            """
+            SELECT
+                date(timestamp) AS day,
+                action_type,
+                SUM(CASE WHEN event_type = 'action_completed' THEN 1 ELSE 0 END) AS ok,
+                SUM(CASE WHEN event_type = 'action_failed'    THEN 1 ELSE 0 END) AS fail
+            FROM audit_events
+            WHERE action_type IS NOT NULL AND action_type != ''
+              AND event_type IN ('action_completed', 'action_failed')
+              AND timestamp >= ?
+            GROUP BY day, action_type
+            ORDER BY day, action_type
+            """,
+            (daily_cutoff,),
+        )
+        daily: list[dict[str, object]] = [
+            {
+                "day": str(r[0]),
+                "action_type": str(r[1]),
+                "ok": int(r[2] or 0),
+                "fail": int(r[3] or 0),
+            }
+            for r in d_rows
+        ]
+
+        # Per-type totals (last summary_days days), sorted by volume desc
+        t_rows = await db.execute_fetchall(
+            """
+            SELECT
+                action_type,
+                SUM(CASE WHEN event_type = 'action_completed' THEN 1 ELSE 0 END) AS ok,
+                SUM(CASE WHEN event_type = 'action_failed'    THEN 1 ELSE 0 END) AS fail
+            FROM audit_events
+            WHERE action_type IS NOT NULL AND action_type != ''
+              AND event_type IN ('action_completed', 'action_failed')
+              AND timestamp >= ?
+            GROUP BY action_type
+            ORDER BY COUNT(*) DESC
+            """,
+            (summary_cutoff,),
+        )
+        by_type: list[dict[str, object]] = [
+            {
+                "action_type": str(r[0]),
+                "ok": int(r[1] or 0),
+                "fail": int(r[2] or 0),
+            }
+            for r in t_rows
+        ]
+
+        return {"summary": summary, "daily": daily, "by_type": by_type}
+
     async def count_events(
         self,
         batch_id: str | None = None,

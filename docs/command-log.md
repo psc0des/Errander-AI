@@ -1,5 +1,21 @@
 # Errander-AI Command Log
 
+## Controller Monitoring page — /ui/monitoring (2026-06-05)
+
+```bash
+# Lint changed files
+uv run ruff check errander/safety/audit.py errander/observability/metrics.py
+# Type check changed files
+uv run mypy errander/safety/audit.py errander/observability/metrics.py
+# Full test suite
+uv run pytest --tb=short -q
+# Commit
+git add errander/safety/audit.py errander/observability/metrics.py \
+    STATUS.md tasks/todo.md tasks/lessons.md docs/command-log.md
+git commit -m "feat: add /ui/monitoring — audit DB trends + live process counters with Chart.js"
+git push
+```
+
 ## teardown.sh + doc sync (2026-06-05)
 
 ```bash

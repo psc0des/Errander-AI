@@ -1,5 +1,11 @@
 # Errander-AI — Lessons Learned
 
+## 2026-06-05 — Always cross-check new features against the observability spec before calling them done
+
+When a new observability surface is built, compare it against `docs/OBSERVABILITY.md` before marking complete. That doc is the canonical list of what signals the system is supposed to expose — without the comparison, it's easy to build the "action outcomes" view and miss the approval funnel, safety signals, and duration histograms that are equally important. The monitoring page shipped in two commits because this cross-check wasn't done upfront.
+
+**How to apply:** after implementing any monitoring, metrics, or dashboard feature, read `docs/OBSERVABILITY.md` and verify every row in the built-in table and every "golden rule" bullet is covered.
+
 ## 2026-06-05 — When dict[str, object] is the return type, use isinstance guards — not type: ignore[arg-type]
 
 mypy strict mode won't accept `int(d.get("key", 0))` when the dict type is `dict[str, object]` — the error is `call-overload`, not `arg-type`, so suppression comments are wrong and mypy flags them as unused. The clean pattern: extract to a variable, guard with `isinstance(v, int)`, then use directly. Or write a small `_oint(d, key)` helper at the call site. Never suppress with wrong error codes.

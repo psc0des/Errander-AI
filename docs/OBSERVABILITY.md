@@ -19,6 +19,7 @@ Errander draws a hard line between **what it produces and owns** and **what you 
 | **Audit trail** | B (hands) | *What exactly did the agent do?* | **What changed on infrastructure** | `audit_events` table (SQLite) |
 | **AI decision log** | A (brain) | *Why did the agent recommend this?* | What the LLM was asked + answered | `ai_decisions` table (SQLite) |
 | **`/metrics` endpoint** | B (mostly) | *Is execution healthy / fast / frequent?* | (raw counters — see below) | HTTP `:9090/metrics` |
+| **Monitoring dashboard** | B (mostly) | *How healthy is the fleet over time?* | aggregate view (not per-event) | `GET /ui/monitoring` (web UI) |
 | **Structured JSON logs** | both | *What was the play-by-play / diagnostics?* | nothing — diagnostics, may rotate away | stdout |
 
 **Bring-your-own — external tools you supply and run. Strongly recommended, but NOT part of Errander, tool-agnostic, and never the system of record. They are views/consumers layered on the built-ins.**
@@ -34,7 +35,7 @@ Errander draws a hard line between **what it produces and owns** and **what you 
 The golden rule of which-to-trust:
 
 - **"Did it happen, and what exactly?"** → **audit trail** (built-in). Never Prometheus, never LangSmith, never a log dashboard.
-- **"Is the fleet maintenance healthy in aggregate?"** → **Prometheus** (external view of the built-in `/metrics`).
+- **"Is the fleet maintenance healthy in aggregate?"** → **`/ui/monitoring`** (built-in dashboard — approval funnel, safety signals, action trends, duration averages). Prometheus + Grafana for time-series depth if needed.
 - **"Why did the LLM choose that?"** → **AI decision log** (built-in, always there) or **LangSmith** (external, richer, planned).
 - **"What was the diagnostic play-by-play?"** → **structured logs** (built-in stream) → searchable via **ELK/Loki** (external).
 
@@ -116,6 +117,8 @@ Web UI: `/ui/ai-decisions`, `/ui/ai-decisions/{id}`.
 ## 3. Prometheus metrics — Layer B execution health
 
 The agent **exposes** `/metrics` on its UI port (default `9090`, `ERRANDER_METRICS_PORT`) in Prometheus text format. It does **not** bundle a Prometheus server.
+
+> **Built-in view first:** the **`/ui/monitoring`** dashboard (see §1 above) visualises these same metrics in-process — action trends, approval funnel, safety signals, avg durations — with no external tool required. Prometheus + Grafana add time-series retention and alerting on top of that.
 
 **Install a controller-node Prometheus** (scrapes the agent's own `/metrics`):
 

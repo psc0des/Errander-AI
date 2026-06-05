@@ -312,7 +312,7 @@ All Slack communication is outbound HTTPS. No webhooks, no inbound traffic.
 | Notifications | Slack API | Outbound HTTPS only, reaction polling |
 | Scheduling | APScheduler | Agent owns its own schedule |
 | Audit Trail | SQLite (v1) | PostgreSQL planned for v2 |
-| Observability | Prometheus + Grafana + Web UI | `/metrics`, `/health`, `/ui` on port 9090; Grafana dashboard auto-provisioned |
+| Observability | Built-in dashboard + Prometheus + Grafana | `/ui/monitoring` (built-in: approval funnel, safety signals, action trends, duration averages); `/metrics` Prometheus endpoint; Grafana stack optional for time-series depth |
 | VM Locking | File-based (v1) | Valkey (Redis fork) planned for v2 |
 | Testing | pytest + pytest-asyncio + Playwright | 2507 tests |
 | Linting | ruff | |
@@ -548,9 +548,20 @@ Errander-AI has two layers (see [`docs/AI-ARCHITECTURE.md`](docs/AI-ARCHITECTURE
 
 The key split: **the LLM's reasoning is not a record of what happened to your infrastructure** — a plan can be rejected at approval, and the LLM is deliberately kept out of execution. So the **audit trail is the source of truth for actions**, Prometheus is the source of truth for execution health, and LangSmith (if used) only ever observes Layer A.
 
+### Built-in Monitoring Dashboard
+
+The **`/ui/monitoring`** page is the primary observability surface — no external tools needed. It covers every layer-B signal in one place:
+
+- **Action summary** — 30-day totals, success rate, active VMs, batches run (audit DB)
+- **Approval funnel** — requested / approved / rejected / timed-out with response rate % (audit DB)
+- **Action trends** — 7-day stacked bar + 30-day type breakdown (Chart.js, audit DB)
+- **Safety & health signals** — drift detections, preflight blocks, reboot required, service regressions, SSH anomalies (audit DB, 30d)
+- **Live process counters** — LLM outcomes, action status, SSH errors, agent restarts (Prometheus registry, resets on restart)
+- **Duration averages** — avg batch time, avg approval wait, avg per-action-type (Prometheus histograms)
+
 ### Prometheus Metrics
 
-The agent **exposes** its own metrics on `/metrics` (port 9090, Prometheus text exposition format). It does **not** bundle a Prometheus server — you run that yourself (see below).
+The agent **exposes** raw metrics on `/metrics` (port 9090, Prometheus text exposition format) for external consumption. It does **not** bundle a Prometheus server — the built-in dashboard above is the zero-setup view; Prometheus + Grafana add time-series retention and alerting on top.
 
 | Metric | Type | Description |
 |--------|------|-------------|

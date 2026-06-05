@@ -1,5 +1,17 @@
 # Errander-AI Command Log
 
+## Monitoring gap-fill — approval funnel, safety signals, durations (2026-06-05)
+
+```bash
+uv run ruff check errander/safety/audit.py errander/observability/metrics.py
+uv run mypy errander/safety/audit.py errander/observability/metrics.py
+uv run pytest --tb=short -q
+git add errander/safety/audit.py errander/observability/metrics.py \
+    STATUS.md tasks/todo.md docs/command-log.md
+git commit -m "feat: monitoring gap-fill — approval funnel, safety signals, duration averages"
+git push
+```
+
 ## Controller Monitoring page — /ui/monitoring (2026-06-05)
 
 ```bash

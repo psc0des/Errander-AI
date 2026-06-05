@@ -2699,8 +2699,38 @@ async def _ui_ai_decision_detail(request: web.Request) -> web.Response:
 # Monitoring page helpers
 # ---------------------------------------------------------------------------
 
+def _hist_avg(hist: Histogram) -> float:
+    """Return average observation from a Prometheus histogram (sum / count).
+
+    Returns 0.0 when no observations have been recorded since last restart.
+    """
+    h_sum = h_count = 0.0
+    for mf in hist.collect():
+        for s in mf.samples:
+            if s.name.endswith("_sum"):
+                h_sum += s.value
+            elif s.name.endswith("_count"):
+                h_count += s.value
+    return round(h_sum / h_count, 1) if h_count > 0 else 0.0
+
+
+def _hist_avg_by_label(hist: Histogram, label: str) -> dict[str, float]:
+    """Return per-label average observations from a labeled Prometheus histogram."""
+    sums: dict[str, float] = {}
+    counts: dict[str, float] = {}
+    for mf in hist.collect():
+        for s in mf.samples:
+            if s.name.endswith(("_sum", "_count")):
+                k = s.labels.get(label, "unknown")
+                if s.name.endswith("_sum"):
+                    sums[k] = sums.get(k, 0.0) + s.value
+                else:
+                    counts[k] = counts.get(k, 0.0) + s.value
+    return {k: round(sums.get(k, 0.0) / v, 1) for k, v in counts.items() if v > 0}
+
+
 def _read_prom_counters() -> dict[str, object]:
-    """Read current in-memory Prometheus counter values (since last agent restart).
+    """Read current in-memory Prometheus counter and histogram values.
 
     Reads directly from the registry objects — no HTTP, no text parsing.
     Values reset to zero on agent process restart.
@@ -2728,6 +2758,10 @@ def _read_prom_counters() -> dict[str, object]:
         "ssh_errors_total": int(_total(SSH_ERRORS_TOTAL)),
         "agent_starts": int(_total(AGENT_STARTS_TOTAL)),
         "batches_interrupted": int(_total(BATCHES_INTERRUPTED_TOTAL)),
+        # Histogram averages (wall-clock seconds)
+        "avg_batch_duration_s": _hist_avg(BATCH_DURATION),
+        "avg_action_duration_by_type": _hist_avg_by_label(ACTION_DURATION, "action_type"),
+        "avg_approval_wait_s": _hist_avg(APPROVAL_WAIT),
     }
 
 
@@ -2835,6 +2869,12 @@ async def _ui_monitoring(request: web.Request) -> web.Response:
     by_type_raw = stats.get("by_type", [])
     by_type: list[dict[str, object]] = by_type_raw if isinstance(by_type_raw, list) else []
 
+    approvals_raw = stats.get("approvals", {})
+    apv: dict[str, object] = approvals_raw if isinstance(approvals_raw, dict) else {}
+
+    safety_raw = stats.get("safety", {})
+    saf: dict[str, object] = safety_raw if isinstance(safety_raw, dict) else {}
+
     total = _oint(summary, "total_actions")
     succeeded = _oint(summary, "succeeded")
     failed = _oint(summary, "failed")
@@ -2878,6 +2918,70 @@ async def _ui_monitoring(request: web.Request) -> web.Response:
         + '</div>'
     )
 
+    # Approval funnel cards
+    apv_requested = _oint(apv, "requested")
+    apv_granted   = _oint(apv, "granted")
+    apv_rejected  = _oint(apv, "rejected")
+    apv_timed_out = _oint(apv, "timed_out")
+    apv_rate      = _ofloat(apv, "response_rate")
+    apv_rate_cls = "cg" if apv_rate >= 95 else "ca" if apv_rate >= 80 else "cr"
+    apv_rej_cls  = "cr" if apv_rejected  > 0 else ""
+    apv_tmo_cls  = "cr" if apv_timed_out > 0 else ""
+    approval_cards = (
+        _section("Approval Funnel — 30 Days")
+        + '<div class="cards">'
+        + '<div class="card"><div class="card-lbl">Requested</div>'
+        + f'<div class="card-num">{apv_requested}</div>'
+        + '<div class="card-sub">awaited operator action</div></div>'
+        + f'<div class="card {apv_rate_cls}"><div class="card-lbl">Approved</div>'
+        + f'<div class="card-num {apv_rate_cls}">{apv_granted}</div>'
+        + f'<div class="card-sub">{apv_rate}% response rate</div></div>'
+        + f'<div class="card {apv_rej_cls}"><div class="card-lbl">Rejected</div>'
+        + f'<div class="card-num {apv_rej_cls}">{apv_rejected}</div>'
+        + '<div class="card-sub">operator declined</div></div>'
+        + f'<div class="card {apv_tmo_cls}"><div class="card-lbl">Timed Out</div>'
+        + f'<div class="card-num {apv_tmo_cls}">{apv_timed_out}</div>'
+        + '<div class="card-sub">no response in window</div></div>'
+        + '</div>'
+    )
+
+    # Safety & health signals section (from audit DB, 30 days)
+    def _sig_kv(label: str, val: int, *, warn: bool = True) -> str:
+        color = (
+            "color:var(--red)" if (warn and val > 0)
+            else "color:var(--amber)" if val > 0
+            else "color:var(--green)"
+        )
+        return (
+            f'<div class="prom-kv">'
+            f'<span class="prom-key">{label}</span>'
+            f'<span class="prom-val" style="{color}">{val}</span>'
+            f'</div>'
+        )
+
+    saf_drift      = _oint(saf, "drift_detected")
+    saf_preflight  = _oint(saf, "preflight_blocks")
+    saf_reboot     = _oint(saf, "reboot_required")
+    saf_regression = _oint(saf, "service_regressions")
+    saf_ssh        = _oint(saf, "ssh_anomalies")
+
+    safety_section = (
+        _section("Safety &amp; Health Signals — 30 Days")
+        + '<div class="mon-prom-grid">'
+        + '<div class="chart-wrap">'
+        + '<div class="chart-title">Safety Events</div>'
+        + _sig_kv("Drift detected", saf_drift, warn=False)
+        + _sig_kv("Preflight blocks", saf_preflight, warn=True)
+        + '</div>'
+        + '<div class="chart-wrap">'
+        + '<div class="chart-title">Health Signals</div>'
+        + _sig_kv("Reboot required", saf_reboot, warn=False)
+        + _sig_kv("Service regressions", saf_regression, warn=False)
+        + _sig_kv("SSH login anomalies", saf_ssh, warn=False)
+        + '</div>'
+        + '</div>'
+    )
+
     # Live process counters from Prometheus registry
     prom = _read_prom_counters()
     _ps = prom.get("actions_by_status", {})
@@ -2890,6 +2994,22 @@ async def _ui_monitoring(request: web.Request) -> web.Response:
     agent_starts = _as if isinstance(_as, int) else 0
     _bi = prom.get("batches_interrupted", 0)
     batches_interrupted = _bi if isinstance(_bi, int) else 0
+
+    # Histogram averages
+    _abd = prom.get("avg_batch_duration_s", 0.0)
+    avg_batch_s = _abd if isinstance(_abd, float) else 0.0
+    _aaw = prom.get("avg_approval_wait_s", 0.0)
+    avg_wait_s = _aaw if isinstance(_aaw, float) else 0.0
+    _aat = prom.get("avg_action_duration_by_type", {})
+    avg_by_type: dict[str, float] = _aat if isinstance(_aat, dict) else {}
+
+    def _fmt_dur(seconds: float) -> str:
+        if seconds <= 0:
+            return "—"
+        if seconds < 60:
+            return f"{seconds:.1f} s"
+        m, s = divmod(int(seconds), 60)
+        return f"{m}m {s}s"
 
     llm_kv_html = ""
     for outcome, count in sorted(llm_rows.items()):
@@ -2952,6 +3072,29 @@ async def _ui_monitoring(request: web.Request) -> web.Response:
         + '<span class="prom-val" style="color:var(--text-d);font-size:.68rem">audit DB · 7d / 30d</span></div>'
         + '<div class="prom-kv"><span class="prom-key">Live counters</span>'
         + '<span class="prom-val" style="color:var(--text-d);font-size:.68rem">Prometheus · since restart</span></div>'
+        + '</div>'
+        + '</div>'
+        + '<div class="mon-prom-grid">'
+        + '<div class="chart-wrap">'
+        + '<div class="chart-title">Avg Duration (this restart)</div>'
+        + '<div class="prom-kv"><span class="prom-key">Batch</span>'
+        + f'<span class="prom-val">{_fmt_dur(avg_batch_s)}</span></div>'
+        + '<div class="prom-kv"><span class="prom-key">Approval wait</span>'
+        + f'<span class="prom-val">{_fmt_dur(avg_wait_s)}</span></div>'
+        + '</div>'
+        + '<div class="chart-wrap">'
+        + '<div class="chart-title">Avg per Action Type (this restart)</div>'
+        + (
+            "".join(
+                f'<div class="prom-kv">'
+                f'<span class="prom-key">{_esc(at)}</span>'
+                f'<span class="prom-val">{_fmt_dur(dur)}</span>'
+                f'</div>'
+                for at, dur in sorted(avg_by_type.items())
+            ) or '<div class="prom-kv">'
+                 '<span class="prom-key" style="color:var(--text-d)">no data yet</span>'
+                 '</div>'
+        )
         + '</div>'
         + '</div>'
     )
@@ -3022,7 +3165,7 @@ async def _ui_monitoring(request: web.Request) -> web.Response:
 }})();
 </script>"""
 
-    body = cards + charts + live_counters + chart_init
+    body = cards + approval_cards + charts + safety_section + live_counters + chart_init
     return _page("Monitoring", body, refresh=60, pending_count=pending_count, request=request)
 
 

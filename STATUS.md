@@ -4,6 +4,15 @@
 2026-06-05
 
 ## Current Phase
+**Monitoring page gap-fill — approval funnel, safety signals, duration averages (2026-06-05, COMPLETE).**
+
+Filled three observability gaps in `/ui/monitoring` that were documented in `docs/OBSERVABILITY.md` but not yet surfaced: (1) approval funnel — 4 stat cards showing requested/approved/rejected/timed-out with response rate %; (2) safety & health signals — 30-day counts of drift detections, preflight blocks, reboot required, service regressions, SSH anomalies; (3) performance section — avg batch duration, avg approval wait, and avg per-action-type duration from Prometheus histograms. Page now covers every observability surface except LangSmith (Layer A external tracer) and raw logs (ELK/Loki).
+
+### Files changed (2026-06-05 — monitoring gap-fill)
+- `errander/safety/audit.py` — `get_monitoring_stats()` extended: two new SQL queries (approval funnel + safety signals), two new return keys (`approvals`, `safety`)
+- `errander/observability/metrics.py` — `_hist_avg()` + `_hist_avg_by_label()` helpers, `_read_prom_counters()` extended with histogram averages, `_ui_monitoring()` extended with approval cards, safety section, performance section
+
+## Previous Phase
 **Controller Monitoring page — built-in `/ui/monitoring` with Chart.js visualizations (2026-06-05, COMPLETE).**
 
 Adds a `Monitoring` nav item and `/ui/monitoring` page to the Errander web UI. Two data sources: (1) audit DB aggregate queries for persistent history (30-day summary + 7-day daily breakdown); (2) in-process Prometheus counter reads for live stats since last restart. Charts rendered with Chart.js 4.4 via CDN (agent VM never fetches; operator browser does). No Prometheus+Grafana install required to see metrics — the built-in page replaces them for most operators.

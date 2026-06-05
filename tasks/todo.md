@@ -1,3 +1,12 @@
+## Monitoring page gap-fill — approval funnel, safety signals, durations (2026-06-05, COMPLETE)
+
+- [x] `errander/safety/audit.py` — `get_monitoring_stats()` extended: approval funnel query + safety signals query, two new return keys
+- [x] `errander/observability/metrics.py` — `_hist_avg()` + `_hist_avg_by_label()` helpers; `_read_prom_counters()` adds histogram averages; `_ui_monitoring()` adds approval cards, safety section, performance section
+- [x] 2506 tests passing, mypy clean, ruff clean (pre-existing issues only)
+- [x] `/ui/monitoring` now covers every OBSERVABILITY.md surface except LangSmith + raw logs
+
+---
+
 ## Controller Monitoring page — /ui/monitoring with Chart.js (2026-06-05, COMPLETE)
 
 - [x] `errander/safety/audit.py` — `get_monitoring_stats()`: 30-day summary, 7-day daily, 30-day by-type SQL aggregations

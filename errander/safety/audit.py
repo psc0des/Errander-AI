@@ -345,7 +345,74 @@ class AuditStore:
             for r in t_rows
         ]
 
-        return {"summary": summary, "daily": daily, "by_type": by_type}
+        # Approval funnel (last summary_days days)
+        a_rows = await db.execute_fetchall(
+            """
+            SELECT
+                SUM(CASE WHEN event_type = 'approval_requested' THEN 1 ELSE 0 END) AS requested,
+                SUM(CASE WHEN event_type = 'approval_granted'   THEN 1 ELSE 0 END) AS granted,
+                SUM(CASE WHEN event_type = 'approval_rejected'  THEN 1 ELSE 0 END) AS rejected,
+                SUM(CASE WHEN event_type = 'approval_timeout'   THEN 1 ELSE 0 END) AS timed_out
+            FROM audit_events
+            WHERE event_type IN
+                ('approval_requested','approval_granted','approval_rejected','approval_timeout')
+              AND timestamp >= ?
+            """,
+            (summary_cutoff,),
+        )
+        ar = next(iter(a_rows), None)
+        apv_requested = int(ar[0] or 0) if ar else 0
+        apv_granted   = int(ar[1] or 0) if ar else 0
+        apv_rejected  = int(ar[2] or 0) if ar else 0
+        apv_timed_out = int(ar[3] or 0) if ar else 0
+        apv_responded = apv_granted + apv_rejected
+        apv_rate = round(100.0 * apv_responded / apv_requested, 1) if apv_requested > 0 else 100.0
+        approvals: dict[str, object] = {
+            "requested": apv_requested,
+            "granted": apv_granted,
+            "rejected": apv_rejected,
+            "timed_out": apv_timed_out,
+            "response_rate": apv_rate,
+        }
+
+        # Safety & health signals (last summary_days days)
+        sig_rows = await db.execute_fetchall(
+            """
+            SELECT event_type, COUNT(*) AS cnt
+            FROM audit_events
+            WHERE event_type IN (
+                'drift_detected','drift_kind_changed',
+                'sudo_preflight_failed','target_preflight_failed','disk_gate_blocked',
+                'reboot_required_detected','service_health_regression',
+                'failed_ssh_logins_observed'
+            )
+            AND timestamp >= ?
+            GROUP BY event_type
+            """,
+            (summary_cutoff,),
+        )
+        counts: dict[str, int] = {str(r[0]): int(r[1] or 0) for r in sig_rows}
+        safety: dict[str, object] = {
+            "drift_detected": (
+                counts.get("drift_detected", 0) + counts.get("drift_kind_changed", 0)
+            ),
+            "preflight_blocks": (
+                counts.get("sudo_preflight_failed", 0)
+                + counts.get("target_preflight_failed", 0)
+                + counts.get("disk_gate_blocked", 0)
+            ),
+            "reboot_required":     counts.get("reboot_required_detected", 0),
+            "service_regressions": counts.get("service_health_regression", 0),
+            "ssh_anomalies":       counts.get("failed_ssh_logins_observed", 0),
+        }
+
+        return {
+            "summary": summary,
+            "daily": daily,
+            "by_type": by_type,
+            "approvals": approvals,
+            "safety": safety,
+        }
 
     async def count_events(
         self,

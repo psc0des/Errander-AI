@@ -104,13 +104,23 @@ Same as Linux — follow [SETUP.md Step 5](SETUP.md#step-5--configure-the-agent)
 
 > **configure.sh on Windows:** `configure.sh` runs in **Git Bash**. Open Git Bash and run `bash scripts/configure.sh` from inside the `errander/` folder. Alternatively, create `.env` and `inventory.yaml` manually as shown above.
 
-### Monitoring (Prometheus + Grafana)
+### Monitoring
 
-`scripts/install-prometheus.sh` and `scripts/install-grafana.sh` are Linux Bash scripts — they do not run natively on Windows.
+**Built-in dashboard (works on Windows — no extra install needed):**
 
-The agent still exposes `/metrics` on port 9090 (cross-platform). To monitor a Windows controller, point an existing Prometheus instance at `http://<controller-ip>:9090/metrics`, then point Grafana at that Prometheus. The pre-built dashboard JSON is at `deploy/grafana/dashboards/errander.json` — import it manually into your Grafana instance.
+Once the agent is running, open `http://localhost:9090/ui/monitoring` in your browser. It shows:
+- Action trends (7-day stacked bar + 30-day type breakdown)
+- Approval funnel — requested / approved / rejected / timed-out
+- Safety & health signals — drift detections, preflight blocks, reboot required
+- Live Prometheus counters — LLM outcomes, SSH errors, agent restarts, duration averages
 
-If you want the full automated stack, the simplest path is to run Prometheus + Grafana on a small Linux VM (or WSL2) and scrape the Windows controller's `:9090` endpoint from there.
+This requires no Prometheus or Grafana installation.
+
+**Optional — Prometheus + Grafana (time-series history and alerting):**
+
+`scripts/install-prometheus.sh` and `scripts/install-grafana.sh` are Linux Bash scripts — they do not run natively on Windows. To get the external stack on a Windows controller:
+- Run Prometheus + Grafana on a small Linux VM (or WSL2) and point them at `http://<controller-ip>:9090/metrics`
+- Or import the pre-built dashboard JSON at `deploy/grafana/dashboards/errander.json` manually into an existing Grafana instance
 
 ---
 
@@ -193,7 +203,10 @@ C:\Users\<you>\errander\.venv\Scripts\python.exe -m errander ^
 
 **Access the web UI** once the service is running:
 ```
-http://localhost:9090/ui
+http://localhost:9090/ui              ← Fleet dashboard
+http://localhost:9090/ui/monitoring   ← Built-in monitoring dashboard
+http://localhost:9090/ui/approvals    ← Approve / reject pending plans
+http://localhost:9090/ui/batches      ← Full batch history
 ```
 
 ---

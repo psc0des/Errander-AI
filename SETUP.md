@@ -502,494 +502,41 @@ Approve the plan in `#errander-approvals` with ✅. The wrapper captures pre/pos
 
 ---
 
-## Steps 4–6 — Quick path (recommended)
 
-Once you have your LLM endpoint URL, model name, and API key ready, run the interactive setup script from inside the `errander/` directory:
+## Step 4 — Set up an LLM *(Master VM)*
+
+`configure.sh` (Step 5) will prompt you for three values: your **Endpoint URL**, **Model name**, and **API key**. Have them ready before the next step.
+
+> **Where do I find these?** → [Appendix A: LLM provider reference](#appendix-a-llm-provider-reference) — exact endpoint URLs, model names, and key locations for Azure AI Foundry, OpenAI, Groq, Ollama, and vLLM.
+
+The LLM is optional — the agent falls back to built-in hardcoded logic if no LLM is configured.
+
+---
+
+## Step 5 — Configure the agent
+
+> **Want Docker hygiene or service restart?** Install wrapper scripts first (see Optional sections above), then come back here.
+
+Run the interactive setup script from inside the `errander/` directory:
 
 **Linux:**
 ```bash
 bash scripts/configure.sh
 ```
 
-It will prompt you for LLM credentials, target VMs, verify your SSH key path (create it first in Step 2 if you haven't), optional Slack — then write `.env` and `inventory.yaml`, verify the LLM connection, and optionally pin SSH host keys (recommended). Skip to [Step 6 — Verify everything](#step-6--verify-everything) when done.
+`configure.sh` prompts for LLM credentials, SSH key path, target VMs, and optional Slack — then writes `.env` and `inventory.yaml`, tests the LLM connection, and optionally pins SSH host keys. Skip to [Step 6 — Verify everything](#step-6--verify-everything) when done.
 
-> **Want Docker hygiene or service restart?** These require wrapper scripts installed on each target VM before `configure.sh` runs. Follow the optional sections first, then come back here:
-> - [Optional: Docker hygiene](#optional-docker-hygiene) — install `errander-docker-assess-v2` and `errander-docker-remove-v2` wrappers
-> - [Optional: Service restart](#optional-service-restart) — install `errander-systemctl-restart` wrapper and configure the allowlist
+**After configure.sh, set these in `.env` if needed:**
 
-> **Prefer to configure manually?** Follow Steps 4–6 below instead.
-
----
-
-## Step 4 — Set up an LLM *(Master VM)*
-
-The LLM powers maintenance decisions and report generation. It is **optional** — the agent falls back to built-in hardcoded logic if no LLM is configured and will never block on LLM availability.
-
-There are two fundamentally different approaches:
-
-| | **Option A — Cloud API** | **Option B — Self-hosted** |
+| Variable | Default | When to change |
 |---|---|---|
-| **Where it runs** | Provider's servers (OpenAI, Azure, Groq…) | Your own VM |
-| **Setup effort** | Minutes — just an API key | More work — install and run a model |
-| **Data privacy** | Leaves your network (except Azure Foundry, which stays in your Azure tenant) | Never leaves your network |
-| **Cost** | Pay per token (Groq has a free tier) | Free after setup (hardware cost only) |
-| **Performance** | Fast | Depends on hardware (see below) |
-
-**Pick Option A if:** you have a cloud account or just want the fastest setup.
-**Pick Option B if:** data must stay on your own infrastructure.
-
-If you pick Option B, choose the right tool:
-
-| | **Ollama** | **vLLM** |
-|---|---|---|
-| **Hardware** | CPU or GPU — any machine | NVIDIA GPU required (16 GB VRAM) |
-| **Where it runs** | Any VM, including Master VM | Dedicated GPU VM recommended |
-| **Setup** | Single install command | Docker + NVIDIA Container Toolkit |
-| **Performance** | Fast on GPU, slow on CPU-only | High throughput, production-grade |
-| **Best for** | Getting started, dev/testing | Production self-hosted deployment |
-
-Pick **Ollama** if you want the simpler path — it works on CPU or GPU, and you can run it on the Master VM or any other machine.
-Pick **vLLM** if you have a dedicated GPU VM and need production-grade throughput.
-
-Each option below gives you three values (`BASE_URL`, `MODEL`, `API_KEY`) and a verify command.
-Note them down — you'll paste them into your `.env` in Step 5.
-
-> For full provider config reference, see `docs/LLM-PROVIDERS.md`.
-
----
-
-### Option A — Cloud API *(no extra infrastructure)*
-
-**All commands run on the Master VM.**
-
-#### Azure AI Foundry *(if you have an Azure subscription)*
-
-Azure AI Foundry has two URL formats depending on how your resource was created:
-
-**New Foundry project endpoint** (Azure AI Foundry portal — recommended):
-1. Open your project in [Azure AI Foundry portal](https://ai.azure.com)
-2. Go to **Settings → API keys** — copy a key
-3. The endpoint is shown on the project overview page
-
-```
-BASE_URL  = https://<hub>.services.ai.azure.com/api/projects/<project>/v1/   ← trailing / required
-MODEL     = <your-deployment-name>                                              ← name you gave the deployment
-API_KEY   = <key from project Settings → API keys>
-```
-
-**Classic Azure OpenAI resource** (Azure portal → Azure OpenAI service):
-1. Go to your **Azure OpenAI resource** → **Keys and Endpoint**
-2. Copy the **Endpoint URL** and one of the **Keys**
-
-```
-BASE_URL  = https://<your-resource>.cognitiveservices.azure.com/openai/v1/   ← trailing / required
-MODEL     = <your-deployment-name>                                             ← deployment name, not model ID
-API_KEY   = <key from Keys and Endpoint blade>
-```
-
-#### OpenAI
-
-Your three values:
-```
-BASE_URL  = https://api.openai.com/v1
-MODEL     = gpt-4o-mini
-API_KEY   = sk-...
-```
-
-#### Groq *(free tier available at console.groq.com)*
-
-Your three values:
-```
-BASE_URL  = https://api.groq.com/openai/v1
-MODEL     = llama-3.3-70b-versatile
-API_KEY   = gsk_...
-```
-
-**Verify** — test the connection before moving on *(Master VM, inside `errander/` directory)*:
-```bash
-ERRANDER_LLM_BASE_URL=<your-base-url> \
-ERRANDER_LLM_MODEL=<your-model> \
-ERRANDER_LLM_API_KEY=<your-key> \
-uv run python -m errander --check-llm
-# Expected: Status: OK, Latency: <Xms>, Response: 'OK'
-```
-
----
-
-### Option B — Self-hosted
-
-#### B1 — Ollama *(runs on any VM — CPU or GPU)*
-
-Ollama is the easiest self-hosted path. It runs on the Master VM or any other machine,
-uses whatever hardware is available (CPU or NVIDIA/AMD/Apple GPU), and needs no Docker setup.
-Needs 8 GB+ RAM minimum. Inference is GPU-fast when a GPU is present, CPU-slow without one.
-
-**On the Master VM:**
-
-```bash
-# Install Ollama
-curl -fsSL https://ollama.com/install.sh | sh
-
-# Pull a model (~5 GB download)
-ollama pull qwen3:8b
-
-# Ollama starts automatically and listens on port 11434
-```
-
-Your three values:
-```
-BASE_URL  = http://localhost:11434/v1
-MODEL     = qwen3:8b
-API_KEY   = ollama
-```
-
-**Verify** *(Master VM)*:
-```bash
-ERRANDER_LLM_BASE_URL=http://localhost:11434/v1 \
-ERRANDER_LLM_MODEL=qwen3:8b \
-ERRANDER_LLM_API_KEY=ollama \
-uv run python -m errander --check-llm
-# Expected: Status: OK, Latency: <Xms>, Response: 'OK'
-```
-
----
-
-#### B2 — vLLM *(GPU, dedicated VM)*
-
-Requires a separate Linux VM with an NVIDIA GPU.
-Recommended hardware: Tesla T4, 16 GB VRAM, 4 vCPUs, 16 GB RAM.
-
-**On the GPU VM** *(not the Master VM — this is a separate dedicated machine)*:
-
-```bash
-# Install Docker
-curl -fsSL https://get.docker.com | sh
-
-# Install NVIDIA Container Toolkit
-distribution=$(. /etc/os-release; echo $ID$VERSION_ID)
-curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey \
-  | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
-curl -sL "https://nvidia.github.io/libnvidia-container/$distribution/libnvidia-container.list" \
-  | sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' \
-  | sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
-sudo apt-get update && sudo apt-get install -y nvidia-container-toolkit
-sudo nvidia-ctk runtime configure --runtime=docker
-sudo systemctl restart docker
-
-# Verify GPU is visible to Docker
-docker run --rm --gpus all nvidia/cuda:12.0-base-ubuntu20.04 nvidia-smi
-```
-
-```bash
-# Start vLLM (from your cloned repo on the GPU VM)
-cd errander/deploy/vllm
-cp .env.example .env
-
-sudo mkdir -p /opt/vllm/model-cache
-sudo chown $USER /opt/vllm/model-cache
-
-# First run downloads ~5 GB of model weights (5–10 min)
-docker compose up -d
-docker compose logs -f
-# Wait for: "Application startup complete"
-```
-
-Your three values *(on the Master VM)*:
-```
-BASE_URL  = http://<gpu-vm-private-ip>:8000/v1
-MODEL     = Qwen/Qwen3-8B-AWQ
-API_KEY   = (leave blank — unauthenticated vLLM needs no key)
-```
-
-**Verify** *(Master VM)*:
-```bash
-ERRANDER_LLM_BASE_URL=http://<gpu-vm-private-ip>:8000/v1 \
-ERRANDER_LLM_MODEL=Qwen/Qwen3-8B-AWQ \
-uv run python -m errander --check-llm
-# Expected: Status: OK, Latency: <Xms>, Response: 'OK'
-```
-
----
-
-## Step 5 — Configure the agent
-
-### Create `.env`  *(Master VM)*
-
-Inside the `errander/` directory. Paste the `BASE_URL`, `MODEL`, and `API_KEY` values you noted in Step 4.
-
-**Linux:**
-```bash
-cat > .env << 'EOF'
-# LLM — paste the values from whichever Step 4 option you chose
-ERRANDER_LLM_BASE_URL=<base-url-from-step-4>
-ERRANDER_LLM_MODEL=<model-from-step-4>
-ERRANDER_LLM_API_KEY=<api-key-from-step-4>
-
-ERRANDER_AUDIT_DB_URL=errander.sqlite
-
-# Inventory path (used by the web UI in live mode)
-ERRANDER_INVENTORY_PATH=inventory.yaml
-
-# Web UI auth — change all three before exposing to a network
-ERRANDER_UI_USERNAME=admin
-ERRANDER_UI_PASSWORD=changeme
-ERRANDER_UI_SECRET=change-this-to-a-random-32-char-string
-
-# Web UI data mode: "fixture" (demo/default) or "live" (real backend stores)
-# Set to "live" when running against real VMs
-ERRANDER_UI_DATA_MODE=fixture
-
-# Slack — optional (see "Slack notifications" below; remove # to enable)
-# ERRANDER_SLACK_BOT_TOKEN=xoxb-your-token-here
-# ERRANDER_SLACK_CHANNEL_ID=C0123456789
-
-# Signed-URL HMAC secret — required for docker_hygiene web approval (v1.1).
-# Generate with: head -c 32 /dev/urandom | base64
-# ERRANDER_SIGNING_SECRET=paste-base64-output-here
-
-# Base URL for agent VM web UI — used to build signed web-approval URLs
-# in Slack messages (docker_hygiene). Empty = web URL omitted from Slack.
-# ERRANDER_WEB_BASE_URL=http://10.0.0.5:9090
-
-# SSH host key verification
-# Run --bootstrap-known-hosts <env> to pin host keys, then set this to true
-ERRANDER_SSH_STRICT_HOST_KEYS=false
-# ERRANDER_SSH_KNOWN_HOSTS=~/.ssh/errander_known_hosts  # set automatically by --bootstrap-known-hosts
-
-# LangSmith — optional, Layer A tracing only (dev/staging).
-# Sends Layer-A prompt contents off-network to LangChain cloud — do NOT enable in no-egress prod.
-# Sign up at https://smith.langchain.com, create a project, copy your API key.
-# LANGCHAIN_TRACING_V2=true
-# LANGCHAIN_API_KEY=lsv2_pt_...
-# LANGCHAIN_PROJECT=errander-ai
-EOF
-```
-
-> Never commit `.env` — it is already in `.gitignore`.
-
-### Create your inventory
-
-Copy the example and edit it:
-```bash
-cp example/inventory.yaml inventory.yaml
-```
-
-Minimal example for a single dev VM:
-
-```yaml
-environments:
-  dev:
-    ssh_user: errander
-    ssh_key_path: ~/.ssh/errander_prod
-    approval_policy: relaxed
-    maintenance_window: "08:00-20:00"
-    maintenance_days: [monday, tuesday, wednesday, thursday, friday]
-    maintenance_timezone: UTC
-    targets:
-      - host: 192.168.1.10
-        name: dev-vm-01
-        os_family: ubuntu
-```
-
-Optionally copy and edit settings:
-```bash
-cp example/settings.yaml settings.yaml
-```
-
-### Web UI
-
-The agent exposes a web UI at `http://<master-vm-ip>:9090/ui` (port 9090 — see Prerequisites for NSG setup). The `ERRANDER_UI_USERNAME` / `ERRANDER_UI_PASSWORD` env vars in the `.env` template above enable HTTP Basic Auth.
-
-> **Change all three UI secrets** — `ERRANDER_UI_PASSWORD` and `ERRANDER_UI_SECRET` are placeholders. Set both to unique values in `.env` before exposing the UI on any network. `ERRANDER_UI_SECRET` signs the 8-hour session cookie; if left as default, any attacker who knows the default can forge a session.
-
-#### Data mode: fixture vs live
-
-| `ERRANDER_UI_DATA_MODE` | Behaviour |
-|---|---|
-| `fixture` (default) | Shows realistic demo data — safe for demos and CI. No real stores needed. |
-| `live` | Shows real data from your AuditStore, inventory, and ApprovalManager. Missing stores render "Unavailable" — never shows fake data. |
-
-Set `ERRANDER_UI_DATA_MODE=live` in `.env` when running against real VMs. Also set `ERRANDER_INVENTORY_PATH` to the path of your `inventory.yaml` so the web UI can read VM identity.
-
-The UI covers:
-- `/ui/` — batch run history, event log, pending approvals
-- `/ui/monitoring` — **built-in monitoring dashboard**: action trends, approval funnel, safety signals, duration averages, live Prometheus counters (no external tools needed)
-- `/ui/approvals` — approve or reject pending maintenance plans (replaces Slack when no token is set)
-- `/ui/settings` — change LLM/approval settings at runtime (no restart required)
-- `/ui/inventory` — disable YAML VMs or add ad-hoc VMs before the next run
-- `/ui/ai-decisions` — AI decision log (LLM calls, outcomes, latencies)
-
-Settings changed via the UI are stored in SQLite. Precedence chain:
-```
-env var  >  DB (UI)  >  settings.yaml  >  built-in default
-```
-
-### Slack notifications *(optional)*
-
-> **You can skip this section entirely.** When no Slack token is configured, the agent uses **web UI approval mode**: maintenance plans that require approval appear at `http://<master-vm-ip>:9090/ui/approvals`. All other functionality (scheduling, SSH, audit trail, metrics) is unaffected.
->
-> Come back here when you want Slack notifications and mobile approval reactions.
-
-To enable Slack:
-
-1. Go to [api.slack.com/apps](https://api.slack.com/apps) → **Create New App** → **From scratch**
-2. Name it `Errander-AI`, select your workspace
-3. Under **OAuth & Permissions** → **Bot Token Scopes**, add:
-   - `chat:write` — post messages
-   - `reactions:read` — poll for ✅/❌ reactions
-4. Click **Install to Workspace** → copy the **Bot User OAuth Token** (`xoxb-...`)
-5. Create a Slack channel `#errander-approvals` and invite the bot to it
-6. Copy the **Channel ID** — right-click the channel → View channel details → copy the ID at the bottom (starts with `C`)
-
-Then **uncomment and fill in** the Slack lines in your `.env`:
-```
-ERRANDER_SLACK_BOT_TOKEN=xoxb-your-token-here
-ERRANDER_SLACK_CHANNEL_ID=C0123456789
-```
-
-### Prometheus metrics *(optional)*
-
-> **Two different Prometheus relationships — don't confuse them.** This section is **Errander → Prometheus**: the agent *reads* target-VM metrics from a Prometheus *you already run*. The separate [Monitoring the agent](#monitoring-the-agent-with-prometheus-optional) section is **Prometheus → Errander**: a Prometheus on the controller that *scrapes the agent itself*.
-
-> **Skip if you don't have Prometheus.** The agent runs fully without it. Prometheus adds VM CPU, memory, and disk metrics to the `--ask` fleet analysis and daily probe digest.
-
-If you have a Prometheus instance scraping your VMs via `node_exporter`:
-
-```
-ERRANDER_PROMETHEUS_BASE_URL=http://<prometheus-host>:9090
-```
-
-Add this to your `.env`. Leave it blank or omit it entirely to disable.
-
-**Per-environment override:** If each environment has its own Prometheus cluster, set `prometheus_url:` under the environment block in `inventory.yaml`. The env-level value takes priority over the global `.env` setting:
-
-```yaml
-# inventory.yaml
-environments:
-  production:
-    prometheus_url: http://10.0.1.100:9090   # overrides ERRANDER_PROMETHEUS_BASE_URL
-  staging:
-    # no prometheus_url → uses global ERRANDER_PROMETHEUS_BASE_URL
-```
-
-### Monitoring stack: Prometheus + Grafana *(optional)*
-
-> **Built-in first.** The web UI at `/ui/monitoring` already shows action trends, approval funnel, safety signals, and duration averages with no external tools. Prometheus + Grafana add **time-series retention** and **alerting** on top — useful if you want historical charts past 30 days or paging on error rates.
-
-> **This is the reverse direction from the section above.** Here Prometheus running **on the controller node** scrapes the agent's own `/metrics` (action counts, durations, SSH errors, LLM outcomes, approval waits), and Grafana visualises it — monitoring *Errander itself*, not your target VMs.
-
-`bootstrap.sh` prompts for both during Step A. To install them at any time afterwards:
-
-```bash
-sudo bash scripts/install-prometheus.sh   # Prometheus on :9091
-sudo bash scripts/install-grafana.sh      # Grafana on :3000 with pre-built dashboard
-```
-
-**What you get:**
-- Prometheus scrapes `/metrics` every 15 s, listens on **:9091**
-- Grafana is pre-provisioned with the **Errander-AI Fleet Operations** dashboard (no manual setup) — action success rates, batch durations, LLM health, SSH errors, approval wait times
-- Admin credentials printed once by `install-grafana.sh` — change them after first login
-
-**Access via SSH tunnel** (no firewall rules needed):
-```bash
-ssh -L 9091:localhost:9091 -L 3000:localhost:3000 <user>@<controller-ip>
-```
-Then open `http://localhost:3000` (Grafana) or `http://localhost:9091/targets` (Prometheus).
-
-```bash
-# Override defaults if needed:
-PROM_PORT=9091 AGENT_METRICS_PORT=9090 PROM_VERSION=2.53.2 bash scripts/install-prometheus.sh
-GF_PORT=3000 bash scripts/install-grafana.sh
-```
-
-### LangSmith tracing *(optional — Layer A only, dev/staging)*
-
-> **Skip for production.** LangSmith sends Layer-A prompt contents (VM hostnames, log excerpts, package lists) to LangChain's cloud. Enable it in dev/staging for debugging; never in a no-egress prod deployment. The built-in AI decision log (`/ui/ai-decisions`) is always-on and in-network — it covers the same reasoning record without egress.
-
-> **Layer A only.** LangSmith must never be wired into the Layer B execution path. It observes reasoning; it never participates in execution. See [`docs/OBSERVABILITY.md §4`](docs/OBSERVABILITY.md).
-
-LangSmith attaches to the LangGraph decision engine with **no code changes** — just three env vars. Because the LLM calls are currently single-shot (not a tool-using loop), the most valuable panels are **Traces** and **Run Types** (the node/edge execution path). LLM Calls is redundant with Prometheus; the Tools panel is empty until the investigation agent (Plan A) is built.
-
-**Setup:**
-1. Sign up at [smith.langchain.com](https://smith.langchain.com) and create a project (e.g. `errander-ai`).
-2. Copy your API key from Settings → API Keys.
-3. Add to `.env`:
-
-```bash
-LANGCHAIN_TRACING_V2=true
-LANGCHAIN_API_KEY=lsv2_pt_...       # your LangSmith API key
-LANGCHAIN_PROJECT=errander-ai       # your LangSmith project name
-```
-
-4. Restart the agent. Traces will appear in the LangSmith UI within seconds of the next batch or `--ask` run.
-
-**To disable:** remove the three vars from `.env` (or set `LANGCHAIN_TRACING_V2=false`) and restart. No code change needed.
-
-> **No code wiring needed.** LangGraph auto-detects `LANGCHAIN_TRACING_V2=true` at startup and registers a trace callback. Nothing inside Errander needs to change.
-
-### ELK / Elasticsearch log aggregation *(optional)*
-
-> **Skip if you don't use ELK.** Without it the agent reads `journalctl` directly from each VM via SSH. ELK adds aggregated log error counts and error summaries to the probe digest and `--ask` analysis.
-
-#### Check if auth is required
-
-```bash
-curl http://<elasticsearch-host>:9200/_cluster/health
-```
-
-- **Returns JSON** — no auth required, skip the API key steps below and leave `ERRANDER_ELK_API_KEY` blank.
-- **Returns 401** — security is enabled, follow the steps below to create an API key.
-
-#### Create a scoped API key (if auth is required)
-
-First, find your `elastic` user password — check your docker-compose file or the container's first-startup logs:
-
-```bash
-docker logs <elasticsearch-container> 2>&1 | grep -i password
-# or
-grep -i elastic_password /path/to/docker-compose.yml
-```
-
-Then create a read-only API key scoped to Errander:
-
-```bash
-curl -u elastic:<password> -X POST http://<elasticsearch-host>:9200/_security/api_key \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "errander-ai",
-    "role_descriptors": {
-      "errander": {
-        "cluster": ["monitor"],
-        "indices": [{"names": ["*"], "privileges": ["read"]}]
-      }
-    }
-  }'
-```
-
-Copy the `encoded` field from the response — that is your API key.
-
-#### Add to `.env`
-
-```
-ERRANDER_ELK_BASE_URL=http://<elasticsearch-host>:9200
-ERRANDER_ELK_API_KEY=<encoded value from above>   # omit entirely if no auth required
-ERRANDER_ELK_INDEX_PATTERN=filebeat-*,logstash-*  # default; change if needed
-```
-
-Add these to your `.env`. Leave `ERRANDER_ELK_BASE_URL` blank or omit it to disable.
-
-**Per-environment override:** Each ELK field can be overridden independently in `inventory.yaml`. Fields not set in the env block fall back to the global `.env` values:
-
-```yaml
-# inventory.yaml
-environments:
-  production:
-    elk_url: http://10.0.1.101:9200          # overrides ERRANDER_ELK_BASE_URL
-    elk_index_pattern: prod-logs-*           # overrides ERRANDER_ELK_INDEX_PATTERN
-    # elk_api_key not set → uses global ERRANDER_ELK_API_KEY
-  staging:
-    # no elk_* → all use global .env values
-```
+| `ERRANDER_UI_PASSWORD` | `errander` | Before any network exposure |
+| `ERRANDER_UI_SECRET` | dev default | Before any network exposure — signs session cookies |
+| `ERRANDER_UI_DATA_MODE` | `fixture` | Set to `live` when running against real VMs |
+| `ERRANDER_SIGNING_SECRET` | unset | Required for docker_hygiene web approval |
+| `ERRANDER_WEB_BASE_URL` | unset | e.g. `http://10.0.0.5:9090` — enables signed approval URL in Slack |
+
+> **Full reference** (complete `.env` template, web UI, Slack, Prometheus, LangSmith, ELK) → [Appendix B: Agent configuration reference](#appendix-b-agent-configuration-reference)
 
 ---
 
@@ -1302,4 +849,429 @@ uv run pytest
 # Lint and type-check
 uv run ruff check .
 uv run mypy .
+```
+
+---
+
+## Appendix A: LLM provider reference
+
+Endpoint URL, model name, and API key for each supported provider. You will be prompted for these by `configure.sh` (Step 5). For deeper per-provider config options see `docs/LLM-PROVIDERS.md`.
+
+The LLM is **optional** — the agent falls back to built-in hardcoded logic if no LLM is configured.
+
+There are two fundamentally different approaches:
+
+| | **Option A — Cloud API** | **Option B — Self-hosted** |
+|---|---|---|
+| **Where it runs** | Provider's servers (OpenAI, Azure, Groq…) | Your own VM |
+| **Setup effort** | Minutes — just an API key | More work — install and run a model |
+| **Data privacy** | Leaves your network (except Azure Foundry, which stays in your Azure tenant) | Never leaves your network |
+| **Cost** | Pay per token (Groq has a free tier) | Free after setup (hardware cost only) |
+| **Performance** | Fast | Depends on hardware (see below) |
+
+**Pick Option A if:** you have a cloud account or just want the fastest setup.
+**Pick Option B if:** data must stay on your own infrastructure.
+
+If you pick Option B, choose the right tool:
+
+| | **Ollama** | **vLLM** |
+|---|---|---|
+| **Hardware** | CPU or GPU — any machine | NVIDIA GPU required (16 GB VRAM) |
+| **Where it runs** | Any VM, including Master VM | Dedicated GPU VM recommended |
+| **Setup** | Single install command | Docker + NVIDIA Container Toolkit |
+| **Performance** | Fast on GPU, slow on CPU-only | High throughput, production-grade |
+| **Best for** | Getting started, dev/testing | Production self-hosted deployment |
+
+Pick **Ollama** if you want the simpler path — it works on CPU or GPU, and you can run it on the Master VM or any other machine.
+Pick **vLLM** if you have a dedicated GPU VM and need production-grade throughput.
+
+---
+
+### Option A — Cloud API *(no extra infrastructure)*
+
+**All commands run on the Master VM.**
+
+#### Azure AI Foundry *(if you have an Azure subscription)*
+
+Azure AI Foundry has two URL formats depending on how your resource was created:
+
+**New Foundry project endpoint** (Azure AI Foundry portal — recommended):
+1. Open your project in [Azure AI Foundry portal](https://ai.azure.com)
+2. Go to **Settings → API keys** — copy a key
+3. The endpoint is shown on the project overview page
+
+```
+BASE_URL  = https://<hub>.services.ai.azure.com/api/projects/<project>/v1/   ← trailing / required
+MODEL     = <your-deployment-name>                                              ← name you gave the deployment
+API_KEY   = <key from project Settings → API keys>
+```
+
+**Classic Azure OpenAI resource** (Azure portal → Azure OpenAI service):
+1. Go to your **Azure OpenAI resource** → **Keys and Endpoint**
+2. Copy the **Endpoint URL** and one of the **Keys**
+
+```
+BASE_URL  = https://<your-resource>.cognitiveservices.azure.com/openai/v1/   ← trailing / required
+MODEL     = <your-deployment-name>                                             ← deployment name, not model ID
+API_KEY   = <key from Keys and Endpoint blade>
+```
+
+#### OpenAI
+
+Your three values:
+```
+BASE_URL  = https://api.openai.com/v1
+MODEL     = gpt-4o-mini
+API_KEY   = sk-...
+```
+
+#### Groq *(free tier available at console.groq.com)*
+
+Your three values:
+```
+BASE_URL  = https://api.groq.com/openai/v1
+MODEL     = llama-3.3-70b-versatile
+API_KEY   = gsk_...
+```
+
+**Verify** — test the connection *(Master VM, inside `errander/` directory)*:
+```bash
+ERRANDER_LLM_BASE_URL=<your-base-url> \
+ERRANDER_LLM_MODEL=<your-model> \
+ERRANDER_LLM_API_KEY=<your-key> \
+uv run python -m errander --check-llm
+# Expected: Status: OK, Latency: <Xms>, Response: 'OK'
+```
+
+---
+
+### Option B — Self-hosted
+
+#### B1 — Ollama *(runs on any VM — CPU or GPU)*
+
+Ollama is the easiest self-hosted path. It runs on the Master VM or any other machine,
+uses whatever hardware is available (CPU or NVIDIA/AMD/Apple GPU), and needs no Docker setup.
+Needs 8 GB+ RAM minimum. Inference is GPU-fast when a GPU is present, CPU-slow without one.
+
+**On the Master VM:**
+
+```bash
+# Install Ollama
+curl -fsSL https://ollama.com/install.sh | sh
+
+# Pull a model (~5 GB download)
+ollama pull qwen3:8b
+
+# Ollama starts automatically and listens on port 11434
+```
+
+Your three values:
+```
+BASE_URL  = http://localhost:11434/v1
+MODEL     = qwen3:8b
+API_KEY   = ollama
+```
+
+**Verify** *(Master VM)*:
+```bash
+ERRANDER_LLM_BASE_URL=http://localhost:11434/v1 \
+ERRANDER_LLM_MODEL=qwen3:8b \
+ERRANDER_LLM_API_KEY=ollama \
+uv run python -m errander --check-llm
+# Expected: Status: OK, Latency: <Xms>, Response: 'OK'
+```
+
+---
+
+#### B2 — vLLM *(GPU, dedicated VM)*
+
+Requires a separate Linux VM with an NVIDIA GPU.
+Recommended hardware: Tesla T4, 16 GB VRAM, 4 vCPUs, 16 GB RAM.
+
+**On the GPU VM** *(not the Master VM — this is a separate dedicated machine)*:
+
+```bash
+# Install Docker
+curl -fsSL https://get.docker.com | sh
+
+# Install NVIDIA Container Toolkit
+distribution=$(. /etc/os-release; echo $ID$VERSION_ID)
+curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey \
+  | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
+curl -sL "https://nvidia.github.io/libnvidia-container/$distribution/libnvidia-container.list" \
+  | sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' \
+  | sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
+sudo apt-get update && sudo apt-get install -y nvidia-container-toolkit
+sudo nvidia-ctk runtime configure --runtime=docker
+sudo systemctl restart docker
+
+# Verify GPU is visible to Docker
+docker run --rm --gpus all nvidia/cuda:12.0-base-ubuntu20.04 nvidia-smi
+```
+
+```bash
+# Start vLLM (from your cloned repo on the GPU VM)
+cd errander/deploy/vllm
+cp .env.example .env
+
+sudo mkdir -p /opt/vllm/model-cache
+sudo chown $USER /opt/vllm/model-cache
+
+# First run downloads ~5 GB of model weights (5–10 min)
+docker compose up -d
+docker compose logs -f
+# Wait for: "Application startup complete"
+```
+
+Your three values *(on the Master VM)*:
+```
+BASE_URL  = http://<gpu-vm-private-ip>:8000/v1
+MODEL     = Qwen/Qwen3-8B-AWQ
+API_KEY   = (leave blank — unauthenticated vLLM needs no key)
+```
+
+**Verify** *(Master VM)*:
+```bash
+ERRANDER_LLM_BASE_URL=http://<gpu-vm-private-ip>:8000/v1 \
+ERRANDER_LLM_MODEL=Qwen/Qwen3-8B-AWQ \
+uv run python -m errander --check-llm
+# Expected: Status: OK, Latency: <Xms>, Response: 'OK'
+```
+
+---
+
+## Appendix B: Agent configuration reference
+
+Full `.env` template and optional service configuration. Use this if you prefer to configure
+manually instead of using `configure.sh`, or to set options `configure.sh` does not cover
+(web UI auth, LangSmith, ELK, Prometheus).
+
+### Create `.env` manually *(Master VM)*
+
+Inside the `errander/` directory:
+
+```bash
+cat > .env << 'EOF'
+# LLM — paste the values from Appendix A
+ERRANDER_LLM_BASE_URL=<base-url>
+ERRANDER_LLM_MODEL=<model>
+ERRANDER_LLM_API_KEY=<api-key>
+
+ERRANDER_AUDIT_DB_URL=errander.sqlite
+
+# Inventory path (used by the web UI in live mode)
+ERRANDER_INVENTORY_PATH=inventory.yaml
+
+# Web UI auth — change all three before exposing to a network
+ERRANDER_UI_USERNAME=admin
+ERRANDER_UI_PASSWORD=changeme
+ERRANDER_UI_SECRET=change-this-to-a-random-32-char-string
+
+# Web UI data mode: "fixture" (demo/default) or "live" (real backend stores)
+# Set to "live" when running against real VMs
+ERRANDER_UI_DATA_MODE=fixture
+
+# Slack — optional (see "Slack notifications" below; remove # to enable)
+# ERRANDER_SLACK_BOT_TOKEN=xoxb-your-token-here
+# ERRANDER_SLACK_CHANNEL_ID=C0123456789
+
+# Signed-URL HMAC secret — required for docker_hygiene web approval (v1.1).
+# Generate with: head -c 32 /dev/urandom | base64
+# ERRANDER_SIGNING_SECRET=paste-base64-output-here
+
+# Base URL for agent VM web UI — used to build signed web-approval URLs
+# in Slack messages (docker_hygiene). Empty = web URL omitted from Slack.
+# ERRANDER_WEB_BASE_URL=http://10.0.0.5:9090
+
+# SSH host key verification
+# Run --bootstrap-known-hosts <env> to pin host keys, then set this to true
+ERRANDER_SSH_STRICT_HOST_KEYS=false
+# ERRANDER_SSH_KNOWN_HOSTS=~/.ssh/errander_known_hosts
+
+# LangSmith — optional, Layer A tracing only (dev/staging).
+# Sends Layer-A prompt contents off-network — do NOT enable in no-egress prod.
+# LANGCHAIN_TRACING_V2=true
+# LANGCHAIN_API_KEY=lsv2_pt_...
+# LANGCHAIN_PROJECT=errander-ai
+EOF
+```
+
+> Never commit `.env` — it is already in `.gitignore`.
+
+### Create your inventory manually
+
+```bash
+cp example/inventory.yaml inventory.yaml
+```
+
+Minimal example for a single dev VM:
+
+```yaml
+environments:
+  dev:
+    ssh_user: errander
+    ssh_key_path: ~/.ssh/errander_prod
+    approval_policy: relaxed
+    maintenance_window: "08:00-20:00"
+    maintenance_days: [monday, tuesday, wednesday, thursday, friday]
+    maintenance_timezone: UTC
+    targets:
+      - host: 192.168.1.10
+        name: dev-vm-01
+        os_family: ubuntu
+```
+
+Optionally copy and edit settings:
+```bash
+cp example/settings.yaml settings.yaml
+```
+
+### Web UI
+
+The agent exposes a web UI at `http://<master-vm-ip>:9090/ui`. The `ERRANDER_UI_USERNAME` / `ERRANDER_UI_PASSWORD` env vars enable HTTP Basic Auth.
+
+> **Change all three UI secrets** before exposing the UI on any network. `ERRANDER_UI_SECRET` signs the 8-hour session cookie — if left as default any attacker who knows the default can forge a session.
+
+#### Data mode: fixture vs live
+
+| `ERRANDER_UI_DATA_MODE` | Behaviour |
+|---|---|
+| `fixture` (default) | Shows realistic demo data — safe for demos and CI. No real stores needed. |
+| `live` | Shows real data from your AuditStore, inventory, and ApprovalManager. Missing stores render "Unavailable" — never shows fake data. |
+
+Set `ERRANDER_UI_DATA_MODE=live` when running against real VMs. Also set `ERRANDER_INVENTORY_PATH` to the path of your `inventory.yaml`.
+
+The UI covers:
+- `/ui/` — batch run history, event log, pending approvals
+- `/ui/monitoring` — **built-in monitoring dashboard**: action trends, approval funnel, safety signals, duration averages, live Prometheus counters
+- `/ui/approvals` — approve or reject pending maintenance plans (replaces Slack when no token is set)
+- `/ui/settings` — change LLM/approval settings at runtime (no restart required)
+- `/ui/inventory` — disable YAML VMs or add ad-hoc VMs before the next run
+- `/ui/ai-decisions` — AI decision log (LLM calls, outcomes, latencies)
+
+Settings changed via the UI are stored in SQLite. Precedence chain:
+```
+env var  >  DB (UI)  >  settings.yaml  >  built-in default
+```
+
+### Slack notifications *(optional)*
+
+> **Skip this entirely** if you are happy with web UI approval at `/ui/approvals`. All other functionality is unaffected.
+
+To enable Slack:
+
+1. Go to [api.slack.com/apps](https://api.slack.com/apps) → **Create New App** → **From scratch**
+2. Name it `Errander-AI`, select your workspace
+3. Under **OAuth & Permissions** → **Bot Token Scopes**, add:
+   - `chat:write` — post messages
+   - `reactions:read` — poll for ✅/❌ reactions
+4. Click **Install to Workspace** → copy the **Bot User OAuth Token** (`xoxb-...`)
+5. Create a Slack channel `#errander-approvals` and invite the bot to it
+6. Copy the **Channel ID** — right-click the channel → View channel details → copy the ID at the bottom (starts with `C`)
+
+Uncomment and fill in the Slack lines in `.env`:
+```
+ERRANDER_SLACK_BOT_TOKEN=xoxb-your-token-here
+ERRANDER_SLACK_CHANNEL_ID=C0123456789
+```
+
+### Prometheus metrics *(optional — reads existing Prometheus)*
+
+> **Two different Prometheus relationships.** This section is **Errander → Prometheus**: the agent *reads* target-VM metrics from a Prometheus *you already run*. The monitoring stack section below is the reverse: Prometheus *scrapes the agent itself*.
+
+> **Skip if you don't have Prometheus.** The agent runs fully without it.
+
+```
+ERRANDER_PROMETHEUS_BASE_URL=http://<prometheus-host>:9090
+```
+
+Add to `.env`. Per-environment override in `inventory.yaml`:
+
+```yaml
+environments:
+  production:
+    prometheus_url: http://10.0.1.100:9090
+  staging:
+    # no prometheus_url → uses global ERRANDER_PROMETHEUS_BASE_URL
+```
+
+### Monitoring stack: Prometheus + Grafana *(optional — monitors the agent)*
+
+> **Built-in first.** `/ui/monitoring` already shows action trends, approval funnel, safety signals, and duration averages with no external tools. Prometheus + Grafana add **time-series retention** and **alerting**.
+
+`bootstrap.sh` prompts for both during Step A. To install afterwards:
+
+```bash
+sudo bash scripts/install-prometheus.sh   # Prometheus on :9091
+sudo bash scripts/install-grafana.sh      # Grafana on :3000 with pre-built dashboard
+```
+
+**Access via SSH tunnel** (no firewall rules needed):
+```bash
+ssh -L 9091:localhost:9091 -L 3000:localhost:3000 <user>@<controller-ip>
+```
+
+```bash
+# Override defaults if needed:
+PROM_PORT=9091 AGENT_METRICS_PORT=9090 PROM_VERSION=2.53.2 bash scripts/install-prometheus.sh
+GF_PORT=3000 bash scripts/install-grafana.sh
+```
+
+### LangSmith tracing *(optional — Layer A only, dev/staging)*
+
+> **Skip for production.** LangSmith sends Layer-A prompt contents off-network. The built-in `/ui/ai-decisions` log is always-on and in-network — use that in prod.
+
+Add three env vars to `.env`:
+
+```bash
+LANGCHAIN_TRACING_V2=true
+LANGCHAIN_API_KEY=lsv2_pt_...
+LANGCHAIN_PROJECT=errander-ai
+```
+
+Sign up at [smith.langchain.com](https://smith.langchain.com), create a project, copy your API key. LangGraph auto-detects `LANGCHAIN_TRACING_V2=true` at startup — no code changes needed.
+
+### ELK / Elasticsearch log aggregation *(optional)*
+
+> **Skip if you don't use ELK.** Without it the agent reads `journalctl` directly from each VM via SSH.
+
+```bash
+# Check if auth is required:
+curl http://<elasticsearch-host>:9200/_cluster/health
+# Returns JSON → no auth. Returns 401 → create an API key (see below).
+```
+
+**Create a read-only API key** (if auth is required):
+
+```bash
+curl -u elastic:<password> -X POST http://<elasticsearch-host>:9200/_security/api_key \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "errander-ai",
+    "role_descriptors": {
+      "errander": {
+        "cluster": ["monitor"],
+        "indices": [{"names": ["*"], "privileges": ["read"]}]
+      }
+    }
+  }'
+```
+
+Copy the `encoded` field. Then add to `.env`:
+
+```
+ERRANDER_ELK_BASE_URL=http://<elasticsearch-host>:9200
+ERRANDER_ELK_API_KEY=<encoded value>   # omit entirely if no auth required
+ERRANDER_ELK_INDEX_PATTERN=filebeat-*,logstash-*
+```
+
+Per-environment override in `inventory.yaml`:
+
+```yaml
+environments:
+  production:
+    elk_url: http://10.0.1.101:9200
+    elk_index_pattern: prod-logs-*
+  staging:
+    # no elk_* → uses global .env values
 ```

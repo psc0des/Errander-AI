@@ -98,7 +98,7 @@ ERRANDER_SSH_STRICT_HOST_KEYS=false
 
 ### Create your inventory
 
-Same as Linux — follow [SETUP.md Step 5](SETUP.md#step-5--configure-the-agent) for inventory, Slack, LangSmith, and ELK setup.
+Same as Linux — follow [SETUP.md Step 5](SETUP.md#step-5--configure-the-agent) to run `configure.sh`. For inventory, Slack, LangSmith, and ELK manual setup see [Appendix B](SETUP.md#appendix-b-agent-configuration-reference).
 
 > **SSH key path in inventory.yaml:** Use the Git Bash-style path (`~/.ssh/errander_prod`) or the Windows native path (`C:\Users\you\.ssh\errander_prod`) — both work.
 

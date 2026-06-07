@@ -55,15 +55,38 @@ These steps are identical on Windows. Follow them in [SETUP.md](SETUP.md):
 
 ## Step 5 — Configure the agent
 
-### Create `.env`
+Run `configure.sh` in **Git Bash** from inside the `errander/` folder:
 
-Create a file named `.env` in the `errander\` directory using Notepad, VS Code, or any text editor:
+```bash
+bash scripts/configure.sh
+```
+
+`configure.sh` prompts for LLM credentials, SSH key path, target VMs, and optional Slack — then writes `.env` and `inventory.yaml` and tests the LLM connection.
+
+**After configure.sh, open `.env` in Notepad or VS Code and set these if needed:**
+
+| Variable | Default | When to change |
+|---|---|---|
+| `ERRANDER_UI_PASSWORD` | `errander` | Before any network exposure |
+| `ERRANDER_UI_SECRET` | dev default | Before any network exposure — signs session cookies |
+| `ERRANDER_UI_DATA_MODE` | `fixture` | Set to `live` when running against real VMs |
+| `ERRANDER_SIGNING_SECRET` | unset | Required for docker_hygiene web approval |
+| `ERRANDER_WEB_BASE_URL` | unset | e.g. `http://10.0.0.5:9090` — enables signed approval URL in Slack |
+
+> **SSH key path in inventory.yaml:** Use Git Bash-style (`~/.ssh/errander_prod`) or Windows-style (`C:\Users\you\.ssh\errander_prod`) — both work.
+
+> **Full reference** → [SETUP.md Appendix B](SETUP.md#appendix-b-agent-configuration-reference) — complete `.env` template, web UI, Slack, LangSmith, ELK.
+
+<details>
+<summary>Manual .env creation (fallback — if not using Git Bash)</summary>
+
+Create a file named `.env` in the `errander\` directory using Notepad or VS Code:
 
 ```
-# LLM — paste the values from whichever Step 4 option you chose
-ERRANDER_LLM_BASE_URL=<base-url-from-step-4>
-ERRANDER_LLM_MODEL=<model-from-step-4>
-ERRANDER_LLM_API_KEY=<api-key-from-step-4>
+# LLM — paste the values from SETUP.md Appendix A
+ERRANDER_LLM_BASE_URL=<base-url>
+ERRANDER_LLM_MODEL=<model>
+ERRANDER_LLM_API_KEY=<api-key>
 
 ERRANDER_AUDIT_DB_URL=errander.sqlite
 
@@ -96,13 +119,9 @@ ERRANDER_SSH_STRICT_HOST_KEYS=false
 
 > Never commit `.env` — it is already in `.gitignore`.
 
-### Create your inventory
+Then create `inventory.yaml` manually — see [SETUP.md Appendix B](SETUP.md#appendix-b-agent-configuration-reference) for the full template.
 
-Same as Linux — follow [SETUP.md Step 5](SETUP.md#step-5--configure-the-agent) to run `configure.sh`. For inventory, Slack, LangSmith, and ELK manual setup see [Appendix B](SETUP.md#appendix-b-agent-configuration-reference).
-
-> **SSH key path in inventory.yaml:** Use the Git Bash-style path (`~/.ssh/errander_prod`) or the Windows native path (`C:\Users\you\.ssh\errander_prod`) — both work.
-
-> **configure.sh on Windows:** `configure.sh` runs in **Git Bash**. Open Git Bash and run `bash scripts/configure.sh` from inside the `errander/` folder. Alternatively, create `.env` and `inventory.yaml` manually as shown above.
+</details>
 
 ### Monitoring
 

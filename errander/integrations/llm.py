@@ -80,19 +80,11 @@ class LLMClient:
         # Anthropic supports explicit cache_control breakpoints on stable content blocks.
         # For OpenAI/vLLM, prefix caching is automatic when the prompt prefix is byte-stable.
         self._prefix_cache = "anthropic.com" in base_url
-        # Azure AI Foundry and Azure OpenAI require api-version on every request.
-        # The OpenAI SDK's default_query injects it automatically.
-        _default_query: dict[str, str] = {}
-        if "services.ai.azure.com" in base_url:
-            _default_query["api-version"] = "2025-04-01-preview"
-        elif "cognitiveservices.azure.com" in base_url:
-            _default_query["api-version"] = "2024-12-01-preview"
         self._client = AsyncOpenAI(
             base_url=base_url,
             api_key=api_key,
             timeout=timeout_seconds,
             max_retries=0,  # we handle retries ourselves
-            default_query=_default_query or None,
         )
 
     def _build_messages(self, prompt: str) -> list[Any]:

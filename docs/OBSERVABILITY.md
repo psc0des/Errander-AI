@@ -26,7 +26,7 @@ Errander draws a hard line between **what it produces and owns** and **what you 
 
 | External tool (or equivalent) | Consumes / observes | Layer | Status |
 |---|---|---|---|
-| **Prometheus** (+ **Grafana**) | scrapes the `/metrics` endpoint | B (health) | ✅ supported; `bootstrap.sh` prompts for both, or run `scripts/install-prometheus.sh` + `scripts/install-grafana.sh`; Grafana dashboard auto-provisioned |
+| **Prometheus** (+ **Grafana**) | scrapes the `/metrics` endpoint | B (health) | ✅ supported; **dedicated external VM only** — not the agent VM. Run `scripts/install-prometheus.sh` + `scripts/install-grafana.sh` on a separate monitoring VM; Grafana dashboard auto-provisioned |
 | **LangSmith** *or any LangGraph tracer* | the Layer-A reasoning graph | A (brain) | 🔜 planned (after Prometheus); off by default |
 | **ELK / Loki / any log store** | ingests the stdout JSON logs | diagnostics | bring-your-own (see `example/ELK/`) |
 
@@ -35,7 +35,7 @@ Errander draws a hard line between **what it produces and owns** and **what you 
 The golden rule of which-to-trust:
 
 - **"Did it happen, and what exactly?"** → **audit trail** (built-in). Never Prometheus, never LangSmith, never a log dashboard.
-- **"Is the fleet maintenance healthy in aggregate?"** → **`/ui/monitoring`** (built-in dashboard — approval funnel, safety signals, action trends, duration averages). Prometheus + Grafana for time-series depth if needed.
+- **"Is the fleet maintenance healthy in aggregate?"** → **`/ui/monitoring`** (built-in dashboard — approval funnel, safety signals, action trends, duration averages; 24h / 7d / 30d time-range selector). Prometheus + Grafana only if you have a dedicated external monitoring VM and need alerting.
 - **"Why did the LLM choose that?"** → **AI decision log** (built-in, always there) or **LangSmith** (external, richer, planned).
 - **"What was the diagnostic play-by-play?"** → **structured logs** (built-in stream) → searchable via **ELK/Loki** (external).
 
@@ -118,15 +118,16 @@ Web UI: `/ui/ai-decisions`, `/ui/ai-decisions/{id}`.
 
 The agent **exposes** `/metrics` on its UI port (default `9090`, `ERRANDER_METRICS_PORT`) in Prometheus text format. It does **not** bundle a Prometheus server.
 
-> **Built-in view first:** the **`/ui/monitoring`** dashboard (see §1 above) visualises these same metrics in-process — action trends, approval funnel, safety signals, avg durations — with no external tool required. Prometheus + Grafana add time-series retention and alerting on top of that.
+> **Built-in view first:** the **`/ui/monitoring`** dashboard (see §1 above) visualises these same metrics in-process — action trends, approval funnel, safety signals, avg durations, 24h / 7d / 30d time-range selector — with no external tool required. Prometheus + Grafana are only worth adding if you have a **dedicated external monitoring VM** and need time-series history across restarts or alertmanager-based paging.
 
-**Install a controller-node Prometheus** (scrapes the agent's own `/metrics`):
+**Optional — install on a dedicated external monitoring VM** (not the agent VM):
 
 ```bash
-bash scripts/install-prometheus.sh   # also offered as an opt-in step in bootstrap.sh
+bash scripts/install-prometheus.sh   # listens on :9091, scrape target = <agent-vm>:9090
+bash scripts/install-grafana.sh      # Grafana on :3000, dashboard auto-provisioned
 ```
 
-Distro-agnostic (official binary + systemd), listens on **`:9091`** to avoid the agent's `:9090`. See [SETUP.md → Monitoring the agent with Prometheus](../SETUP.md) and [README.md → Observability](../README.md).
+Distro-agnostic (official binary + systemd). See [SETUP.md → Monitoring stack](../SETUP.md) and [README.md → Observability](../README.md).
 
 ### Metrics exposed
 

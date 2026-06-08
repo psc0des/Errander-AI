@@ -335,11 +335,11 @@ uv run python -m errander --check-targets production
 
 ---
 
-## Monitoring with Prometheus + Grafana
+## Monitoring with Prometheus + Grafana *(optional — dedicated external VM only)*
 
-The agent exposes metrics at `http://localhost:9090/metrics` in Prometheus format.
+The agent exposes metrics at `http://localhost:9090/metrics` in Prometheus format. The built-in `/ui/monitoring` page is the primary view — no external stack needed on the agent VM.
 
-> **Quick setup:** to install Prometheus on the controller node and auto-wire the scrape config below, run `bash scripts/install-prometheus.sh` (it listens on `:9091` to avoid the agent's `:9090`). See SETUP.md → "Monitoring the agent with Prometheus".
+> **External VM only:** run `bash scripts/install-prometheus.sh` on a separate monitoring VM and point it at `<agent-vm-ip>:9090`. Running Prometheus on the same server as the agent adds resource pressure with no observability gain over the built-in page.
 
 ### Scrape config (`prometheus.yml`)
 

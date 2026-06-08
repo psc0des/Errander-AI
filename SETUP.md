@@ -183,9 +183,6 @@ sudo chown -R errander-agent:errander-agent /home/errander-agent/.ssh
 # Clone repo as service user
 sudo -u errander-agent git clone https://github.com/psc0des/Errander-AI.git /home/errander-agent/errander
 
-# Optional: install Prometheus now (or run later)
-# sudo bash /home/errander-agent/errander/scripts/install-prometheus.sh
-
 # As errander-agent: install deps and configure
 sudo su - errander-agent
 cd ~/errander

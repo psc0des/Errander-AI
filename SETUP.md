@@ -242,7 +242,7 @@ sudo cp -r /etc/sudoers.d /etc/sudoers.d.bak.$(date +%Y%m%d)
 
 **2. Create the errander sudoers file** *(Target VM)*
 
-> **sudo -n model:** The agent calls all privileged commands as `sudo -n /absolute/path ...` (e.g. `sudo -n /usr/bin/apt-get upgrade -y`). `sudo -n` fails immediately with exit 1 if passwordless sudo is not configured — it never hangs waiting for a password. Absolute paths match sudoers entries predictably and produce clean audit logs in `/var/log/auth.log` on the target VM.
+> **sudo -n model:** The agent calls all privileged commands as `sudo -n /absolute/path ...` (e.g. `sudo -n /usr/bin/apt-get upgrade -y` on Ubuntu, `sudo -n /usr/bin/dnf upgrade -y` on RHEL-family). `sudo -n` fails immediately with exit 1 if passwordless sudo is not configured — it never hangs waiting for a password. Absolute paths match sudoers entries predictably and produce clean audit logs in `/var/log/auth.log` on the target VM.
 
 ```bash
 sudo tee /etc/sudoers.d/errander << 'EOF'
@@ -260,6 +260,17 @@ errander ALL=(root) NOPASSWD: \
   /usr/bin/systemctl
 EOF
 ```
+
+> **Which entries apply to which OS:**
+>
+> | Entry | Ubuntu / Debian | RHEL / AlmaLinux / Rocky |
+> |---|---|---|
+> | `/usr/bin/apt-get`, `/usr/bin/apt-mark` | ✓ Used | Harmless — binary does not exist, never called |
+> | `/usr/bin/dnf`, `/usr/bin/yum` | Harmless — not called | ✓ Used (`dnf` on RHEL 8/9+) |
+> | `/usr/bin/needs-restarting` | Not used | ✓ Used — requires `dnf-utils` installed: `sudo dnf install -y dnf-utils` |
+> | All other entries | ✓ Same path on both | ✓ Same path on both |
+>
+> The template is intentionally cross-distro — paste it on any supported OS and Errander will only call the binaries that exist.
 
 **3. Set correct permissions and validate syntax** *(Target VM)*
 
@@ -282,13 +293,24 @@ sudo cp -r /etc/sudoers.d.bak.$(date +%Y%m%d) /etc/sudoers.d
 
 **4. Verify the errander user can use sudo -n** *(Target VM)*
 
+Use the package manager that matches the target OS:
+
 ```bash
+# Ubuntu / Debian
 sudo -u errander sudo -n /usr/bin/apt-get --version
 # Expected: apt-get version output — no password prompt, exits 0
 
-# Confirm sudo -n fails fast when not configured (sanity check):
+# RHEL / AlmaLinux / Rocky / CentOS
+sudo -u errander sudo -n /usr/bin/dnf --version
+# Expected: dnf version output — no password prompt, exits 0
+```
+
+> **AlmaLinux / Rocky / RHEL note:** `/usr/bin/apt-get` does not exist on these distros — always use `/usr/bin/dnf` to verify. Listing `apt-get` in the sudoers file is harmless (the binary simply doesn't exist), but using it for verification will produce `command not found`.
+
+```bash
+# Confirm sudo -n fails fast when not configured (sanity check — any OS):
 sudo -u errander sudo -n /usr/bin/id  # should FAIL — /usr/bin/id is not in sudoers
-# Expected: exit 1 immediately, no hanging
+# Expected: "sudo: a password is required" — exit 1 immediately, no hanging
 ```
 
 ---
@@ -315,9 +337,10 @@ Errander supports two Docker modes per environment (`actions.docker_hygiene.comm
 
 Two steps — copy from the controller, then run on the target:
 
-**From the controller** — copy using the errander key (no admin key needed on the controller):
+**From the controller** — run from the repo directory (`~/errander`), not from `~/.ssh`:
 
 ```bash
+cd ~/errander
 scp -i ~/.ssh/errander_prod scripts/install-docker-wrappers-v2.sh errander@<target>:/tmp/
 ```
 
@@ -404,15 +427,16 @@ docker_hygiene_end
 > **Skip this entire section if you are not enabling service_restart.**
 > When you create `inventory.yaml` in Step 5, leave `actions.service_restart.enabled: false` (the default). Continue to Step 4.
 
-Service restart is operator-triggered only — Errander does not auto-restart services. The operator runs `--restart-service` after seeing a failed unit in the Slack probe digest, and must approve the restart in Slack before it executes. Risk tier: **HIGH** — Slack approval is always required.
+Service restart is operator-triggered only — Errander does not auto-restart services. The operator runs `--restart-service` after seeing a failed unit in the probe digest, and must approve the restart before it executes. Risk tier: **HIGH** — human approval is always required (via Slack reaction or web UI at `/ui/approvals`).
 
 ### Part 1 — Install wrapper on each target VM *(do this now, after Step 3)*
 
 The restart wrapper enforces a per-VM allowlist so Errander can only restart pre-approved units. Two steps — copy from the controller, then run on the target:
 
-**From the controller** — copy using the errander key (no admin key needed on the controller):
+**From the controller** — run from the repo directory (`~/errander`), not from `~/.ssh`:
 
 ```bash
+cd ~/errander
 scp -i ~/.ssh/errander_prod scripts/install-systemctl-restart-wrapper.sh errander@<target>:/tmp/
 ```
 
@@ -459,7 +483,7 @@ uv run python -m errander --restart-service production --unit nginx.service --vm
 uv run python -m errander --restart-service production --unit nginx.service --vm prod-web-01
 ```
 
-Approve the plan in `#errander-approvals` with ✅. The wrapper captures pre/post status + journal; a verify step confirms the unit reached `active` state. If verification fails, a `SERVICE_RESTART_VERIFY_FAILED` event is logged and Slack is notified — no automatic re-restart attempt.
+Approve the plan via Slack reaction ✅ in `#errander-approvals`, or via the web UI at `http://<controller>:9090/ui/approvals`. The wrapper captures pre/post status + journal; a verify step confirms the unit reached `active` state. If verification fails, a `SERVICE_RESTART_VERIFY_FAILED` event is logged — no automatic re-restart attempt.
 
 ---
 
@@ -480,8 +504,9 @@ The LLM is optional — the agent falls back to built-in hardcoded logic if no L
 
 Run the interactive setup script from inside the `errander/` directory:
 
-**Linux:**
+**Linux** — run from the repo directory (`~/errander`):
 ```bash
+cd ~/errander
 bash scripts/configure.sh
 ```
 
@@ -740,7 +765,7 @@ Type `yes` at the prompt. Removes: the `errander-agent` user + home (repo, `.env
 - Add `--force --force-reason "manual test"` to bypass the window check
 
 **vLLM container exits immediately**
-- GPU not found: `docker run --rm --gpus all nvidia/cuda:12.0-base-ubuntu20.04 nvidia-smi`
+- GPU not found: `docker run --rm --gpus all nvidia/cuda:12.2.0-base-ubuntu22.04 nvidia-smi` (works on any Linux GPU VM — the image OS doesn't need to match the host)
 - VRAM OOM: reduce `GPU_MEM_UTIL` to `0.80` in `deploy/vllm/.env`
 
 **Agent falls back to hardcoded logic**
@@ -955,6 +980,8 @@ Recommended hardware: Tesla T4, 16 GB VRAM, 4 vCPUs, 16 GB RAM.
 curl -fsSL https://get.docker.com | sh
 
 # Install NVIDIA Container Toolkit
+
+# Ubuntu / Debian:
 distribution=$(. /etc/os-release; echo $ID$VERSION_ID)
 curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey \
   | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
@@ -962,11 +989,17 @@ curl -sL "https://nvidia.github.io/libnvidia-container/$distribution/libnvidia-c
   | sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' \
   | sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
 sudo apt-get update && sudo apt-get install -y nvidia-container-toolkit
+
+# RHEL / AlmaLinux / Rocky (use this block instead of the Ubuntu block above):
+# curl -s -L https://nvidia.github.io/libnvidia-container/stable/rpm/nvidia-container-toolkit.repo \
+#   | sudo tee /etc/yum.repos.d/nvidia-container-toolkit.repo
+# sudo dnf install -y nvidia-container-toolkit
+
 sudo nvidia-ctk runtime configure --runtime=docker
 sudo systemctl restart docker
 
-# Verify GPU is visible to Docker
-docker run --rm --gpus all nvidia/cuda:12.0-base-ubuntu20.04 nvidia-smi
+# Verify GPU is visible to Docker (image works on both Ubuntu and RHEL GPU VMs)
+docker run --rm --gpus all nvidia/cuda:12.2.0-base-ubuntu22.04 nvidia-smi
 ```
 
 ```bash

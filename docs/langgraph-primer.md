@@ -35,6 +35,8 @@ graph LR
 
 State is a `TypedDict` shared across all nodes. Each node receives the full state and returns a **partial dict** — only the keys it wants to update.
 
+In Errander, state TypedDicts use `total=False` (all keys optional) and are defined **inline in their graph module** — not in a separate `state.py`. For example, `BatchGraphState` lives in `errander/agent/graph.py` and `VMGraphState` in `errander/agent/vm_graph.py`.
+
 ```python
 from typing import TypedDict, Annotated
 from operator import add
@@ -47,14 +49,19 @@ class MaintenanceState(TypedDict):
 
 **Default behavior**: returning `{"vm_id": "new"}` overwrites the old value.
 
-**Reducers**: `Annotated[list[str], add]` means returning `{"results": ["new item"]}` *appends* to the existing list instead of replacing it. You can write custom reducers:
+**Reducers**: `Annotated[list[str], add]` means returning `{"results": ["new item"]}` *appends* to the existing list instead of replacing it. Errander uses custom reducers for aggregating results across VMs:
 
 ```python
-def keep_max(current: int, update: int) -> int:
-    return max(current, update)
+def _merge_vm_results(
+    existing: list[dict[str, object]],
+    incoming: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    return [*existing, *incoming]
 
-class State(TypedDict):
-    risk_score: Annotated[int, keep_max]
+class BatchGraphState(TypedDict, total=False):
+    vm_results: Annotated[list[dict[str, object]], _merge_vm_results]
+    vm_plans:   Annotated[list[dict[str, object]], _merge_vm_plans]
+    # ... many more fields
 ```
 
 ---
@@ -80,6 +87,17 @@ from langchain_core.runnables import RunnableConfig
 def my_node(state: State, config: RunnableConfig) -> dict:
     thread_id = config["configurable"]["thread_id"]
     ...
+```
+
+In Errander, most nodes are `async def` and dependencies (SSH manager, audit store, etc.) are injected via closures at graph-build time rather than passed through state:
+
+```python
+async def _validate_targets(state: BatchGraphState) -> dict[str, Any]:
+    return await validate_targets_node(
+        state, ssh_manager=ssh_manager, audit_store=audit_store,
+    )
+
+builder.add_node("validate_targets", _validate_targets)
 ```
 
 ---
@@ -166,6 +184,8 @@ graph TD
 
 ```
 
+Errander uses **two fan-out phases** — one for planning, one for execution — with human approval between them. See the "Actual Batch Graph" section below.
+
 ---
 
 ## Sub-Graphs
@@ -191,26 +211,30 @@ Checkpointers propagate automatically from parent to sub-graphs.
 
 ```mermaid
 graph TD
-    subgraph Parent["Parent Graph"]
-        P_START(("START")) --> discover["discover"]
-        discover --> dispatch["dispatch_action"]
-        dispatch -->|"action=patching"| patch_sub["patching<br/>(sub-graph)"]
-        dispatch -->|"action=docker_prune"| docker_sub["docker_prune<br/>(sub-graph)"]
-        patch_sub --> collect["collect"]
-        docker_sub --> collect
+    subgraph Parent["Parent Graph (batch orchestrator)"]
+        P_START(("START")) --> init["init_batch"]
+        init --> validate["validate_targets"]
+        validate --> approval["approval_gate"]
+        approval -->|"approved"| dispatch["dispatch_wave"]
+        dispatch -->|"Send per VM"| run_vm["run_vm<br/>(VM sub-graph)"]
+        run_vm --> collect["collect_results"]
         collect --> P_END(("END"))
     end
 
-    subgraph Sub["Patching Sub-Graph (expanded)"]
-        S_START(("START")) --> validate["validate"]
-        validate --> execute["execute"]
-        execute -->|"success"| verify["verify"]
-        execute -->|"error"| rollback["rollback"]
-        verify --> S_END(("END"))
-        rollback --> S_END
+    subgraph Sub["VM Sub-Graph (per action type)"]
+        S_START(("START")) --> lock["lock_vm"]
+        lock --> discover["discover"]
+        discover --> dispatch_action["dispatch_action"]
+        dispatch_action -->|"patching"| patch_sub["patching<br/>(sub-graph)"]
+        dispatch_action -->|"docker_hygiene"| docker_sub["docker_hygiene<br/>(sub-graph)"]
+        dispatch_action -->|"disk_cleanup"| disk_sub["disk_cleanup<br/>(sub-graph)"]
+        patch_sub --> unlock["unlock_vm"]
+        docker_sub --> unlock
+        disk_sub --> unlock
+        unlock --> S_END(("END"))
     end
 
-    patch_sub -.->|"invokes"| S_START
+    run_vm -.->|"invokes"| S_START
 
 ```
 
@@ -218,7 +242,7 @@ graph TD
 
 ## Checkpointing (Persistence)
 
-Checkpoints save full graph state at every super-step. Required for human-in-the-loop and fault recovery.
+Checkpoints save full graph state at every super-step. Required for LangGraph's native human-in-the-loop (`interrupt()`) and fault recovery.
 
 ```python
 from langgraph.checkpoint.memory import InMemorySaver  # Dev only
@@ -231,81 +255,71 @@ config = {"configurable": {"thread_id": "maint-run-42"}}
 result = graph.invoke(initial_state, config)
 ```
 
-**Inspect state**:
-```python
-snapshot = graph.get_state(config)
-snapshot.values   # Current state
-snapshot.next     # Next node(s) to execute
-```
-
-**Update state externally** (e.g., after human reviews):
-```python
-graph.update_state(config, {"approved": True}, as_node="human_approval")
-```
+**Errander does not use LangGraph checkpointing.** Human approval is implemented as a regular async node that polls Slack — the graph never pauses mid-run. See "Approval in Errander" below.
 
 ---
 
-## Human-in-the-Loop: `interrupt()`
+## Human-in-the-Loop: LangGraph `interrupt()` vs Errander's Slack polling
 
-The `interrupt()` function pauses a node and waits for external input. This is how safety gates work.
+LangGraph provides `interrupt()` to pause a graph mid-run and wait for external input:
 
 ```python
 from langgraph.types import interrupt, Command
 
 def safety_gate(state: State):
     if state["risk_tier"] == "high":
-        # Pause here — return payload to the caller
         decision = interrupt({
             "action": state["current_action"],
-            "vm_id": state["vm_id"],
             "message": "High-risk action requires human approval"
         })
-        # Resumes here when human responds
         return {"approved": decision == "approved"}
     return {"approved": True}
 ```
 
-**Invoke and resume**:
+**Errander does not use `interrupt()`.** The architecture constraint is that all Slack communication is outbound HTTPS polling — no inbound webhooks, no public endpoints. LangGraph's `interrupt()` requires a checkpointer and an external system to call `graph.invoke(Command(resume=...), config)` to resume the graph, which needs an inbound connection.
+
+Instead, Errander's approval gate is a plain `async def` node that blocks synchronously (from the graph's perspective) while polling Slack reactions:
+
 ```python
-config = {"configurable": {"thread_id": "maint-1"}}
+async def approval_gate_node(state: BatchGraphState, ...) -> dict[str, Any]:
+    plan_summary = _format_plan_for_approval(vm_plans, batch_id, plan_id, plan_hash)
 
-# First call — hits interrupt, returns payload
-result = graph.invoke(initial_state, config)
-# result contains __interrupt__ with the payload
-
-# Human reviews, then resume
-result = graph.invoke(Command(resume="approved"), config)
+    # Post plan to Slack, then poll for ✅/❌ every 30s (outbound HTTPS only)
+    approval_result = await await_dual_approval(
+        approval_manager, slack_client, batch_id, plan_summary,
+        timeout_seconds=1800,
+        poll_interval_seconds=30,
+    )
+    approved, approver, approved_items = approval_result
+    return {"approved": approved}
 ```
 
-**Critical rules**:
-- Never wrap `interrupt()` in bare `try/except` — it raises internally
-- Code *before* `interrupt()` re-executes on resume — make it idempotent
-- Values passed to `interrupt()` must be JSON-serializable
+This node runs to completion before the graph routes to the next node — no checkpointing or resume needed. The tradeoff: the agent process must stay alive during the 30-minute approval window.
 
 ```mermaid
 sequenceDiagram
-    participant App as Application
     participant Graph as LangGraph
-    participant Gate as safety_gate node
+    participant Gate as approval_gate_node
+    participant Slack as Slack API
     participant Human as Operator
 
-    App->>Graph: graph.invoke(initial_state, config)
-    Graph->>Gate: execute node
-    Gate->>Gate: risk_tier == "high"
-    Gate->>Graph: interrupt((action, vm_id, message))
-    Graph-->>Graph: save checkpoint
-    Graph->>App: return __interrupt__ payload
-
-    Note over App,Human: Graph is PAUSED — checkpoint saved
-
-    App->>Human: display approval request
-    Human->>App: "approved"
-    App->>Graph: graph.invoke(Command(resume="approved"), config)
-    Graph-->>Graph: load checkpoint
-    Graph->>Gate: resume — decision = "approved"
-    Gate->>Graph: return (approved: True)
-    Graph->>Graph: continue to next node
+    Graph->>Gate: execute node (async)
+    Gate->>Slack: POST plan summary to #errander-approvals
+    loop every 30s (outbound HTTPS polling)
+        Gate->>Slack: GET reactions on message
+        Slack-->>Gate: reactions list
+    end
+    Human->>Slack: adds ✅ or ❌ reaction
+    Gate->>Gate: reaction detected → resolve
+    Gate-->>Graph: return {"approved": True/False}
+    Graph->>Graph: route to next node
 ```
+
+**Key rules for the approval gate:**
+- Never wrap `await_dual_approval` in bare `try/except` — propagate timeouts as `approved=False`
+- Dry-run batches auto-approve — sandbox execution is always safe
+- `require_live_approval=True` (default) forces all live tiers through approval regardless of policy
+- Approval outside the maintenance window → execution is deferred, not run immediately
 
 ---
 
@@ -332,7 +346,60 @@ builder.add_node(
 
 ---
 
-## Putting It Together
+## Actual Batch Graph (Errander v1.x)
+
+The real batch orchestrator is more complex than a simple tutorial example. Two fan-out phases separated by human approval:
+
+```mermaid
+graph TD
+    START(("START")) --> init["init_batch"]
+    init --> win["validate_window"]
+    win -->|"in window / force"| vtgt["validate_targets"]
+    win -->|"outside window"| rep["generate_report"]
+    vtgt --> fleet["check_fleet_health"]
+    fleet -->|"error / no healthy"| rep
+    fleet -->|"preloaded_plan_json"| lda["load_deferred_artifact"]
+    fleet -->|"normal"| pvms["plan_vms"]
+
+    subgraph plan_fanout["Planning Fan-Out (one Send per VM)"]
+        pvms -->|"Send('plan_vm', ...)"| pvm["plan_vm"]
+    end
+
+    pvm --> cplans["collect_plans"]
+    cplans --> enrich["enrich_plan"]
+    enrich --> gpa["generate_plan_artifact"]
+    lda --> ag["approval_gate"]
+    gpa --> ag
+
+    ag -->|"deferred"| END(("END"))
+    ag -->|"rejected"| rep
+    ag -->|"approved"| vph["verify_plan_hash"]
+    vph -->|"hash drift"| rep
+    vph -->|"hash ok"| pw["prepare_waves"]
+    pw -->|"no waves"| rep
+    pw -->|"waves ready"| dw["dispatch_wave"]
+
+    subgraph exec_fanout["Execution Fan-Out (one Send per VM in wave)"]
+        dw -->|"Send('run_vm', ...)"| rvm["run_vm"]
+    end
+
+    rvm --> cwh["check_wave_health"]
+    cwh -->|"next wave"| dw
+    cwh -->|"all done / aborted"| cr["collect_results"]
+    cr --> rep
+    rep --> END
+```
+
+**Key design points:**
+- `plan_vms` and `dispatch_wave` are no-op nodes; their conditional edges do the `Send()` fan-out work
+- Approval happens **before** execution — the operator sees exact packages/versions via `enrich_plan`
+- `verify_plan_hash` re-checks SHA-256 between approval and execution to catch state drift
+- Waves implement rolling updates; canary is wave 0 with a stricter health check
+- `load_deferred_artifact` bypasses planning for deferred replay (operator approved while outside window)
+
+---
+
+## Putting It Together (Simple Example)
 
 ```python
 from langgraph.graph import StateGraph, START, END
@@ -356,6 +423,6 @@ builder.add_conditional_edges("execute", route_after_execute)
 builder.add_edge("rollback", "report")
 builder.add_edge("report", END)
 
-# Compile
-graph = builder.compile(checkpointer=InMemorySaver())
+# Compile (no checkpointer — Errander uses Slack polling for approval)
+graph = builder.compile()
 ```

@@ -351,6 +351,7 @@ Before every `git commit` + `git push`, update all files that are relevant to th
 
 ### Update when relevant (when the specific thing changes)
 - `SETUP.md` — when setup steps or scripts change
+- `docs/langgraph-primer.md` — when graph nodes, edges, state schema, fan-out structure, approval flow, or sub-graph layout changes; this file went stale before — keep it in sync
 - `README.md` — when major features, architecture, or test counts change
 - `RUN.md` — when CLI commands or run process changes
 - `CLAUDE.md` — when project rules or architecture decisions change

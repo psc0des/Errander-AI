@@ -1,5 +1,15 @@
 # Errander-AI Command Log
 
+## langgraph-primer.md updated (2026-06-08)
+
+```bash
+# Read and updated docs/langgraph-primer.md — no shell commands needed
+# Changes: removed stale docker_prune diagram, replaced interrupt() HITL section
+# with accurate Slack-polling description, added real batch graph flow diagram
+```
+
+---
+
 ## Time-range selector + Prometheus+Grafana demoted (2026-06-08)
 
 ```bash

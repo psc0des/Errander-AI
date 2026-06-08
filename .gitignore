@@ -64,5 +64,7 @@ errander-*.png
 tmp_*.yaml
 approvals_text.txt
 
-# Demo deployment infrastructure (local only — contains real IPs/keys/configs)
+# Local-only example folders (personal configs, not part of project source)
 example/Infrastructure/
+example/ELK/
+example/Prometheus/

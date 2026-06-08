@@ -56,34 +56,6 @@ else
     skip "errander.service"
 fi
 
-# ── Grafana ────────────────────────────────────────────────────────────────────
-warn "removing Grafana..."
-systemctl stop    grafana-server 2>/dev/null || true
-systemctl disable grafana-server 2>/dev/null || true
-rm -f /etc/systemd/system/grafana-server.service
-rm -f /usr/sbin/grafana /usr/sbin/grafana-server /usr/sbin/grafana-cli
-rm -rf /usr/share/grafana /etc/grafana /var/lib/grafana /var/log/grafana
-if id grafana &>/dev/null 2>&1; then
-    userdel grafana 2>/dev/null || true
-fi
-# Clean up any partial apt-installed Grafana
-if command -v dpkg &>/dev/null && dpkg -s grafana &>/dev/null 2>&1; then
-    DEBIAN_FRONTEND=noninteractive apt-get remove -y grafana 2>/dev/null || true
-fi
-ok "Grafana removed"
-
-# ── Prometheus ─────────────────────────────────────────────────────────────────
-warn "removing Prometheus..."
-systemctl stop    prometheus 2>/dev/null || true
-systemctl disable prometheus 2>/dev/null || true
-rm -f /etc/systemd/system/prometheus.service
-rm -f /usr/local/bin/prometheus /usr/local/bin/promtool
-rm -rf /etc/prometheus /var/lib/prometheus
-if id prometheus &>/dev/null 2>&1; then
-    userdel prometheus 2>/dev/null || true
-fi
-ok "Prometheus removed"
-
 # ── systemd cleanup ────────────────────────────────────────────────────────────
 systemctl daemon-reload
 systemctl reset-failed 2>/dev/null || true
@@ -113,9 +85,6 @@ fi
 
 # ── leftovers ──────────────────────────────────────────────────────────────────
 rm -f /etc/needrestart/conf.d/50-errander.conf 2>/dev/null || true
-rm -f /etc/apt/sources.list.d/grafana.list 2>/dev/null || true
-rm -f /etc/apt/keyrings/grafana.gpg 2>/dev/null || true
-rm -f /etc/yum.repos.d/grafana.repo 2>/dev/null || true
 
 # ── done ───────────────────────────────────────────────────────────────────────
 echo ""

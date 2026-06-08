@@ -65,7 +65,6 @@ missing binaries.
 |---|---|
 | Python 3.12+ | `python3 --version` |
 | git | `git --version` |
-| pip | `pip3 --version` |
 
 > **These are handled automatically by the bootstrap script in Step 1.** You only need to verify them if you are skipping the bootstrap and doing a manual install.
 
@@ -125,7 +124,7 @@ The web UI and metrics endpoint run on port 9090. To access it from your laptop,
 
 ### Linux controller
 
-Two steps: **admin** handles all system-level setup (including cloning the repo), then **errander-agent** installs dependencies and configures the agent. No sudo required after Step A.
+Two steps: **admin** handles all system-level setup (including cloning the repo), then **errander-agent** installs dependencies. No sudo required after Step A.
 
 **Step A — System setup** (run as your admin user — needs sudo):
 
@@ -722,7 +721,7 @@ sudo bash scripts/teardown.sh
 curl -fsSL https://raw.githubusercontent.com/psc0des/Errander-AI/main/scripts/teardown.sh | bash
 ```
 
-Type `yes` at the prompt. Removes: Grafana, Prometheus, the `errander-agent` user + home (repo, `.env`, `inventory.yaml`), and `uv` from `/usr/local/bin`. Does **not** remove git, curl, or Python 3.12.
+Type `yes` at the prompt. Removes: the `errander-agent` user + home (repo, `.env`, `inventory.yaml`) and `uv` from `/usr/local/bin`. Does **not** remove git, curl, or Python 3.12. Prometheus and Grafana run on a separate monitoring VM — use your normal process to remove them there.
 
 ---
 

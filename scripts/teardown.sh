@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Errander-AI — teardown / uninstall
 #
-# Reverses everything bootstrap.sh, install-prometheus.sh, and
-# install-grafana.sh did. Intended for dev/test re-runs on a clean slate.
+# Reverses everything bootstrap.sh did on the agent VM. Intended for
+# dev/test re-runs on a clean slate.
 #
 # Run as your admin user (needs sudo):
 #   sudo bash scripts/teardown.sh
@@ -24,8 +24,6 @@ echo -e "${BOLD}Errander-AI — Teardown${NC}"
 echo "═══════════════════════════════════════════"
 echo ""
 echo -e "  ${RED}This will permanently remove:${NC}"
-echo "    • Grafana    — service, binary, assets, config, data"
-echo "    • Prometheus — service, binaries, config, data"
 echo "    • errander-agent user + /home/errander-agent (repo, .env, inventory)"
 echo "    • uv from /usr/local/bin"
 echo ""

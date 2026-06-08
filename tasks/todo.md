@@ -1,3 +1,12 @@
+## `/ui/monitoring` time-range selector + Prometheus+Grafana demoted (2026-06-08, COMPLETE)
+
+- [x] `errander/observability/metrics.py` — `?days=` query param (1/7/30), dynamic window labels, `_tr_btn()` toggle, toggle CSS
+- [x] `scripts/bootstrap.sh` — removed Prometheus + Grafana install block; updated Done banner
+- [x] `SETUP.md`, `README.md`, `SETUP-Win-Controller.md`, `docs/MONITORING-VALIDATION.md` — reframed as external-VM-only
+- [x] 2506 tests passing, mypy clean, ruff clean (pre-existing issues only)
+
+---
+
 ## Monitoring page gap-fill — approval funnel, safety signals, durations (2026-06-05, COMPLETE)
 
 - [x] `errander/safety/audit.py` — `get_monitoring_stats()` extended: approval funnel query + safety signals query, two new return keys

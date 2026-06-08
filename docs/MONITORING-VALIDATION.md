@@ -132,5 +132,8 @@ Same restart caveat as durations.
 
 ## Status
 
-- [ ] Comparison not yet run — both stacks running in parallel as of 2026-06-05
-- [ ] Results TBD
+**Decision made 2026-06-08 — comparison not required.**
+
+Reasoning: the built-in page reads from the audit DB (authoritative, survives restarts) and covers approval funnel and safety signals that Prometheus never exposes. Running Prometheus + Grafana co-located on the agent VM adds RAM pressure, continuous TSDB disk growth, and false co-location confidence (alertmanager fails when the server it's monitoring fails). The three genuine Grafana advantages (time-series zoom, restart-surviving counters, alerting) are either covered by the audit DB already, replaced by the `/ui/monitoring` time-range selector (24h / 7d / 30d), or belong on a dedicated external monitoring VM — not the agent VM.
+
+**Outcome:** Prometheus + Grafana demoted to optional, dedicated external VM only. The install scripts (`install-prometheus.sh`, `install-grafana.sh`) are retained in the repo for users with a dedicated monitoring VM. They are no longer part of the default install or bootstrap prompt.

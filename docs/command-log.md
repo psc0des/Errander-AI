@@ -1,5 +1,21 @@
 # Errander-AI Command Log
 
+## Time-range selector + Prometheus+Grafana demoted (2026-06-08)
+
+```bash
+uv run ruff check errander/observability/metrics.py errander/safety/audit.py
+uv run mypy errander/observability/metrics.py errander/safety/audit.py
+uv run pytest --tb=short -q
+git add errander/observability/metrics.py scripts/bootstrap.sh \
+    SETUP.md README.md SETUP-Win-Controller.md \
+    docs/MONITORING-VALIDATION.md docs/command-log.md \
+    STATUS.md tasks/todo.md tasks/lessons.md
+git commit -m "feat: add /ui/monitoring time-range selector; demote Prometheus+Grafana to external-VM-only"
+git push
+```
+
+---
+
 ## Monitoring gap-fill — approval funnel, safety signals, durations (2026-06-05)
 
 ```bash

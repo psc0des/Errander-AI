@@ -2,7 +2,7 @@
 # Errander-AI — System bootstrap
 #
 # Phase 1 of 2: installs system prerequisites, creates the errander-agent
-# service user, clones the repo, and optionally installs Prometheus.
+# service user and clones the repo.
 # No repo needed — safe to run via curl | bash.
 #
 #   curl -fsSL https://raw.githubusercontent.com/psc0des/Errander-AI/main/scripts/bootstrap.sh | bash
@@ -173,57 +173,6 @@ else
     ok "cloned to ${REPO_DIR}"
 fi
 
-# ── Monitoring stack: Prometheus + Grafana  (optional) ───────────────────────
-echo ""
-echo -e "${BOLD}[optional]${NC} Monitoring stack  (Prometheus + Grafana)"
-
-_prom_running=false
-_graf_running=false
-systemctl is-active prometheus    &>/dev/null 2>&1 && _prom_running=true
-systemctl is-active grafana-server &>/dev/null 2>&1 && _graf_running=true
-
-if $_prom_running && $_graf_running; then
-    ok "Prometheus + Grafana already running — skipping"
-else
-    echo "  Installs Prometheus (:9091) to scrape the agent's /metrics (:9090)"
-    echo "  and Grafana (:3000) with the Errander-AI Fleet Operations dashboard"
-    echo "  pre-provisioned. Access both via SSH tunnel — no firewall rules needed."
-    echo "  Skip to set up later: sudo bash scripts/install-prometheus.sh"
-    echo "                        sudo bash scripts/install-grafana.sh"
-    echo ""
-    _mon_ans=""
-    if [ -e /dev/tty ]; then
-        read -r -p "  Install monitoring stack (Prometheus + Grafana)? [y/N] " _mon_ans </dev/tty || _mon_ans=""
-    else
-        warn "non-interactive session — skipping monitoring stack"
-        warn "run later: sudo bash ${REPO_DIR}/scripts/install-prometheus.sh"
-        warn "           sudo bash ${REPO_DIR}/scripts/install-grafana.sh"
-    fi
-
-    if echo "${_mon_ans:-N}" | grep -qiE '^y'; then
-        if ! $_prom_running; then
-            warn "installing Prometheus..."
-            bash "${REPO_DIR}/scripts/install-prometheus.sh" \
-                && ok "Prometheus installed" \
-                || warn "Prometheus install failed — run later: sudo bash ${REPO_DIR}/scripts/install-prometheus.sh"
-        else
-            ok "Prometheus already running — skipping"
-        fi
-
-        if ! $_graf_running; then
-            warn "installing Grafana..."
-            bash "${REPO_DIR}/scripts/install-grafana.sh" \
-                || warn "Grafana install failed — run later: sudo bash ${REPO_DIR}/scripts/install-grafana.sh"
-        else
-            ok "Grafana already running — skipping"
-        fi
-    else
-        ok "skipped — run later:"
-        ok "  sudo bash ${REPO_DIR}/scripts/install-prometheus.sh"
-        ok "  sudo bash ${REPO_DIR}/scripts/install-grafana.sh"
-    fi
-fi
-
 # ── Done ──────────────────────────────────────────────────────────────────────
 echo ""
 echo -e "${BOLD}═══════════════════════════════════════════${NC}"
@@ -237,6 +186,10 @@ echo ""
 echo -e "    ${BOLD}sudo su - ${SERVICE_USER}${NC}"
 echo -e "    ${BOLD}cd ~/errander${NC}"
 echo -e "    ${BOLD}bash scripts/configure.sh${NC}"
+echo ""
+echo "  Optional — Prometheus + Grafana (dedicated external VM only):"
+echo "    sudo bash scripts/install-prometheus.sh"
+echo "    sudo bash scripts/install-grafana.sh"
 echo ""
 echo -e "${BOLD}═══════════════════════════════════════════${NC}"
 echo ""

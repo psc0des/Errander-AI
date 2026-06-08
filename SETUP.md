@@ -138,7 +138,6 @@ curl -fsSL https://raw.githubusercontent.com/psc0des/Errander-AI/main/scripts/bo
 - Installs git, curl, uv (at `/usr/local/bin`), Python 3.12
 - Creates the `errander-agent` service user with a `.ssh` directory
 - Clones the repo into `/home/errander-agent/errander` (pulls latest on re-runs)
-- Optionally installs Prometheus + Grafana monitoring stack (single prompt, both use official release tarballs — no package manager, no interactive dialogs)
 
 **Step B — Install dependencies** (run as the service user — no sudo required):
 
@@ -1195,20 +1194,30 @@ environments:
     # no prometheus_url → uses global ERRANDER_PROMETHEUS_BASE_URL
 ```
 
-### Monitoring stack: Prometheus + Grafana *(optional — monitors the agent)*
+### Monitoring stack: Prometheus + Grafana *(optional — dedicated external VM only)*
 
-> **Built-in first.** `/ui/monitoring` already shows action trends, approval funnel, safety signals, and duration averages with no external tools. Prometheus + Grafana add **time-series retention** and **alerting**.
+> **Built-in first — no external stack needed on the agent VM.** `/ui/monitoring` already shows action trends, approval funnel, safety signals, and duration averages. It reads from the audit DB (authoritative, survives restarts) and in-process Prometheus counters.
+>
+> **Only install Prometheus + Grafana if you have a dedicated monitoring VM** and need time-series history spanning multiple agent restarts, or alertmanager-based paging. Running them on the same server as the agent adds RAM pressure and disk growth with no meaningful observability gain over the built-in page.
 
-`bootstrap.sh` prompts for both during Step A. To install afterwards:
+On a **separate dedicated monitoring VM**:
 
 ```bash
-sudo bash scripts/install-prometheus.sh   # Prometheus on :9091
+sudo bash scripts/install-prometheus.sh   # Prometheus on :9091 — scrapes agent :9090/metrics
 sudo bash scripts/install-grafana.sh      # Grafana on :3000 with pre-built dashboard
+```
+
+**Point Prometheus at the agent** — edit `/etc/prometheus/prometheus.yml` on the monitoring VM:
+```yaml
+scrape_configs:
+  - job_name: errander-agent
+    static_configs:
+      - targets: ['<agent-vm-ip>:9090']
 ```
 
 **Access via SSH tunnel** (no firewall rules needed):
 ```bash
-ssh -L 9091:localhost:9091 -L 3000:localhost:3000 <user>@<controller-ip>
+ssh -L 9091:localhost:9091 -L 3000:localhost:3000 <user>@<monitoring-vm-ip>
 ```
 
 ```bash

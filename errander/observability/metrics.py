@@ -592,6 +592,12 @@ background:var(--blue-bg);color:var(--primary)}
 .prom-kv:last-child{border-bottom:none}
 .prom-key{font-family:var(--mono);font-size:.72rem;color:var(--text-m)}
 .prom-val{font-family:var(--mono);font-size:.78rem;font-weight:600;color:var(--text)}
+.tr-sel{display:flex;gap:.4rem;margin-bottom:1.5rem}
+.tr-btn{padding:.35rem .9rem;border-radius:6px;font-size:.8rem;font-weight:600;
+  text-decoration:none;color:var(--text-m);background:var(--surface-lowest);
+  border:1px solid var(--outline);transition:background .15s,color .15s}
+.tr-btn:hover{color:var(--text);background:var(--surface-container)}
+.tr-btn.on{background:var(--primary);color:#fff;border-color:var(--primary)}
 @media(max-width:700px){.mon-grid,.mon-prom-grid{grid-template-columns:1fr}}
 """
 
@@ -2845,12 +2851,18 @@ def _build_chart_json(
 
 async def _ui_monitoring(request: web.Request) -> web.Response:
     """GET /ui/monitoring — controller monitoring: audit DB trends + live process counters."""
+    _days_raw = request.rel_url.query.get("days", "7")
+    days = int(_days_raw) if _days_raw in ("1", "7", "30") else 7
+    window_label = "last 24 h" if days == 1 else f"last {days} days"
+    window_display = "Last 24 h" if days == 1 else f"Last {days} Days"
+    day_plural = "day" if days == 1 else "days"
+
     audit: AuditStore | None = request.app.get(_AUDIT_STORE_KEY)
     manager: ApprovalManager | None = request.app.get(_APPROVAL_MANAGER_KEY)
     pending_count = len(manager.get_pending()) if manager is not None else 0
 
     if audit is not None:
-        stats = await audit.get_monitoring_stats()
+        stats = await audit.get_monitoring_stats(daily_days=days, summary_days=days)
     else:
         stats = {"summary": {}, "daily": [], "by_type": []}
 
@@ -2883,11 +2895,24 @@ async def _ui_monitoring(request: web.Request) -> web.Response:
     total_batches = _oint(summary, "total_batches")
 
     rate_cls = "cg" if success_rate >= 95 else "ca" if success_rate >= 80 else "cr"
+
+    def _tr_btn(label: str, d: int) -> str:
+        cls = "tr-btn on" if d == days else "tr-btn"
+        return f'<a href="?days={d}" class="{cls}">{label}</a>'
+
+    toggle = (
+        '<div class="tr-sel">'
+        + _tr_btn("24 h", 1)
+        + _tr_btn("7 d", 7)
+        + _tr_btn("30 d", 30)
+        + '</div>'
+    )
+
     cards = (
         '<div class="cards">'
         f'<div class="card ca"><div class="card-lbl">Total Actions</div>'
         f'<div class="card-num ca">{total}</div>'
-        f'<div class="card-sub">last 30 days</div></div>'
+        f'<div class="card-sub">{window_label}</div></div>'
 
         f'<div class="card {rate_cls}"><div class="card-lbl">Success Rate</div>'
         f'<div class="card-num {rate_cls}">{success_rate}%</div>'
@@ -2899,13 +2924,13 @@ async def _ui_monitoring(request: web.Request) -> web.Response:
 
         f'<div class="card"><div class="card-lbl">Batches Run</div>'
         f'<div class="card-num">{total_batches}</div>'
-        f'<div class="card-sub">last 30 days</div></div>'
+        f'<div class="card-sub">{window_label}</div></div>'
         '</div>'
     )
 
     chart_json = _build_chart_json(daily, by_type)
     charts = (
-        _section("Audit Trail — Last 7 Days")
+        _section(f"Audit Trail — {window_display}")
         + '<div class="mon-grid">'
         + '<div class="chart-wrap">'
         + '<div class="chart-title">Actions by Day</div>'
@@ -2928,7 +2953,7 @@ async def _ui_monitoring(request: web.Request) -> web.Response:
     apv_rej_cls  = "cr" if apv_rejected  > 0 else ""
     apv_tmo_cls  = "cr" if apv_timed_out > 0 else ""
     approval_cards = (
-        _section("Approval Funnel — 30 Days")
+        _section(f"Approval Funnel — {window_display}")
         + '<div class="cards">'
         + '<div class="card"><div class="card-lbl">Requested</div>'
         + f'<div class="card-num">{apv_requested}</div>'
@@ -2966,7 +2991,7 @@ async def _ui_monitoring(request: web.Request) -> web.Response:
     saf_ssh        = _oint(saf, "ssh_anomalies")
 
     safety_section = (
-        _section("Safety &amp; Health Signals — 30 Days")
+        _section(f"Safety &amp; Health Signals — {window_display}")
         + '<div class="mon-prom-grid">'
         + '<div class="chart-wrap">'
         + '<div class="chart-title">Safety Events</div>'
@@ -3067,9 +3092,9 @@ async def _ui_monitoring(request: web.Request) -> web.Response:
         + '<div class="chart-wrap">'
         + '<div class="chart-title">Data Sources</div>'
         + '<div class="prom-kv"><span class="prom-key">Stat cards</span>'
-        + '<span class="prom-val" style="color:var(--text-d);font-size:.68rem">audit DB · 30d</span></div>'
+        + f'<span class="prom-val" style="color:var(--text-d);font-size:.68rem">audit DB · {window_label}</span></div>'
         + '<div class="prom-kv"><span class="prom-key">Charts</span>'
-        + '<span class="prom-val" style="color:var(--text-d);font-size:.68rem">audit DB · 7d / 30d</span></div>'
+        + f'<span class="prom-val" style="color:var(--text-d);font-size:.68rem">audit DB · {window_label}</span></div>'
         + '<div class="prom-kv"><span class="prom-key">Live counters</span>'
         + '<span class="prom-val" style="color:var(--text-d);font-size:.68rem">Prometheus · since restart</span></div>'
         + '</div>'
@@ -3135,7 +3160,7 @@ async def _ui_monitoring(request: web.Request) -> web.Response:
       }});
     }} else {{
       barEl.parentElement.innerHTML +=
-        '<div class="empty" style="margin-top:.5rem">No actions in the last 7 days.</div>';
+        '<div class="empty" style="margin-top:.5rem">No actions in the last {days} {day_plural}.</div>';
     }}
   }}
 
@@ -3159,13 +3184,13 @@ async def _ui_monitoring(request: web.Request) -> web.Response:
       }});
     }} else {{
       doEl.parentElement.innerHTML +=
-        '<div class="empty" style="margin-top:.5rem">No actions in the last 30 days.</div>';
+        '<div class="empty" style="margin-top:.5rem">No actions in the last {days} {day_plural}.</div>';
     }}
   }}
 }})();
 </script>"""
 
-    body = cards + approval_cards + charts + safety_section + live_counters + chart_init
+    body = toggle + cards + approval_cards + charts + safety_section + live_counters + chart_init
     return _page("Monitoring", body, refresh=60, pending_count=pending_count, request=request)
 
 

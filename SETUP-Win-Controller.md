@@ -135,11 +135,11 @@ Once the agent is running, open `http://localhost:9090/ui/monitoring` in your br
 
 This requires no Prometheus or Grafana installation.
 
-**Optional — Prometheus + Grafana (time-series history and alerting):**
+**Optional — Prometheus + Grafana (dedicated external VM only):**
 
-`scripts/install-prometheus.sh` and `scripts/install-grafana.sh` are Linux Bash scripts — they do not run natively on Windows. To get the external stack on a Windows controller:
-- Run Prometheus + Grafana on a small Linux VM (or WSL2) and point them at `http://<controller-ip>:9090/metrics`
-- Or import the pre-built dashboard JSON at `deploy/grafana/dashboards/errander.json` manually into an existing Grafana instance
+The built-in `/ui/monitoring` page covers all agent observability with no external tools. Prometheus + Grafana are only useful on a **separate dedicated monitoring VM** (not co-located with the agent) if you need time-series history across restarts or alertmanager paging.
+
+`scripts/install-prometheus.sh` and `scripts/install-grafana.sh` are Linux Bash scripts — run them on a dedicated Linux monitoring VM and point Prometheus at `http://<controller-ip>:9090/metrics`. Import the pre-built dashboard JSON from `deploy/grafana/dashboards/errander.json` if you have an existing Grafana instance.
 
 ---
 

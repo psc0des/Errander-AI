@@ -1,5 +1,11 @@
 # Errander-AI — Lessons Learned
 
+## 2026-06-08 — Co-located monitoring stacks defeat their own purpose
+
+Running Prometheus + Grafana on the same VM as the agent they monitor is theater observability. The three real advantages of Grafana (time-series history, survive-restart counters, alerting) are all weakened or eliminated when co-located: the audit DB already survives restarts and is more authoritative, alertmanager fails when the server fails, and RAM/disk pressure from the stack is an ops risk on a small VM. The right answer is to build the time-range feature into the built-in page (the data is already in the audit DB) and reserve Prometheus+Grafana for dedicated external monitoring VMs.
+
+**How to apply:** when evaluating whether to keep an external stack, ask "does co-location defeat the core advantage?" If yes, build the missing feature into the built-in page instead.
+
 ## 2026-06-05 — Always cross-check new features against the observability spec before calling them done
 
 When a new observability surface is built, compare it against `docs/OBSERVABILITY.md` before marking complete. That doc is the canonical list of what signals the system is supposed to expose — without the comparison, it's easy to build the "action outcomes" view and miss the approval funnel, safety signals, and duration histograms that are equally important. The monitoring page shipped in two commits because this cross-check wasn't done upfront.

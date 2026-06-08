@@ -312,7 +312,7 @@ All Slack communication is outbound HTTPS. No webhooks, no inbound traffic.
 | Notifications | Slack API | Outbound HTTPS only, reaction polling |
 | Scheduling | APScheduler | Agent owns its own schedule |
 | Audit Trail | SQLite (v1) | PostgreSQL planned for v2 |
-| Observability | Built-in dashboard + Prometheus + Grafana | `/ui/monitoring` (built-in: approval funnel, safety signals, action trends, duration averages); `/metrics` Prometheus endpoint; Grafana stack optional for time-series depth |
+| Observability | Built-in dashboard | `/ui/monitoring` — approval funnel, safety signals, action trends, duration averages, live counters; `/metrics` Prometheus endpoint for external scraping |
 | VM Locking | File-based (v1) | Valkey (Redis fork) planned for v2 |
 | Testing | pytest + pytest-asyncio + Playwright | 2507 tests |
 | Linting | ruff | |
@@ -573,27 +573,27 @@ The agent **exposes** raw metrics on `/metrics` (port 9090, Prometheus text expo
 | `errander_approval_wait_seconds` | Histogram | Time waiting for approval |
 | `errander_vm_lock_held_seconds` | Histogram | Lock hold duration |
 
-### Installing the monitoring stack (Prometheus + Grafana)
+### Prometheus + Grafana *(optional — dedicated external VM only)*
 
-Prometheus and Grafana both run **on the controller node**. Prometheus scrapes the agent's local `/metrics`; Grafana is pre-provisioned with the **Errander-AI Fleet Operations** dashboard — no manual panel setup.
+> **Not needed on the agent VM.** `/ui/monitoring` is the primary observability surface — it reads from the audit DB (authoritative, survives restarts) and needs no external stack. Prometheus + Grafana are only worth running if you have a **dedicated monitoring VM** and need time-series history across restarts or alertmanager-based paging.
 
 There are **two distinct Prometheus relationships** in this system — keep them separate:
 
-1. **Prometheus → Errander** — Prometheus scrapes the agent's own `/metrics` (the table above). This is what you set up below.
-2. **Errander → Prometheus / node_exporter** — the agent *reads* host metrics from node_exporter on the **target VMs** (`observability/vm_metrics.py`, `integrations/prometheus.py`) to inform Layer A decisions. Configured per-target, separate from the scrape job below.
+1. **Prometheus → Errander** — Prometheus scrapes the agent's own `/metrics` (the table above) from a separate monitoring VM.
+2. **Errander → Prometheus / node_exporter** — the agent *reads* host metrics from node_exporter on the **target VMs** (`observability/vm_metrics.py`, `integrations/prometheus.py`) to inform Layer A decisions. Configured per-target, separate from the scrape job above.
 
-**Easiest — `bootstrap.sh` prompts for the full stack during setup**, or run the scripts anytime:
+On a dedicated monitoring VM:
 
 ```bash
 sudo bash scripts/install-prometheus.sh   # Prometheus on :9091
 sudo bash scripts/install-grafana.sh      # Grafana on :3000 (dashboard auto-provisioned)
 ```
 
-`install-prometheus.sh` and `install-grafana.sh` both use the **official release tarballs** (no package manager, no apt/yum, zero interactive prompts) — the same binary download + systemd unit approach, works identically on any distro. Grafana auto-provisions the Prometheus datasource and the Errander dashboard and prints the admin password once.
+`install-prometheus.sh` and `install-grafana.sh` use the **official release tarballs** (no package manager, no apt/yum, zero interactive prompts). Grafana auto-provisions the Prometheus datasource and the Errander Fleet Operations dashboard.
 
 **Access via SSH tunnel** (no firewall rule for :9091 or :3000 needed):
 ```bash
-ssh -L 9091:localhost:9091 -L 3000:localhost:3000 <user>@<controller-ip>
+ssh -L 9091:localhost:9091 -L 3000:localhost:3000 <user>@<monitoring-vm-ip>
 ```
 Then open `http://localhost:3000` (Grafana) or `http://localhost:9091/targets` (Prometheus).
 

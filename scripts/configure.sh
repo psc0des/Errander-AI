@@ -509,13 +509,24 @@ fi
 
 # ── Encryption (optional) ─────────────────────────────────────────────────────
 echo ""
-printf "  Encrypt sensitive values in .env? (y/N): "
-read -r _enc_choice || true
-echo ""
-
 _encrypt=false
 SECRETS_KEY=""
 KEY_FILE="${HOME}/.errander.key"
+
+# On re-run, default to keeping existing encryption if the key file is present
+if [ -f "$KEY_FILE" ]; then
+    printf "  Encryption key found at %s — keep encryption active? (Y/n): " "$KEY_FILE"
+    read -r _enc_choice || true
+    echo ""
+    case "${_enc_choice,,}" in
+      n|no) _enc_choice="no" ;;
+      *)    _enc_choice="yes" ;;
+    esac
+else
+    printf "  Encrypt sensitive values in .env? (y/N): "
+    read -r _enc_choice || true
+    echo ""
+fi
 
 case "${_enc_choice,,}" in
   y|yes)

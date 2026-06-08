@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
-# Errander-AI — install Prometheus on the controller node
+# Errander-AI — install Prometheus on a dedicated monitoring VM
 #
-# Installs Prometheus (official static binary + systemd unit) on the SAME VM that
-# runs the Errander-AI agent, and configures it to scrape the agent's own
-# /metrics endpoint. This is the "Prometheus → Errander" direction — monitoring
-# the agent itself. It is NOT the agent-reads-target-node_exporter direction
+# Run this on a SEPARATE monitoring VM, not on the agent VM. Point it at the
+# agent VM's /metrics endpoint via AGENT_METRICS_PORT below.
+# This is the "Prometheus → Errander" direction — monitoring the agent from
+# outside. It is NOT the agent-reads-target-node_exporter direction
 # (that is configured separately; see example/Prometheus/).
 #
 # Distro-agnostic: uses the upstream release tarball, so it works the same on
 # Ubuntu, Debian, RHEL, Rocky, Alma, Fedora, etc. — no apt/dnf package needed.
 #
-# Port layout (both on the controller node):
-#   agent UI + /metrics : 9090   (ERRANDER_METRICS_PORT)
-#   prometheus          : 9091   (avoids the 9090 collision)
+# Port layout:
+#   agent UI + /metrics : 9090 on the AGENT VM   (ERRANDER_METRICS_PORT)
+#   prometheus          : 9091 on THIS monitoring VM
 #
 # Usage (run as a user with sudo):
 #   bash scripts/install-prometheus.sh
@@ -38,7 +38,7 @@ warn() { echo -e "  ${YELLOW}▶${NC} $*"; }
 fail() { echo -e "\n  ${RED}✗ ERROR:${NC} $*\n"; exit 1; }
 
 echo ""
-echo -e "${BOLD}Errander-AI — Prometheus (controller node)${NC}"
+echo -e "${BOLD}Errander-AI — Prometheus (monitoring VM)${NC}"
 echo "═══════════════════════════════════════════"
 
 command -v curl &>/dev/null || fail "curl is required but not installed"
@@ -88,8 +88,8 @@ ok "installed prometheus + promtool to /usr/local/bin"
 # INVARIANT: the agent's /metrics is unauthenticated by design (it stays open even
 # when the UI requires login), so no credentials are needed in this scrape job.
 sudo tee "${PROM_CONF_DIR}/prometheus.yml" > /dev/null <<EOF
-# Managed by scripts/install-prometheus.sh — controller-node Prometheus.
-# Scrapes the Errander-AI agent's own /metrics endpoint on this host.
+# Managed by scripts/install-prometheus.sh — dedicated monitoring VM.
+# Scrapes the Errander-AI agent's /metrics endpoint (set static_configs target below).
 global:
   scrape_interval: 15s
 
@@ -113,7 +113,7 @@ ok "wrote + validated ${PROM_CONF_DIR}/prometheus.yml  (scrapes agent on :${AGEN
 # ── systemd unit ─────────────────────────────────────────────────────────────────
 sudo tee /etc/systemd/system/prometheus.service > /dev/null <<EOF
 [Unit]
-Description=Prometheus (Errander-AI controller node)
+Description=Prometheus (Errander-AI monitoring VM)
 Wants=network-online.target
 After=network-online.target
 
@@ -147,7 +147,7 @@ fi
 
 echo ""
 echo -e "${BOLD}═══════════════════════════════════════════${NC}"
-echo -e "${GREEN} Prometheus installed on the controller node.${NC}"
+echo -e "${GREEN} Prometheus installed on this monitoring VM.${NC}"
 echo ""
 echo "  Prometheus UI   : http://<controller-ip>:${PROM_PORT}"
 echo "  Scrape target   : localhost:${AGENT_METRICS_PORT}/metrics  (the agent)"

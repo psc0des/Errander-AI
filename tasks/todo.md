@@ -92,7 +92,7 @@
 
 The architecture diagram shows these as target components — that's the **vision**, NOT a completion claim. Build/verify in this order:
 
-- [ ] **1. Prometheus test** — script + docs DONE; **not yet run/verified on a real controller**. Run `scripts/install-prometheus.sh`; confirm `http://<controller>:9091/targets` shows `errander-agent` UP.
+- [ ] **1. Prometheus test** — script + docs DONE; **not yet run on a dedicated monitoring VM**. Run `scripts/install-prometheus.sh` on a separate monitoring VM; confirm `http://<monitoring-vm>:9091/targets` shows `errander-agent` UP. Not needed on the agent VM.
 - [ ] **2. LangSmith wiring** — SETUP/OBSERVABILITY docs + `.env`/env-var entries DONE; **not yet enabled/verified**. Set `LANGCHAIN_*` in dev/staging, confirm traces, add learning doc.
 - [ ] **3. Layer A Investigation Agent** — plan DONE (`tasks/investigation-agent-implementation-plan.md`); **implementation pending** (build first; it's the engine).
 - [ ] **4. Dashboard Chat (SRE ops-console)** — plan DONE (`tasks/dashboard-chat-implementation-plan.md`); **implementation pending** (after #3; reconcile step first; chat never executes — action handoff goes through approval).

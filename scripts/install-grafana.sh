@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Errander-AI — install Grafana on the controller node
+# Errander-AI — install Grafana on a dedicated monitoring VM
 #
 # Downloads the official Grafana OSS release tarball — no package manager,
 # zero interactive prompts, works identically on Ubuntu, Debian, RHEL,
@@ -33,7 +33,7 @@ warn() { echo -e "  ${YELLOW}▶${NC} $*"; }
 fail() { echo -e "\n  ${RED}✗ ERROR:${NC} $*\n"; exit 1; }
 
 echo ""
-echo -e "${BOLD}Errander-AI — Grafana (controller node)${NC}"
+echo -e "${BOLD}Errander-AI — Grafana (monitoring VM)${NC}"
 echo "═══════════════════════════════════════════"
 
 command -v curl &>/dev/null || fail "curl is required but not installed"
@@ -160,7 +160,7 @@ ok "dashboard JSON installed: Errander-AI Fleet Operations"
 # ── systemd unit ──────────────────────────────────────────────────────────────
 sudo tee /etc/systemd/system/grafana-server.service > /dev/null <<EOF
 [Unit]
-Description=Grafana (Errander-AI controller node)
+Description=Grafana (Errander-AI monitoring VM)
 Documentation=https://grafana.com/docs/grafana/latest/
 Wants=network-online.target
 After=network-online.target
@@ -218,7 +218,7 @@ fi
 # ── done ──────────────────────────────────────────────────────────────────────
 echo ""
 echo -e "${BOLD}═══════════════════════════════════════════${NC}"
-echo -e "${GREEN} Grafana installed on the controller node.${NC}"
+echo -e "${GREEN} Grafana installed on this monitoring VM.${NC}"
 echo ""
 echo "  Grafana UI      : http://<controller-ip>:${GF_PORT}"
 echo "  Dashboard       : Errander-AI Fleet Operations  (auto-provisioned)"

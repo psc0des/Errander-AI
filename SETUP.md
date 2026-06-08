@@ -80,7 +80,7 @@ Everything the controller needs to reach, and what needs to reach the controller
 | Slack API (`slack.com`) | 443 (HTTPS) | Optional | Only if Slack notifications are enabled. Outbound HTTPS is allowed by default |
 | Cloud LLM API (OpenAI / Groq / Azure AI Foundry) | 443 (HTTPS) | Optional | Only if using a cloud LLM provider. Outbound HTTPS is allowed by default |
 | Self-hosted vLLM (private IP, GPU VM) | 8000 (HTTP) | Optional | Only if using self-hosted vLLM. Same-VNet: needs NSG allow rule on the GPU VM inbound |
-| Your existing Prometheus server (private IP) | 9090 (HTTP) | Optional | Errander reads metrics from a Prometheus instance you already have — it does not install or run Prometheus itself. Set `ERRANDER_PROMETHEUS_BASE_URL` to point at it |
+| Your existing Prometheus server (private IP) | varies (HTTP) | Optional | Errander reads metrics from a Prometheus instance you already have — it does not install or run Prometheus itself. Set `ERRANDER_PROMETHEUS_BASE_URL` to point at it (commonly 9090, but use whatever port your Prometheus runs on) |
 | Your existing ELK / Elasticsearch server (private IP) | 9200 (HTTP) | Optional | Errander reads logs from an Elasticsearch instance you already have — it does not install or run ELK itself. Set `ERRANDER_ELK_BASE_URL` to point at it |
 
 **Inbound to the controller**
@@ -652,13 +652,13 @@ In service mode (no `--run-now`, no `--env`), Errander runs as a long-lived daem
 
 ### systemd service *(Linux)*
 
-Run this from inside the `errander/` directory — it auto-fills your username and install path:
+> **Switch back to your admin user for this step** — `sudo` is required to write the systemd unit file and manage services. `errander-agent` has no sudo access.
+
+Run this from inside the errander directory (`/home/errander-agent/errander`):
 
 ```bash
-# Run from inside the errander/ directory
-INSTALL_DIR=$(pwd)
-INSTALL_USER=$(whoami)
-KEY_PATH=$(echo ~/.errander.key)
+# Run as your admin user from /home/errander-agent/errander
+INSTALL_DIR=/home/errander-agent/errander
 
 sudo tee /etc/systemd/system/errander.service << EOF
 [Unit]
@@ -667,13 +667,11 @@ After=network.target
 
 [Service]
 Type=simple
-User=${INSTALL_USER}
+User=errander-agent
 WorkingDirectory=${INSTALL_DIR}
 EnvironmentFile=${INSTALL_DIR}/.env
-EnvironmentFile=-${KEY_PATH}
 ExecStart=${INSTALL_DIR}/.venv/bin/python -m errander \\
-  --inventory ${INSTALL_DIR}/inventory.yaml \\
-  --config ${INSTALL_DIR}/settings.yaml
+  --inventory ${INSTALL_DIR}/inventory.yaml
 Restart=on-failure
 RestartSec=30
 
@@ -971,7 +969,8 @@ docker run --rm --gpus all nvidia/cuda:12.0-base-ubuntu20.04 nvidia-smi
 ```
 
 ```bash
-# Start vLLM (from your cloned repo on the GPU VM)
+# Clone the repo on the GPU VM (only deploy/vllm is needed)
+git clone https://github.com/psc0des/Errander-AI.git errander
 cd errander/deploy/vllm
 cp .env.example .env
 

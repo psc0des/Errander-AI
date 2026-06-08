@@ -77,6 +77,36 @@ ok "Python dependencies ready"
 # ── 1. LLM ───────────────────────────────────────────────────────────────────
 step "1/5" "LLM configuration"
 echo ""
+
+# On re-run, offer to keep existing LLM settings from .env
+_existing_llm_url=""
+_existing_llm_model=""
+_existing_llm_key=""
+if [ -f ".env" ]; then
+    _existing_llm_url=$(grep "^ERRANDER_LLM_BASE_URL=" .env 2>/dev/null | cut -d= -f2- || true)
+    _existing_llm_model=$(grep "^ERRANDER_LLM_MODEL=" .env 2>/dev/null | cut -d= -f2- || true)
+    _existing_llm_key=$(grep "^ERRANDER_LLM_API_KEY=" .env 2>/dev/null | cut -d= -f2- || true)
+fi
+
+LLM_BASE_URL="" LLM_MODEL="" LLM_API_KEY=""
+
+if [ -n "$_existing_llm_url" ] && [ -n "$_existing_llm_model" ]; then
+    echo "  Current LLM: $_existing_llm_url  model=$_existing_llm_model"
+    printf "  Keep this configuration? (Y/n): "
+    read -r _llm_keep || true
+    echo ""
+    case "${_llm_keep,,}" in
+      n|no) ;;  # fall through to provider menu below
+      *)
+        LLM_BASE_URL="$_existing_llm_url"
+        LLM_MODEL="$_existing_llm_model"
+        LLM_API_KEY="$_existing_llm_key"
+        ok "LLM — keeping existing configuration"
+        ;;
+    esac
+fi
+
+if [ -z "$LLM_BASE_URL" ]; then
 echo "  Which LLM provider are you using?"
 echo "    1) Azure AI Foundry"
 echo "    2) OpenAI"
@@ -155,6 +185,7 @@ case "$LLM_CHOICE" in
     LLM_API_KEY="${REPLY:-not-needed}"
     ;;
 esac
+fi  # end: if [ -z "$LLM_BASE_URL" ]
 
 ok "LLM: $LLM_BASE_URL  model=$LLM_MODEL"
 

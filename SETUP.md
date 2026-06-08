@@ -148,9 +148,7 @@ uv sync --extra dev
 uv run python -c "import errander; print('OK')"
 ```
 
-This installs Python packages only. **Do not run `configure.sh` yet** — it needs your SSH key path (Step 2) and target VM list (Step 3). Come back to configure once those are done.
-
-**All remaining steps run as `errander-agent`** (inside the `sudo su - errander-agent` session). Continue to Step 2.
+**All remaining steps run as `errander-agent`.** Continue to Step 2 — `configure.sh` comes later in Step 5 once SSH keys and target VMs are set up.
 
 > **Prefer to inspect bootstrap.sh before running it?** Clone it first — bootstrap.sh skips any step already done:
 > ```bash
@@ -158,39 +156,7 @@ This installs Python packages only. **Do not run `configure.sh` yet** — it nee
 > bash errander-setup/scripts/bootstrap.sh
 > ```
 
-<details>
-<summary>Manual installation (reference / fallback)</summary>
-
-```bash
-# As admin: install system deps and create service user
-sudo apt-get update && sudo apt-get install -y git curl   # Ubuntu/Debian
-# sudo dnf install -y git curl                            # RHEL/CentOS/Oracle
-
-# Install uv (official installer — no PPA, works on all distros)
-curl -LsSf https://astral.sh/uv/install.sh | sh
-export PATH="$HOME/.local/bin:$PATH"
-sudo cp ~/.local/bin/uv /usr/local/bin/uv
-
-# Install Python 3.12 via uv
-uv python install 3.12
-
-# Create service user and .ssh directory
-sudo useradd -m -s /bin/bash errander-agent
-sudo mkdir -p /home/errander-agent/.ssh
-sudo chmod 700 /home/errander-agent/.ssh
-sudo chown -R errander-agent:errander-agent /home/errander-agent/.ssh
-
-# Clone repo as service user
-sudo -u errander-agent git clone https://github.com/psc0des/Errander-AI.git /home/errander-agent/errander
-
-# As errander-agent: install deps and configure
-sudo su - errander-agent
-cd ~/errander
-uv sync --extra dev
-uv run python -c "import errander; print('OK')"
-```
-
-</details>
+> **Prefer to install manually?** → [Appendix C: Manual installation](#appendix-c-manual-installation)
 
 ---
 
@@ -1281,3 +1247,40 @@ environments:
   staging:
     # no elk_* → uses global .env values
 ```
+
+---
+
+## Appendix C: Manual installation
+
+> **Normally you do not need this.** `bootstrap.sh` handles everything in Step 1A automatically. Use these commands only if `bootstrap.sh` fails or you need to inspect each step individually.
+
+```bash
+# As admin: install system deps and create service user
+sudo apt-get update && sudo apt-get install -y git curl   # Ubuntu/Debian
+# sudo dnf install -y git curl                            # RHEL/CentOS/Oracle
+
+# Install uv (official installer — no PPA, works on all distros)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+export PATH="$HOME/.local/bin:$PATH"
+sudo cp ~/.local/bin/uv /usr/local/bin/uv
+
+# Install Python 3.12 via uv
+uv python install 3.12
+
+# Create service user and .ssh directory
+sudo useradd -m -s /bin/bash errander-agent
+sudo mkdir -p /home/errander-agent/.ssh
+sudo chmod 700 /home/errander-agent/.ssh
+sudo chown -R errander-agent:errander-agent /home/errander-agent/.ssh
+
+# Clone repo as service user
+sudo -u errander-agent git clone https://github.com/psc0des/Errander-AI.git /home/errander-agent/errander
+
+# As errander-agent: install deps and verify
+sudo su - errander-agent
+cd ~/errander
+uv sync --extra dev
+uv run python -c "import errander; print('OK')"
+```
+
+Once these commands succeed, continue from **Step 2** — all remaining steps are identical to the `bootstrap.sh` path.

@@ -669,6 +669,7 @@ After=network.target
 Type=simple
 User=errander-agent
 WorkingDirectory=${INSTALL_DIR}
+EnvironmentFile=-/home/errander-agent/.errander.key
 EnvironmentFile=${INSTALL_DIR}/.env
 ExecStart=${INSTALL_DIR}/.venv/bin/python -m errander \\
   --inventory ${INSTALL_DIR}/inventory.yaml

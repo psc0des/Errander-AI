@@ -275,18 +275,56 @@ else
     warn "Setup is incomplete — re-run configure.sh after creating the SSH key."
 fi
 
+# ── Read existing .env values as defaults for optional services ───────────────
+# On re-run, pre-fill Slack/Prometheus/ELK from the existing .env so the user
+# only has to press Enter to keep current settings.
+_existing_slack_token=""
+_existing_slack_channel=""
+_existing_prometheus_url=""
+_existing_elk_url=""
+_existing_elk_api_key=""
+_existing_elk_index=""
+if [ -f ".env" ]; then
+    _existing_slack_token=$(grep "^ERRANDER_SLACK_BOT_TOKEN=" .env 2>/dev/null | cut -d= -f2- || true)
+    _existing_slack_channel=$(grep "^ERRANDER_SLACK_CHANNEL_ID=" .env 2>/dev/null | cut -d= -f2- || true)
+    _existing_prometheus_url=$(grep "^ERRANDER_PROMETHEUS_BASE_URL=" .env 2>/dev/null | cut -d= -f2- || true)
+    _existing_elk_url=$(grep "^ERRANDER_ELK_BASE_URL=" .env 2>/dev/null | cut -d= -f2- || true)
+    _existing_elk_api_key=$(grep "^ERRANDER_ELK_API_KEY=" .env 2>/dev/null | cut -d= -f2- || true)
+    _existing_elk_index=$(grep "^ERRANDER_ELK_INDEX_PATTERN=" .env 2>/dev/null | cut -d= -f2- || true)
+fi
+
 # ── 4. Slack ──────────────────────────────────────────────────────────────────
 step "4/5" "Slack  (optional)"
 echo ""
 echo "  When Slack is not configured, approvals go to the web UI at"
 echo "  http://<master-vm-ip>:9090/ui/approvals instead."
 echo ""
-printf "  Enable Slack notifications? (y/N): "
-read -r SLACK_CHOICE
-echo ""
 
 SLACK_BOT_TOKEN=""
 SLACK_CHANNEL_ID=""
+
+if [ -n "$_existing_slack_token" ]; then
+    printf "  Keep existing Slack configuration? (Y/n): "
+    read -r _slack_keep || true
+    echo ""
+    case "${_slack_keep,,}" in
+      n|no)
+        printf "  Enable Slack notifications? (y/N): "
+        read -r SLACK_CHOICE
+        echo ""
+        ;;
+      *)
+        SLACK_BOT_TOKEN="$_existing_slack_token"
+        SLACK_CHANNEL_ID="$_existing_slack_channel"
+        ok "Slack — keeping existing configuration"
+        SLACK_CHOICE="keep"
+        ;;
+    esac
+else
+    printf "  Enable Slack notifications? (y/N): "
+    read -r SLACK_CHOICE
+    echo ""
+fi
 
 case "${SLACK_CHOICE,,}" in
   y|yes)
@@ -298,6 +336,7 @@ case "${SLACK_CHOICE,,}" in
     SLACK_CHANNEL_ID="$REPLY"
     ok "Slack configured"
     ;;
+  keep) ;;  # already set above
   *)
     ok "Skipping Slack — web UI approval mode will be active"
     ;;
@@ -308,49 +347,91 @@ echo ""
 echo "  Prometheus is optional. This sets the global default URL used by --ask and"
 echo "  --probe-now. You can override it per-environment in inventory.yaml via"
 echo "  'prometheus_url:' under the environment block."
-printf "  Do you have Prometheus running? (y/N): "
-read -r PROM_CHOICE
-echo ""
 
 PROMETHEUS_BASE_URL=""
-case "${PROM_CHOICE,,}" in
-  y|yes)
-    prompt_val "Prometheus URL (global default)" "http://localhost:9091"
-    PROMETHEUS_BASE_URL="$REPLY"
-    ok "Prometheus configured: $PROMETHEUS_BASE_URL"
-    ;;
-  *)
-    ok "Skipping Prometheus — live VM metrics will use SSH-only probes"
-    ;;
-esac
+_prom_default="${_existing_prometheus_url:-http://localhost:9091}"
+
+if [ -n "$_existing_prometheus_url" ]; then
+    printf "  Keep existing Prometheus URL (%s)? (Y/n): " "$_existing_prometheus_url"
+    read -r _prom_keep || true
+    echo ""
+    case "${_prom_keep,,}" in
+      n|no)
+        prompt_val "Prometheus URL (global default)" "$_prom_default"
+        PROMETHEUS_BASE_URL="$REPLY"
+        ok "Prometheus configured: $PROMETHEUS_BASE_URL"
+        ;;
+      *)
+        PROMETHEUS_BASE_URL="$_existing_prometheus_url"
+        ok "Prometheus — keeping existing URL: $PROMETHEUS_BASE_URL"
+        ;;
+    esac
+else
+    printf "  Do you have Prometheus running? (y/N): "
+    read -r PROM_CHOICE
+    echo ""
+    case "${PROM_CHOICE,,}" in
+      y|yes)
+        prompt_val "Prometheus URL (global default)" "$_prom_default"
+        PROMETHEUS_BASE_URL="$REPLY"
+        ok "Prometheus configured: $PROMETHEUS_BASE_URL"
+        ;;
+      *)
+        ok "Skipping Prometheus — live VM metrics will use SSH-only probes"
+        ;;
+    esac
+fi
 
 # ── 4c. ELK / Elasticsearch (optional) ───────────────────────────────────────
 echo ""
 echo "  ELK is optional. This sets the global default used by --ask and --probe-now."
 echo "  You can override it per-environment in inventory.yaml via 'elk_url:',"
 echo "  'elk_api_key:', and 'elk_index_pattern:' under the environment block."
-printf "  Do you use ELK / Elasticsearch for log aggregation? (y/N): "
-read -r ELK_CHOICE
-echo ""
 
 ELK_BASE_URL=""
 ELK_API_KEY=""
 ELK_INDEX_PATTERN="filebeat-*,logstash-*"
 
-case "${ELK_CHOICE,,}" in
-  y|yes)
-    prompt_val "Elasticsearch URL (global default)" "http://localhost:9200"
-    ELK_BASE_URL="$REPLY"
-    prompt_val "API key  (press Enter to skip for unauthenticated)" ""
-    ELK_API_KEY="$REPLY"
-    prompt_val "Index pattern" "filebeat-*,logstash-*"
-    ELK_INDEX_PATTERN="$REPLY"
-    ok "ELK configured: $ELK_BASE_URL  index=$ELK_INDEX_PATTERN"
-    ;;
-  *)
-    ok "Skipping ELK — journal errors will be read via journalctl over SSH"
-    ;;
-esac
+if [ -n "$_existing_elk_url" ]; then
+    printf "  Keep existing ELK configuration (%s)? (Y/n): " "$_existing_elk_url"
+    read -r _elk_keep || true
+    echo ""
+    case "${_elk_keep,,}" in
+      n|no)
+        prompt_val "Elasticsearch URL (global default)" "${_existing_elk_url:-http://localhost:9200}"
+        ELK_BASE_URL="$REPLY"
+        prompt_val "API key  (press Enter to skip for unauthenticated)" ""
+        ELK_API_KEY="$REPLY"
+        prompt_val "Index pattern" "${_existing_elk_index:-filebeat-*,logstash-*}"
+        ELK_INDEX_PATTERN="$REPLY"
+        ok "ELK configured: $ELK_BASE_URL  index=$ELK_INDEX_PATTERN"
+        ;;
+      *)
+        ELK_BASE_URL="$_existing_elk_url"
+        ELK_API_KEY="$_existing_elk_api_key"
+        ELK_INDEX_PATTERN="${_existing_elk_index:-filebeat-*,logstash-*}"
+        ok "ELK — keeping existing configuration: $ELK_BASE_URL"
+        ;;
+    esac
+else
+    printf "  Do you use ELK / Elasticsearch for log aggregation? (y/N): "
+    read -r ELK_CHOICE
+    echo ""
+    case "${ELK_CHOICE,,}" in
+      y|yes)
+        prompt_val "Elasticsearch URL (global default)" "http://localhost:9200"
+        ELK_BASE_URL="$REPLY"
+        prompt_val "API key  (press Enter to skip for unauthenticated)" ""
+        ELK_API_KEY="$REPLY"
+        prompt_val "Index pattern" "filebeat-*,logstash-*"
+        ELK_INDEX_PATTERN="$REPLY"
+        ok "ELK configured: $ELK_BASE_URL  index=$ELK_INDEX_PATTERN"
+        ;;
+      *)
+        ok "Skipping ELK — journal errors will be read via journalctl over SSH"
+        ;;
+    esac
+fi
 
 # ── 5. Write files ────────────────────────────────────────────────────────────
 step "5/5" "Writing .env and inventory.yaml"

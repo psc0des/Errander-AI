@@ -66,7 +66,7 @@ def _load_inventory(path: Path) -> dict[str, Any]:
     data: Any = yaml.safe_load(text)
     if not isinstance(data, dict) or "environments" not in data:
         raise ValueError("inventory.yaml must have a top-level 'environments:' key")
-    return data  # type: ignore[return-value]
+    return data
 
 
 def _save_inventory(path: Path, data: dict[str, Any]) -> None:
@@ -128,54 +128,92 @@ async def _main(inventory_path: Path) -> None:
     environments: dict[str, Any] = data["environments"]
     env_names = list(environments.keys())
 
-    if not env_names:
-        _err("No environments found in inventory.yaml.")
-        print("  Run configure.sh first to create the initial inventory.\n")
-        sys.exit(1)
-
     # Show current state
     print(f"  Inventory: {inventory_path}\n")
-    for i, env_name in enumerate(env_names, 1):
-        env = environments[env_name]
-        targets = env.get("targets", [])
-        print(f"  [{i}] {env_name}  ({len(targets)} VM{'s' if len(targets) != 1 else ''})")
-        for t in targets:
-            print(f"       - {t.get('name', t.get('host', '?'))}  ({t.get('host', '?')})")
+    if env_names:
+        for i, env_name in enumerate(env_names, 1):
+            env = environments[env_name]
+            targets = env.get("targets", [])
+            print(f"  [{i}] {env_name}  ({len(targets)} VM{'s' if len(targets) != 1 else ''})")
+            for t in targets:
+                print(f"       - {t.get('name', t.get('host', '?'))}  ({t.get('host', '?')})")
+        print(f"  [n] New environment")
+    else:
+        print("  (no environments yet — you will create the first one)")
     print()
 
     # Choose environment
+    new_env = False
+    chosen_env = ""
     while True:
-        raw = input(
-            f"  Which environment to add to? (1–{len(env_names)}"
-            + (f", or name" if len(env_names) > 1 else "")
-            + "): "
-        ).strip()
+        if env_names:
+            raw = input(
+                f"  Which environment to add to? (1–{len(env_names)}, name, or n for new): "
+            ).strip()
+        else:
+            raw = "n"
         if not raw:
             continue
+        if raw.lower() == "n":
+            new_env = True
+            break
         if raw.isdigit():
             idx = int(raw) - 1
             if 0 <= idx < len(env_names):
                 chosen_env = env_names[idx]
                 break
-            print(f"  Enter a number between 1 and {len(env_names)}")
+            print(f"  Enter a number between 1 and {len(env_names)}, or 'n'")
         elif raw in environments:
             chosen_env = raw
             break
         else:
-            print(f"  '{raw}' not found. Options: {', '.join(env_names)}")
+            print(f"  '{raw}' not found. Options: {', '.join(env_names)}, n")
 
-    env_data = environments[chosen_env]
-    ssh_user = env_data.get("ssh_user", "errander")
-    ssh_key_path = str(
-        Path(env_data.get("ssh_key_path", "~/.ssh/errander_prod")).expanduser()
-    )
-    existing_targets: list[dict[str, Any]] = env_data.get("targets", [])
+    if new_env:
+        print()
+        print("  Creating new environment")
+        print()
+        chosen_env = _prompt_val("Environment name")
+        if chosen_env in environments:
+            _err(f"Environment '{chosen_env}' already exists — select it above instead.")
+            sys.exit(1)
+        ssh_user      = _prompt_val("SSH user on target VMs", "errander")
+        ssh_key_raw   = _prompt_val("SSH key path", "~/.ssh/errander_prod")
+        ssh_key_path  = str(Path(ssh_key_raw).expanduser())
+        approval      = _prompt_val("Approval policy  (relaxed / moderate / strict)", "relaxed")
+        maint_win     = _prompt_val("Maintenance window  (HH:MM-HH:MM)", "08:00-20:00")
+        maint_days_raw = _prompt_val(
+            "Maintenance days  (comma-separated)",
+            "monday,tuesday,wednesday,thursday,friday",
+        )
+        maint_days = [d.strip() for d in maint_days_raw.split(",") if d.strip()]
+        maint_tz   = _prompt_val("Maintenance timezone", "UTC")
+
+        env_data: dict[str, Any] = {
+            "ssh_user":             ssh_user,
+            "ssh_key_path":         ssh_key_raw,   # store tilde form, not expanded
+            "approval_policy":      approval,
+            "maintenance_window":   maint_win,
+            "maintenance_days":     maint_days,
+            "maintenance_timezone": maint_tz,
+            "targets":              [],
+        }
+        environments[chosen_env] = env_data
+        existing_targets: list[dict[str, Any]] = []
+    else:
+        env_data = environments[chosen_env]
+        ssh_user = env_data.get("ssh_user", "errander")
+        ssh_key_path = str(
+            Path(env_data.get("ssh_key_path", "~/.ssh/errander_prod")).expanduser()
+        )
+        existing_targets = env_data.get("targets", [])
 
     print()
     print(f"  Environment : {chosen_env}")
     print(f"  SSH user    : {ssh_user}")
     print(f"  SSH key     : {ssh_key_path}")
-    print(f"  Existing VMs: {len(existing_targets)}")
+    if not new_env:
+        print(f"  Existing VMs: {len(existing_targets)}")
     print()
 
     new_targets: list[dict[str, Any]] = []

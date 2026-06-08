@@ -634,6 +634,9 @@ if [ "$VM_COUNT" -eq 0 ]; then
     echo ""
 fi
 
+echo "  To add more VMs later (without re-running this wizard):"
+echo "    bash scripts/add-target.sh"
+echo ""
 echo "  Next steps (continue from SETUP.md Step 6):"
 echo ""
 echo "  Step 6 — Verify:"

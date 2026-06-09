@@ -110,8 +110,9 @@ class TargetData:
     os_family: str
     tags: list[str] = field(default_factory=list)
     critical_services: list[str] = field(default_factory=list)
-    disable_docker_hygiene: bool = False   # per-target: override env docker_hygiene → false
-    service_restart_units: list[str] = field(default_factory=list)  # per-target units
+    disable_docker_hygiene: bool = False        # per-target: override env docker_hygiene → false
+    service_restart_intent: bool = False        # user wants service_restart; units added post-setup
+    service_restart_units: list[str] = field(default_factory=list)  # per-target units (if known)
 
 
 @dataclass
@@ -274,30 +275,26 @@ def _wizard_target(
             print("\033[33mSKIPPED\033[0m")
             _warn(f"SSH key not found at {key_expanded} — check SETUP.md Step 2")
 
-    # Per-target action overrides
+    # ── Per-VM configuration ──────────────────────────────────────────────────
     disable_docker_hygiene = False
+    service_restart_intent = False
     service_restart_units: list[str] = []
 
     print()
-    if _prompt_yn("      Configure per-target action overrides?", default=False):
-        print()
-        if env.enable_docker_hygiene:
-            disable_docker_hygiene = _prompt_yn(
-                "        Disable docker_hygiene on this VM? (no Docker installed)",
-                default=False,
-            )
-        print()
-        print("        service_restart lets operators restart specific systemd units.")
-        print("        Requires wrapper install — see SETUP.md #optional-service-restart.")
-        print()
-        if _prompt_yn("        Configure service_restart units for this VM?", default=False):
-            while True:
-                raw_units = _prompt_val("          Restartable units (comma-sep)", "nginx.service")
-                units = [u.strip() for u in raw_units.split(",") if u.strip()]
-                if units:
-                    service_restart_units = units
-                    break
-                print("          At least one unit is required.")
+    # Docker hygiene: ask whether Docker is installed on this VM.
+    # Only relevant when docker_hygiene is enabled at env level.
+    if env.enable_docker_hygiene:
+        has_docker = _prompt_yn("      Is Docker installed on this VM?", default=True)
+        if not has_docker:
+            disable_docker_hygiene = True
+
+    # Service restart intent: ask whether this VM will need operator-triggered restarts.
+    # Unit names can be added later (after wrapper install) — we capture the intent now.
+    print()
+    print("      service_restart — lets operators restart specific systemd units.")
+    print("      Unit names can be added after installing the wrapper (SETUP.md Step 3c).")
+    if _prompt_yn("      Will this VM need operator-triggered service restarts?", default=False):
+        service_restart_intent = True
 
     return TargetData(
         host=host,
@@ -306,6 +303,7 @@ def _wizard_target(
         tags=tags,
         critical_services=critical_services,
         disable_docker_hygiene=disable_docker_hygiene,
+        service_restart_intent=service_restart_intent,
         service_restart_units=service_restart_units,
     )
 
@@ -387,7 +385,9 @@ def _render_target(t: TargetData, env: EnvData) -> list[str]:
             lines.append(f"          - {svc}")
 
     # Per-target action overrides — active block if user configured any
-    has_active_overrides = t.disable_docker_hygiene or bool(t.service_restart_units)
+    has_active_overrides = (
+        t.disable_docker_hygiene or bool(t.service_restart_units) or t.service_restart_intent
+    )
 
     if has_active_overrides:
         lines.append("        actions:")
@@ -400,12 +400,19 @@ def _render_target(t: TargetData, env: EnvData) -> list[str]:
             lines.append("            restartable_units:")
             for unit in t.service_restart_units:
                 lines.append(f"              - {unit}")
+        elif t.service_restart_intent:
+            # Intent captured but units not known yet — render as disabled with a clear TODO.
+            # Schema requires enabled:true only when units are non-empty, so keep false until
+            # the operator adds unit names after installing the wrapper.
+            lines.append("          service_restart:")
+            lines.append("            enabled: false        # TODO: set to true after adding units below")
+            lines.append("            restartable_units: [] # e.g. [nginx.service, postgresql.service]")
+            lines.append("            # After wrapper install: bash scripts/install-systemctl-restart-wrapper.sh")
+            lines.append("            # Then add unit names here and set enabled: true")
     else:
         # Commented-out template so users know what's possible
         lines.append("        # Per-target overrides — uncomment + edit to activate:")
-        if t.critical_services:
-            pass  # already rendered critical_services above
-        else:
+        if not t.critical_services:
             lines.append("        # critical_services: [nginx, ssh, prometheus-node-exporter]")
         docker_hint = "" if not env.enable_docker_hygiene else "   # no Docker on this VM"
         lines.append("        # actions:")
@@ -709,6 +716,27 @@ def main() -> None:
     vm_word = "VM" if total_vms == 1 else "VMs"
     _ok(f"inventory.yaml written  ({len(envs)} {env_word}, {total_vms} {vm_word})")
     _ok("Config validated — no schema errors")
+
+    # Remind about VMs where service_restart intent was captured but units are pending
+    pending_restart = [
+        f"{e.name}/{t.name}"
+        for e in envs
+        for t in e.targets
+        if t.service_restart_intent and not t.service_restart_units
+    ]
+    if pending_restart:
+        print()
+        _warn("Service restart planned — complete setup after the wizard:")
+        for vm in pending_restart:
+            print(f"       {vm}")
+        print()
+        print("    Steps:")
+        print("      1. Install wrapper on each target VM:")
+        print("           bash scripts/install-systemctl-restart-wrapper.sh")
+        print("      2. Edit inventory.yaml — add unit names to restartable_units")
+        print("           and set enabled: true for those targets")
+        print("      3. Re-run: uv run python -m errander --check-targets <env>")
+
     print()
     print("  Next:")
     print("    • Run configure.sh (root) to probe Node Exporter on each VM")

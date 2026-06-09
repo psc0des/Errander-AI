@@ -91,6 +91,23 @@ class TargetSchema(BaseModel):
     # None  → inherit from environment-level node_exporter default.
     node_exporter: bool | None = None
 
+    # Per-target action overrides. Each key replaces the env-level ActionConfig for
+    # this VM only; actions not listed here inherit from the environment actions block.
+    # Use this to disable docker_hygiene on VMs without Docker, or to set per-VM
+    # restartable_units for service_restart (different VMs run different services).
+    actions: dict[str, ActionConfig] | None = None
+
+    def resolve_actions(self, env_actions: dict[str, ActionConfig]) -> dict[str, ActionConfig]:
+        """Return the effective action config for this VM.
+
+        Target-level entries replace the env-level config per action key.
+        The env_actions dict must already be fully expanded (all BUILTIN_ACTIONS
+        present) — i.e. the result of EnvironmentSchema._apply_action_defaults.
+        """
+        if not self.actions:
+            return env_actions
+        return {**env_actions, **self.actions}
+
     @field_validator("os_family")
     @classmethod
     def validate_os_family(cls, v: str) -> str:
@@ -226,6 +243,45 @@ class EnvironmentSchema(BaseModel):
                     ) from exc
 
         self.actions = full_actions
+
+        # Validate per-target action overrides
+        for target in self.targets:
+            if not target.actions:
+                continue
+            if "docker_prune" in target.actions:
+                raise ConfigError(
+                    f"Target '{target.name}' contains legacy 'docker_prune' action key. "
+                    "Run: uv run python -m errander --migrate-inventory <path> "
+                    "to rename it to 'docker_hygiene'."
+                )
+            resolved = {**full_actions, **target.actions}
+            t_docker = resolved.get("docker_hygiene")
+            if t_docker and t_docker.enabled and t_docker.command_mode == "disabled":
+                raise ConfigError(
+                    f"Target '{target.name}' docker_hygiene: contradiction — "
+                    "enabled=true but command_mode=disabled."
+                )
+            t_restart = resolved.get("service_restart")
+            if t_restart and t_restart.enabled and not t_restart.restartable_units:
+                raise ConfigError(
+                    f"Target '{target.name}' service_restart: enabled is true but "
+                    "restartable_units is empty. Add restartable_units under "
+                    "actions.service_restart for this target, or set enabled: false."
+                )
+            if t_restart and t_restart.restartable_units:
+                from errander.execution.command_builder import (
+                    CommandBuildError,
+                    safe_systemd_unit_name,
+                )
+                for unit in t_restart.restartable_units:
+                    try:
+                        safe_systemd_unit_name(unit)
+                    except CommandBuildError as exc:
+                        raise ConfigError(
+                            f"Target '{target.name}': invalid unit name in "
+                            f"restartable_units: {exc}"
+                        ) from exc
+
         return self
 
 

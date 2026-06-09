@@ -362,14 +362,27 @@ async def validate_targets_node(
             # Sudo/wrapper readiness check — fail early rather than mid-batch
             try:
                 from errander.execution.target_validation import check_target
-                _enabled: list[str] | None = state.get("enabled_actions")
+                # Prefer per-target values (embedded in target dict by run_maintenance);
+                # fall back to batch-level for DB-added VMs that have no per-target config.
+                _t_enabled = t.get("enabled_actions")
+                _enabled: list[str] | None = (
+                    list(_t_enabled)  # type: ignore[arg-type]
+                    if isinstance(_t_enabled, list)
+                    else state.get("enabled_actions")
+                )
+                _t_docker = t.get("docker_command_mode")
+                _docker_mode = (
+                    str(_t_docker)
+                    if _t_docker is not None
+                    else str(state.get("docker_command_mode", "disabled"))
+                )
                 readiness = await check_target(
                     vm_id=vm_id,
                     hostname=hostname,
                     username=ssh_user,
                     key_path=key_path,
                     os_family=detected_family.value,
-                    docker_command_mode=str(state.get("docker_command_mode", "wrapper")),
+                    docker_command_mode=_docker_mode,
                     ssh_manager=ssh_manager,
                     enabled_actions=_enabled,
                 )
@@ -1830,11 +1843,14 @@ def make_fan_out_router(
         batch_id = state.get("batch_id", "unknown")
         dry_run = state.get("dry_run", True)
         env_policy = state.get("env_policy", "strict")
-        docker_command_mode = state.get("docker_command_mode", "wrapper")
-        _enabled_raw: list[str] | None = state.get("enabled_actions")
+        _batch_enabled: list[str] | None = state.get("enabled_actions")
+        _batch_docker: str = str(state.get("docker_command_mode", "disabled"))
 
-        return [
-            Send(
+        sends = []
+        for t in healthy:
+            _t_enabled = t.get("enabled_actions")
+            _t_docker = t.get("docker_command_mode")
+            sends.append(Send(
                 "run_vm",
                 VMGraphState(
                     vm_id=str(t["vm_id"]),
@@ -1845,7 +1861,9 @@ def make_fan_out_router(
                     ssh_key_path=str(t["ssh_key_path"]),
                     os_family=str(t.get("os_family", "ubuntu")),
                     env_policy=env_policy,
-                    docker_command_mode=docker_command_mode,
+                    docker_command_mode=(
+                        str(_t_docker) if _t_docker is not None else _batch_docker
+                    ),
                     locked=False,
                     results=[],
                     current_action_index=0,
@@ -1855,11 +1873,14 @@ def make_fan_out_router(
                     drift_abort_on_detection=state.get("drift_abort_on_detection", False),
                     disable_failed_login_check=bool(t.get("disable_failed_login_check", False)),
                     critical_services=list(t.get("critical_services") or []),  # type: ignore[call-overload]
-                    enabled_actions=list(_enabled_raw) if _enabled_raw is not None else [],
+                    enabled_actions=(
+                        list(_t_enabled)  # type: ignore[arg-type]
+                        if isinstance(_t_enabled, list)
+                        else (list(_batch_enabled) if _batch_enabled is not None else [])
+                    ),
                 ),
-            )
-            for t in healthy
-        ]
+            ))
+        return sends
 
     return route_after_validate, vm_compiled
 
@@ -1923,8 +1944,8 @@ def make_wave_dispatcher(
 
         env_policy = state.get("env_policy", "strict")
         ai_db_path = state.get("ai_db_path", "")
-        docker_command_mode = state.get("docker_command_mode", "wrapper")
-        _enabled_exec: list[str] | None = state.get("enabled_actions")
+        _batch_docker_exec: str = str(state.get("docker_command_mode", "disabled"))
+        _batch_enabled_exec: list[str] | None = state.get("enabled_actions")
 
         # Build approved plan lookup: vm_id → planned_actions.
         # Execution MUST follow the approved plan — the VM graph skips re-planning
@@ -1981,7 +2002,11 @@ def make_wave_dispatcher(
                         os_family=str(t.get("os_family", "ubuntu")),
                         env_policy=env_policy,
                         ai_db_path=ai_db_path,
-                        docker_command_mode=docker_command_mode,
+                        docker_command_mode=(
+                            str(t["docker_command_mode"])
+                            if "docker_command_mode" in t
+                            else _batch_docker_exec
+                        ),
                         locked=False,
                         results=[],
                         current_action_index=0,
@@ -1994,7 +2019,11 @@ def make_wave_dispatcher(
                         drift_abort_on_detection=state.get("drift_abort_on_detection", False),
                         disable_failed_login_check=bool(t.get("disable_failed_login_check", False)),
                         critical_services=list(t.get("critical_services") or []),  # type: ignore[call-overload]
-                        enabled_actions=list(_enabled_exec) if _enabled_exec is not None else [],
+                        enabled_actions=(
+                            list(t["enabled_actions"])  # type: ignore[arg-type]
+                            if "enabled_actions" in t and isinstance(t["enabled_actions"], list)
+                            else (list(_batch_enabled_exec) if _batch_enabled_exec is not None else [])
+                        ),
                     ),
                 )
             )
@@ -2015,21 +2044,27 @@ def route_plan_vms(state: BatchGraphState) -> str | list[Send]:
 
     Extracted to module level so it can be unit-tested without building the
     full graph. Each Send payload carries the per-VM identity fields PLUS
-    ``enabled_actions`` from batch state so ``plan_vm_node`` can pass it to
+    ``enabled_actions`` so ``plan_vm_node`` can pass it to
     ``prioritize_actions(available_actions=...)``.
 
-    When ``enabled_actions`` is absent from state (old states, replays), the key
-    is omitted from the Send payload so ``plan_vm_node`` falls back to
-    DEFAULT_PRIORITY rather than planning zero actions.
+    Per-target enabled_actions embedded in the target dict take precedence over
+    the batch-level fallback. When both are absent (old states, replays), the key
+    is omitted so ``plan_vm_node`` falls back to DEFAULT_PRIORITY.
     """
     healthy = state.get("healthy_targets", [])
     if not healthy:
         return "generate_report"
     batch_id = state.get("batch_id", "unknown")
     env_policy = state.get("env_policy", "strict")
-    _enabled_raw: list[str] | None = state.get("enabled_actions")
+    _batch_enabled: list[str] | None = state.get("enabled_actions")
     sends = []
     for t in healthy:
+        _t_enabled = t.get("enabled_actions")
+        effective_enabled: list[str] | None = (
+            list(_t_enabled)  # type: ignore[arg-type]
+            if isinstance(_t_enabled, list)
+            else _batch_enabled
+        )
         payload: dict[str, object] = {
             "vm_id": str(t["vm_id"]),
             "hostname": str(t["hostname"]),
@@ -2038,8 +2073,8 @@ def route_plan_vms(state: BatchGraphState) -> str | list[Send]:
             "batch_id": batch_id,
             "env_policy": env_policy,
         }
-        if _enabled_raw is not None:
-            payload["enabled_actions"] = list(_enabled_raw)
+        if effective_enabled is not None:
+            payload["enabled_actions"] = effective_enabled
         sends.append(Send("plan_vm", payload))
     return sends
 

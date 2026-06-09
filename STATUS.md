@@ -4,6 +4,19 @@
 2026-06-09
 
 ## Current Phase
+**Per-target `actions:` support (2026-06-09, COMPLETE).**
+
+`actions:` was previously env-level only — all VMs in an environment shared the same `docker_hygiene.enabled` and `restartable_units`. Added per-target `actions:` to `TargetSchema` with a `resolve_actions(env_actions)` method that merges target overrides on top of env defaults. Updated all three fan-out paths in `graph.py` to use per-target resolved values from the target dict (batch-level env values remain as fallback for DB-added VMs). Fixed `run_check_targets` and `run_restart_service` to validate per-VM resolved config instead of env-level. Added validation in `EnvironmentSchema` for per-target docker_hygiene/service_restart contradictions. 11 new tests.
+
+### Files changed (2026-06-09)
+- `errander/config/schema.py` — `TargetSchema`: `actions:` field + `resolve_actions()` + per-target validation in env validator
+- `errander/main.py` — `yaml_targets` loop with per-target `enabled_actions`/`docker_command_mode`; `run_check_targets` + `run_restart_service` use per-VM resolved config
+- `errander/agent/graph.py` — `validate_targets_node`, `route_plan_vms`, `make_simple_fan_out`, `make_wave_dispatcher` all use per-target values
+- `example/inventory.yaml` — per-target `actions:` header docs + production env examples
+- `SETUP.md` — step 5b/5c rewritten with per-target syntax and "why per-target" callout
+- `tests/config/test_schema_actions.py` — `TestPerTargetActions` (11 tests)
+
+## Previous Phase
 **configure.sh security hardening + add-target.sh new-environment support (2026-06-09, COMPLETE).**
 
 Fixed 6 security issues in configure.sh: (1) `ERRANDER_ELK_API_KEY` written plaintext despite encryption being enabled — now goes through `encrypt_val`; (2–5) four API key prompts used `prompt_val` (visible) instead of `prompt_secret` (hidden) — vLLM API key, "Other" provider API key, ELK API key (both new-entry and re-entry paths); (6) `ERRANDER_SIGNING_SECRET` never generated — docker_hygiene web approval URLs would silently fail or crash at runtime. `ERRANDER_WEB_BASE_URL` auto-detected from the VM's primary IP (no prompt — it's always this VM; override in `.env` if behind NAT/LB). Extended `add_target.py` with `[n] New environment` option so operators can add a brand-new env without re-running the full configure.sh wizard.
@@ -62,4 +75,4 @@ Adds a `Monitoring` nav item and `/ui/monitoring` page to the Errander web UI. T
 None.
 
 ## Test count
-2506 passing.
+2517 passing.

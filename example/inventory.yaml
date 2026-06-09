@@ -30,6 +30,22 @@
 #             Set automatically by configure.sh. Can be overridden per-host.
 #             If true but :9100 is unreachable at startup, Errander warns and falls
 #             back to SSH probe — metrics collection never fails hard.
+#           actions:                     # Per-target action overrides (optional)
+#             Override the environment-level actions block for this VM only.
+#             Each key listed here REPLACES the env-level config for that action.
+#             Actions not listed here inherit from the environment actions block.
+#
+#             Use cases:
+#               • Disable docker_hygiene for VMs without Docker installed:
+#                   docker_hygiene:
+#                     enabled: false
+#               • Different restartable_units per VM (each VM runs different services):
+#                   service_restart:
+#                     enabled: true
+#                     restartable_units: [nginx.service, my-app.service]
+#
+#             Note: specify the complete ActionConfig when overriding — e.g. if you
+#             override service_restart, include both enabled: and restartable_units:.
 #
 #       actions:                         # Per-action opt-in (all optional, defaults shown)
 #         patching:
@@ -133,11 +149,21 @@ environments:
           - nginx
           - prometheus-node-exporter
           - ssh
+        # Per-target: web servers can be restarted (different units than other VMs)
+        actions:
+          service_restart:
+            enabled: true
+            restartable_units: [nginx.service, gunicorn.service]
 
       - host: 10.0.1.11
         name: prod-web-02
         os_family: ubuntu
         tags: [web, prod, tier-1]
+        # Per-target: same service_restart allowlist as web-01
+        actions:
+          service_restart:
+            enabled: true
+            restartable_units: [nginx.service, gunicorn.service]
 
       - host: 10.0.1.20
         name: prod-db-01
@@ -148,11 +174,22 @@ environments:
           - postgresql
           - prometheus-node-exporter
           - ssh
+        # Per-target: DB server has no Docker (disable hygiene) and different restart units
+        actions:
+          docker_hygiene:
+            enabled: false
+          service_restart:
+            enabled: true
+            restartable_units: [postgresql.service]
 
       - host: 10.0.2.10
         name: prod-worker-01
         os_family: rhel
         tags: [worker, prod]
+        # Per-target: no Docker on RHEL worker — disable docker_hygiene explicitly
+        actions:
+          docker_hygiene:
+            enabled: false
 
   staging:
     ssh_user: errander

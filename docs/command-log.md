@@ -1,5 +1,17 @@
 # Errander-AI Command Log
 
+## Per-target actions: support (2026-06-09)
+
+```bash
+# Tests: verify schema changes, service restart CLI, and fan-out
+uv run pytest tests/config/test_schema_actions.py tests/config/test_schema.py -x -q
+uv run pytest tests/agent/test_service_restart_cli.py tests/config/test_schema_actions.py -x -q
+uv run pytest tests/config/ tests/agent/ -q
+uv run pytest -x -q   # full suite — 2517 passed
+```
+
+---
+
 ## configure.sh security hardening (2026-06-09)
 
 ```bash

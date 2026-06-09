@@ -302,3 +302,192 @@ class TestServiceRestartUnitNameValidationAtConfigLoad:
             validate_inventory(config_file)
         msg = str(exc_info.value)
         assert "metacharacter" in msg or "unit" in msg.lower() or "grammar" in msg
+
+
+class TestPerTargetActions:
+    """Per-target actions: override, resolve, and validate."""
+
+    _ENV_ACTIONS = {
+        "docker_hygiene": ActionConfig(enabled=True, command_mode="wrapper"),
+        "service_restart": ActionConfig(enabled=False, restartable_units=[]),
+        "patching": ActionConfig(enabled=True),
+        "disk_cleanup": ActionConfig(enabled=True),
+        "log_rotation": ActionConfig(enabled=True),
+        "backup_verify": ActionConfig(enabled=False),
+    }
+
+    def test_resolve_actions_no_override_returns_env(self) -> None:
+        target = TargetSchema(**_TARGET)  # type: ignore[arg-type]
+        resolved = target.resolve_actions(self._ENV_ACTIONS)
+        assert resolved is self._ENV_ACTIONS
+
+    def test_resolve_actions_overrides_one_key(self) -> None:
+        target = TargetSchema(
+            **_TARGET,  # type: ignore[arg-type]
+            actions={"docker_hygiene": ActionConfig(enabled=False)},
+        )
+        resolved = target.resolve_actions(self._ENV_ACTIONS)
+        assert resolved["docker_hygiene"].enabled is False
+        # Other keys inherit from env
+        assert resolved["patching"].enabled is True
+        assert resolved["service_restart"].enabled is False
+
+    def test_resolve_actions_per_target_service_restart_units(self) -> None:
+        target = TargetSchema(
+            **_TARGET,  # type: ignore[arg-type]
+            actions={"service_restart": ActionConfig(enabled=True, restartable_units=["nginx.service"])},
+        )
+        resolved = target.resolve_actions(self._ENV_ACTIONS)
+        assert resolved["service_restart"].enabled is True
+        assert "nginx.service" in resolved["service_restart"].restartable_units
+        # docker_hygiene still from env
+        assert resolved["docker_hygiene"].command_mode == "wrapper"
+
+    def test_resolve_actions_multiple_overrides(self) -> None:
+        target = TargetSchema(
+            **_TARGET,  # type: ignore[arg-type]
+            actions={
+                "docker_hygiene": ActionConfig(enabled=False),
+                "service_restart": ActionConfig(enabled=True, restartable_units=["my-app.service"]),
+            },
+        )
+        resolved = target.resolve_actions(self._ENV_ACTIONS)
+        assert resolved["docker_hygiene"].enabled is False
+        assert resolved["service_restart"].enabled is True
+        assert "my-app.service" in resolved["service_restart"].restartable_units
+
+    def test_env_schema_accepts_target_with_actions(self) -> None:
+        env = EnvironmentSchema(
+            targets=[
+                TargetSchema(**_TARGET),  # type: ignore[arg-type]
+                TargetSchema(
+                    host="10.0.1.20", name="db-01", os_family="ubuntu",
+                    actions={"docker_hygiene": ActionConfig(enabled=False)},
+                ),
+            ],
+        )
+        # DB host overrides docker_hygiene to disabled
+        db_target = env.targets[1]
+        resolved = db_target.resolve_actions(env.actions)
+        assert resolved["docker_hygiene"].enabled is False
+        # Web host inherits env default
+        web_target = env.targets[0]
+        web_resolved = web_target.resolve_actions(env.actions)
+        assert web_resolved["docker_hygiene"].enabled is False  # env default is also disabled
+
+    def test_target_docker_hygiene_contradiction_raises(self) -> None:
+        with pytest.raises((ConfigError, ValidationError, ValueError)) as exc_info:
+            EnvironmentSchema(
+                targets=[
+                    TargetSchema(
+                        **_TARGET,  # type: ignore[arg-type]
+                        actions={"docker_hygiene": ActionConfig(enabled=True, command_mode="disabled")},
+                    ),
+                ],
+            )
+        assert "contradiction" in str(exc_info.value).lower()
+
+    def test_target_service_restart_enabled_empty_units_raises(self) -> None:
+        with pytest.raises((ConfigError, ValidationError, ValueError)) as exc_info:
+            EnvironmentSchema(
+                targets=[
+                    TargetSchema(
+                        **_TARGET,  # type: ignore[arg-type]
+                        actions={"service_restart": ActionConfig(enabled=True, restartable_units=[])},
+                    ),
+                ],
+            )
+        assert "restartable_units" in str(exc_info.value)
+
+    def test_target_docker_prune_key_raises_config_error(self) -> None:
+        with pytest.raises((ConfigError, ValidationError, ValueError)) as exc_info:
+            EnvironmentSchema(
+                targets=[
+                    TargetSchema(
+                        **_TARGET,  # type: ignore[arg-type]
+                        actions={"docker_prune": ActionConfig(enabled=False)},
+                    ),
+                ],
+            )
+        assert "docker_prune" in str(exc_info.value)
+
+    def test_target_valid_service_restart_units_accepted(self) -> None:
+        env = EnvironmentSchema(
+            targets=[
+                TargetSchema(
+                    **_TARGET,  # type: ignore[arg-type]
+                    actions={"service_restart": ActionConfig(
+                        enabled=True, restartable_units=["nginx.service", "gunicorn.service"],
+                    )},
+                ),
+            ],
+        )
+        target = env.targets[0]
+        assert target.actions is not None
+        resolved = target.resolve_actions(env.actions)
+        assert resolved["service_restart"].enabled is True
+        assert "nginx.service" in resolved["service_restart"].restartable_units
+
+    def test_target_invalid_unit_name_raises(self, tmp_path: Path) -> None:
+        config_file = tmp_path / "inventory.yaml"
+        config_file.write_text(_inventory_yaml({
+            "prod": {
+                "targets": [{
+                    "host": "10.0.1.10",
+                    "name": "web-01",
+                    "os_family": "ubuntu",
+                    "actions": {
+                        "service_restart": {
+                            "enabled": True,
+                            "restartable_units": ["bad-name"],  # missing .service etc.
+                        },
+                    },
+                }],
+            },
+        }))
+        with pytest.raises((ConfigError, ValidationError, ValueError)):
+            validate_inventory(config_file)
+
+    def test_per_target_actions_via_yaml_roundtrip(self, tmp_path: Path) -> None:
+        config_file = tmp_path / "inventory.yaml"
+        config_file.write_text(_inventory_yaml({
+            "prod": {
+                "actions": {
+                    "docker_hygiene": {"enabled": True, "command_mode": "wrapper"},
+                    "service_restart": {"enabled": False, "restartable_units": []},
+                },
+                "targets": [
+                    {
+                        "host": "10.0.1.10",
+                        "name": "web-01",
+                        "os_family": "ubuntu",
+                    },
+                    {
+                        "host": "10.0.1.20",
+                        "name": "db-01",
+                        "os_family": "ubuntu",
+                        "actions": {
+                            "docker_hygiene": {"enabled": False},
+                            "service_restart": {
+                                "enabled": True,
+                                "restartable_units": ["postgresql.service"],
+                            },
+                        },
+                    },
+                ],
+            },
+        }))
+        inv = validate_inventory(config_file)
+        env = inv.environments["prod"]
+
+        web = env.targets[0]
+        db = env.targets[1]
+
+        web_resolved = web.resolve_actions(env.actions)
+        assert web_resolved["docker_hygiene"].enabled is True
+        assert web_resolved["service_restart"].enabled is False
+
+        db_resolved = db.resolve_actions(env.actions)
+        assert db_resolved["docker_hygiene"].enabled is False
+        assert db_resolved["service_restart"].enabled is True
+        assert "postgresql.service" in db_resolved["service_restart"].restartable_units

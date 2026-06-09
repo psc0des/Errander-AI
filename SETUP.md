@@ -601,7 +601,11 @@ uv run python -m errander --check-targets <your-env-name>
 
 This confirms SSH access, sudo permissions, OS detection, and binary paths for every VM in the environment.
 
-**5b. If you installed Docker wrappers** — add the `actions:` block to each environment in `inventory.yaml`, then re-run `--check-targets`:
+**5b. If you installed Docker wrappers** — enable `docker_hygiene` in `inventory.yaml`, then re-run `--check-targets`.
+
+You can enable it at the **environment level** (all VMs in the env get Docker hygiene) or at the **per-target level** (only specific VMs):
+
+*Environment-level — all VMs have Docker:*
 
 ```yaml
 environments:
@@ -612,7 +616,7 @@ environments:
     maintenance_window: "08:00-20:00"
     maintenance_days: [monday, tuesday, wednesday, thursday, friday]
     maintenance_timezone: UTC
-    actions:                        # ← add this block
+    actions:
       docker_hygiene:
         enabled: true
         command_mode: wrapper
@@ -620,13 +624,44 @@ environments:
       - host: 10.0.0.10
         name: prod-vm-01
         os_family: ubuntu
+      - host: 10.0.0.11
+        name: prod-vm-02
+        os_family: ubuntu
+```
+
+*Per-target — only some VMs have Docker (most realistic):*
+
+```yaml
+environments:
+  <your-env-name>:
+    ssh_user: errander
+    ssh_key_path: ~/.ssh/errander_prod
+    approval_policy: relaxed
+    maintenance_window: "08:00-20:00"
+    maintenance_days: [monday, tuesday, wednesday, thursday, friday]
+    maintenance_timezone: UTC
+    actions:
+      docker_hygiene:
+        enabled: false       # off by default for the env
+    targets:
+      - host: 10.0.0.10
+        name: prod-app-01    # has Docker
+        os_family: ubuntu
+        actions:             # ← per-target override
+          docker_hygiene:
+            enabled: true
+            command_mode: wrapper
+      - host: 10.0.0.20
+        name: prod-db-01     # no Docker
+        os_family: ubuntu
+        # no per-target actions: block → inherits env default (disabled)
 ```
 
 ```bash
 uv run python -m errander --check-targets <your-env-name>
 ```
 
-**5c. If you installed the service restart wrapper** — add `service_restart` under the same `actions:` block:
+**5c. If you installed the service restart wrapper** — `restartable_units` should almost always be per-target, since different VMs run different services:
 
 ```yaml
 environments:
@@ -639,21 +674,34 @@ environments:
     maintenance_timezone: UTC
     actions:
       service_restart:
-        enabled: true
-        restartable_units:
-          - nginx.service        # replace with your actual units
-          - gunicorn.service
+        enabled: false       # off at env level — each VM opts in with its own units
     targets:
       - host: 10.0.0.10
-        name: prod-vm-01
+        name: prod-web-01
         os_family: ubuntu
+        actions:             # ← per-target override
+          service_restart:
+            enabled: true
+            restartable_units:
+              - nginx.service
+              - gunicorn.service
+      - host: 10.0.0.20
+        name: prod-db-01
+        os_family: ubuntu
+        actions:             # ← different units for the DB host
+          service_restart:
+            enabled: true
+            restartable_units:
+              - postgresql.service
 ```
+
+> **Why per-target?** Every VM in an environment runs different services. `restartable_units` at the env level would mean every VM has the same allowlist — which is almost never true. Set it per-target to avoid allowing nginx restart on your DB server.
 
 ```bash
 uv run python -m errander --check-targets <your-env-name>
 ```
 
-`--check-targets` verifies wrapper presence, sudoers entry, and (for service restart) that the on-target allowlist matches your `restartable_units`. Any drift is reported as a warning.
+`--check-targets` verifies wrapper presence, sudoers entry, and (for service restart) that the on-target allowlist matches each VM's `restartable_units`. Any drift is reported as a warning.
 
 ---
 

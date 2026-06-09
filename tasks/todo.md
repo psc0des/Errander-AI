@@ -1,3 +1,15 @@
+## Per-target `actions:` support (2026-06-09, COMPLETE)
+
+- [x] `errander/config/schema.py` — `TargetSchema`: add `actions: dict[str, ActionConfig] | None`, `resolve_actions()` method; validate per-target overrides (docker_prune, docker_hygiene contradiction, service_restart units) in `EnvironmentSchema._apply_action_defaults_and_validate`
+- [x] `errander/main.py` — `yaml_targets`: embed per-target `enabled_actions` + `docker_command_mode` in each target dict; `run_check_targets`: use per-target resolved actions; `run_restart_service`: check per-target resolved units per VM
+- [x] `errander/agent/graph.py` — all three fan-out paths (`validate_targets_node`, `route_plan_vms`, `make_simple_fan_out`, `make_wave_dispatcher`) use per-target values from target dict with batch-level fallback for DB-added VMs
+- [x] `example/inventory.yaml` — per-target `actions:` header comment + production env examples
+- [x] `SETUP.md` — step 5b/5c rewritten to show per-target syntax with "why per-target" callout
+- [x] Tests: 11 new tests in `TestPerTargetActions` (resolve, validation, YAML roundtrip)
+- [x] 2517 tests passing (2506 + 11 new)
+
+---
+
 ## configure.sh security hardening + add-target new-env support (2026-06-09, COMPLETE)
 
 - [x] `scripts/configure.sh` — `ERRANDER_ELK_API_KEY` now encrypted via `encrypt_val` (was written plaintext)

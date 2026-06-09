@@ -1,5 +1,17 @@
 # Errander-AI — Lessons Learned
 
+## 2026-06-09 — Per-target actions: propagation must follow the data, not the batch
+
+When a config value is conceptually per-VM (e.g. `restartable_units` for service_restart, `docker_hygiene.enabled` for VMs with/without Docker), it's wrong to compute it once at batch level and stamp it onto every VM. The correct pattern:
+
+1. Embed the resolved per-target value in the serialized target dict at build time (in `run_maintenance`).
+2. All fan-out paths (`validate_targets_node`, `route_plan_vms`, `dispatch_current_wave`) read from `t.get("key")` first, then fall back to the batch-level value for VMs that don't carry the field (DB-added VMs, old replays).
+3. CLI paths that target specific VMs (`--service-restart`, `--check-targets`) compute `target.resolve_actions(env.actions)` per VM — never use env-level values to gate per-VM operations.
+
+**Why:** a DB-server and a web-server in the same env will have different services. Using env-level `restartable_units` means every VM has the same allowlist — a security invariant violation.
+
+**How to apply:** before adding any new per-env config field, ask "is this actually per-VM?" If yes, put it in `TargetSchema` with a `resolve_actions()` pattern. Never add a per-VM value as an env-level field that gets stamped onto all VMs.
+
 ## 2026-06-09 — configure.sh security audit: three categories of secrets mistakes
 
 When auditing an interactive setup script for an open-source project, check three things:

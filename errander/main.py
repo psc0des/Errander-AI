@@ -780,16 +780,18 @@ async def run_check_targets(env_name: str, inventory_path: Path) -> int:
         strict_host_keys=settings.ssh_strict_host_keys,
     )
     results = []
-    docker_hygiene_cfg = env.actions.get("docker_hygiene")
-    docker_mode = (
-        (docker_hygiene_cfg.command_mode or "wrapper")
-        if docker_hygiene_cfg and docker_hygiene_cfg.enabled
-        else "disabled"
-    )
-    enabled_action_names = [name for name, cfg in env.actions.items() if cfg.enabled]
-
     try:
         for target in env.targets:
+            # Resolve per-target effective actions (target overrides env defaults)
+            resolved = target.resolve_actions(env.actions)
+            t_docker_cfg = resolved.get("docker_hygiene")
+            t_docker_mode = (
+                (t_docker_cfg.command_mode or "wrapper")
+                if t_docker_cfg and t_docker_cfg.enabled
+                else "disabled"
+            )
+            t_enabled = [name for name, cfg in resolved.items() if cfg.enabled]
+
             username = target.ssh_user or env.ssh_user
             key_path = str(Path(target.ssh_key_path or env.ssh_key_path).expanduser())
             readiness = await check_target(
@@ -798,62 +800,63 @@ async def run_check_targets(env_name: str, inventory_path: Path) -> int:
                 username=username,
                 key_path=key_path,
                 os_family=target.os_family,
-                docker_command_mode=docker_mode,
+                docker_command_mode=t_docker_mode,
                 ssh_manager=ssh_manager,
-                enabled_actions=enabled_action_names,
+                enabled_actions=t_enabled,
             )
             results.append(readiness)
 
-        # Allowlist drift check for service_restart-enabled environments
-        service_restart_cfg = env.actions.get("service_restart")
-        if service_restart_cfg and service_restart_cfg.enabled:
-            inventory_units = set(service_restart_cfg.restartable_units)
-            for target in env.targets:
-                username = target.ssh_user or env.ssh_user
-                key_path = str(Path(target.ssh_key_path or env.ssh_key_path).expanduser())
-                try:
-                    cmd = "cat /etc/errander/restart-allowlist 2>/dev/null || echo '__not_found__'"
-                    ssh_result = await ssh_manager.execute(
-                        target.name, target.host, username, key_path, cmd
-                    )
-                    if ssh_result.success and "__not_found__" not in ssh_result.stdout:
-                        on_target_units = {
-                            line.strip()
-                            for line in ssh_result.stdout.splitlines()
-                            if line.strip()
-                        }
-                        drift_found = False
-                        for unit in sorted(inventory_units - on_target_units):
-                            drift_found = True
-                            print(
-                                f"  ALLOWLIST DRIFT {target.name}: "
-                                f"'{unit}' in inventory but missing from "
-                                f"/etc/errander/restart-allowlist"
-                            )
-                        for unit in sorted(on_target_units - inventory_units):
-                            drift_found = True
-                            print(
-                                f"  ALLOWLIST DRIFT {target.name}: "
-                                f"'{unit}' in /etc/errander/restart-allowlist "
-                                f"but not in inventory restartable_units"
-                            )
-                        if not drift_found:
-                            units_str = ", ".join(sorted(on_target_units))
-                            print(
-                                f"  ALLOWLIST OK {target.name}: "
-                                f"{units_str} ({len(on_target_units)} unit(s) verified)"
-                            )
-                    else:
+        # Allowlist drift check — per-target resolved restartable_units
+        for target in env.targets:
+            resolved_restart = target.resolve_actions(env.actions).get("service_restart")
+            if not resolved_restart or not resolved_restart.enabled:
+                continue
+            inventory_units = set(resolved_restart.restartable_units)
+            username = target.ssh_user or env.ssh_user
+            key_path = str(Path(target.ssh_key_path or env.ssh_key_path).expanduser())
+            try:
+                cmd = "cat /etc/errander/restart-allowlist 2>/dev/null || echo '__not_found__'"
+                ssh_result = await ssh_manager.execute(
+                    target.name, target.host, username, key_path, cmd
+                )
+                if ssh_result.success and "__not_found__" not in ssh_result.stdout:
+                    on_target_units = {
+                        line.strip()
+                        for line in ssh_result.stdout.splitlines()
+                        if line.strip()
+                    }
+                    drift_found = False
+                    for unit in sorted(inventory_units - on_target_units):
+                        drift_found = True
                         print(
-                            f"  WARN {target.name}: "
-                            f"/etc/errander/restart-allowlist not readable — "
-                            f"run install-systemctl-restart-wrapper.sh"
+                            f"  ALLOWLIST DRIFT {target.name}: "
+                            f"'{unit}' in inventory but missing from "
+                            f"/etc/errander/restart-allowlist"
                         )
-                except Exception:  # noqa: BLE001
+                    for unit in sorted(on_target_units - inventory_units):
+                        drift_found = True
+                        print(
+                            f"  ALLOWLIST DRIFT {target.name}: "
+                            f"'{unit}' in /etc/errander/restart-allowlist "
+                            f"but not in inventory restartable_units"
+                        )
+                    if not drift_found:
+                        units_str = ", ".join(sorted(on_target_units))
+                        print(
+                            f"  ALLOWLIST OK {target.name}: "
+                            f"{units_str} ({len(on_target_units)} unit(s) verified)"
+                        )
+                else:
                     print(
                         f"  WARN {target.name}: "
-                        f"failed to read /etc/errander/restart-allowlist"
+                        f"/etc/errander/restart-allowlist not readable — "
+                        f"run install-systemctl-restart-wrapper.sh"
                     )
+            except Exception:  # noqa: BLE001
+                print(
+                    f"  WARN {target.name}: "
+                    f"failed to read /etc/errander/restart-allowlist"
+                )
     finally:
         await ssh_manager.close_all()
 
@@ -1129,24 +1132,10 @@ async def run_restart_service(
         print(f"Unknown environment: {env_name}")
         return 1
 
-    restart_cfg = env.actions.get("service_restart")
-    if restart_cfg is None or not restart_cfg.enabled:
-        print(
-            f"service_restart is not enabled for environment '{env_name}'. "
-            "Set actions.service_restart.enabled: true in inventory.yaml."
-        )
-        return 1
-
-    restartable_units = restart_cfg.restartable_units
-    if unit_name not in restartable_units:
-        print(
-            f"Unit '{unit_name}' is not in restartable_units for '{env_name}'. "
-            f"Allowed: {restartable_units}"
-        )
-        return 1
-
     all_vm_names = {t.name for t in env.targets}
     targets_by_name = {t.name: t for t in env.targets}
+
+    # Validate VM existence first, then per-VM resolved service_restart config.
     for vm_id in vm_ids:
         if vm_id not in all_vm_names:
             print(
@@ -1154,6 +1143,25 @@ async def run_restart_service(
                 f"Known VMs: {sorted(all_vm_names)}"
             )
             return 1
+
+    all_allowed_units: set[str] = set()
+    for vm_id in vm_ids:
+        target = targets_by_name[vm_id]
+        vm_restart_cfg = target.resolve_actions(env.actions).get("service_restart")
+        if not vm_restart_cfg or not vm_restart_cfg.enabled:
+            print(
+                f"service_restart is not enabled for VM '{vm_id}' in '{env_name}'. "
+                "Set actions.service_restart.enabled: true in inventory.yaml "
+                "for this target or the environment."
+            )
+            return 1
+        if unit_name not in vm_restart_cfg.restartable_units:
+            print(
+                f"Unit '{unit_name}' is not in restartable_units for VM '{vm_id}'. "
+                f"Allowed: {vm_restart_cfg.restartable_units}"
+            )
+            return 1
+        all_allowed_units.update(vm_restart_cfg.restartable_units)
 
     try:
         settings = load_settings()
@@ -1193,7 +1201,7 @@ async def run_restart_service(
     print(f"Service Restart Plan — {env_name}")
     print(f"  Unit      : {unit_name}")
     print(f"  VMs       : {vm_list}")
-    print(f"  Allowlist : inventory ✓ ({', '.join(restartable_units)})")
+    print(f"  Allowlist : inventory ✓ ({', '.join(sorted(all_allowed_units))})")
     print("  Risk      : HIGH — Slack approval required before execution")
     print(f"  Mode      : {'DRY RUN' if dry_run else 'LIVE'}")
 
@@ -1299,12 +1307,13 @@ async def run_restart_service(
             overall_success = False
             continue
 
+        vm_restart_cfg_exec = target.resolve_actions(env.actions).get("service_restart")
         sub_state: ServiceRestartState = {
             "vm_id": vm_id,
             "os_family": target.os_family,
             "dry_run": False,
             "unit_name": unit_name,
-            "restartable_units": restartable_units,
+            "restartable_units": vm_restart_cfg_exec.restartable_units if vm_restart_cfg_exec else [],
             "hostname": target.host,
             "username": username,
             "key_path": key_path,
@@ -1731,9 +1740,27 @@ async def run_env_batch(
     ).compile(checkpointer=_checkpointer)
     graph = _compiled
 
+    from errander.agent.subgraphs import BUILTIN_ACTIONS
+
     # Build effective target list: YAML base, apply DB overrides (disable/add)
-    yaml_targets = [
-        {
+    # Each target dict carries per-target resolved enabled_actions and docker_command_mode
+    # so the fan-out dispatchers can use per-VM action config instead of a single env value.
+    yaml_targets: list[dict[str, object]] = []
+    for t in env_schema.targets:
+        resolved = t.resolve_actions(env_schema.actions)
+        t_docker_cfg = resolved.get("docker_hygiene")
+        t_docker_mode = (
+            (t_docker_cfg.command_mode or "wrapper")
+            if t_docker_cfg and t_docker_cfg.enabled
+            else "disabled"
+        )
+        t_enabled = [
+            name for name, cfg in resolved.items()
+            if cfg.enabled and (
+                name not in BUILTIN_ACTIONS or not BUILTIN_ACTIONS[name].operator_triggered
+            )
+        ]
+        yaml_targets.append({
             "vm_id": f"{env_name}/{t.name}",
             "hostname": t.host,
             "ssh_user": t.ssh_user or env_schema.ssh_user,
@@ -1742,9 +1769,9 @@ async def run_env_batch(
             "disable_failed_login_check": t.disable_failed_login_check,
             "critical_services": list(t.critical_services),
             "_name": t.name,
-        }
-        for t in env_schema.targets
-    ]
+            "enabled_actions": t_enabled,
+            "docker_command_mode": t_docker_mode,
+        })
 
     db_overrides: list[dict[str, object]] = []
     if overrides_store is not None:
@@ -1782,13 +1809,13 @@ async def run_env_batch(
         yaml_count, disabled_count, added_count, len(targets),
     )
 
+    # Batch-level defaults (env-level, used as fallback for DB-added VMs without per-target config)
     _docker_hygiene_cfg = env_schema.actions.get("docker_hygiene")
     _docker_mode = (
         (_docker_hygiene_cfg.command_mode or "wrapper")
         if _docker_hygiene_cfg and _docker_hygiene_cfg.enabled
         else "disabled"
     )
-    from errander.agent.subgraphs import BUILTIN_ACTIONS
     _enabled_actions = [
         name for name, cfg in env_schema.actions.items()
         if cfg.enabled and (

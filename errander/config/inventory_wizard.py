@@ -241,13 +241,11 @@ def _wizard_env(env_number: int) -> EnvData:
 def _wizard_target(
     env: EnvData,
     target_number: int,
-) -> TargetData | None:
-    """Collect fields for one VM.  Returns None if user enters blank host (stop signal)."""
+) -> TargetData:
+    """Collect fields for one VM."""
     print()
     print(f"    VM {target_number}:")
-    host = input("      Host (IP or hostname, Enter to finish): ").strip()
-    if not host:
-        return None
+    host = _prompt_val("      Host (IP or hostname)")
 
     default_name = f"{env.name}-vm-{target_number:02d}"
     name = _prompt_val("      Name", default_name)
@@ -341,17 +339,18 @@ def _wizard_new_inventory() -> list[EnvData]:
         # Collect VMs for this environment
         print()
         print(f"  {_hr('─', 48)}")
-        print(f"  Add VMs to '{env.name}'  (Enter blank host to stop)")
+        print(f"  Add VMs to '{env.name}'")
         print(f"  {_hr('─', 48)}")
 
         target_number = 1
         while True:
             target = _wizard_target(env, target_number)
-            if target is None:
-                break
             env.targets.append(target)
-            target_number += 1
             _ok(f"Added {target.name}  ({target.host}, {target.os_family})")
+            target_number += 1
+            print()
+            if not _prompt_yn("  Add another VM to this environment?", default=False):
+                break
 
         if env.targets:
             _ok(f"Environment '{env.name}' — {len(env.targets)} VM(s)")

@@ -209,7 +209,7 @@ def _wizard_env(env_number: int) -> EnvData:
     enable_log_rotation = _prompt_yn("Enable log rotation?", default=True)
     print()
     print("    docker_hygiene requires wrapper scripts on each VM.")
-    print("    Run scripts/install-docker-wrappers-v2.sh after setup to install them.")
+    print("    configure.sh will install them automatically via SSH after this wizard.")
     print()
     enable_docker_hygiene = _prompt_yn("Enable docker_hygiene?", default=False)
     print()

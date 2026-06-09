@@ -2996,3 +2996,19 @@ uv run pytest --tb=short -q  # 2496 passed
 .venv/Scripts/python -c "import playwright"   # confirm Playwright available before writing capture script
 uv run python scripts/capture_ui_screenshots.py   # seed in-memory stores + serve UI on loopback + headless-Chromium screenshot 6 pages into docs/images/ (with baked-in DEMO banner)
 ls -lh docs/images/   # verify sizes — 6 PNGs, ~950 KB total
+
+# Wizard input validation refactor (2026-06-10)
+git status   # confirmed inventory_wizard.py still unstaged
+git add errander/config/inventory_wizard.py && git commit -m "fix: wizard docker_hygiene hint points to configure.sh not manual script"
+git push origin main
+git add errander/config/inventory_wizard.py errander/config/add_target.py && git commit -m "fix: validate systemd unit names inline in wizard — re-prompt on invalid input"
+git push origin main
+git add errander/config/inventory_wizard.py errander/config/add_target.py && git commit -m "fix: reject invalid wizard input inline — y/n, HH:MM-HH:MM window, policy choice all re-prompt"
+git push origin main
+# Full refactor: shared _prompts.py
+uv run pytest tests/config/test_prompts.py -v   # 87 passed
+uv run pytest --tb=short -q   # 2626 passed
+uv run ruff check errander/config/_prompts.py errander/config/inventory_wizard.py errander/config/add_target.py   # All checks passed!
+uv run mypy errander/config/_prompts.py errander/config/inventory_wizard.py errander/config/add_target.py   # Success: no issues found in 3 source files
+git add errander/config/_prompts.py errander/config/inventory_wizard.py errander/config/add_target.py tests/config/test_prompts.py && git commit -m "feat: shared _prompts.py — all wizard inputs validated inline, single source of truth"
+git push origin main

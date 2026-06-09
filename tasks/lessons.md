@@ -1,5 +1,14 @@
 # Errander-AI — Lessons Learned
 
+## 2026-06-10 — Piecemeal input validation fixes create drift and miss the full picture
+
+When asked to fix an input validation bug (e.g. "docker" not accepted as a unit name), the right response is to audit ALL inputs in ALL wizard files first — not just fix the one the user tripped on. A reactive single-fix approach:
+1. Leaves other invalid inputs (days, timezone, OS family silent default) still broken
+2. Copy-pastes the fix into multiple files instead of creating a shared module
+3. Produces inconsistent behavior across the same flows
+
+The rule: before fixing any prompt validation, enumerate every `input()` call and prompt helper across all wizard files, classify each as validated/unvalidated, then fix them all atomically in a shared module. One shared module beats two copies of the same function — copies always drift.
+
 ## 2026-06-09 — Defer-and-remind is worse than collect-and-install
 
 When software must be installed before a feature works, collect everything needed (unit names, etc.) at wizard time and install immediately — not "collect intent now, remind later." Deferred setup creates half-configured states that operators forget to complete. If you can install it right now via SSH, do it.

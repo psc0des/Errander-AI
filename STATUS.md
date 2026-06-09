@@ -1,9 +1,20 @@
 # Errander-AI — Project Status
 
 ## Last Updated
-2026-06-09
+2026-06-10
 
 ## Current Phase
+**Enterprise wizard input validation — shared `_prompts.py` module (2026-06-10, COMPLETE).**
+
+All interactive wizard inputs now validate inline and re-prompt on bad input — no garbage reaches schema validation. A single shared `errander/config/_prompts.py` module is the sole source of truth for all prompt helpers; both `inventory_wizard.py` and `add_target.py` import from it, eliminating copy-paste drift. Gaps fixed: OS family menu (was silently defaulting to ubuntu on any non-"2"/non-"3" input), maintenance days (unknown names now rejected), timezone (validated against `zoneinfo.available_timezones()`), env/target names (YAML-key-safe identifiers enforced), and inventory keep/replace choice. 87 new tests added.
+
+### Files changed (2026-06-10 — wizard input validation)
+- `errander/config/_prompts.py` — new shared module: `prompt_val`, `prompt_val_optional`, `prompt_yn`, `prompt_policy`, `prompt_maintenance_window`, `prompt_maintenance_days`, `prompt_timezone`, `prompt_os_family`, `prompt_name`, `prompt_systemd_units`
+- `errander/config/inventory_wizard.py` — remove all local prompt helpers; import from `_prompts`; all constrained inputs now validated inline
+- `errander/config/add_target.py` — same; also fix inventory keep/replace choice loop
+- `tests/config/test_prompts.py` — 87 new tests covering all prompt helpers
+
+## Previous Phase
 **configure.sh and add-target.sh now install wrappers automatically (2026-06-09, COMPLETE).**
 
 After the wizard, `configure.py` (called by `configure.sh`) now SSHes into each VM and — with a per-item confirmation prompt — checks and installs Node Exporter, docker wrappers, and the service restart wrapper based on what's enabled in inventory.yaml. `add_target.py` does the same after adding new VMs. Service restart unit names are now collected in the wizard (required), not deferred. The `service_restart_intent` concept is removed.

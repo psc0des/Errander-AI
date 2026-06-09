@@ -1,3 +1,13 @@
+## Enterprise wizard input validation — shared _prompts.py (2026-06-10, COMPLETE)
+
+- [x] `errander/config/_prompts.py` — new shared module with all prompt helpers
+- [x] `errander/config/inventory_wizard.py` — remove local helpers; import from `_prompts`; all constrained inputs validated inline
+- [x] `errander/config/add_target.py` — same; fix inventory keep/replace choice loop
+- [x] `tests/config/test_prompts.py` — 87 new tests for all helpers
+- [x] 2626 tests passing, ruff clean, mypy clean
+
+---
+
 ## configure.sh/add-target auto wrapper install (2026-06-09, COMPLETE)
 
 - [x] `inventory_wizard.py` — collect restart units immediately (required); remove `service_restart_intent`

@@ -1,5 +1,19 @@
 # Errander-AI Command Log
 
+## Approval surface wording fix (2026-06-09)
+
+```bash
+# Audit all Slack-only approval references
+grep -rn "Slack approval\|human Slack\|needs Slack\|require.*Slack\|Slack.*approv" \
+  --include="*.py" --include="*.md" --include="*.yaml" --include="*.sh" \
+  . | grep -v ".venv/"
+
+# Full test suite — confirm no regressions after text-only changes
+uv run pytest -x -q   # 2537 passed
+```
+
+---
+
 ## Enterprise inventory wizard + comment-preserving YAML (2026-06-09)
 
 ```bash

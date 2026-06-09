@@ -1,3 +1,15 @@
+## Approval surface wording fix (2026-06-09, COMPLETE)
+
+- [x] `AGENTS.md` — opening line + risk tier table
+- [x] `CLAUDE.md` — risk tier table
+- [x] `README.md` — action table, CLI comment, safety gates table
+- [x] `errander/config/inventory_wizard.py` — approval policy menu text + generated YAML comments
+- [x] `errander/main.py` — `--help` text, docstring, terminal print
+- [x] `errander/web/server.py` — admin panel label, glossary chip, action execution note
+- [x] All 2537 tests still passing
+
+---
+
 ## Enterprise inventory wizard + comment-preserving YAML (2026-06-09, COMPLETE)
 
 - [x] `pyproject.toml` — add `ruamel.yaml>=0.18` + mypy override; `uv sync`

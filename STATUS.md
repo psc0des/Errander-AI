@@ -4,6 +4,19 @@
 2026-06-09
 
 ## Current Phase
+**Approval surface wording — replace "Slack approval" with "human approval (Slack or Web UI)" (2026-06-09, COMPLETE).**
+
+Every user-facing description that implied Slack was the only approval channel was updated to accurately reflect both surfaces (Slack reactions + Web UI). 12 instances across 7 files. No behaviour change — docs/UI text only.
+
+### Files changed (2026-06-09 — approval surface wording)
+- `AGENTS.md` — opening line + risk tier table
+- `CLAUDE.md` — risk tier table
+- `README.md` — action table, CLI comment, safety gates table
+- `errander/config/inventory_wizard.py` — approval policy menu + generated YAML comments + patching comment
+- `errander/main.py` — `--help` text, docstring, terminal `print()` operators see
+- `errander/web/server.py` — admin panel label, Service Restart glossary chip, action execution note
+
+## Previous Phase
 **Enterprise inventory wizard + comment-preserving YAML (2026-06-09, COMPLETE).**
 
 Replaced the bare 9-line bash inventory stub in `configure.sh` with a full Python interactive wizard (`errander/config/inventory_wizard.py`). Collects: environment name, SSH creds, maintenance window/days, per-env action toggles (5 actions), and per-VM details (host, name, OS family, tags, critical services, optional service_restart units). Generates a richly annotated `inventory.yaml` with inline comments on every field and all optional sections present-but-commented. Also fixed `errander/config/configure.py` to use `ruamel.yaml` for comment-preserving round-trips on `node_exporter:` updates (previous `yaml.safe_load + yaml.dump` stripped all comments). 20 new tests.

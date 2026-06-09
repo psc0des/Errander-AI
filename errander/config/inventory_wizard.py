@@ -284,7 +284,9 @@ def _wizard_target(
                 _warn("SSH unreachable — you can fix this later (see SETUP.md Step 2)")
         else:
             print("\033[33mSKIPPED\033[0m")
-            _warn(f"SSH key not found at {key_expanded} — check SETUP.md Step 2")
+            _warn(f"SSH key not found at {key_expanded}")
+            _warn("If your key is at a different path, update ssh_key_path in inventory.yaml")
+            _warn("or re-run the wizard and enter the correct path at the 'SSH key path' prompt.")
 
     # ── Per-VM configuration ──────────────────────────────────────────────────
     disable_docker_hygiene = False

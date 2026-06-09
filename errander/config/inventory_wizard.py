@@ -9,7 +9,6 @@ Entry point: ``uv run python -m errander.config.inventory_wizard``
 from __future__ import annotations
 
 import asyncio
-import re
 import sys
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -18,8 +17,20 @@ from typing import Any
 
 import yaml
 
-# ── Output helpers ──────────────────────────────────────────────────────────────
+from errander.config._prompts import (
+    prompt_maintenance_days,
+    prompt_maintenance_window,
+    prompt_name,
+    prompt_os_family,
+    prompt_policy,
+    prompt_systemd_units,
+    prompt_timezone,
+    prompt_val,
+    prompt_val_optional,
+    prompt_yn,
+)
 
+# ── Output helpers ──────────────────────────────────────────────────────────────
 
 
 def _hr(char: str = "─", width: int = 62) -> str:
@@ -36,89 +47,6 @@ def _warn(msg: str) -> None:
 
 def _err(msg: str) -> None:
     print(f"    \033[31m✗\033[0m  {msg}")
-
-
-def _prompt_val(label: str, default: str = "") -> str:
-    """Prompt for a value; loop until non-empty or default accepted."""
-    while True:
-        if default:
-            raw = input(f"    {label} [{default}]: ").strip()
-            if not raw:
-                return default
-            return raw
-        else:
-            raw = input(f"    {label}: ").strip()
-            if raw:
-                return raw
-            print("      (required — please enter a value)")
-
-
-def _prompt_val_optional(label: str, hint: str = "") -> str:
-    """Prompt for an optional value; returns empty string if skipped."""
-    suffix = f"  e.g. {hint}" if hint else ""
-    raw = input(f"    {label} (optional{suffix}): ").strip()
-    return raw
-
-
-def _prompt_yn(question: str, default: bool = True) -> bool:
-    hint = "[Y/n]" if default else "[y/N]"
-    while True:
-        try:
-            raw = input(f"    {question} {hint} ").strip().lower()
-        except EOFError:
-            return default
-        if not raw:
-            return default
-        if raw in ("y", "yes"):
-            return True
-        if raw in ("n", "no"):
-            return False
-        print("    Please enter y or n.")
-
-
-_MW_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d-([01]\d|2[0-3]):[0-5]\d$")
-
-
-def _prompt_maintenance_window(default: str) -> str:
-    while True:
-        raw = input(f"    Maintenance window (HH:MM-HH:MM) [{default}]: ").strip()
-        val = raw if raw else default
-        if _MW_RE.match(val):
-            return val
-        print(f"    ✗  {val!r} is not a valid window. Expected format: HH:MM-HH:MM (e.g. 08:00-20:00)")
-
-
-def _prompt_policy() -> str:
-    """Numbered menu for approval policy; returns 'strict'/'moderate'/'relaxed'."""
-    print()
-    print("    Approval policy:")
-    print("      1) strict   — all actions require explicit human approval (Slack or web UI)  (recommended)")
-    print("      2) moderate — patching + Docker need approval; cleanup is auto-approved")
-    print("      3) relaxed  — most non-destructive actions auto-approved")
-    print()
-    while True:
-        raw = input("    Choice [1/3, Enter=1]: ").strip()
-        if raw in ("", "1"):
-            return "strict"
-        if raw == "2":
-            return "moderate"
-        if raw == "3":
-            return "relaxed"
-        print("    ✗  Please enter 1, 2, or 3.")
-
-
-# ── Day normalisation ──────────────────────────────────────────────────────────
-
-_DAY_ALIASES: dict[str, str] = {
-    "mon": "monday", "tue": "tuesday", "wed": "wednesday",
-    "thu": "thursday", "fri": "friday", "sat": "saturday", "sun": "sunday",
-    "monday": "monday", "tuesday": "tuesday", "wednesday": "wednesday",
-    "thursday": "thursday", "friday": "friday", "saturday": "saturday", "sunday": "sunday",
-}
-
-
-def _parse_days(raw: str) -> list[str]:
-    return [_DAY_ALIASES.get(d.strip().lower(), d.strip().lower()) for d in raw.split(",") if d.strip()]
 
 
 # ── Data models (wizard-internal) ──────────────────────────────────────────────
@@ -198,15 +126,15 @@ def _wizard_env(env_number: int) -> EnvData:
     print(f"  Environment {env_number}")
     print(f"  {_hr()}")
 
-    name = _prompt_val("Environment name", default_name)
-    ssh_user = _prompt_val("SSH user on target VMs", "errander")
-    ssh_key_path = _prompt_val("SSH key path", "~/.ssh/errander_prod")
+    name = prompt_name("Environment name", default_name)
+    ssh_user = prompt_val("SSH user on target VMs", "errander")
+    ssh_key_path = prompt_val("SSH key path", "~/.ssh/errander_prod")
 
-    approval_policy = _prompt_policy()
+    approval_policy = prompt_policy()
 
     print()
     mw_default = "02:00-06:00" if name == "production" else ("22:00-06:00" if name == "staging" else "08:00-20:00")
-    maintenance_window = _prompt_maintenance_window(mw_default)
+    maintenance_window = prompt_maintenance_window(mw_default)
 
     if name == "production":
         days_default = "tuesday,thursday"
@@ -214,10 +142,9 @@ def _wizard_env(env_number: int) -> EnvData:
         days_default = "monday,tuesday,wednesday,thursday,friday"
     else:
         days_default = "monday,tuesday,wednesday,thursday,friday,saturday,sunday"
-    raw_days = _prompt_val("Maintenance days (comma-separated)", days_default)
-    maintenance_days = _parse_days(raw_days)
+    maintenance_days = prompt_maintenance_days(days_default)
 
-    maintenance_timezone = _prompt_val("Maintenance timezone", "UTC")
+    maintenance_timezone = prompt_timezone()
 
     print()
     print(f"  {_hr('─', 48)}")
@@ -225,14 +152,14 @@ def _wizard_env(env_number: int) -> EnvData:
     print(f"  {_hr('─', 48)}")
     print()
 
-    enable_patching = _prompt_yn("Enable patching (OS package updates, non-kernel)?", default=True)
-    enable_disk_cleanup = _prompt_yn("Enable disk cleanup (/tmp, apt/yum cache, journal)?", default=True)
-    enable_log_rotation = _prompt_yn("Enable log rotation?", default=True)
+    enable_patching = prompt_yn("Enable patching (OS package updates, non-kernel)?", default=True)
+    enable_disk_cleanup = prompt_yn("Enable disk cleanup (/tmp, apt/yum cache, journal)?", default=True)
+    enable_log_rotation = prompt_yn("Enable log rotation?", default=True)
     print()
     print("    docker_hygiene requires wrapper scripts on each VM.")
     print("    configure.sh will install them automatically via SSH after this wizard.")
     print()
-    enable_docker_hygiene = _prompt_yn("Enable docker_hygiene?", default=False)
+    enable_docker_hygiene = prompt_yn("Enable docker_hygiene?", default=False)
     print()
     print()
     print("    backup_verify is read-only — it SSHes in and checks that your backup files")
@@ -240,7 +167,7 @@ def _wizard_env(env_number: int) -> EnvData:
     print("    It does NOT create backups. Requires a backup: section in settings.yaml")
     print("    listing the file paths to check (e.g. /var/backups/postgres/latest.dump).")
     print()
-    enable_backup_verify = _prompt_yn("Enable backup_verify?", default=False)
+    enable_backup_verify = prompt_yn("Enable backup_verify?", default=False)
 
     return EnvData(
         name=name,
@@ -265,18 +192,14 @@ def _wizard_target(
     """Collect fields for one VM."""
     print()
     print(f"    VM {target_number}:")
-    host = _prompt_val("      Host (IP or hostname)")
+    host = prompt_val("Host (IP or hostname)", indent=6)
 
     default_name = f"{env.name}-vm-{target_number:02d}"
-    name = _prompt_val("      Name", default_name)
+    name = prompt_name("Name", default_name, indent=6)
 
-    print()
-    print("      OS family:  1) ubuntu  2) debian  3) rhel")
-    os_raw = input("      Choice [1/3, Enter=1]: ").strip()
-    os_map = {"2": "debian", "3": "rhel"}
-    os_family = os_map.get(os_raw, "ubuntu")
+    os_family = prompt_os_family(indent=6)
 
-    raw_tags = _prompt_val_optional("      Tags (comma-sep)", f"{env.name},web")
+    raw_tags = prompt_val_optional("Tags (comma-sep)", f"{env.name},web", indent=6)
     tags = [t.strip() for t in raw_tags.split(",") if t.strip()] if raw_tags else [env.name]
 
     print()
@@ -284,13 +207,13 @@ def _wizard_target(
     print("      Errander checks these are active before and after every maintenance run")
     print("      and alerts you if any go down. It never restarts them.")
     print("      (service_restart is separate — an operator-triggered action to restart a unit.)")
-    raw_svc = _prompt_val_optional("      Services to watch (comma-sep)", "ssh")
+    raw_svc = prompt_val_optional("Services to watch (comma-sep)", "ssh", indent=6)
     critical_services = [s.strip() for s in raw_svc.split(",") if s.strip()]
 
     # Optional SSH verification
     print()
     key_expanded = str(Path(env.ssh_key_path).expanduser())
-    if _prompt_yn("      Verify SSH connectivity now?", default=True):
+    if prompt_yn("Verify SSH connectivity now?", default=True, indent=6):
         print(f"        Checking SSH ({env.ssh_user}@{host})...", end=" ", flush=True)
         if Path(key_expanded).exists():
             ok = _check_ssh(host, env.ssh_user, key_expanded)
@@ -313,7 +236,7 @@ def _wizard_target(
     # Docker hygiene: ask whether Docker is installed on this VM.
     # Only relevant when docker_hygiene is enabled at env level.
     if env.enable_docker_hygiene:
-        has_docker = _prompt_yn("      Is Docker installed on this VM?", default=True)
+        has_docker = prompt_yn("Is Docker installed on this VM?", default=True, indent=6)
         if not has_docker:
             disable_docker_hygiene = True
 
@@ -321,30 +244,8 @@ def _wizard_target(
     print()
     print("      service_restart — lets operators restart specific systemd units via Errander.")
     print("      configure.sh will install the wrapper on this VM automatically.")
-    if _prompt_yn("      Will this VM need operator-triggered service restarts?", default=False):
-        from errander.execution.command_builder import CommandBuildError, safe_systemd_unit_name
-
-        print("      Enter unit names (space or comma separated, e.g. nginx.service postgresql.service):")
-        while True:
-            raw_units = input("      Units: ").strip()
-            parsed = [u.strip().rstrip(",") for u in raw_units.replace(",", " ").split() if u.strip()]
-            if not parsed:
-                print("      (at least one unit name required — e.g. nginx.service)")
-                continue
-            invalid: list[str] = []
-            for u in parsed:
-                try:
-                    safe_systemd_unit_name(u)
-                except CommandBuildError as exc:
-                    invalid.append(f"        ✗  {u!r} — {exc}")
-            if invalid:
-                print("      Invalid unit name(s):")
-                for msg in invalid:
-                    print(msg)
-                print("      Unit names must include a type suffix, e.g. docker.service, nginx.service")
-                continue
-            service_restart_units = parsed
-            break
+    if prompt_yn("Will this VM need operator-triggered service restarts?", default=False, indent=6):
+        service_restart_units = prompt_systemd_units(indent=6)
 
     return TargetData(
         host=host,
@@ -388,7 +289,7 @@ def _wizard_new_inventory() -> list[EnvData]:
             _ok(f"Added {target.name}  ({target.host}, {target.os_family})")
             target_number += 1
             print()
-            if not _prompt_yn("  Add another VM to this environment?", default=False):
+            if not prompt_yn("Add another VM to this environment?", default=False, indent=2):
                 break
 
         if env.targets:
@@ -400,7 +301,7 @@ def _wizard_new_inventory() -> list[EnvData]:
         env_number += 1
 
         print()
-        if not _prompt_yn("  Add another environment?", default=False):
+        if not prompt_yn("Add another environment?", default=False, indent=2):
             break
 
     return envs
@@ -715,14 +616,17 @@ def main() -> None:
         print("    1) Keep existing  (default — recommended)")
         print("    2) Replace — run wizard to create a new inventory from scratch")
         print()
-        choice = input("  Choice [1/2, Enter=1]: ").strip()
-        if choice != "2":
-            _ok("Keeping existing inventory.yaml")
-            env_name, ssh_key_path = _first_env_vars(inventory_path)
-            # Count actual VMs so bash gets the real number for SSH bootstrap etc.
-            vm_count = _count_vms(inventory_path)
-            _write_result(env_name, ssh_key_path, vm_count)
-            return
+        while True:
+            choice = input("  Choice [1/2, Enter=1]: ").strip()
+            if choice in ("", "1"):
+                _ok("Keeping existing inventory.yaml")
+                env_name, ssh_key_path = _first_env_vars(inventory_path)
+                vm_count = _count_vms(inventory_path)
+                _write_result(env_name, ssh_key_path, vm_count)
+                return
+            if choice == "2":
+                break
+            print("  ✗  Please enter 1 or 2.")
 
     # ── Run wizard ─────────────────────────────────────────────────────────────
     envs = _wizard_new_inventory()

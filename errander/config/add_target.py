@@ -7,12 +7,23 @@ wizard when you only need to add new target VMs. Leaves .env untouched.
 from __future__ import annotations
 
 import asyncio
-import re
 import sys
 from pathlib import Path
 from typing import Any
 
 from ruamel.yaml import YAML
+
+from errander.config._prompts import (
+    prompt_maintenance_days,
+    prompt_maintenance_window,
+    prompt_name,
+    prompt_os_family,
+    prompt_policy,
+    prompt_systemd_units,
+    prompt_timezone,
+    prompt_val,
+    prompt_yn,
+)
 
 # ---------------------------------------------------------------------------
 # Output helpers
@@ -32,64 +43,6 @@ def _err(msg: str) -> None:
 
 def _hr(char: str = "─", width: int = 55) -> str:
     return char * width
-
-
-def _prompt_val(label: str, default: str = "") -> str:
-    """Prompt for a value; re-prompt if empty and no default."""
-    if default:
-        raw = input(f"    {label} [{default}]: ").strip()
-        return raw if raw else default
-    while True:
-        raw = input(f"    {label}: ").strip()
-        if raw:
-            return raw
-        print("    (required — cannot be empty)")
-
-
-def _prompt_yn(question: str, default: bool = True) -> bool:
-    hint = "[Y/n]" if default else "[y/N]"
-    while True:
-        try:
-            raw = input(f"  {question} {hint} ").strip().lower()
-        except EOFError:
-            return default
-        if not raw:
-            return default
-        if raw in ("y", "yes"):
-            return True
-        if raw in ("n", "no"):
-            return False
-        print("  Please enter y or n.")
-
-
-_MW_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d-([01]\d|2[0-3]):[0-5]\d$")
-
-
-def _prompt_maintenance_window(default: str) -> str:
-    while True:
-        raw = input(f"    Maintenance window (HH:MM-HH:MM) [{default}]: ").strip()
-        val = raw if raw else default
-        if _MW_RE.match(val):
-            return val
-        print(f"    ✗  {val!r} is not a valid window. Expected format: HH:MM-HH:MM (e.g. 08:00-20:00)")
-
-
-def _prompt_policy() -> str:
-    print()
-    print("  Approval policy:")
-    print("    1) strict   — all actions require explicit human approval (recommended)")
-    print("    2) moderate — patching + Docker need approval; cleanup is auto-approved")
-    print("    3) relaxed  — most non-destructive actions auto-approved")
-    print()
-    while True:
-        raw = input("  Choice [1/3, Enter=1]: ").strip()
-        if raw in ("", "1"):
-            return "strict"
-        if raw == "2":
-            return "moderate"
-        if raw == "3":
-            return "relaxed"
-        print("  ✗  Please enter 1, 2, or 3.")
 
 
 # ---------------------------------------------------------------------------
@@ -376,21 +329,17 @@ async def _main(inventory_path: Path) -> None:
         print()
         print("  Creating new environment")
         print()
-        chosen_env = _prompt_val("Environment name")
+        chosen_env = prompt_name("Environment name")
         if chosen_env in environments:
             _err(f"Environment '{chosen_env}' already exists — select it above instead.")
             sys.exit(1)
-        ssh_user      = _prompt_val("SSH user on target VMs", "errander")
-        ssh_key_raw   = _prompt_val("SSH key path", "~/.ssh/errander_prod")
+        ssh_user      = prompt_val("SSH user on target VMs", "errander")
+        ssh_key_raw   = prompt_val("SSH key path", "~/.ssh/errander_prod")
         ssh_key_path  = str(Path(ssh_key_raw).expanduser())
-        approval      = _prompt_policy()
-        maint_win     = _prompt_maintenance_window("08:00-20:00")
-        maint_days_raw = _prompt_val(
-            "Maintenance days  (comma-separated)",
-            "monday,tuesday,wednesday,thursday,friday",
-        )
-        maint_days = [d.strip() for d in maint_days_raw.split(",") if d.strip()]
-        maint_tz   = _prompt_val("Maintenance timezone", "UTC")
+        approval      = prompt_policy(indent=2)
+        maint_win     = prompt_maintenance_window("08:00-20:00")
+        maint_days    = prompt_maintenance_days("monday,tuesday,wednesday,thursday,friday")
+        maint_tz      = prompt_timezone()
 
         env_data: dict[str, Any] = {
             "ssh_user":             ssh_user,
@@ -427,19 +376,15 @@ async def _main(inventory_path: Path) -> None:
         print(f"  New VM #{len(new_targets) + 1}")
         print()
 
-        host = _prompt_val("VM hostname or private IP")
+        host = prompt_val("VM hostname or private IP")
         default_name = f"{chosen_env}-vm-{vm_num:02d}"
-        name = _prompt_val("VM name", default_name)
+        name = prompt_name("VM name", default_name)
 
-        print()
-        print("    OS family:  1) ubuntu  2) debian  3) rhel")
-        os_raw = input("    Choice [1/3, Enter=1]: ").strip()
-        os_map = {"2": "debian", "3": "rhel"}
-        os_family = os_map.get(os_raw, "ubuntu")
+        os_family = prompt_os_family()
         print()
 
         # Optional SSH verification
-        if _prompt_yn(f"  Verify SSH connectivity to {host} now?"):
+        if prompt_yn(f"Verify SSH connectivity to {host} now?", indent=2):
             print(f"    Connecting as {ssh_user}@{host} ...")
             ssh_ok = await _check_ssh(host, ssh_user, ssh_key_path)
             if ssh_ok:
@@ -455,40 +400,19 @@ async def _main(inventory_path: Path) -> None:
         target_overrides: dict[str, Any] = {}
 
         if env_docker:
-            has_docker = _prompt_yn("  Is Docker installed on this VM?", default=True)
+            has_docker = prompt_yn("Is Docker installed on this VM?", default=True, indent=2)
             if not has_docker:
                 target_overrides["docker_hygiene"] = {"enabled": False}
 
         # Service restart — collect unit names now; wrapper installed below
         print()
         print("  service_restart — lets operators restart specific systemd units via Errander.")
-        if _prompt_yn("  Will this VM need operator-triggered service restarts?", default=False):
-            from errander.execution.command_builder import CommandBuildError, safe_systemd_unit_name
-
-            print("  Enter unit names (space or comma separated, e.g. nginx.service postgresql.service):")
-            while True:
-                raw_units = input("  Units: ").strip()
-                parsed = [u.strip().rstrip(",") for u in raw_units.replace(",", " ").split() if u.strip()]
-                if not parsed:
-                    print("  (at least one unit name required — e.g. nginx.service)")
-                    continue
-                invalid: list[str] = []
-                for u in parsed:
-                    try:
-                        safe_systemd_unit_name(u)
-                    except CommandBuildError as exc:
-                        invalid.append(f"    ✗  {u!r} — {exc}")
-                if invalid:
-                    print("  Invalid unit name(s):")
-                    for msg in invalid:
-                        print(msg)
-                    print("  Unit names must include a type suffix, e.g. docker.service, nginx.service")
-                    continue
-                target_overrides["service_restart"] = {
-                    "enabled": True,
-                    "restartable_units": parsed,
-                }
-                break
+        if prompt_yn("Will this VM need operator-triggered service restarts?", default=False, indent=2):
+            units = prompt_systemd_units(indent=2)
+            target_overrides["service_restart"] = {
+                "enabled": True,
+                "restartable_units": units,
+            }
 
         target: dict[str, Any] = {
             "host": host,
@@ -503,7 +427,7 @@ async def _main(inventory_path: Path) -> None:
         _ok(f"Queued: {name}  ({host}, {os_family})")
         print()
 
-        if not _prompt_yn("Add another VM to this environment?", default=False):
+        if not prompt_yn("Add another VM to this environment?", default=False, indent=2):
             break
         print()
 
@@ -549,7 +473,7 @@ async def _main(inventory_path: Path) -> None:
             _ok("Already running.")
         else:
             print("\033[33mNOT FOUND\033[0m")
-            if _prompt_yn(f"  Install Node Exporter on {t_name}?", default=True):
+            if prompt_yn(f"Install Node Exporter on {t_name}?", default=True, indent=2):
                 await _install_ne(t_host, ssh_user, ssh_key_path)
             else:
                 _warn("Skipping — SSH probe will be used for metrics.")
@@ -563,7 +487,7 @@ async def _main(inventory_path: Path) -> None:
                 _ok("Docker wrappers already installed.")
             else:
                 print("\033[33mNOT FOUND\033[0m")
-                if _prompt_yn(f"  Install docker wrappers on {t_name}?", default=True):
+                if prompt_yn(f"Install docker wrappers on {t_name}?", default=True, indent=2):
                     await _install_docker_wrappers(t_host, ssh_user, ssh_key_path)
                 else:
                     _warn("Skipping — docker_hygiene will not work until wrappers are installed.")
@@ -578,9 +502,10 @@ async def _main(inventory_path: Path) -> None:
             else:
                 print("\033[33mNOT FOUND\033[0m")
                 units_display = ", ".join(restart_units)
-                if _prompt_yn(
-                    f"  Install service restart wrapper on {t_name} (units: {units_display})?",
+                if prompt_yn(
+                    f"Install service restart wrapper on {t_name} (units: {units_display})?",
                     default=True,
+                    indent=2,
                 ):
                     await _install_restart_wrapper(t_host, ssh_user, ssh_key_path, restart_units)
                 else:

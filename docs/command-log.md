@@ -1,5 +1,14 @@
 # Errander-AI Command Log
 
+## Wizard prompt clarity (2026-06-09)
+
+```bash
+uv run ruff check errander/config/inventory_wizard.py
+uv run pytest tests/config/test_inventory_wizard.py -q
+```
+
+---
+
 ## add_target.py UX improvements (2026-06-09)
 
 ```bash

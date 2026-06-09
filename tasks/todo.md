@@ -1,3 +1,11 @@
+## Wizard prompt clarity — backup_verify and critical_services (2026-06-09, COMPLETE)
+
+- [x] `backup_verify` prompt — added 4-line explanation: read-only file check, does NOT create backups, requires settings.yaml
+- [x] `critical_services` prompt — added 4-line explanation: watch-only sentinels vs service_restart; changed example default from "nginx,ssh" to "ssh"
+- [x] 22 wizard tests passing, ruff clean
+
+---
+
 ## `add_target.py` UX improvements (2026-06-09, COMPLETE)
 
 - [x] Switch I/O from `yaml.dump` to `ruamel.yaml` (comment-preserving)

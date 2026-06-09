@@ -4,6 +4,14 @@
 2026-06-09
 
 ## Current Phase
+**Wizard prompt clarity — backup_verify and critical_services (2026-06-09, COMPLETE).**
+
+Added inline explanations to two confusing wizard prompts: `backup_verify` now explains it is read-only (does NOT create backups, checks file existence + age on disk) and what `backup:` in settings.yaml means; `critical_services` now explains the watch-only role and explicitly distinguishes it from `service_restart`.
+
+### Files changed (2026-06-09 — wizard prompt clarity)
+- `errander/config/inventory_wizard.py` — `backup_verify` and `critical_services` prompt text
+
+## Previous Phase
 **`add_target.py` UX improvements (2026-06-09, COMPLETE).**
 
 `add_target.py` now asks the same three questions as the full wizard when adding a new VM:

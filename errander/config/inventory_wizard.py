@@ -215,7 +215,13 @@ def _wizard_env(env_number: int) -> EnvData:
     print()
     enable_docker_hygiene = _prompt_yn("Enable docker_hygiene?", default=False)
     print()
-    enable_backup_verify = _prompt_yn("Enable backup_verify? (requires backup: in settings.yaml)", default=False)
+    print()
+    print("    backup_verify is read-only — it SSHes in and checks that your backup files")
+    print("    exist on disk, are non-zero, and were modified within the last N hours.")
+    print("    It does NOT create backups. Requires a backup: section in settings.yaml")
+    print("    listing the file paths to check (e.g. /var/backups/postgres/latest.dump).")
+    print()
+    enable_backup_verify = _prompt_yn("Enable backup_verify?", default=False)
 
     return EnvData(
         name=name,
@@ -256,7 +262,12 @@ def _wizard_target(
     raw_tags = _prompt_val_optional("      Tags (comma-sep)", f"{env.name},web")
     tags = [t.strip() for t in raw_tags.split(",") if t.strip()] if raw_tags else [env.name]
 
-    raw_svc = _prompt_val_optional("      Critical services to monitor (comma-sep)", "nginx,ssh")
+    print()
+    print("      critical_services — watch-only health sentinels.")
+    print("      Errander checks these are active before and after every maintenance run")
+    print("      and alerts you if any go down. It never restarts them.")
+    print("      (service_restart is separate — an operator-triggered action to restart a unit.)")
+    raw_svc = _prompt_val_optional("      Services to watch (comma-sep)", "ssh")
     critical_services = [s.strip() for s in raw_svc.split(",") if s.strip()]
 
     # Optional SSH verification

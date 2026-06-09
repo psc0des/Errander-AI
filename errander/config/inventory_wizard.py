@@ -74,8 +74,8 @@ def _prompt_policy() -> str:
     """Numbered menu for approval policy; returns 'strict'/'moderate'/'relaxed'."""
     print()
     print("    Approval policy:")
-    print("      1) strict   — all actions require explicit Slack approval  (recommended for production)")
-    print("      2) moderate — patching + Docker need Slack; cleanup is auto-approved")
+    print("      1) strict   — all actions require explicit human approval (Slack or web UI)  (recommended)")
+    print("      2) moderate — patching + Docker need approval; cleanup is auto-approved")
     print("      3) relaxed  — most non-destructive actions auto-approved")
     print()
     raw = input("    Choice [1/3, Enter=1]: ").strip()
@@ -426,9 +426,9 @@ def _render_env(env: EnvData) -> list[str]:
     lines.append(f"    ssh_key_path: {env.ssh_key_path}")
     lines.append("")
     lines.append("    # ── Approval ─────────────────────────────────────────────────────────")
-    lines.append("    # relaxed  → non-destructive actions auto-approved; high-risk needs Slack")
-    lines.append("    # moderate → patching + Docker need Slack approval; cleanup auto-approved")
-    lines.append("    # strict   → all actions require explicit human Slack approval (recommended)")
+    lines.append("    # relaxed  → non-destructive actions auto-approved; high-risk needs approval")
+    lines.append("    # moderate → patching + Docker need approval (Slack or web UI); cleanup auto")
+    lines.append("    # strict   → all actions require explicit human approval (Slack or web UI) (recommended)")
     lines.append(f"    approval_policy: {env.approval_policy}")
     lines.append("")
     lines.append("    # ── Maintenance window ────────────────────────────────────────────────")
@@ -467,7 +467,7 @@ def _render_env(env: EnvData) -> list[str]:
     # patching
     lines.append("      patching:")
     enabled_str = "true" if env.enable_patching else "false"
-    lines.append(f"        enabled: {enabled_str}       # OS package updates (non-kernel); Slack approval required")
+    lines.append(f"        enabled: {enabled_str}       # OS package updates (non-kernel); human approval required")
 
     # disk_cleanup
     lines.append("      disk_cleanup:")

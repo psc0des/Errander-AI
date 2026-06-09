@@ -366,7 +366,7 @@ async def validate_targets_node(
                 # fall back to batch-level for DB-added VMs that have no per-target config.
                 _t_enabled = t.get("enabled_actions")
                 _enabled: list[str] | None = (
-                    list(_t_enabled)  # type: ignore[arg-type]
+                    list(_t_enabled)
                     if isinstance(_t_enabled, list)
                     else state.get("enabled_actions")
                 )
@@ -1874,7 +1874,7 @@ def make_fan_out_router(
                     disable_failed_login_check=bool(t.get("disable_failed_login_check", False)),
                     critical_services=list(t.get("critical_services") or []),  # type: ignore[call-overload]
                     enabled_actions=(
-                        list(_t_enabled)  # type: ignore[arg-type]
+                        list(_t_enabled)
                         if isinstance(_t_enabled, list)
                         else (list(_batch_enabled) if _batch_enabled is not None else [])
                     ),
@@ -2020,7 +2020,7 @@ def make_wave_dispatcher(
                         disable_failed_login_check=bool(t.get("disable_failed_login_check", False)),
                         critical_services=list(t.get("critical_services") or []),  # type: ignore[call-overload]
                         enabled_actions=(
-                            list(t["enabled_actions"])  # type: ignore[arg-type]
+                            list(t["enabled_actions"])
                             if "enabled_actions" in t and isinstance(t["enabled_actions"], list)
                             else (list(_batch_enabled_exec) if _batch_enabled_exec is not None else [])
                         ),
@@ -2061,7 +2061,7 @@ def route_plan_vms(state: BatchGraphState) -> str | list[Send]:
     for t in healthy:
         _t_enabled = t.get("enabled_actions")
         effective_enabled: list[str] | None = (
-            list(_t_enabled)  # type: ignore[arg-type]
+            list(_t_enabled)
             if isinstance(_t_enabled, list)
             else _batch_enabled
         )

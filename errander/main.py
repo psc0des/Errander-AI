@@ -1787,9 +1787,9 @@ async def run_env_batch(
         if row["source"] == "db_addition" and not bool(row["disabled"])
     ]
 
-    targets = [t for t in yaml_targets if t["_name"] not in disabled_names]
-    for t in targets:
-        del t["_name"]
+    targets = [entry for entry in yaml_targets if entry["_name"] not in disabled_names]
+    for entry in targets:
+        del entry["_name"]
 
     for row in db_additions:
         targets.append({

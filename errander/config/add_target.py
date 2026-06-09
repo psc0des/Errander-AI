@@ -7,6 +7,7 @@ wizard when you only need to add new target VMs. Leaves .env untouched.
 from __future__ import annotations
 
 import asyncio
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -47,13 +48,48 @@ def _prompt_val(label: str, default: str = "") -> str:
 
 def _prompt_yn(question: str, default: bool = True) -> bool:
     hint = "[Y/n]" if default else "[y/N]"
-    try:
-        raw = input(f"  {question} {hint} ").strip().lower()
-    except EOFError:
-        return default
-    if not raw:
-        return default
-    return raw in ("y", "yes")
+    while True:
+        try:
+            raw = input(f"  {question} {hint} ").strip().lower()
+        except EOFError:
+            return default
+        if not raw:
+            return default
+        if raw in ("y", "yes"):
+            return True
+        if raw in ("n", "no"):
+            return False
+        print("  Please enter y or n.")
+
+
+_MW_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d-([01]\d|2[0-3]):[0-5]\d$")
+
+
+def _prompt_maintenance_window(default: str) -> str:
+    while True:
+        raw = input(f"    Maintenance window (HH:MM-HH:MM) [{default}]: ").strip()
+        val = raw if raw else default
+        if _MW_RE.match(val):
+            return val
+        print(f"    ✗  {val!r} is not a valid window. Expected format: HH:MM-HH:MM (e.g. 08:00-20:00)")
+
+
+def _prompt_policy() -> str:
+    print()
+    print("  Approval policy:")
+    print("    1) strict   — all actions require explicit human approval (recommended)")
+    print("    2) moderate — patching + Docker need approval; cleanup is auto-approved")
+    print("    3) relaxed  — most non-destructive actions auto-approved")
+    print()
+    while True:
+        raw = input("  Choice [1/3, Enter=1]: ").strip()
+        if raw in ("", "1"):
+            return "strict"
+        if raw == "2":
+            return "moderate"
+        if raw == "3":
+            return "relaxed"
+        print("  ✗  Please enter 1, 2, or 3.")
 
 
 # ---------------------------------------------------------------------------
@@ -347,8 +383,8 @@ async def _main(inventory_path: Path) -> None:
         ssh_user      = _prompt_val("SSH user on target VMs", "errander")
         ssh_key_raw   = _prompt_val("SSH key path", "~/.ssh/errander_prod")
         ssh_key_path  = str(Path(ssh_key_raw).expanduser())
-        approval      = _prompt_val("Approval policy  (relaxed / moderate / strict)", "relaxed")
-        maint_win     = _prompt_val("Maintenance window  (HH:MM-HH:MM)", "08:00-20:00")
+        approval      = _prompt_policy()
+        maint_win     = _prompt_maintenance_window("08:00-20:00")
         maint_days_raw = _prompt_val(
             "Maintenance days  (comma-separated)",
             "monday,tuesday,wednesday,thursday,friday",

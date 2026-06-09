@@ -9,6 +9,7 @@ Entry point: ``uv run python -m errander.config.inventory_wizard``
 from __future__ import annotations
 
 import asyncio
+import re
 import sys
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -61,13 +62,30 @@ def _prompt_val_optional(label: str, hint: str = "") -> str:
 
 def _prompt_yn(question: str, default: bool = True) -> bool:
     hint = "[Y/n]" if default else "[y/N]"
-    try:
-        raw = input(f"    {question} {hint} ").strip().lower()
-    except EOFError:
-        return default
-    if not raw:
-        return default
-    return raw in ("y", "yes")
+    while True:
+        try:
+            raw = input(f"    {question} {hint} ").strip().lower()
+        except EOFError:
+            return default
+        if not raw:
+            return default
+        if raw in ("y", "yes"):
+            return True
+        if raw in ("n", "no"):
+            return False
+        print("    Please enter y or n.")
+
+
+_MW_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d-([01]\d|2[0-3]):[0-5]\d$")
+
+
+def _prompt_maintenance_window(default: str) -> str:
+    while True:
+        raw = input(f"    Maintenance window (HH:MM-HH:MM) [{default}]: ").strip()
+        val = raw if raw else default
+        if _MW_RE.match(val):
+            return val
+        print(f"    ✗  {val!r} is not a valid window. Expected format: HH:MM-HH:MM (e.g. 08:00-20:00)")
 
 
 def _prompt_policy() -> str:
@@ -78,12 +96,15 @@ def _prompt_policy() -> str:
     print("      2) moderate — patching + Docker need approval; cleanup is auto-approved")
     print("      3) relaxed  — most non-destructive actions auto-approved")
     print()
-    raw = input("    Choice [1/3, Enter=1]: ").strip()
-    if raw == "2":
-        return "moderate"
-    if raw == "3":
-        return "relaxed"
-    return "strict"
+    while True:
+        raw = input("    Choice [1/3, Enter=1]: ").strip()
+        if raw in ("", "1"):
+            return "strict"
+        if raw == "2":
+            return "moderate"
+        if raw == "3":
+            return "relaxed"
+        print("    ✗  Please enter 1, 2, or 3.")
 
 
 # ── Day normalisation ──────────────────────────────────────────────────────────
@@ -185,7 +206,7 @@ def _wizard_env(env_number: int) -> EnvData:
 
     print()
     mw_default = "02:00-06:00" if name == "production" else ("22:00-06:00" if name == "staging" else "08:00-20:00")
-    maintenance_window = _prompt_val("Maintenance window (HH:MM-HH:MM)", mw_default)
+    maintenance_window = _prompt_maintenance_window(mw_default)
 
     if name == "production":
         days_default = "tuesday,thursday"

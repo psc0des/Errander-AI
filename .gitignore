@@ -42,8 +42,17 @@ htmlcov/
 # Playwright browser binaries
 playwright/.local-browsers/
 
-# Test temp files
+# Test temp files (pytest tmp dirs, audit probe dirs, manual test dirs)
 .pytest-tmp/
+.pytest-tmp-*/
+audit_tmp_*/
+.audit_tmp_*/
+tmp-pytest-run/
+manualtmpaudit/
+pytesttmpaudit/
+pycreates*/
+singlefreshaudit*/
+acl_probe_latest/
 
 # Local SRE audit working docs (not part of project source)
 ai_sre_*.md

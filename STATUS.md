@@ -1,9 +1,18 @@
 # Errander-AI — Project Status
 
 ## Last Updated
-2026-06-08
+2026-06-09
 
 ## Current Phase
+**configure.sh security hardening + add-target.sh new-environment support (2026-06-09, COMPLETE).**
+
+Fixed 6 security issues in configure.sh: (1) `ERRANDER_ELK_API_KEY` written plaintext despite encryption being enabled — now goes through `encrypt_val`; (2–5) four API key prompts used `prompt_val` (visible) instead of `prompt_secret` (hidden) — vLLM API key, "Other" provider API key, ELK API key (both new-entry and re-entry paths); (6) `ERRANDER_SIGNING_SECRET` never generated — docker_hygiene web approval URLs would silently fail or crash at runtime; also added `ERRANDER_WEB_BASE_URL` prompt (previously absent). Extended `add_target.py` with `[n] New environment` option so operators can add a brand-new env without re-running the full configure.sh wizard.
+
+### Files changed (2026-06-09)
+- `scripts/configure.sh` — `ERRANDER_ELK_API_KEY` encrypted; 4 API key prompts → `prompt_secret`; SIGNING_SECRET auto-generation block; WEB_BASE_URL prompt; both added to `.env` write block with encryption
+- `errander/config/add_target.py` — `[n] New environment` option; prompts for all env-level fields; removed stale `type: ignore` comment
+
+## Previous Phase
 **`/ui/monitoring` time-range selector + Prometheus+Grafana demoted to external-only (2026-06-08, COMPLETE).**
 
 Added a 24h / 7d / 30d time-range toggle to `/ui/monitoring` — all sections (stat cards, approval funnel, safety signals, audit trail charts) respond to the selected window by passing it to `get_monitoring_stats()`. Removed the Prometheus + Grafana install prompt from `bootstrap.sh` and reframed both stacks as optional, dedicated-external-VM-only tools in all docs. Reasoning: the built-in page reads from the audit DB (authoritative, survives restarts, has approval/safety data Prometheus never sees); running Prometheus + Grafana on the same server adds RAM pressure and disk growth with no meaningful gain over the built-in page.

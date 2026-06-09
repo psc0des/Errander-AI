@@ -172,7 +172,7 @@ case "$LLM_CHOICE" in
     LLM_BASE_URL="$REPLY"
     prompt_val "Model" "Qwen/Qwen3-8B-AWQ"
     LLM_MODEL="$REPLY"
-    prompt_val "API key  (press Enter to skip for unauthenticated vLLM)" ""
+    prompt_secret "API key  (Enter to skip for unauthenticated vLLM)"
     LLM_API_KEY="${REPLY:-not-needed}"
     ;;
   *)
@@ -181,7 +181,7 @@ case "$LLM_CHOICE" in
     LLM_BASE_URL="$REPLY"
     prompt_val "Model"
     LLM_MODEL="$REPLY"
-    prompt_val "API key  (press Enter to skip)" ""
+    prompt_secret "API key  (Enter to skip)"
     LLM_API_KEY="${REPLY:-not-needed}"
     ;;
 esac
@@ -315,6 +315,8 @@ _existing_prometheus_url=""
 _existing_elk_url=""
 _existing_elk_api_key=""
 _existing_elk_index=""
+_existing_signing_secret=""
+_existing_web_base_url=""
 if [ -f ".env" ]; then
     _existing_slack_token=$(grep "^ERRANDER_SLACK_BOT_TOKEN=" .env 2>/dev/null | cut -d= -f2- || true)
     _existing_slack_channel=$(grep "^ERRANDER_SLACK_CHANNEL_ID=" .env 2>/dev/null | cut -d= -f2- || true)
@@ -322,6 +324,8 @@ if [ -f ".env" ]; then
     _existing_elk_url=$(grep "^ERRANDER_ELK_BASE_URL=" .env 2>/dev/null | cut -d= -f2- || true)
     _existing_elk_api_key=$(grep "^ERRANDER_ELK_API_KEY=" .env 2>/dev/null | cut -d= -f2- || true)
     _existing_elk_index=$(grep "^ERRANDER_ELK_INDEX_PATTERN=" .env 2>/dev/null | cut -d= -f2- || true)
+    _existing_signing_secret=$(grep "^ERRANDER_SIGNING_SECRET=" .env 2>/dev/null | cut -d= -f2- || true)
+    _existing_web_base_url=$(grep "^ERRANDER_WEB_BASE_URL=" .env 2>/dev/null | cut -d= -f2- || true)
 fi
 
 # ── 4. Slack ──────────────────────────────────────────────────────────────────
@@ -431,7 +435,7 @@ if [ -n "$_existing_elk_url" ]; then
       n|no)
         prompt_val "Elasticsearch URL (global default)" "${_existing_elk_url:-http://localhost:9200}"
         ELK_BASE_URL="$REPLY"
-        prompt_val "API key  (press Enter to skip for unauthenticated)" ""
+        prompt_secret "API key  (Enter to skip for unauthenticated)"
         ELK_API_KEY="$REPLY"
         prompt_val "Index pattern" "${_existing_elk_index:-filebeat-*,logstash-*}"
         ELK_INDEX_PATTERN="$REPLY"
@@ -452,7 +456,7 @@ else
       y|yes)
         prompt_val "Elasticsearch URL (global default)" "http://localhost:9200"
         ELK_BASE_URL="$REPLY"
-        prompt_val "API key  (press Enter to skip for unauthenticated)" ""
+        prompt_secret "API key  (Enter to skip for unauthenticated)"
         ELK_API_KEY="$REPLY"
         prompt_val "Index pattern" "filebeat-*,logstash-*"
         ELK_INDEX_PATTERN="$REPLY"
@@ -505,6 +509,47 @@ else
         fi
         break
     done
+fi
+
+# ── Web base URL (enables signed web-approval links in Slack) ─────────────────
+echo ""
+WEB_BASE_URL="${_existing_web_base_url:-}"
+if [ -n "$_existing_web_base_url" ]; then
+    printf "  Agent web base URL: %s — keep? (Y/n): " "$_existing_web_base_url"
+    read -r _web_keep || true
+    echo ""
+    case "${_web_keep,,}" in
+      n|no)
+        printf "  Agent web base URL  (e.g. http://10.0.0.5:9090 — Enter to skip): "
+        read -r _web_url || true
+        echo ""
+        WEB_BASE_URL="${_web_url:-}"
+        ;;
+    esac
+else
+    printf "  Agent web base URL  (e.g. http://10.0.0.5:9090 — Enter to skip): "
+    read -r _web_url || true
+    echo ""
+    WEB_BASE_URL="${_web_url:-}"
+fi
+if [ -n "$WEB_BASE_URL" ]; then
+    ok "Web base URL: $WEB_BASE_URL  (signed approval links will appear in Slack)"
+else
+    ok "Web base URL: not set — Slack messages will omit web approval links"
+fi
+
+# ── Signing secret (HMAC key for web-approval tokens — auto-generated) ────────
+SIGNING_SECRET="${_existing_signing_secret:-}"
+if [ -z "$SIGNING_SECRET" ]; then
+    _gen=$(uv run python -c \
+        "import secrets, base64; print(base64.b64encode(secrets.token_bytes(32)).decode())" \
+        2>/dev/null || true)
+    if [ -n "$_gen" ]; then
+        SIGNING_SECRET="$_gen"
+        ok "Signing secret auto-generated"
+    else
+        warn "Could not generate signing secret — docker_hygiene web approval URLs will be unavailable"
+    fi
 fi
 
 # ── Encryption (optional) ─────────────────────────────────────────────────────
@@ -609,6 +654,10 @@ _env_llm_api_key=$(encrypt_val "$LLM_API_KEY")
 _env_ui_pass=$(encrypt_val "$_ui_pass")
 _env_slack_token=""
 [ -n "$SLACK_BOT_TOKEN" ] && _env_slack_token=$(encrypt_val "$SLACK_BOT_TOKEN")
+_env_elk_api_key=""
+[ -n "$ELK_API_KEY" ] && _env_elk_api_key=$(encrypt_val "$ELK_API_KEY")
+_env_signing_secret=""
+[ -n "$SIGNING_SECRET" ] && _env_signing_secret=$(encrypt_val "$SIGNING_SECRET")
 
 # .env
 {
@@ -641,7 +690,7 @@ _env_slack_token=""
     echo ""
     if [ -n "$ELK_BASE_URL" ]; then
         echo "ERRANDER_ELK_BASE_URL=${ELK_BASE_URL}"
-        [ -n "$ELK_API_KEY" ] && echo "ERRANDER_ELK_API_KEY=${ELK_API_KEY}"
+        [ -n "$_env_elk_api_key" ] && echo "ERRANDER_ELK_API_KEY=${_env_elk_api_key}"
         echo "ERRANDER_ELK_INDEX_PATTERN=${ELK_INDEX_PATTERN}"
     else
         echo "# ELK not configured (optional — adds log error summaries to --ask and probe digest)"
@@ -657,6 +706,17 @@ _env_slack_token=""
     echo "# Web UI / metrics bind address"
     echo "# 0.0.0.0 = reachable from your laptop; 127.0.0.1 = localhost only (SSH tunnel required)"
     echo "ERRANDER_UI_BIND=0.0.0.0"
+    echo ""
+    if [ -n "$_env_signing_secret" ]; then
+        echo "ERRANDER_SIGNING_SECRET=${_env_signing_secret}"
+    else
+        echo "# ERRANDER_SIGNING_SECRET=  # run configure.sh to auto-generate"
+    fi
+    if [ -n "$WEB_BASE_URL" ]; then
+        echo "ERRANDER_WEB_BASE_URL=${WEB_BASE_URL}"
+    else
+        echo "# ERRANDER_WEB_BASE_URL=http://<agent-ip>:9090  # set to include signed web approval links in Slack"
+    fi
 } > .env
 
 chmod 600 .env

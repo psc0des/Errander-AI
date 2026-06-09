@@ -1,5 +1,16 @@
 # Errander-AI Command Log
 
+## configure.sh security hardening (2026-06-09)
+
+```bash
+# No shell commands run — all changes were targeted file edits
+# Files changed: scripts/configure.sh, errander/config/add_target.py
+# Security fixes: ELK API key encryption, 4 prompt_val→prompt_secret,
+#   SIGNING_SECRET auto-generation, WEB_BASE_URL prompt
+```
+
+---
+
 ## langgraph-primer.md updated (2026-06-08)
 
 ```bash

@@ -1,3 +1,14 @@
+## configure.sh security hardening + add-target new-env support (2026-06-09, COMPLETE)
+
+- [x] `scripts/configure.sh` — `ERRANDER_ELK_API_KEY` now encrypted via `encrypt_val` (was written plaintext)
+- [x] `scripts/configure.sh` — 4 API key prompts switched `prompt_val` → `prompt_secret`: vLLM, "Other" provider, ELK API key (x2)
+- [x] `scripts/configure.sh` — `ERRANDER_SIGNING_SECRET` auto-generated; encrypted; written to `.env`
+- [x] `scripts/configure.sh` — `ERRANDER_WEB_BASE_URL` now prompted in Step 5; pre-filled on re-run
+- [x] `errander/config/add_target.py` — `[n] New environment` option; prompts env-level YAML fields before VM loop
+- [x] Doc sync: STATUS.md, todo.md, lessons.md, SETUP.md, docs/SECRETS.md
+
+---
+
 ## `/ui/monitoring` time-range selector + Prometheus+Grafana demoted (2026-06-08, COMPLETE)
 
 - [x] `errander/observability/metrics.py` — `?days=` query param (1/7/30), dynamic window labels, `_tr_btn()` toggle, toggle CSS

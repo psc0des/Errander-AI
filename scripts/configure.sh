@@ -511,35 +511,20 @@ else
     done
 fi
 
-# ── Web base URL (enables signed web-approval links in Slack) ─────────────────
-# Auto-detect this VM's primary private IP so the user can just press Enter.
-_detected_ip=$(hostname -I 2>/dev/null | awk '{print $1}' || \
-               ip route get 1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src") print $(i+1)}' || \
-               true)
-_detected_web_url=""
-[ -n "$_detected_ip" ] && _detected_web_url="http://${_detected_ip}:9090"
-
-echo ""
+# ── Web base URL (auto-detected — enables signed web-approval links in Slack) ──
+# Always this VM's IP + port 9090. No prompt needed — override ERRANDER_WEB_BASE_URL
+# in .env manually if behind a load balancer, NAT, or custom domain.
 WEB_BASE_URL="${_existing_web_base_url:-}"
-if [ -n "$_existing_web_base_url" ]; then
-    printf "  Agent web base URL: %s — keep? (Y/n): " "$_existing_web_base_url"
-    read -r _web_keep || true
-    echo ""
-    case "${_web_keep,,}" in
-      n|no)
-        prompt_val "Agent web base URL" "${_detected_web_url:-}"
-        WEB_BASE_URL="$REPLY"
-        ;;
-    esac
-else
-    prompt_val "Agent web base URL  (URL operators use to reach this VM's web UI)" \
-               "${_detected_web_url:-}"
-    WEB_BASE_URL="$REPLY"
+if [ -z "$WEB_BASE_URL" ]; then
+    _detected_ip=$(hostname -I 2>/dev/null | awk '{print $1}' || \
+                   ip route get 1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src") print $(i+1)}' || \
+                   true)
+    [ -n "$_detected_ip" ] && WEB_BASE_URL="http://${_detected_ip}:9090"
 fi
 if [ -n "$WEB_BASE_URL" ]; then
     ok "Web base URL: $WEB_BASE_URL  (signed approval links will appear in Slack)"
 else
-    ok "Web base URL: not set — Slack messages will omit web approval links"
+    ok "Web base URL: could not auto-detect — set ERRANDER_WEB_BASE_URL in .env manually"
 fi
 
 # ── Signing secret (HMAC key for web-approval tokens — auto-generated) ────────

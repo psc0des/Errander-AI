@@ -512,6 +512,13 @@ else
 fi
 
 # ── Web base URL (enables signed web-approval links in Slack) ─────────────────
+# Auto-detect this VM's primary private IP so the user can just press Enter.
+_detected_ip=$(hostname -I 2>/dev/null | awk '{print $1}' || \
+               ip route get 1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src") print $(i+1)}' || \
+               true)
+_detected_web_url=""
+[ -n "$_detected_ip" ] && _detected_web_url="http://${_detected_ip}:9090"
+
 echo ""
 WEB_BASE_URL="${_existing_web_base_url:-}"
 if [ -n "$_existing_web_base_url" ]; then
@@ -520,17 +527,14 @@ if [ -n "$_existing_web_base_url" ]; then
     echo ""
     case "${_web_keep,,}" in
       n|no)
-        printf "  Agent web base URL  (e.g. http://10.0.0.5:9090 — Enter to skip): "
-        read -r _web_url || true
-        echo ""
-        WEB_BASE_URL="${_web_url:-}"
+        prompt_val "Agent web base URL" "${_detected_web_url:-}"
+        WEB_BASE_URL="$REPLY"
         ;;
     esac
 else
-    printf "  Agent web base URL  (e.g. http://10.0.0.5:9090 — Enter to skip): "
-    read -r _web_url || true
-    echo ""
-    WEB_BASE_URL="${_web_url:-}"
+    prompt_val "Agent web base URL  (URL operators use to reach this VM's web UI)" \
+               "${_detected_web_url:-}"
+    WEB_BASE_URL="$REPLY"
 fi
 if [ -n "$WEB_BASE_URL" ]; then
     ok "Web base URL: $WEB_BASE_URL  (signed approval links will appear in Slack)"

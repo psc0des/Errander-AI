@@ -230,3 +230,7 @@ signed web-approval URL that is included in Slack messages. Optional: when empty
 the web-approval URL is omitted from Slack messages and operators approve via
 Slack structured reply only. Does not affect the web routes themselves — those
 remain reachable regardless of this setting.
+
+**Auto-detected by `configure.sh`** from the VM's primary private IP
+(`hostname -I`). Override manually in `.env` if the agent VM is behind a NAT,
+load balancer, or you want to use a hostname instead of an IP.

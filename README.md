@@ -13,7 +13,7 @@ Errander-AI is a **supervised agentic AI SRE platform** for small-to-medium Linu
 | `backup_verify` | ❌ disabled | Yes — requires `backup:` config section | LOW |
 | `service_restart` | ❌ disabled | Yes — install wrapper + declare `restartable_units` | HIGH — Slack approval always required, operator-triggered |
 
-Each action is independently enabled per environment in `inventory.yaml` (`actions.<name>.enabled`). Actions default as shown — no YAML required to run the enabled defaults.
+Each action is independently enabled per environment or per target in `inventory.yaml` (`actions.<name>.enabled`). Per-target overrides let you disable `docker_hygiene` on VMs without Docker, or set different `restartable_units` per VM. Actions default as shown — no YAML required to run the enabled defaults.
 
 ```bash
 # Trigger a service restart (operator-initiated, always requires Slack approval)
@@ -314,7 +314,7 @@ All Slack communication is outbound HTTPS. No webhooks, no inbound traffic.
 | Audit Trail | SQLite (v1) | PostgreSQL planned for v2 |
 | Observability | Built-in dashboard | `/ui/monitoring` — approval funnel, safety signals, action trends, duration averages, live counters; `/metrics` Prometheus endpoint for external scraping |
 | VM Locking | File-based (v1) | Valkey (Redis fork) planned for v2 |
-| Testing | pytest + pytest-asyncio + Playwright | 2507 tests |
+| Testing | pytest + pytest-asyncio + Playwright | 2517 tests |
 | Linting | ruff | |
 | Type Checking | mypy (strict mode) | |
 | Package Manager | uv | |
@@ -365,7 +365,7 @@ errander/
     scheduler.py            # APScheduler setup
     windows.py              # Maintenance window enforcement
   main.py                   # Entry point
-tests/                      # Mirrors src structure (2507 tests)
+tests/                      # Mirrors src structure (2517 tests)
 deploy/
   vllm/
     docker-compose.yml      # vLLM container (GPU passthrough)
@@ -468,7 +468,7 @@ After starting, visit `http://<controller-ip>:9090/ui` (or `http://localhost:909
 ## Key Commands
 
 ```bash
-uv run pytest                                          # Run all 2507 tests
+uv run pytest                                          # Run all 2517 tests
 uv run ruff check .                                    # Lint
 uv run mypy .                                          # Type check
 uv run python -m errander --run-now --env dev --dry-run # Dry-run a batch

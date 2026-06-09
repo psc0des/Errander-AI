@@ -601,28 +601,52 @@ uv run python -m errander --check-targets <your-env-name>
 
 This confirms SSH access, sudo permissions, OS detection, and binary paths for every VM in the environment.
 
-**5b. If you installed Docker wrappers** — add this to each environment block in `inventory.yaml`, then re-run `--check-targets`:
+**5b. If you installed Docker wrappers** — add the `actions:` block to each environment in `inventory.yaml`, then re-run `--check-targets`:
 
 ```yaml
-actions:
-  docker_hygiene:
-    enabled: true
-    command_mode: wrapper
+environments:
+  <your-env-name>:
+    ssh_user: errander
+    ssh_key_path: ~/.ssh/errander_prod
+    approval_policy: relaxed
+    maintenance_window: "08:00-20:00"
+    maintenance_days: [monday, tuesday, wednesday, thursday, friday]
+    maintenance_timezone: UTC
+    actions:                        # ← add this block
+      docker_hygiene:
+        enabled: true
+        command_mode: wrapper
+    targets:
+      - host: 10.0.0.10
+        name: prod-vm-01
+        os_family: ubuntu
 ```
 
 ```bash
 uv run python -m errander --check-targets <your-env-name>
 ```
 
-**5c. If you installed the service restart wrapper** — add this to each environment block in `inventory.yaml`, then re-run `--check-targets`:
+**5c. If you installed the service restart wrapper** — add `service_restart` under the same `actions:` block:
 
 ```yaml
-actions:
-  service_restart:
-    enabled: true
-    restartable_units:
-      - nginx.service        # replace with your actual units
-      - gunicorn.service
+environments:
+  <your-env-name>:
+    ssh_user: errander
+    ssh_key_path: ~/.ssh/errander_prod
+    approval_policy: relaxed
+    maintenance_window: "08:00-20:00"
+    maintenance_days: [monday, tuesday, wednesday, thursday, friday]
+    maintenance_timezone: UTC
+    actions:
+      service_restart:
+        enabled: true
+        restartable_units:
+          - nginx.service        # replace with your actual units
+          - gunicorn.service
+    targets:
+      - host: 10.0.0.10
+        name: prod-vm-01
+        os_family: ubuntu
 ```
 
 ```bash

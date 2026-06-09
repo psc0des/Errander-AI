@@ -333,18 +333,20 @@ Errander supports two Docker modes per environment (`actions.docker_hygiene.comm
 | `wrapper` | Root-owned wrapper scripts at `/usr/local/sbin/errander-docker-*` | Production and all deployments — per-object validation requires the wrapper |
 | `disabled` (default) | No Docker hygiene planned or executed | Envs without Docker or not yet set up |
 
-### Part 1 — Install wrapper on each target VM *(do this now, after Step 3)*
+### Part 1 — Install wrapper on each target VM
 
-Two steps — copy from the controller, then run on the target:
+**Automatic (recommended):** `configure.sh` (Step 5) and `add-target.sh` (when adding new VMs) check whether the wrapper is installed on each target and offer to install it for you — with a per-VM confirmation prompt. No manual steps are needed if you let the scripts handle it.
 
-**From the controller** — run from the repo directory (`~/errander`), not from `~/.ssh`:
+**Manual install (if automatic install fails or you need to reinstall):**
+
+*From the controller* — run from the repo directory (`~/errander`), not from `~/.ssh`:
 
 ```bash
 cd ~/errander
 scp -i ~/.ssh/errander_prod scripts/install-docker-wrappers-v2.sh errander@<target>:/tmp/
 ```
 
-**On the target** — SSH in as your admin user and run as root:
+*On the target* — SSH in as your admin user and run as root:
 
 ```bash
 ssh <admin-user>@<target>
@@ -429,18 +431,22 @@ docker_hygiene_end
 
 Service restart is operator-triggered only — Errander does not auto-restart services. The operator runs `--restart-service` after seeing a failed unit in the probe digest, and must approve the restart before it executes. Risk tier: **HIGH** — human approval is always required (via Slack reaction or web UI at `/ui/approvals`).
 
-### Part 1 — Install wrapper on each target VM *(do this now, after Step 3)*
+### Part 1 — Install wrapper on each target VM
 
-The restart wrapper enforces a per-VM allowlist so Errander can only restart pre-approved units. Two steps — copy from the controller, then run on the target:
+The restart wrapper enforces a per-VM allowlist so Errander can only restart pre-approved units.
 
-**From the controller** — run from the repo directory (`~/errander`), not from `~/.ssh`:
+**Automatic (recommended):** `configure.sh` (Step 5) and `add-target.sh` (when adding new VMs) check whether the wrapper is installed on each target and offer to install it — with a per-VM confirmation prompt. The wizard collects the unit names up-front, so the wrapper is installed with the correct allowlist in one step. No manual steps needed.
+
+**Manual install (if automatic install fails or you need to reinstall):**
+
+*From the controller* — run from the repo directory (`~/errander`), not from `~/.ssh`:
 
 ```bash
 cd ~/errander
 scp -i ~/.ssh/errander_prod scripts/install-systemctl-restart-wrapper.sh errander@<target>:/tmp/
 ```
 
-**On the target** — SSH in as your admin user and run as root:
+*On the target* — SSH in as your admin user and run as root:
 
 ```bash
 ssh <admin-user>@<target>
@@ -500,7 +506,7 @@ The LLM is optional — the agent falls back to built-in hardcoded logic if no L
 
 ## Step 5 — Configure the agent
 
-> **Want Docker hygiene or service restart?** Install wrapper scripts first (see Optional sections above), then come back here.
+> **Want Docker hygiene or service restart?** The wizard and configure.sh handle wrapper installation automatically — just answer the prompts. See the Optional sections above for details.
 
 Run the interactive setup script from inside the `errander/` directory:
 
@@ -546,9 +552,10 @@ The script reads your existing `inventory.yaml`, shows your current environments
 2. Enter hostname/IP and VM name
 3. Select OS family from a numbered menu: 1) ubuntu  2) debian  3) rhel *(alma/oracle/centos → rhel)*
 4. Answer whether Docker is installed — writes a `docker_hygiene: {enabled: false}` override if not *(only asked when the env has docker_hygiene enabled)*
-5. Optionally note service restart intent — writes a `service_restart: {enabled: false}` placeholder + TODO comment so you remember to add unit names after the wrapper is installed
+5. Answer whether service restart is needed — if yes, enter the unit names (e.g. `nginx.service gunicorn.service`); the script builds `service_restart: {enabled: true, restartable_units: [...]}` immediately
 6. Optionally verify SSH connectivity immediately
 7. Writes the new VM block into `inventory.yaml` under the correct environment — your `.env` is never touched
+8. Offers to install Node Exporter, docker wrappers, and the service restart wrapper on the new VM (one confirmation prompt per item; skipped if already present)
 
 **After running the script**, complete the usual per-target setup on each new VM:
 
@@ -556,8 +563,8 @@ The script reads your existing `inventory.yaml`, shows your current environments
 |---|---|
 | SSH setup | Create `errander` user + install public key — [Step 2](#step-2--set-up-ssh-keys) |
 | Sudo permissions | Grant passwordless sudo — [Step 3](#step-3--configure-target-vms-sudo-permissions) |
-| Docker hygiene *(if env uses it)* | Install wrappers — [Optional: Docker hygiene](#optional-docker-hygiene) |
-| Service restart *(if env uses it)* | Install wrapper + update allowlist — [Optional: Service restart](#optional-service-restart) |
+| Docker hygiene *(if env uses it)* | `add-target.sh` installs the wrapper automatically with a confirmation prompt — see [Optional: Docker hygiene](#optional-docker-hygiene) if you need to reinstall manually |
+| Service restart *(if env uses it)* | `add-target.sh` installs the wrapper + allowlist automatically — see [Optional: Service restart](#optional-service-restart) if you need to reinstall manually |
 | Verify | `uv run python -m errander --check-targets <env>` |
 | Pin host key | `uv run python -m errander --bootstrap-known-hosts <env>` |
 

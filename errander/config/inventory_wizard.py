@@ -180,8 +180,7 @@ def _wizard_env(env_number: int) -> EnvData:
 
     name = _prompt_val("Environment name", default_name)
     ssh_user = _prompt_val("SSH user on target VMs", "errander")
-    key_default = f"~/.ssh/errander_{name}"
-    ssh_key_path = _prompt_val("SSH key path", key_default)
+    ssh_key_path = _prompt_val("SSH key path", "~/.ssh/errander_prod")
 
     approval_policy = _prompt_policy()
 

@@ -4,6 +4,17 @@
 2026-06-09
 
 ## Current Phase
+**configure.sh and add-target.sh now install wrappers automatically (2026-06-09, COMPLETE).**
+
+After the wizard, `configure.py` (called by `configure.sh`) now SSHes into each VM and — with a per-item confirmation prompt — checks and installs Node Exporter, docker wrappers, and the service restart wrapper based on what's enabled in inventory.yaml. `add_target.py` does the same after adding new VMs. Service restart unit names are now collected in the wizard (required), not deferred. The `service_restart_intent` concept is removed.
+
+### Files changed (2026-06-09 — auto wrapper install)
+- `errander/config/inventory_wizard.py` — collect restart units immediately (required); remove intent-only path
+- `errander/config/configure.py` — add `_check_docker_wrappers`, `_install_docker_wrappers`, `_check_restart_wrapper`, `_install_restart_wrapper`; `_configure_vm` now handles all three install steps with prompts
+- `errander/config/add_target.py` — same wrapper functions; post-save install loop per new VM
+- `tests/config/test_inventory_wizard.py` — remove intent-only test; update `_make_env` helper
+
+## Previous Phase
 **Wizard prompt clarity — backup_verify and critical_services (2026-06-09, COMPLETE).**
 
 Added inline explanations to two confusing wizard prompts: `backup_verify` now explains it is read-only (does NOT create backups, checks file existence + age on disk) and what `backup:` in settings.yaml means; `critical_services` now explains the watch-only role and explicitly distinguishes it from `service_restart`.

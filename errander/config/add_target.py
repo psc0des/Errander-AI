@@ -115,6 +115,169 @@ async def _check_ssh(
 
 
 # ---------------------------------------------------------------------------
+# Wrapper check / install helpers
+# ---------------------------------------------------------------------------
+
+_SCRIPTS_DIR = Path(__file__).parent.parent.parent / "scripts"
+
+
+def _decode(v: str | bytes | None) -> str:
+    if v is None:
+        return ""
+    return v if isinstance(v, str) else v.decode()
+
+
+async def _check_ne(hostname: str, port: int = 9100, timeout: float = 3.0) -> bool:
+    """Return True if Node Exporter responds on host:port."""
+    import aiohttp
+    url = f"http://{hostname}:{port}/metrics"
+    try:
+        async with (
+            aiohttp.ClientSession() as session,
+            session.get(url, timeout=aiohttp.ClientTimeout(total=timeout)) as resp,
+        ):
+            return resp.status == 200
+    except Exception:
+        return False
+
+
+async def _install_ne(hostname: str, ssh_user: str, ssh_key_path: str) -> bool:
+    """Install Node Exporter on target via SSH. Returns True on success."""
+    from errander.config.configure import _NE_VERSION
+    from errander.config.configure import _install_ne as _conf_install_ne
+    _ok(f"Installing Node Exporter {_NE_VERSION}...")
+    result: bool = await _conf_install_ne(hostname, ssh_user, ssh_key_path)
+    return result
+
+
+async def _check_docker_wrappers(
+    hostname: str, ssh_user: str, ssh_key_path: str
+) -> bool:
+    try:
+        import asyncssh
+    except ImportError:
+        return False
+    try:
+        async with await asyncssh.connect(
+            hostname, username=ssh_user, client_keys=[ssh_key_path],
+            known_hosts=None, password=None, connect_timeout=8,
+        ) as conn:
+            result = await conn.run(
+                "sudo /usr/local/sbin/errander-docker-assess-v2 --check 2>/dev/null",
+                check=False,
+            )
+            return result.exit_status == 0 and "ok" in _decode(result.stdout)
+    except Exception:
+        return False
+    return False  # unreachable; satisfies mypy
+
+
+async def _install_docker_wrappers(
+    hostname: str, ssh_user: str, ssh_key_path: str
+) -> bool:
+    script_path = _SCRIPTS_DIR / "install-docker-wrappers-v2.sh"
+    if not script_path.exists():
+        _err(f"Script not found: {script_path}")
+        return False
+    script = script_path.read_text(encoding="utf-8")
+    try:
+        import asyncssh
+    except ImportError:
+        _err("asyncssh not installed")
+        return False
+    print("    Installing docker wrappers...")
+    try:
+        async with await asyncssh.connect(
+            hostname, username=ssh_user, client_keys=[ssh_key_path],
+            known_hosts=None, password=None, connect_timeout=10,
+        ) as conn:
+            result = await conn.run("sudo bash -s", input=script, check=False)
+            stdout = _decode(result.stdout)
+            if stdout:
+                for line in stdout.strip().splitlines():
+                    print(f"      {line}")
+            if result.exit_status != 0:
+                stderr = _decode(result.stderr)
+                if stderr:
+                    _err(stderr.strip())
+                return False
+    except Exception as exc:
+        _err(f"Docker wrapper install failed: {exc}")
+        return False
+    ok = await _check_docker_wrappers(hostname, ssh_user, ssh_key_path)
+    if ok:
+        _ok("Docker wrappers installed and responding.")
+    else:
+        _err("Installed but --check still failing — check sudo permissions.")
+    return ok
+
+
+async def _check_restart_wrapper(
+    hostname: str, ssh_user: str, ssh_key_path: str
+) -> bool:
+    try:
+        import asyncssh
+    except ImportError:
+        return False
+    try:
+        async with await asyncssh.connect(
+            hostname, username=ssh_user, client_keys=[ssh_key_path],
+            known_hosts=None, password=None, connect_timeout=8,
+        ) as conn:
+            result = await conn.run(
+                "sudo /usr/local/sbin/errander-systemctl-restart --check 2>/dev/null",
+                check=False,
+            )
+            return result.exit_status == 0 and "ok" in _decode(result.stdout)
+    except Exception:
+        return False
+    return False  # unreachable; satisfies mypy
+
+
+async def _install_restart_wrapper(
+    hostname: str, ssh_user: str, ssh_key_path: str, units: list[str]
+) -> bool:
+    script_path = _SCRIPTS_DIR / "install-systemctl-restart-wrapper.sh"
+    if not script_path.exists():
+        _err(f"Script not found: {script_path}")
+        return False
+    script = script_path.read_text(encoding="utf-8")
+    units_arg = " ".join(units)
+    try:
+        import asyncssh
+    except ImportError:
+        _err("asyncssh not installed")
+        return False
+    print(f"    Installing service restart wrapper ({units_arg})...")
+    try:
+        async with await asyncssh.connect(
+            hostname, username=ssh_user, client_keys=[ssh_key_path],
+            known_hosts=None, password=None, connect_timeout=10,
+        ) as conn:
+            result = await conn.run(
+                f"sudo bash -s {units_arg}", input=script, check=False
+            )
+            stdout = _decode(result.stdout)
+            if stdout:
+                for line in stdout.strip().splitlines():
+                    print(f"      {line}")
+            if result.exit_status != 0:
+                stderr = _decode(result.stderr)
+                if stderr:
+                    _err(stderr.strip())
+                return False
+    except Exception as exc:
+        _err(f"Restart wrapper install failed: {exc}")
+        return False
+    ok = await _check_restart_wrapper(hostname, ssh_user, ssh_key_path)
+    if ok:
+        _ok(f"Service restart wrapper installed for: {units_arg}")
+    else:
+        _err("Installed but --check still failing — check sudo permissions.")
+    return ok
+
+
+# ---------------------------------------------------------------------------
 # Main interactive flow
 # ---------------------------------------------------------------------------
 
@@ -260,17 +423,21 @@ async def _main(inventory_path: Path) -> None:
             if not has_docker:
                 target_overrides["docker_hygiene"] = {"enabled": False}
 
-        # Service restart intent
+        # Service restart — collect unit names now; wrapper installed below
         print()
-        print("  service_restart — lets operators restart specific systemd units.")
-        print("  Unit names can be added after installing the wrapper (SETUP.md Step 3c).")
-        wants_restart = _prompt_yn("  Will this VM need operator-triggered service restarts?", default=False)
-
-        if wants_restart:
-            target_overrides["service_restart"] = {
-                "enabled": False,       # set to true after adding unit names below
-                "restartable_units": [],  # e.g. [nginx.service, postgresql.service]
-            }
+        print("  service_restart — lets operators restart specific systemd units via Errander.")
+        if _prompt_yn("  Will this VM need operator-triggered service restarts?", default=False):
+            print("  Enter unit names (space or comma separated, e.g. nginx.service postgresql.service):")
+            while True:
+                raw_units = input("  Units: ").strip()
+                units = [u.strip().rstrip(",") for u in raw_units.replace(",", " ").split() if u.strip()]
+                if units:
+                    target_overrides["service_restart"] = {
+                        "enabled": True,
+                        "restartable_units": units,
+                    }
+                    break
+                print("  (at least one unit name required — e.g. nginx.service)")
 
         target: dict[str, Any] = {
             "host": host,
@@ -299,8 +466,80 @@ async def _main(inventory_path: Path) -> None:
 
     print(_hr("═"))
     _ok(f"inventory.yaml updated — {len(new_targets)} VM(s) added to '{chosen_env}'")
+
+    # ── Per-VM software install ───────────────────────────────────────────────
     print()
-    print("  Next steps for each new VM:")
+    print("  Software setup for each new VM (SSH connectivity required)")
+    print()
+
+    for target in new_targets:
+        t_host: str = target["host"]
+        t_name: str = target["name"]
+        t_actions: dict[str, Any] = target.get("actions") or {}
+
+        # Resolve docker: env-level enabled, target override may disable
+        t_docker_override = (t_actions.get("docker_hygiene") or {}).get("enabled")
+        docker_enabled = t_docker_override if t_docker_override is not None else env_docker
+
+        # Resolve restart units
+        t_restart = t_actions.get("service_restart") or {}
+        restart_units: list[str] = t_restart.get("restartable_units") or []
+        restart_enabled: bool = bool(t_restart.get("enabled", False)) and bool(restart_units)
+
+        print(f"  {_hr('─', 48)}")
+        print(f"  {t_name}  ({t_host})")
+        print()
+
+        # Node Exporter
+        print(f"    Checking Node Exporter ({t_host}:9100)...", end=" ", flush=True)
+        ne_found = await _check_ne(t_host)
+        if ne_found:
+            print("\033[32mFOUND\033[0m")
+            _ok("Already running.")
+        else:
+            print("\033[33mNOT FOUND\033[0m")
+            if _prompt_yn(f"  Install Node Exporter on {t_name}?", default=True):
+                await _install_ne(t_host, ssh_user, ssh_key_path)
+            else:
+                _warn("Skipping — SSH probe will be used for metrics.")
+
+        # Docker wrappers
+        if docker_enabled:
+            print("    Checking docker wrappers...", end=" ", flush=True)
+            dw_found = await _check_docker_wrappers(t_host, ssh_user, ssh_key_path)
+            if dw_found:
+                print("\033[32mFOUND\033[0m")
+                _ok("Docker wrappers already installed.")
+            else:
+                print("\033[33mNOT FOUND\033[0m")
+                if _prompt_yn(f"  Install docker wrappers on {t_name}?", default=True):
+                    await _install_docker_wrappers(t_host, ssh_user, ssh_key_path)
+                else:
+                    _warn("Skipping — docker_hygiene will not work until wrappers are installed.")
+
+        # Service restart wrapper
+        if restart_enabled:
+            print("    Checking service restart wrapper...", end=" ", flush=True)
+            rw_found = await _check_restart_wrapper(t_host, ssh_user, ssh_key_path)
+            if rw_found:
+                print("\033[32mFOUND\033[0m")
+                _ok("Service restart wrapper already installed.")
+            else:
+                print("\033[33mNOT FOUND\033[0m")
+                units_display = ", ".join(restart_units)
+                if _prompt_yn(
+                    f"  Install service restart wrapper on {t_name} (units: {units_display})?",
+                    default=True,
+                ):
+                    await _install_restart_wrapper(t_host, ssh_user, ssh_key_path, restart_units)
+                else:
+                    _warn("Skipping — service_restart will not work until wrapper is installed.")
+
+        print()
+
+    print(_hr("═"))
+    print()
+    print("  Remaining steps for each new VM:")
     print()
     print("  1. SSH user setup (SETUP.md Step 2):")
     print("       sudo useradd -m -s /bin/bash errander")
@@ -309,12 +548,10 @@ async def _main(inventory_path: Path) -> None:
     print("  2. Sudo permissions (SETUP.md Step 3):")
     print("       sudo tee /etc/sudoers.d/errander  # see SETUP.md")
     print()
-    print("  3. If using Docker hygiene or service restart — install wrappers.")
-    print()
-    print("  4. Verify:")
+    print("  3. Verify:")
     print(f"       uv run python -m errander --check-targets {chosen_env}")
     print()
-    print("  5. Pin SSH host key for the new VM:")
+    print("  4. Pin SSH host key:")
     print(f"       uv run python -m errander --bootstrap-known-hosts {chosen_env}")
     print()
     print(_hr("═"))

@@ -1,5 +1,11 @@
 # Errander-AI — Lessons Learned
 
+## 2026-06-09 — Defer-and-remind is worse than collect-and-install
+
+When software must be installed before a feature works, collect everything needed (unit names, etc.) at wizard time and install immediately — not "collect intent now, remind later." Deferred setup creates half-configured states that operators forget to complete. If you can install it right now via SSH, do it.
+
+---
+
 ## 2026-06-09 — Add-target wizard: ask the same questions as the full wizard
 
 When there are two entry points for the same operation (full wizard + add-target), both must ask the same questions. If the wizard collects docker/service_restart intent but add_target.py doesn't, operators who add VMs after initial setup get a worse experience and may end up with incorrect inventory entries.

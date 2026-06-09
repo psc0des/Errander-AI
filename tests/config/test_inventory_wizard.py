@@ -23,7 +23,6 @@ def _make_env(
     name: str = "production",
     enable_docker: bool = False,
     enable_service_restart_on_target: bool = False,
-    service_restart_intent_only: bool = False,
 ) -> EnvData:
     """Return a minimal EnvData suitable for rendering."""
     target = TargetData(
@@ -32,7 +31,6 @@ def _make_env(
         os_family="ubuntu",
         tags=[name, "web"],
         service_restart_units=["nginx.service"] if enable_service_restart_on_target else [],
-        service_restart_intent=service_restart_intent_only,
     )
     return EnvData(
         name=name,
@@ -112,16 +110,12 @@ class TestRenderInventoryYaml:
         data = yaml.safe_load(rendered)
         InventoryConfig.model_validate(data)
 
-    def test_service_restart_intent_only_renders_disabled_with_todo(self) -> None:
-        """intent=True but no units → enabled:false + TODO comment, passes schema."""
-        env = _make_env(service_restart_intent_only=True)
+    def test_service_restart_units_render_enabled_true(self) -> None:
+        """Units provided → enabled:true + unit names rendered, passes schema."""
+        env = _make_env(enable_service_restart_on_target=True)
         rendered = _render_inventory_yaml([env], "2026-06-09")
-        # Must be disabled (schema rejects enabled:true with empty units)
-        assert "enabled: false" in rendered
-        assert "restartable_units: []" in rendered
-        # Must carry a clear TODO so the operator knows what to do next
-        assert "TODO" in rendered
-        # Must pass schema validation
+        assert "enabled: true" in rendered
+        assert "nginx.service" in rendered
         data = yaml.safe_load(rendered)
         InventoryConfig.model_validate(data)
 

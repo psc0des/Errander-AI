@@ -1,5 +1,16 @@
 # Errander-AI Command Log
 
+## configure.sh/add-target auto wrapper install (2026-06-09)
+
+```bash
+uv run ruff check errander/config/add_target.py errander/config/configure.py errander/config/inventory_wizard.py --fix
+uv run mypy errander/config/add_target.py errander/config/configure.py errander/config/inventory_wizard.py
+uv run pytest tests/config/ -q --tb=short
+uv run pytest -q --tb=no   # 2539 passed
+```
+
+---
+
 ## Wizard prompt clarity (2026-06-09)
 
 ```bash

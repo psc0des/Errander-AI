@@ -1,3 +1,13 @@
+## configure.sh/add-target auto wrapper install (2026-06-09, COMPLETE)
+
+- [x] `inventory_wizard.py` — collect restart units immediately (required); remove `service_restart_intent`
+- [x] `configure.py` — docker wrappers + restart wrapper check/prompt/install in `_configure_vm`
+- [x] `add_target.py` — same wrapper helpers; post-save install loop with prompts per new VM
+- [x] `tests/config/test_inventory_wizard.py` — remove intent-only test; update helpers
+- [x] 2539 tests passing, ruff clean, mypy clean
+
+---
+
 ## Wizard prompt clarity — backup_verify and critical_services (2026-06-09, COMPLETE)
 
 - [x] `backup_verify` prompt — added 4-line explanation: read-only file check, does NOT create backups, requires settings.yaml

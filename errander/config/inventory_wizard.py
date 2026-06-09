@@ -111,8 +111,7 @@ class TargetData:
     tags: list[str] = field(default_factory=list)
     critical_services: list[str] = field(default_factory=list)
     disable_docker_hygiene: bool = False        # per-target: override env docker_hygiene → false
-    service_restart_intent: bool = False        # user wants service_restart; units added post-setup
-    service_restart_units: list[str] = field(default_factory=list)  # per-target units (if known)
+    service_restart_units: list[str] = field(default_factory=list)  # empty = no restart on this VM
 
 
 @dataclass
@@ -287,7 +286,6 @@ def _wizard_target(
 
     # ── Per-VM configuration ──────────────────────────────────────────────────
     disable_docker_hygiene = False
-    service_restart_intent = False
     service_restart_units: list[str] = []
 
     print()
@@ -298,13 +296,19 @@ def _wizard_target(
         if not has_docker:
             disable_docker_hygiene = True
 
-    # Service restart intent: ask whether this VM will need operator-triggered restarts.
-    # Unit names can be added later (after wrapper install) — we capture the intent now.
+    # Service restart: collect unit names now — configure.sh installs the wrapper.
     print()
-    print("      service_restart — lets operators restart specific systemd units.")
-    print("      Unit names can be added after installing the wrapper (SETUP.md Step 3c).")
+    print("      service_restart — lets operators restart specific systemd units via Errander.")
+    print("      configure.sh will install the wrapper on this VM automatically.")
     if _prompt_yn("      Will this VM need operator-triggered service restarts?", default=False):
-        service_restart_intent = True
+        print("      Enter unit names (space or comma separated, e.g. nginx.service postgresql.service):")
+        while True:
+            raw_units = input("      Units: ").strip()
+            units = [u.strip().rstrip(",") for u in raw_units.replace(",", " ").split() if u.strip()]
+            if units:
+                service_restart_units = units
+                break
+            print("      (at least one unit name required — e.g. nginx.service)")
 
     return TargetData(
         host=host,
@@ -313,7 +317,6 @@ def _wizard_target(
         tags=tags,
         critical_services=critical_services,
         disable_docker_hygiene=disable_docker_hygiene,
-        service_restart_intent=service_restart_intent,
         service_restart_units=service_restart_units,
     )
 
@@ -396,9 +399,7 @@ def _render_target(t: TargetData, env: EnvData) -> list[str]:
             lines.append(f"          - {svc}")
 
     # Per-target action overrides — active block if user configured any
-    has_active_overrides = (
-        t.disable_docker_hygiene or bool(t.service_restart_units) or t.service_restart_intent
-    )
+    has_active_overrides = t.disable_docker_hygiene or bool(t.service_restart_units)
 
     if has_active_overrides:
         lines.append("        actions:")
@@ -411,15 +412,6 @@ def _render_target(t: TargetData, env: EnvData) -> list[str]:
             lines.append("            restartable_units:")
             for unit in t.service_restart_units:
                 lines.append(f"              - {unit}")
-        elif t.service_restart_intent:
-            # Intent captured but units not known yet — render as disabled with a clear TODO.
-            # Schema requires enabled:true only when units are non-empty, so keep false until
-            # the operator adds unit names after installing the wrapper.
-            lines.append("          service_restart:")
-            lines.append("            enabled: false        # TODO: set to true after adding units below")
-            lines.append("            restartable_units: [] # e.g. [nginx.service, postgresql.service]")
-            lines.append("            # After wrapper install: bash scripts/install-systemctl-restart-wrapper.sh")
-            lines.append("            # Then add unit names here and set enabled: true")
     else:
         # Commented-out template so users know what's possible
         lines.append("        # Per-target overrides — uncomment + edit to activate:")
@@ -728,29 +720,10 @@ def main() -> None:
     _ok(f"inventory.yaml written  ({len(envs)} {env_word}, {total_vms} {vm_word})")
     _ok("Config validated — no schema errors")
 
-    # Remind about VMs where service_restart intent was captured but units are pending
-    pending_restart = [
-        f"{e.name}/{t.name}"
-        for e in envs
-        for t in e.targets
-        if t.service_restart_intent and not t.service_restart_units
-    ]
-    if pending_restart:
-        print()
-        _warn("Service restart planned — complete setup after the wizard:")
-        for vm in pending_restart:
-            print(f"       {vm}")
-        print()
-        print("    Steps:")
-        print("      1. Install wrapper on each target VM:")
-        print("           bash scripts/install-systemctl-restart-wrapper.sh")
-        print("      2. Edit inventory.yaml — add unit names to restartable_units")
-        print("           and set enabled: true for those targets")
-        print("      3. Re-run: uv run python -m errander --check-targets <env>")
-
     print()
     print("  Next:")
-    print("    • Run configure.sh (root) to probe Node Exporter on each VM")
+    print("    • configure.sh will SSH into each VM to install Node Exporter,")
+    print("      docker wrappers, and service restart wrapper (with your confirmation)")
     print("    • uv run python -m errander --check-inventory")
     print("    • uv run python -m errander --check-targets <env>")
     print(_hr("═"))

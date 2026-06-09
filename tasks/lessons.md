@@ -1,5 +1,46 @@
 # Errander-AI — Lessons Learned
 
+## 2026-06-09 — YAML generation vs. round-trip update require different tools
+
+Two distinct operations need different tools:
+
+1. **Initial generation** (controlled output with full comment control): build the string
+   directly in Python, not via `yaml.dump`. `yaml.dump` strips comments and may reorder
+   keys. Use `"\n".join(lines)` with explicit comment strings for full control.
+
+2. **Round-trip update** (preserve existing content, mutate specific fields): use
+   `ruamel.yaml`. It loads YAML into `CommentedMap` objects that carry comment metadata,
+   and writes them back intact. Critical: set `ryaml.width = 4096` to prevent
+   ruamel from wrapping long inline comments at 80 chars.
+
+**Why:** the Node Exporter configure step was using `yaml.safe_load + yaml.dump` to
+update `node_exporter:` values — this destroyed every comment in the file on re-run.
+
+**How to apply:** when the task is "update one field in an existing user-edited file",
+use ruamel.yaml. When the task is "generate a new file from scratch", build the string.
+
+## 2026-06-09 — Script variable ordering: compute derived vars before the code that uses them
+
+In `scripts/configure.sh`, `_inv_count` was first computed in the Done banner section
+(~line 684) but the SSH bootstrap check at line ~655 used `${_inv_count:-0}`. Because
+`_inv_count` wasn't set yet, the bootstrap never ran for existing inventories.
+
+**Why:** bash variable assignments take effect at the line they execute, not at the top
+of the file. A variable used in an `if` guard must be assigned before that `if`.
+
+**How to apply:** before writing a bash `if [ "${_inv_count:-0}" -gt 0 ]` guard, grep
+upward from the if to confirm the variable is set. Move the assignment if needed.
+
+## 2026-06-09 — Use actual-file-state counters over wizard-output counters in bash
+
+`$VM_COUNT` from the wizard result file is 0 when the user keeps their existing
+inventory. Using it for the SSH bootstrap check (`if [ "$VM_COUNT" -gt 0 ]`) means
+the bootstrap never runs for kept inventories. Fix: replace with
+`_inv_count=$(grep -c "^\s*- host:" inventory.yaml)` which reads actual file state.
+
+**How to apply:** whenever a bash guard checks "how many VMs", read from the inventory
+file directly, not from a variable that was set earlier in the flow.
+
 ## 2026-06-09 — Per-target actions: propagation must follow the data, not the batch
 
 When a config value is conceptually per-VM (e.g. `restartable_units` for service_restart, `docker_hygiene.enabled` for VMs with/without Docker), it's wrong to compute it once at batch level and stamp it onto every VM. The correct pattern:

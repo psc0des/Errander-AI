@@ -189,108 +189,29 @@ fi  # end: if [ -z "$LLM_BASE_URL" ]
 
 ok "LLM: $LLM_BASE_URL  model=$LLM_MODEL"
 
-# ── 2. Target VMs ─────────────────────────────────────────────────────────────
-KEEP_INVENTORY=false
-TARGETS_YAML=""
+# ── 2. Target inventory ───────────────────────────────────────────────────────
+step "2/5" "Target inventory"
+echo ""
+
+uv run python -m errander.config.inventory_wizard
+
+# Read back result vars written by the Python wizard
+_wiz_result="${HOME}/.errander_wizard_result"
+ENV_NAME="dev"
+SSH_KEY_PATH="~/.ssh/errander_prod"
+SSH_USER="errander"
 VM_COUNT=0
-_add_vms="y"
-
-if [ -f "inventory.yaml" ]; then
-    # Re-run: read existing settings silently and reuse them
-    step "2/5" "Target VMs"
-    echo ""
-    _existing_vms=$(grep -c "^\s*- host:" inventory.yaml 2>/dev/null || echo 0)
-    ENV_NAME=$(grep -m1 "^environments:" -A1 inventory.yaml | tail -1 | tr -d ' :' || true)
-    ENV_NAME="${ENV_NAME:-dev}"
-    SSH_USER=$(grep -m1 "ssh_user:" inventory.yaml | awk '{print $2}' || true)
-    SSH_USER="${SSH_USER:-errander}"
-    SSH_KEY_PATH=$(grep -m1 "ssh_key_path:" inventory.yaml | awk '{print $2}' || true)
-    SSH_KEY_PATH="${SSH_KEY_PATH:-~/.ssh/errander_prod}"
-    VM_COUNT=$_existing_vms
-    ok "Reusing settings from existing inventory.yaml  (env=${ENV_NAME}, ssh_user=${SSH_USER})"
-    if [ "$_existing_vms" -gt 0 ]; then
-        echo "  Current VMs:"
-        grep -E "host:|name:" inventory.yaml | grep -v "ssh_" | sed 's/^/    /' || true
-        echo ""
-        printf "  Keep these VMs? (Y/n): "
-        read -r _keep || true
-        echo ""
-        case "${_keep,,}" in
-          n|no) KEEP_INVENTORY=false; VM_COUNT=0; TARGETS_YAML="" ;;
-          *)    KEEP_INVENTORY=true ;;
-        esac
-    fi
-    echo ""
-    printf "  Add more VMs? (y/N): "
-    read -r _add_vms || true
-    echo ""
-else
-    # Fresh install: ask first, show section header only if they say yes
-    echo ""
-    printf "  [2/5] Do you want to add target VMs now? (Y/n): "
-    read -r _add_vms || true
-    _add_vms="${_add_vms:-y}"   # Enter = Y (default)
-    echo ""
-
-    case "${_add_vms,,}" in
-      n|no)
-        ENV_NAME="dev"
-        prompt_val "SSH user on target VMs" "errander"
-        SSH_USER="$REPLY"
-        prompt_val "SSH key path" "~/.ssh/errander_prod"
-        SSH_KEY_PATH="$REPLY"
-        ;;
-      *)
-        step "2/5" "Target VMs"
-        echo ""
-        prompt_val "Environment name" "dev"
-        ENV_NAME="$REPLY"
-        prompt_val "SSH user on target VMs" "errander"
-        SSH_USER="$REPLY"
-        prompt_val "SSH key path" "~/.ssh/errander_prod"
-        SSH_KEY_PATH="$REPLY"
-        ;;
-    esac
+if [ -f "$_wiz_result" ]; then
+    _env_line=$(grep "^ERRANDER_RESULT_ENV_NAME=" "$_wiz_result" 2>/dev/null | cut -d= -f2- || true)
+    _key_line=$(grep "^ERRANDER_RESULT_SSH_KEY_PATH=" "$_wiz_result" 2>/dev/null | cut -d= -f2- || true)
+    _cnt_line=$(grep "^ERRANDER_RESULT_VM_COUNT=" "$_wiz_result" 2>/dev/null | cut -d= -f2- || true)
+    [ -n "$_env_line" ] && ENV_NAME="$_env_line"
+    [ -n "$_key_line" ] && SSH_KEY_PATH="$_key_line"
+    [ -n "$_cnt_line" ] && VM_COUNT="$_cnt_line"
 fi
-
-case "${_add_vms,,}" in
-  y|yes)
-    while true; do
-        prompt_val "  VM hostname or private IP" ""
-        VM_HOST="$REPLY"
-        [ -z "$VM_HOST" ] && break
-
-        VM_COUNT=$((VM_COUNT + 1))
-        DEFAULT_NAME="${ENV_NAME}-vm-$(printf '%02d' $VM_COUNT)"
-
-        prompt_val "  VM name" "$DEFAULT_NAME"
-        VM_NAME="$REPLY"
-
-        prompt_val "  OS family  (ubuntu / debian / rhel)" "ubuntu"
-        VM_OS="$REPLY"
-
-        TARGETS_YAML="${TARGETS_YAML}      - host: ${VM_HOST}
-        name: ${VM_NAME}
-        os_family: ${VM_OS}
-"
-        ok "Added $VM_NAME  ($VM_HOST, $VM_OS)"
-        echo ""
-
-        printf "  Add another VM? (y/N): "
-        read -r _more || true
-        echo ""
-        case "${_more,,}" in
-          y|yes) continue ;;
-          *) break ;;
-        esac
-    done
-    ;;
-  *)
-    warn "No VMs added — you can add them later by editing inventory.yaml"
-    ;;
-esac
-
-[ "$VM_COUNT" -gt 0 ] && ok "$VM_COUNT VM(s) in environment '${ENV_NAME}'"
+[ "$VM_COUNT" -gt 0 ] && ok "$VM_COUNT VM(s) configured in environment '${ENV_NAME}'"
+# Count VMs in the file (available to all downstream steps including SSH bootstrap)
+_inv_count=$(grep -c "^\s*- host:" inventory.yaml 2>/dev/null || echo 0)
 
 # ── 3. SSH key — verify only (users set this up in SETUP.md Step 2) ───────────
 SSH_KEY_EXPANDED="${SSH_KEY_PATH/#\~/$HOME}"
@@ -711,29 +632,11 @@ _env_signing_secret=""
 chmod 600 .env
 ok ".env written  (permissions: 600)"
 
-# inventory.yaml
-if $KEEP_INVENTORY; then
-    if [ -n "$TARGETS_YAML" ]; then
-        printf '%s' "$TARGETS_YAML" >> inventory.yaml
-        ok "inventory.yaml updated — appended new VM(s) to existing"
-    else
-        ok "inventory.yaml unchanged (kept existing)"
-    fi
+# inventory.yaml — written by the Python wizard above (step 2)
+if [ -f "inventory.yaml" ]; then
+    ok "inventory.yaml — ready"
 else
-    {
-        echo "# Errander-AI inventory — generated by configure.sh"
-        echo "environments:"
-        echo "  ${ENV_NAME}:"
-        echo "    ssh_user: ${SSH_USER}"
-        echo "    ssh_key_path: ${SSH_KEY_PATH}"
-        echo "    approval_policy: relaxed"
-        echo "    maintenance_window: \"08:00-20:00\""
-        echo "    maintenance_days: [monday, tuesday, wednesday, thursday, friday]"
-        echo "    maintenance_timezone: UTC"
-        echo "    targets:"
-        printf '%s' "$TARGETS_YAML"
-    } > inventory.yaml
-    ok "inventory.yaml written"
+    warn "inventory.yaml not found — re-run scripts/configure.sh to create it"
 fi
 
 # Verify LLM
@@ -751,7 +654,7 @@ else
 fi
 
 # ── SSH host key bootstrap ─────────────────────────────────────────────────────
-if [ "$VM_COUNT" -gt 0 ] && [ -f "$SSH_KEY_EXPANDED" ]; then
+if [ "${_inv_count:-0}" -gt 0 ] && [ -f "$SSH_KEY_EXPANDED" ]; then
     echo ""
     warn "SSH host key bootstrap (recommended)"
     echo "  Pins each VM's host key so Errander verifies identity on every connection."
@@ -782,27 +685,20 @@ echo -e "${GREEN} Setup complete!${NC}"
 echo ""
 echo "  Files written:"
 echo "    .env            — LLM credentials + UI auth"
-if $KEEP_INVENTORY; then
-    echo "    inventory.yaml  — kept existing (${VM_COUNT} VM(s) in '${ENV_NAME}' environment)"
-else
-    echo "    inventory.yaml  — ${VM_COUNT} VM(s) in '${ENV_NAME}' environment"
-fi
+echo "    inventory.yaml  — ${_inv_count} VM(s) in '${ENV_NAME}' environment"
 echo ""
 
-if [ "$VM_COUNT" -eq 0 ]; then
-    echo -e "  ${YELLOW}▶ No VMs configured yet. Add VMs to inventory.yaml before running the agent:${NC}"
+if [ "$_inv_count" -eq 0 ]; then
+    echo -e "  ${YELLOW}▶ No VMs configured yet. Add VMs before running the agent:${NC}"
     echo ""
-    echo "    nano inventory.yaml"
+    echo "    bash scripts/add-target.sh"
     echo ""
-    echo "  Add each VM under the 'targets:' key:"
+    echo "  Or edit inventory.yaml directly:"
     echo ""
     echo "    targets:"
     echo "      - host: 10.0.0.10          # private IP or hostname"
     echo "        name: ${ENV_NAME}-vm-01  # friendly name"
     echo "        os_family: ubuntu        # ubuntu / debian / rhel"
-    echo "      - host: 10.0.0.11"
-    echo "        name: ${ENV_NAME}-vm-02"
-    echo "        os_family: ubuntu"
     echo ""
 fi
 

@@ -510,7 +510,13 @@ cd ~/errander
 bash scripts/configure.sh
 ```
 
-`configure.sh` prompts for LLM credentials, SSH key path, target VMs, optional Slack/Prometheus/ELK, web base URL — then auto-generates `ERRANDER_SIGNING_SECRET`, writes `.env` and `inventory.yaml`, tests the LLM connection, and optionally pins SSH host keys. Skip to [Step 6 — Verify everything](#step-6--verify-everything) when done.
+`configure.sh` prompts for LLM credentials, optional Slack/Prometheus/ELK, web base URL — then auto-generates `ERRANDER_SIGNING_SECRET`, writes `.env`, tests the LLM connection, and optionally pins SSH host keys.
+
+The inventory step launches an interactive Python wizard that collects: environment name, SSH credentials, maintenance window and days, per-environment action toggles (patching, disk_cleanup, log_rotation, docker_hygiene, backup_verify), and per-VM details (hostname, name, OS family, tags, critical services, optional service_restart units). The wizard generates a fully annotated `inventory.yaml` with inline comments on every field — all optional fields are present but commented out so you know they exist.
+
+Re-running `configure.sh` after initial setup: the wizard detects an existing `inventory.yaml`, shows a summary (environment names + VM counts), and asks whether to keep it or replace it. All other `.env` fields are pre-filled from the existing values.
+
+Skip to [Step 6 — Verify everything](#step-6--verify-everything) when done.
 
 **After configure.sh, set these in `.env` if needed:**
 

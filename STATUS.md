@@ -4,6 +4,20 @@
 2026-06-09
 
 ## Current Phase
+**Enterprise inventory wizard + comment-preserving YAML (2026-06-09, COMPLETE).**
+
+Replaced the bare 9-line bash inventory stub in `configure.sh` with a full Python interactive wizard (`errander/config/inventory_wizard.py`). Collects: environment name, SSH creds, maintenance window/days, per-env action toggles (5 actions), and per-VM details (host, name, OS family, tags, critical services, optional service_restart units). Generates a richly annotated `inventory.yaml` with inline comments on every field and all optional sections present-but-commented. Also fixed `errander/config/configure.py` to use `ruamel.yaml` for comment-preserving round-trips on `node_exporter:` updates (previous `yaml.safe_load + yaml.dump` stripped all comments). 20 new tests.
+
+### Files changed (2026-06-09 — inventory wizard)
+- `pyproject.toml` — added `ruamel.yaml>=0.18` dependency + mypy override
+- `errander/config/inventory_wizard.py` — NEW: full interactive wizard + YAML renderer + helpers
+- `scripts/configure.sh` — removed bash VM loop (lines 193–291) + bash YAML generation; step 2 now calls Python wizard; reads result vars from `~/.errander_wizard_result`
+- `errander/config/configure.py` — `_update_inventory_yaml` uses ruamel.yaml round-trip (preserves comments)
+- `tests/config/test_inventory_wizard.py` — NEW: 20 tests (render, schema validation, ruamel round-trip, helpers)
+- `docs/learning/52-configure-wizard.md` — NEW: learning doc
+- `SETUP.md` — Step 5 configure.sh description updated for new wizard behavior
+
+## Previous Phase
 **Per-target `actions:` support (2026-06-09, COMPLETE).**
 
 `actions:` was previously env-level only — all VMs in an environment shared the same `docker_hygiene.enabled` and `restartable_units`. Added per-target `actions:` to `TargetSchema` with a `resolve_actions(env_actions)` method that merges target overrides on top of env defaults. Updated all three fan-out paths in `graph.py` to use per-target resolved values from the target dict (batch-level env values remain as fallback for DB-added VMs). Fixed `run_check_targets` and `run_restart_service` to validate per-VM resolved config instead of env-level. Added validation in `EnvironmentSchema` for per-target docker_hygiene/service_restart contradictions. 11 new tests.
@@ -75,4 +89,4 @@ Adds a `Monitoring` nav item and `/ui/monitoring` page to the Errander web UI. T
 None.
 
 ## Test count
-2517 passing.
+2537 passing.

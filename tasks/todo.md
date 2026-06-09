@@ -1,3 +1,18 @@
+## Enterprise inventory wizard + comment-preserving YAML (2026-06-09, COMPLETE)
+
+- [x] `pyproject.toml` — add `ruamel.yaml>=0.18` + mypy override; `uv sync`
+- [x] `errander/config/inventory_wizard.py` — NEW: wizard dataclasses, prompt helpers, `_render_inventory_yaml`, `_render_env`, `_render_target`, `_summarise_existing`, `_count_vms`, `_write_result`, `main()`
+- [x] `scripts/configure.sh` — remove bash VM collection loop (193–291) + bash YAML block; step 2 calls Python wizard; reads `~/.errander_wizard_result`; `_inv_count` set immediately after wizard call
+- [x] `errander/config/configure.py` — `_update_inventory_yaml` → ruamel.yaml round-trip (comments preserved)
+- [x] `tests/config/test_inventory_wizard.py` — NEW: 20 tests (render, schema validation, ruamel round-trip, helpers)
+- [x] 2537 tests passing (2517 + 20 new)
+- [x] ruff clean, mypy clean (621 pre-existing errors unchanged)
+- [x] `docs/learning/52-configure-wizard.md` — NEW learning doc
+- [x] `SETUP.md` — Step 5 description updated
+- [x] `STATUS.md`, `todo.md`, `lessons.md`, `command-log.md` doc sync
+
+---
+
 ## Per-target `actions:` support (2026-06-09, COMPLETE)
 
 - [x] `errander/config/schema.py` — `TargetSchema`: add `actions: dict[str, ActionConfig] | None`, `resolve_actions()` method; validate per-target overrides (docker_prune, docker_hygiene contradiction, service_restart units) in `EnvironmentSchema._apply_action_defaults_and_validate`

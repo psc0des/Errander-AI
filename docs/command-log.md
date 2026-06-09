@@ -1,5 +1,30 @@
 # Errander-AI Command Log
 
+## Enterprise inventory wizard + comment-preserving YAML (2026-06-09)
+
+```bash
+# Install ruamel.yaml
+uv sync
+
+# Run new wizard tests
+uv run pytest tests/config/test_inventory_wizard.py -v
+
+# Full test suite after changes
+uv run pytest -x -q   # 2537 passed
+
+# Lint + type check new files
+uv run ruff check errander/config/inventory_wizard.py errander/config/configure.py tests/config/test_inventory_wizard.py
+uv run mypy errander/config/inventory_wizard.py errander/config/configure.py
+
+# Baseline mypy check (stash/pop to verify 621 pre-existing errors, no new ones)
+git stash
+uv run mypy .  # 621 errors in 70 files (baseline)
+git stash pop
+uv run mypy .  # 621 errors in 70 files (same — no regressions)
+```
+
+---
+
 ## Per-target actions: support (2026-06-09)
 
 ```bash

@@ -1,4 +1,4 @@
-"""Interactive Node Exporter setup — called by configure.sh.
+"""Interactive Node Exporter setup — called by configure.sh (root).
 
 For each VM in inventory.yaml:
   1. Verify SSH connectivity.
@@ -8,8 +8,8 @@ For each VM in inventory.yaml:
        - Y → install via SSH, verify, mark node_exporter: true.
        - n → mark node_exporter: false (SSH probe will be used).
 
-Writes updated inventory.yaml at the end.  Comments in the original file
-are not preserved (YAML round-trip limitation); values and structure are.
+Writes updated inventory.yaml using ruamel.yaml so that all existing
+comments and formatting are preserved.
 """
 
 from __future__ import annotations
@@ -22,6 +22,7 @@ from typing import Any
 
 import aiohttp
 import yaml
+from ruamel.yaml import YAML
 
 _NE_VERSION = "1.8.2"
 _NE_PORT_DEFAULT = 9100
@@ -267,23 +268,28 @@ def _update_inventory_yaml(
 
     results: {env_name: {vm_name: True/False/None}}
     None entries (SSH unreachable) are left unchanged.
-    """
-    raw = inventory_path.read_text(encoding="utf-8")
-    data: Any = yaml.safe_load(raw)
 
-    for env_name, env_data in data.get("environments", {}).items():
+    Uses ruamel.yaml for a comment-preserving round-trip so that any
+    documentation comments in the file survive the update.
+    """
+    ryaml = YAML()
+    ryaml.preserve_quotes = True
+    ryaml.width = 4096  # prevent unwanted line wrapping
+
+    with open(inventory_path, encoding="utf-8") as fh:
+        data: Any = ryaml.load(fh)
+
+    for env_name, env_data in (data.get("environments") or {}).items():
         env_results = results.get(env_name, {})
-        for target in env_data.get("targets", []):
+        for target in (env_data.get("targets") or []):
             vm_name = target.get("name", target.get("host", ""))
             result = env_results.get(vm_name)
             if result is None:
                 continue  # SSH unreachable — leave unchanged
             target["node_exporter"] = result
 
-    inventory_path.write_text(
-        yaml.dump(data, default_flow_style=False, allow_unicode=True, sort_keys=False),
-        encoding="utf-8",
-    )
+    with open(inventory_path, "w", encoding="utf-8") as fh:
+        ryaml.dump(data, fh)
 
 
 # ---------------------------------------------------------------------------

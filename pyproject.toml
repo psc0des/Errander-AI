@@ -18,6 +18,7 @@ dependencies = [
     "cryptography>=42.0",
     "langgraph-checkpoint-sqlite>=3.1.0",
     "python-dotenv>=1.2.2",
+    "ruamel.yaml>=0.18",
 ]
 
 [project.optional-dependencies]
@@ -63,6 +64,11 @@ warn_unused_configs = true
 [[tool.mypy.overrides]]
 # APScheduler has no type stubs — third-party library
 module = ["apscheduler.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# ruamel.yaml uses a plugin-based type system incompatible with mypy strict
+module = ["ruamel.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

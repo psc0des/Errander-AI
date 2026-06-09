@@ -427,17 +427,32 @@ async def _main(inventory_path: Path) -> None:
         print()
         print("  service_restart — lets operators restart specific systemd units via Errander.")
         if _prompt_yn("  Will this VM need operator-triggered service restarts?", default=False):
+            from errander.execution.command_builder import CommandBuildError, safe_systemd_unit_name
+
             print("  Enter unit names (space or comma separated, e.g. nginx.service postgresql.service):")
             while True:
                 raw_units = input("  Units: ").strip()
-                units = [u.strip().rstrip(",") for u in raw_units.replace(",", " ").split() if u.strip()]
-                if units:
-                    target_overrides["service_restart"] = {
-                        "enabled": True,
-                        "restartable_units": units,
-                    }
-                    break
-                print("  (at least one unit name required — e.g. nginx.service)")
+                parsed = [u.strip().rstrip(",") for u in raw_units.replace(",", " ").split() if u.strip()]
+                if not parsed:
+                    print("  (at least one unit name required — e.g. nginx.service)")
+                    continue
+                invalid: list[str] = []
+                for u in parsed:
+                    try:
+                        safe_systemd_unit_name(u)
+                    except CommandBuildError as exc:
+                        invalid.append(f"    ✗  {u!r} — {exc}")
+                if invalid:
+                    print("  Invalid unit name(s):")
+                    for msg in invalid:
+                        print(msg)
+                    print("  Unit names must include a type suffix, e.g. docker.service, nginx.service")
+                    continue
+                target_overrides["service_restart"] = {
+                    "enabled": True,
+                    "restartable_units": parsed,
+                }
+                break
 
         target: dict[str, Any] = {
             "host": host,

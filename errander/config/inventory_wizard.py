@@ -301,14 +301,29 @@ def _wizard_target(
     print("      service_restart — lets operators restart specific systemd units via Errander.")
     print("      configure.sh will install the wrapper on this VM automatically.")
     if _prompt_yn("      Will this VM need operator-triggered service restarts?", default=False):
+        from errander.execution.command_builder import CommandBuildError, safe_systemd_unit_name
+
         print("      Enter unit names (space or comma separated, e.g. nginx.service postgresql.service):")
         while True:
             raw_units = input("      Units: ").strip()
-            units = [u.strip().rstrip(",") for u in raw_units.replace(",", " ").split() if u.strip()]
-            if units:
-                service_restart_units = units
-                break
-            print("      (at least one unit name required — e.g. nginx.service)")
+            parsed = [u.strip().rstrip(",") for u in raw_units.replace(",", " ").split() if u.strip()]
+            if not parsed:
+                print("      (at least one unit name required — e.g. nginx.service)")
+                continue
+            invalid: list[str] = []
+            for u in parsed:
+                try:
+                    safe_systemd_unit_name(u)
+                except CommandBuildError as exc:
+                    invalid.append(f"        ✗  {u!r} — {exc}")
+            if invalid:
+                print("      Invalid unit name(s):")
+                for msg in invalid:
+                    print(msg)
+                print("      Unit names must include a type suffix, e.g. docker.service, nginx.service")
+                continue
+            service_restart_units = parsed
+            break
 
     return TargetData(
         host=host,

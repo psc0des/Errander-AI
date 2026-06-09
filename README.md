@@ -11,12 +11,12 @@ Errander-AI is a **supervised agentic AI SRE platform** for small-to-medium Linu
 | `log_rotation` | ✅ enabled | No | LOW — compresses, does not delete |
 | `docker_hygiene` | ❌ disabled | Yes — install v2 wrappers, set `enabled: true` | MEDIUM — object-level Slack/web approval |
 | `backup_verify` | ❌ disabled | Yes — requires `backup:` config section | LOW |
-| `service_restart` | ❌ disabled | Yes — install wrapper + declare `restartable_units` | HIGH — Slack approval always required, operator-triggered |
+| `service_restart` | ❌ disabled | Yes — install wrapper + declare `restartable_units` | HIGH — human approval always required (Slack or Web UI), operator-triggered |
 
 Each action is independently enabled per environment or per target in `inventory.yaml` (`actions.<name>.enabled`). Per-target overrides let you disable `docker_hygiene` on VMs without Docker, or set different `restartable_units` per VM. Actions default as shown — no YAML required to run the enabled defaults.
 
 ```bash
-# Trigger a service restart (operator-initiated, always requires Slack approval)
+# Trigger a service restart (operator-initiated, always requires human approval)
 uv run python -m errander --restart-service production --unit nginx.service --vm prod-web-01 --dry-run
 uv run python -m errander --restart-service production --unit nginx.service --vm prod-web-01
 ```
@@ -266,7 +266,7 @@ Level 3: Action Sub-Graphs
 |------|----------|---------|
 | **Low** | Automatic (categorical) | Disk cleanup, log rotation, backup verify |
 | **Medium** | Exact-object Slack/web approval | Non-kernel patching, Docker hygiene |
-| **High** | Human Slack approval — always required | Service restart (operator-triggered only) |
+| **High** | Human approval — always required (Slack or Web UI) | Service restart (operator-triggered only) |
 | **Critical** | **Blocked — never automated** | Kernel operations, data deletion |
 
 Kernel packages (`linux-*`, `linux-image-*`, `kernel-*`) are **always excluded** from patching. This is a hardcoded check, never an LLM decision.

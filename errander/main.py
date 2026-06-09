@@ -169,7 +169,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=None,
         help=(
             "Trigger an operator-initiated service restart for ENV. "
-            "Requires --unit and --vm or --vms. Always requires Slack approval."
+            "Requires --unit and --vm or --vms. Always requires human approval (Slack or Web UI)."
         ),
     )
     parser.add_argument(
@@ -1113,7 +1113,7 @@ async def run_restart_service(
     (dry-run) or goes through the Slack approval gate and executes (live).
 
     Layer B: deterministic validation + audit log. No LLM in this path.
-    HIGH risk tier — always requires Slack approval before live execution.
+    HIGH risk tier — always requires human approval (Slack or Web UI) before live execution.
     Enforces maintenance window (override with --restart-force + --restart-force-reason).
     Acquires a per-VM lock before execution to prevent concurrent maintenance.
     """
@@ -1202,7 +1202,7 @@ async def run_restart_service(
     print(f"  Unit      : {unit_name}")
     print(f"  VMs       : {vm_list}")
     print(f"  Allowlist : inventory ✓ ({', '.join(sorted(all_allowed_units))})")
-    print("  Risk      : HIGH — Slack approval required before execution")
+    print("  Risk      : HIGH — human approval required (Slack or Web UI) before execution")
     print(f"  Mode      : {'DRY RUN' if dry_run else 'LIVE'}")
 
     audit_store = AuditStore(settings.audit_db_url, strict_mode=False)

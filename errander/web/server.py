@@ -1575,7 +1575,7 @@ _ACTIVE_LOCKS: list[dict[str, Any]] = []  # empty = clean state; add dicts with 
 _OVERRIDES = [
     ("Dry Run Mode",            "All batches simulate actions without executing on real VMs.",        True),
     ("Force Maintenance Window","Allow batches outside configured windows. Requires --force reason.", False),
-    ("Skip Approval Gate",      "Bypass Slack approval for High-risk actions. Emergency use only.",  False),
+    ("Skip Approval Gate",      "Bypass approval gate for High-risk actions (Slack and Web UI). Emergency use only.",  False),
     ("Strict Audit Mode",       "Halt agent if any audit write fails — integrity over execution.",    True),
 ]
 
@@ -4070,7 +4070,7 @@ _GLOSS: list[tuple[str, str, str, str, str]] = [
     ("Backup Verify",      "ACTIONS", "#0891b2", "gloss-chip-action",
      "Read-only integrity check: verifies backup files exist, are recent, and meet minimum size thresholds via SSH. Never modifies files. Low risk — runs automatically without approval."),
     ("Service Restart",    "ACTIONS", "#0891b2", "gloss-chip-action",
-     "Operator-triggered restart of a specific systemd unit. High risk — always requires Slack approval. v1: operator-triggered only. Unit must appear in restartable_units allowlist (inventory) AND /etc/errander/restart-allowlist on the target VM."),
+     "Operator-triggered restart of a specific systemd unit. High risk — always requires human approval (Slack or Web UI). v1: operator-triggered only. Unit must appear in restartable_units allowlist (inventory) AND /etc/errander/restart-allowlist on the target VM."),
     # ── INFRA ─────────────────────────────────────────────────────────────────
     ("LLM Endpoint",       "INFRA",   "#d97706", "gloss-chip-infra",
      "Any OpenAI-compatible endpoint: cloud API (OpenAI, Anthropic, Groq) or self-hosted vLLM. Configured via ERRANDER_LLM_BASE_URL + ERRANDER_LLM_MODEL. Hardcoded fallback when unreachable — agent never blocks on LLM availability."),
@@ -4141,7 +4141,7 @@ const WF_NODES = {
     checks: 'Dispatches to one of 6 action sub-graphs · dry_run flag respected · Idempotency enforced · Post-cleanup disk gate runs after disk_cleanup/log_rotation before patching · Service restart requires both operator trigger and allowlist match',
     onfail: 'Exception caught → Rollback node entered → Audit event written with error detail',
     code: 'errander/agent/vm_graph.py · errander/agent/subgraphs/ · errander/execution/commands.py',
-    note: 'post_cleanup_disk_gate_node re-checks disk after cleanup. Blocks patching at ≥95%, warns at 90–94%. All 6 v1 sub-graphs: patching, log_rotation, docker_hygiene, disk_cleanup, backup_verify, service_restart. Service restart is operator-triggered only and always requires Slack approval.'
+    note: 'post_cleanup_disk_gate_node re-checks disk after cleanup. Blocks patching at ≥95%, warns at 90–94%. All 6 v1 sub-graphs: patching, log_rotation, docker_hygiene, disk_cleanup, backup_verify, service_restart. Service restart is operator-triggered only and always requires human approval (Slack or Web UI).'
   },
   'rollback': {
     title: 'Rollback', badge: 'FAILURE PATH ONLY', badgeColor: '#ef4444',

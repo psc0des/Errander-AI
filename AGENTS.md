@@ -1,6 +1,6 @@
 # Errander-AI — Supervised Agentic AI SRE Platform
 
-A supervised agentic AI SRE platform that eliminates operational toil while keeping humans in control of live infrastructure changes. Performs secure patching (non-kernel), log rotation, Docker pruning, disk cleanup, and more — with safety gates, rollback, and full audit logging. Every live change requires human Slack approval.
+A supervised agentic AI SRE platform that eliminates operational toil while keeping humans in control of live infrastructure changes. Performs secure patching (non-kernel), log rotation, Docker pruning, disk cleanup, and more — with safety gates, rollback, and full audit logging. Every live change requires human approval (Slack or Web UI).
 
 ## Stack (100% Open Source, Cloud-Agnostic)
 - Language: Python 3.12+
@@ -157,7 +157,7 @@ deploy/
 |---|---|---|
 | Low | Disk cleanup, log rotation, backup verification | Automatic |
 | Medium | Docker prune, non-kernel patching, config changes | Log + notify |
-| High | Service restart (`service_restart`) — operator-triggered only in v1 | Human Slack approval required (all policy tiers) |
+| High | Service restart (`service_restart`) — operator-triggered only in v1 | Human approval required — Slack or Web UI (all policy tiers) |
 | Critical | Kernel operations, data deletion | Blocked — never automated |
 
 **Service restart is operator-triggered only in v1.** Auto-detection from probe output (detect-and-propose) is deferred to v1.1. Adding a unit to the `restartable_units` allowlist in inventory + on-target `/etc/errander/restart-allowlist` is required before Errander will restart it.

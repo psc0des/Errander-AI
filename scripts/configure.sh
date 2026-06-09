@@ -639,6 +639,14 @@ else
     warn "inventory.yaml not found — re-run scripts/configure.sh to create it"
 fi
 
+# ── Per-VM bootstrap: Node Exporter + docker wrappers + service restart wrapper
+# configure.py reads inventory.yaml and SSHes into each VM to check and install
+# the required wrapper scripts (with a per-item confirmation prompt per VM).
+if [ -f "inventory.yaml" ] && [ "${_inv_count:-0}" -gt 0 ] && [ -f "$SSH_KEY_EXPANDED" ]; then
+    echo ""
+    uv run python -m errander.config.configure
+fi
+
 # Verify LLM
 echo ""
 warn "Verifying LLM connection..."

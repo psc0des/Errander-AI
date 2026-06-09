@@ -543,9 +543,12 @@ bash scripts/add-target.sh
 The script reads your existing `inventory.yaml`, shows your current environments and VMs, and walks you through adding new ones:
 
 1. Choose which environment to add to (shown with current VM count)
-2. Enter hostname/IP, VM name, and OS family for each new VM
-3. Optionally verify SSH connectivity immediately
-4. Writes the new VM block into `inventory.yaml` under the correct environment — your `.env` is never touched
+2. Enter hostname/IP and VM name
+3. Select OS family from a numbered menu: 1) ubuntu  2) debian  3) rhel *(alma/oracle/centos → rhel)*
+4. Answer whether Docker is installed — writes a `docker_hygiene: {enabled: false}` override if not *(only asked when the env has docker_hygiene enabled)*
+5. Optionally note service restart intent — writes a `service_restart: {enabled: false}` placeholder + TODO comment so you remember to add unit names after the wrapper is installed
+6. Optionally verify SSH connectivity immediately
+7. Writes the new VM block into `inventory.yaml` under the correct environment — your `.env` is never touched
 
 **After running the script**, complete the usual per-target setup on each new VM:
 

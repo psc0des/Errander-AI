@@ -1,3 +1,14 @@
+## `add_target.py` UX improvements (2026-06-09, COMPLETE)
+
+- [x] Switch I/O from `yaml.dump` to `ruamel.yaml` (comment-preserving)
+- [x] Numbered OS family menu: 1) ubuntu  2) debian  3) rhel
+- [x] Docker question: "Is Docker installed?" (only when env has docker_hygiene enabled)
+- [x] Service restart intent question with TODO comment in YAML
+- [x] Build target dict with `actions:` overrides when appropriate
+- [x] 2539 tests passing, ruff clean, mypy clean
+
+---
+
 ## Approval surface wording fix (2026-06-09, COMPLETE)
 
 - [x] `AGENTS.md` — opening line + risk tier table

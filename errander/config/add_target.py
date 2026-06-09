@@ -11,8 +11,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-import yaml
-
+from ruamel.yaml import YAML
 
 # ---------------------------------------------------------------------------
 # Output helpers
@@ -61,19 +60,24 @@ def _prompt_yn(question: str, default: bool = True) -> bool:
 # Inventory I/O
 # ---------------------------------------------------------------------------
 
-def _load_inventory(path: Path) -> dict[str, Any]:
-    text = path.read_text(encoding="utf-8")
-    data: Any = yaml.safe_load(text)
+def _load_inventory(path: Path) -> Any:
+    """Load inventory using ruamel.yaml to preserve existing comments."""
+    ryaml = YAML()
+    ryaml.preserve_quotes = True
+    with open(path, encoding="utf-8") as fh:
+        data = ryaml.load(fh)
     if not isinstance(data, dict) or "environments" not in data:
         raise ValueError("inventory.yaml must have a top-level 'environments:' key")
     return data
 
 
-def _save_inventory(path: Path, data: dict[str, Any]) -> None:
-    path.write_text(
-        yaml.dump(data, default_flow_style=False, allow_unicode=True, sort_keys=False),
-        encoding="utf-8",
-    )
+def _save_inventory(path: Path, data: Any) -> None:
+    """Save inventory using ruamel.yaml so existing comments are preserved."""
+    ryaml = YAML()
+    ryaml.preserve_quotes = True
+    ryaml.width = 4096
+    with open(path, "w", encoding="utf-8") as fh:
+        ryaml.dump(data, fh)
 
 
 # ---------------------------------------------------------------------------
@@ -137,7 +141,7 @@ async def _main(inventory_path: Path) -> None:
             print(f"  [{i}] {env_name}  ({len(targets)} VM{'s' if len(targets) != 1 else ''})")
             for t in targets:
                 print(f"       - {t.get('name', t.get('host', '?'))}  ({t.get('host', '?')})")
-        print(f"  [n] New environment")
+        print("  [n] New environment")
     else:
         print("  (no environments yet — you will create the first one)")
     print()
@@ -227,11 +231,16 @@ async def _main(inventory_path: Path) -> None:
         host = _prompt_val("VM hostname or private IP")
         default_name = f"{chosen_env}-vm-{vm_num:02d}"
         name = _prompt_val("VM name", default_name)
-        os_family = _prompt_val("OS family  (ubuntu / debian / rhel)", "ubuntu")
+
+        print()
+        print("    OS family:  1) ubuntu  2) debian  3) rhel")
+        os_raw = input("    Choice [1/3, Enter=1]: ").strip()
+        os_map = {"2": "debian", "3": "rhel"}
+        os_family = os_map.get(os_raw, "ubuntu")
         print()
 
         # Optional SSH verification
-        if _prompt_yn(f"Verify SSH connectivity to {host} now?"):
+        if _prompt_yn(f"  Verify SSH connectivity to {host} now?"):
             print(f"    Connecting as {ssh_user}@{host} ...")
             ssh_ok = await _check_ssh(host, ssh_user, ssh_key_path)
             if ssh_ok:
@@ -241,7 +250,38 @@ async def _main(inventory_path: Path) -> None:
                 _warn("Complete SETUP.md Steps 2–3 on the new VM before running the agent.")
         print()
 
-        new_targets.append({"host": host, "name": name, "os_family": os_family})
+        # Docker hygiene — only ask when docker_hygiene is enabled in this env
+        env_actions: Any = env_data.get("actions", {}) or {}
+        env_docker = (env_actions.get("docker_hygiene") or {}).get("enabled", False)
+        target_overrides: dict[str, Any] = {}
+
+        if env_docker:
+            has_docker = _prompt_yn("  Is Docker installed on this VM?", default=True)
+            if not has_docker:
+                target_overrides["docker_hygiene"] = {"enabled": False}
+
+        # Service restart intent
+        print()
+        print("  service_restart — lets operators restart specific systemd units.")
+        print("  Unit names can be added after installing the wrapper (SETUP.md Step 3c).")
+        wants_restart = _prompt_yn("  Will this VM need operator-triggered service restarts?", default=False)
+
+        if wants_restart:
+            target_overrides["service_restart"] = {
+                "enabled": False,       # set to true after adding unit names below
+                "restartable_units": [],  # e.g. [nginx.service, postgresql.service]
+            }
+
+        target: dict[str, Any] = {
+            "host": host,
+            "name": name,
+            "os_family": os_family,
+            "node_exporter": False,
+        }
+        if target_overrides:
+            target["actions"] = target_overrides
+
+        new_targets.append(target)
         _ok(f"Queued: {name}  ({host}, {os_family})")
         print()
 

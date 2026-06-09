@@ -1,5 +1,13 @@
 # Errander-AI — Lessons Learned
 
+## 2026-06-09 — Add-target wizard: ask the same questions as the full wizard
+
+When there are two entry points for the same operation (full wizard + add-target), both must ask the same questions. If the wizard collects docker/service_restart intent but add_target.py doesn't, operators who add VMs after initial setup get a worse experience and may end up with incorrect inventory entries.
+
+**How to apply:** whenever the full wizard gains a new question (e.g., "Is Docker installed?"), immediately update `add_target.py` to ask the same question in the same flow.
+
+---
+
 ## 2026-06-09 — Approval channel accuracy: both surfaces must be named everywhere
 
 When the system has multiple approval surfaces (Slack reactions + Web UI), every user-facing description must name both. Saying "Slack approval" when the operator could also use the Web UI is inaccurate and confusing — especially for operators who only have the Web UI configured.

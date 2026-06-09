@@ -4,6 +4,15 @@
 2026-06-09
 
 ## Current Phase
+**`add_target.py` UX improvements (2026-06-09, COMPLETE).**
+
+`add_target.py` now asks the same three questions as the full wizard when adding a new VM:
+numbered OS family menu (ubuntu/debian/rhel), Docker installed question (only when `docker_hygiene` is enabled in the env), and service_restart intent question. Builds the target dict with overrides (`docker_hygiene: {enabled: false}` or `service_restart: {enabled: false, restartable_units: []}`) when appropriate. Switched from `yaml.dump` (comment-stripping) to `ruamel.yaml` for comment-preserving round-trips.
+
+### Files changed (2026-06-09 — add_target.py UX)
+- `errander/config/add_target.py` — numbered OS menu; docker/service_restart questions; ruamel.yaml I/O
+
+## Previous Phase
 **Approval surface wording — replace "Slack approval" with "human approval (Slack or Web UI)" (2026-06-09, COMPLETE).**
 
 Every user-facing description that implied Slack was the only approval channel was updated to accurately reflect both surfaces (Slack reactions + Web UI). 12 instances across 7 files. No behaviour change — docs/UI text only.

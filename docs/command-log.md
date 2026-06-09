@@ -1,5 +1,18 @@
 # Errander-AI Command Log
 
+## add_target.py UX improvements (2026-06-09)
+
+```bash
+# Lint + type check add_target.py
+uv run ruff check errander/config/add_target.py --fix
+uv run mypy errander/config/add_target.py
+
+# Full suite — no regressions
+uv run pytest -q --tb=no   # 2539 passed
+```
+
+---
+
 ## Approval surface wording fix (2026-06-09)
 
 ```bash

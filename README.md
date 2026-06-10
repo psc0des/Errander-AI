@@ -1,5 +1,7 @@
 # Errander-AI
 
+[![CI](https://github.com/psc0des/Errander-AI/actions/workflows/ci.yml/badge.svg)](https://github.com/psc0des/Errander-AI/actions/workflows/ci.yml)
+
 **Supervised agentic AI for Linux fleet maintenance — the LLM decides and explains, humans approve, deterministic code acts.**
 
 Errander-AI is a **supervised agentic AI SRE platform** for small-to-medium Linux fleets. It assesses each host, prioritizes what needs doing, and performs non-kernel patching, log rotation, Docker hygiene, disk cleanup, and backup verification — with safety gates, rollback, idempotency, and full audit logging. It runs on a single controller VM and manages any number of target servers over SSH. **Every live change requires human approval (Slack or Web UI) and is executed by deterministic Python — never by the LLM.**

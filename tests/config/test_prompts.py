@@ -25,7 +25,6 @@ from errander.config._prompts import (
     prompt_yn,
 )
 
-
 # ── prompt_val ─────────────────────────────────────────────────────────────────
 
 

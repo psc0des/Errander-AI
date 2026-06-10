@@ -1,3 +1,16 @@
+## §8d Step 0 — CI (2026-06-10, COMPLETE)
+
+- [x] Fix B904 in `errander/observability/metrics.py:1085` — `raise ... from None`
+- [x] Fix E501 in `errander/observability/metrics.py:1017` — split 122-char HTML line
+- [x] Fix I001 in `tests/config/test_prompts.py` — auto-fixed import sort
+- [x] Add `exclude = ["^tests/", "^scripts/"]` to `[tool.mypy]` in `pyproject.toml`
+- [x] Create `.github/workflows/ci.yml` — lint + test (SQLite) + secrets (gitleaks) jobs
+- [x] Create `.gitleaks.toml` — allowlist for example/demo placeholder credentials
+- [x] Add CI badge to `README.md`
+- [x] `uv run ruff check .` → clean; `uv run mypy errander/` → clean; 2626 tests green
+
+---
+
 ## Enterprise wizard input validation — shared _prompts.py (2026-06-10, COMPLETE)
 
 - [x] `errander/config/_prompts.py` — new shared module with all prompt helpers

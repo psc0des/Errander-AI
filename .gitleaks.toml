@@ -1,0 +1,9 @@
+title = "Errander-AI gitleaks config"
+
+[allowlist]
+  description = "Example and demo configs with placeholder credentials"
+  paths = [
+    '''^example/''',
+    '''^demo/''',
+    '''^deploy/vllm/\.env\.example$''',
+  ]

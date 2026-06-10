@@ -1,5 +1,37 @@
 # Errander-AI Command Log
 
+## §8d Step 0 — CI setup (2026-06-10)
+
+```bash
+# Find exact ruff errors
+uv run ruff check .
+# → E501 metrics.py:1017, B904 metrics.py:1085, I001 tests/config/test_prompts.py:6
+
+# Auto-fix the I001 import sort
+uv run ruff check --fix tests/config/test_prompts.py
+
+# Verify ruff clean after manual E501 + B904 fixes
+uv run ruff check .
+
+# Verify mypy clean (errander/ package and full repo with exclude)
+uv run mypy errander/
+uv run mypy .
+
+# CI test suite (matches GitHub Actions test job)
+uv run pytest tests/ --ignore=tests/ui --ignore=tests/staging -q --tb=short
+# → 2450 passed in 31s
+
+# Full suite (for test count)
+uv run pytest tests/ --ignore=tests/staging -q --tb=short
+# → 2626 passed in 85s
+
+# Verify git identity before commit
+git config user.name   # psc0des
+git config user.email  # sarathy.vass6@gmail.com
+```
+
+---
+
 ## configure.sh/add-target auto wrapper install (2026-06-09)
 
 ```bash

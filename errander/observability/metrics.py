@@ -1014,7 +1014,8 @@ async def _ui_login_get(request: web.Request) -> web.Response:
       <div class="l-feat-icon">&#9632;</div>
       <div class="l-feat-body">
         <div class="l-feat-title">Autonomous fleet maintenance</div>
-        <div class="l-feat-desc">OS patching, log rotation, Docker hygiene, disk cleanup — scheduled and supervised.</div>
+        <div class="l-feat-desc">OS patching, log rotation, Docker hygiene,
+        disk cleanup — scheduled and supervised.</div>
       </div>
     </div>
     <div class="l-feat">
@@ -1082,7 +1083,7 @@ async def _ui_login_post(request: web.Request) -> web.Response:
     try:
         data = await request.post()
     except Exception:
-        raise web.HTTPFound("/ui/login?err=1")
+        raise web.HTTPFound("/ui/login?err=1") from None
 
     provided_user = str(data.get("username", ""))
     provided_pass = str(data.get("password", ""))

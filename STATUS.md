@@ -4,15 +4,17 @@
 2026-06-10
 
 ## Current Phase
-**Enterprise wizard input validation — shared `_prompts.py` module (2026-06-10, COMPLETE).**
+**§8d Step 0 — CI (2026-06-10, COMPLETE).**
 
-All interactive wizard inputs now validate inline and re-prompt on bad input — no garbage reaches schema validation. A single shared `errander/config/_prompts.py` module is the sole source of truth for all prompt helpers; both `inventory_wizard.py` and `add_target.py` import from it, eliminating copy-paste drift. Gaps fixed: OS family menu (was silently defaulting to ubuntu on any non-"2"/non-"3" input), maintenance days (unknown names now rejected), timezone (validated against `zoneinfo.available_timezones()`), env/target names (YAML-key-safe identifiers enforced), and inventory keep/replace choice. 87 new tests added.
+GitHub Actions CI added following a zero-trust review by Fable 5 (senior SRE / enterprise AI architect). CI runs on every push to `main` and every PR: `ruff check .`, `mypy errander/`, `pytest` (2,626 tests, excluding Playwright/staging), and `gitleaks` secret scan. Three ruff errors fixed (B904 in metrics.py, E501 in metrics.py, I001 in test_prompts.py). mypy `exclude` added to `pyproject.toml` so `uv run mypy .` passes (tests/scripts were the source of 621 pre-existing errors; errander/ package was already clean).
 
-### Files changed (2026-06-10 — wizard input validation)
-- `errander/config/_prompts.py` — new shared module: `prompt_val`, `prompt_val_optional`, `prompt_yn`, `prompt_policy`, `prompt_maintenance_window`, `prompt_maintenance_days`, `prompt_timezone`, `prompt_os_family`, `prompt_name`, `prompt_systemd_units`
-- `errander/config/inventory_wizard.py` — remove all local prompt helpers; import from `_prompts`; all constrained inputs now validated inline
-- `errander/config/add_target.py` — same; also fix inventory keep/replace choice loop
-- `tests/config/test_prompts.py` — 87 new tests covering all prompt helpers
+### Files changed (2026-06-10 — CI setup, §8d step 0)
+- `.github/workflows/ci.yml` — NEW: lint, test (SQLite), secrets (gitleaks) jobs
+- `.gitleaks.toml` — NEW: allowlist for example/demo/deploy placeholder credentials
+- `errander/observability/metrics.py` — fix B904 (raise from None) + E501 (split 122-char HTML line)
+- `tests/config/test_prompts.py` — fix I001 (auto-fixed import sort)
+- `pyproject.toml` — add `exclude = ["^tests/", "^scripts/"]` to [tool.mypy]
+- `README.md` — CI badge
 
 ## Previous Phase
 **configure.sh and add-target.sh now install wrappers automatically (2026-06-09, COMPLETE).**
@@ -131,14 +133,21 @@ Adds a `Monitoring` nav item and `/ui/monitoring` page to the Errander web UI. T
 - Bootstrap: two-phase install (bootstrap.sh + configure.sh), Windows controller doc, teardown.sh
 - Observability: `/ui/monitoring` — all OBSERVABILITY.md surfaces covered except LangSmith + raw logs
 
-## Next Up (roadmap order)
-1. **Prometheus test on real VM** — run `install-prometheus.sh` on a dedicated monitoring VM, verify targets UP (not agent VM)
-2. **LangSmith wiring** — set `LANGCHAIN_*` in dev/staging, confirm traces, add learning doc
-3. **Layer A Investigation Agent** — implementation (`tasks/investigation-agent-implementation-plan.md`)
-4. **Dashboard Chat** — `/ui/chat` ops-console (after #3)
+## Next Up — §8d Master Roadmap (Fable 5 review, 2026-06-10)
+
+| # | Step | Status |
+|---|---|---|
+| 0 | CI (pytest + ruff + mypy + gitleaks) | ✅ COMPLETE |
+| 1 | R4: PostgreSQL dual-backend + DB layer | next |
+| 2 | R3 keystone: `approval_requests` DB-backed store | after 1 |
+| 3 | R2: users/groups RBAC + web-only approval | after 2 |
+| 4 | R3: process split (two OS processes, key isolation) | after 3 |
+| 5 | R1: advisory-LLM batch planning (F2+F6 fix) | after 4 |
+| 6 | Plan A: investigation agent | after 5 |
+| 7 | Plan B: dashboard chat | after 6 |
 
 ## Blockers
 None.
 
 ## Test count
-2537 passing.
+2626 passing (full suite); 2450 in CI (excluding tests/ui Playwright + tests/staging).

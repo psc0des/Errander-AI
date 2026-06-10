@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from errander.agent.vm_graph import post_cleanup_disk_gate_node
+from errander.db.core import AsyncDatabase
 from errander.models.actions import ActionStatus
 from errander.models.events import EventType
 from errander.safety.audit import AuditStore
@@ -131,7 +132,7 @@ class TestPostCleanupDiskGateNode:
     async def test_blocked_emits_audit_event(self) -> None:
         state = _make_state()
         ssh = _make_ssh_manager(disk_pct=96)
-        async with AuditStore(":memory:") as store:
+        async with AuditStore(AsyncDatabase(":memory:")) as store:
             await post_cleanup_disk_gate_node(state, ssh_manager=ssh, audit_store=store)
             events = await store.get_events(batch_id="batch-gate-test")
 
@@ -143,7 +144,7 @@ class TestPostCleanupDiskGateNode:
     async def test_no_audit_event_when_disk_ok(self) -> None:
         state = _make_state()
         ssh = _make_ssh_manager(disk_pct=70)
-        async with AuditStore(":memory:") as store:
+        async with AuditStore(AsyncDatabase(":memory:")) as store:
             await post_cleanup_disk_gate_node(state, ssh_manager=ssh, audit_store=store)
             events = await store.get_events(batch_id="batch-gate-test")
 

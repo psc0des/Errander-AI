@@ -8,8 +8,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 import yaml
+from sqlalchemy import text
 
 from errander.config.schema import EnvironmentSchema, TargetSchema
+from errander.db.core import AsyncDatabase
 from errander.main import _build_maintenance_window, _parse_args, run_restart_service
 
 # ---------------------------------------------------------------------------
@@ -236,11 +238,11 @@ class TestWindowOpener:
             targets=[target],
         )
 
-        deferred_store = DeferredExecutionStore(":memory:")
+        deferred_store = DeferredExecutionStore(AsyncDatabase(":memory:"))
         await deferred_store.initialize()
 
-        async with AuditStore(":memory:") as audit_store:
-            overrides_store = OverridesStore(":memory:")
+        async with AuditStore(AsyncDatabase(":memory:")) as audit_store:
+            overrides_store = OverridesStore(AsyncDatabase(":memory:"))
             await overrides_store.initialize()
             try:
                 with patch("errander.main.run_env_batch", new_callable=AsyncMock) as mock_run:
@@ -286,13 +288,13 @@ class TestWindowOpener:
             targets=[target],
         )
 
-        deferred_store = DeferredExecutionStore(":memory:")
+        deferred_store = DeferredExecutionStore(AsyncDatabase(":memory:"))
         await deferred_store.initialize()
         future_window = datetime.now(tz=UTC).replace(hour=2, minute=0, second=0, microsecond=0) + timedelta(days=30)
         await deferred_store.save("b-test", "dev", "alice", future_window)
 
-        async with AuditStore(":memory:") as audit_store:
-            overrides_store = OverridesStore(":memory:")
+        async with AuditStore(AsyncDatabase(":memory:")) as audit_store:
+            overrides_store = OverridesStore(AsyncDatabase(":memory:"))
             await overrides_store.initialize()
             try:
                 with patch("errander.main.run_env_batch", new_callable=AsyncMock) as mock_run:
@@ -342,13 +344,13 @@ class TestWindowOpener:
             targets=[target],
         )
 
-        deferred_store = DeferredExecutionStore(":memory:")
+        deferred_store = DeferredExecutionStore(AsyncDatabase(":memory:"))
         await deferred_store.initialize()
         future_window = datetime.now(tz=UTC).replace(hour=2, minute=0, second=0, microsecond=0) + timedelta(days=30)
         await deferred_store.save("b-test", "dev", "alice", future_window)
 
-        async with AuditStore(":memory:") as audit_store:
-            overrides_store = OverridesStore(":memory:")
+        async with AuditStore(AsyncDatabase(":memory:")) as audit_store:
+            overrides_store = OverridesStore(AsyncDatabase(":memory:"))
             await overrides_store.initialize()
             try:
                 with patch("errander.main.run_env_batch", new_callable=AsyncMock):
@@ -367,11 +369,12 @@ class TestWindowOpener:
                     )
 
                 assert deferred_store._db is not None
-                cursor = await deferred_store._db.execute(
-                    "SELECT status FROM deferred_executions WHERE batch_id = ?",
-                    ("b-test",),
-                )
-                row = await cursor.fetchone()
+                async with deferred_store._db.begin() as conn:
+                    result = await conn.execute(
+                        text("SELECT status FROM deferred_executions WHERE batch_id = :bid"),
+                        {"bid": "b-test"},
+                    )
+                    row = result.mappings().fetchone()
                 assert row is not None
                 assert row["status"] == "done"
             finally:

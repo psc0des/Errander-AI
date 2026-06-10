@@ -1,3 +1,22 @@
+## §8d Step 1 — R4: PostgreSQL Dual-Backend + DB Layer (2026-06-10, COMPLETE)
+
+- [x] `errander/db/__init__.py` + `errander/db/core.py` — `AsyncDatabase` wrapper
+- [x] `pyproject.toml` — `sqlalchemy[asyncio]>=2.0`; `postgres = ["asyncpg>=0.29"]` extra; `uv sync`
+- [x] `errander/safety/migrations.py` — port + add migrations #10-#12; `_adapt_ddl()`
+- [x] `errander/safety/audit.py` — first store; GROUP_CONCAT + INSERT OR IGNORE fixes
+- [x] `errander/safety/batches.py`, `artifacts.py`, `agent_lease.py` — ported
+- [x] Remaining 9 safety stores + observability + evals — all ported
+- [x] `errander/web/providers.py` + `server.py` — GROUP_CONCAT fix; AsyncDatabase wrap
+- [x] `errander/main.py` — construct `AsyncDatabase`; pass to all stores
+- [x] `tests/conftest.py` — `TEST_DB_URL` at module level; `session_db` + `async_db` fixtures
+- [x] `tests/safety/test_migrations.py` — dialect-agnostic introspection; uses `TEST_DB_URL`
+- [x] All other test files — `AsyncDatabase(":memory:")` wrapping
+- [x] `.github/workflows/ci.yml` — `test-postgres` job with role-grant verification step
+- [x] `deploy/postgres-setup.sql` — `errander_agent` + `errander_web` role grants
+- [x] 2446 tests green, ruff clean, mypy clean
+
+---
+
 ## §8d Step 0 — CI (2026-06-10, COMPLETE)
 
 - [x] Fix B904 in `errander/observability/metrics.py:1085` — `raise ... from None`

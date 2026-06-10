@@ -11,6 +11,7 @@ from errander.agent.operator_assistant import (
     _fallback_response,
     _format_prompt,
 )
+from errander.db.core import AsyncDatabase
 from errander.models.analysis import AssistantResponse, FleetContext, VMSignalSummary
 
 # ---------------------------------------------------------------------------
@@ -475,7 +476,7 @@ async def test_investigate_logs_decision_when_store_provided() -> None:
     audit = _make_audit_store()
     inv = _make_inventory(["dev"])
 
-    async with AIDecisionStore(":memory:") as ai_store:
+    async with AIDecisionStore(AsyncDatabase(":memory:")) as ai_store:
         await OperatorAssistant().investigate(
             "Is prod healthy?",
             audit_store=audit,
@@ -508,7 +509,7 @@ async def test_investigate_logs_fallback_outcome_when_llm_fails() -> None:
     audit = _make_audit_store()
     inv = _make_inventory(["dev"])
 
-    async with AIDecisionStore(":memory:") as ai_store:
+    async with AIDecisionStore(AsyncDatabase(":memory:")) as ai_store:
         await OperatorAssistant().investigate(
             "q",
             audit_store=audit,
@@ -660,7 +661,7 @@ async def test_investigate_context_snapshot_includes_budget_and_redaction_stats(
     audit = _make_audit_store()
     inv = _make_inventory(["dev"])
 
-    async with AIDecisionStore(":memory:") as ai_store:
+    async with AIDecisionStore(AsyncDatabase(":memory:")) as ai_store:
         await OperatorAssistant().investigate(
             "q",
             audit_store=audit,

@@ -29,6 +29,7 @@ import structlog
 
 from errander.config.schema import EnvironmentSchema, validate_inventory, validate_settings
 from errander.config.settings import Settings, load_settings
+from errander.db.core import AsyncDatabase
 from errander.execution.sandbox import SandboxExecutor
 from errander.execution.ssh import SSHConnectionManager
 from errander.integrations.llm import LLMClient
@@ -903,9 +904,10 @@ async def run_env_probe_main(env_name: str, inventory_path: Path) -> int:
         print(f"Error loading settings: {exc}")
         return 1
 
-    audit_store = AuditStore(settings.audit_db_url, strict_mode=(settings.audit_mode == "strict"))
-    disk_history_store = VMDiskHistoryStore(settings.audit_db_url)
-    baseline_store = BaselineStore(settings.audit_db_url)
+    _db_probe = AsyncDatabase(settings.audit_db_url)
+    audit_store = AuditStore(_db_probe, strict_mode=(settings.audit_mode == "strict"))
+    disk_history_store = VMDiskHistoryStore(_db_probe)
+    baseline_store = BaselineStore(_db_probe)
     ssh_manager = SSHConnectionManager(
         known_hosts_path=settings.ssh_known_hosts_path,
         strict_host_keys=settings.ssh_strict_host_keys,
@@ -1019,9 +1021,10 @@ async def run_ask_query(
         print(f"Error loading settings: {exc}")
         return 1
 
-    audit_store = AuditStore(settings.audit_db_url, strict_mode=False)
-    disk_history_store = VMDiskHistoryStore(settings.audit_db_url)
-    baseline_store = BaselineStore(settings.audit_db_url)
+    _db_ask = AsyncDatabase(settings.audit_db_url)
+    audit_store = AuditStore(_db_ask, strict_mode=False)
+    disk_history_store = VMDiskHistoryStore(_db_ask)
+    baseline_store = BaselineStore(_db_ask)
 
     llm: LLMClient | None = None
     if settings.llm_base_url:
@@ -1046,7 +1049,7 @@ async def run_ask_query(
     )
 
     from errander.safety.ai_audit import AIDecisionStore as _AIDecisionStoreAsk
-    ai_decision_store_ask = _AIDecisionStoreAsk(settings.audit_db_url)
+    ai_decision_store_ask = _AIDecisionStoreAsk(_db_ask)
 
     async with (
         audit_store,
@@ -1205,7 +1208,7 @@ async def run_restart_service(
     print("  Risk      : HIGH — human approval required (Slack or Web UI) before execution")
     print(f"  Mode      : {'DRY RUN' if dry_run else 'LIVE'}")
 
-    audit_store = AuditStore(settings.audit_db_url, strict_mode=False)
+    audit_store = AuditStore(AsyncDatabase(settings.audit_db_url), strict_mode=False)
     async with audit_store:
         await audit_store.log_event(AuditEvent(
             event_type=EventType.SERVICE_RESTART_REQUESTED,
@@ -1371,7 +1374,7 @@ async def run_plan_show(plan_id: str, audit_db_url: str) -> int:
     """Pretty-print the full plan artifact for plan_id (P2-1)."""
     import json as _json
 
-    audit_store = AuditStore(audit_db_url, strict_mode=False)
+    audit_store = AuditStore(AsyncDatabase(audit_db_url), strict_mode=False)
     async with audit_store:
         snapshot = await audit_store.get_plan_snapshot(plan_id)
 
@@ -1430,7 +1433,7 @@ async def run_ai_decisions_query(args: argparse.Namespace, settings: Settings) -
             return url
 
     try:
-        async with AIDecisionStore(settings.audit_db_url) as store:
+        async with AIDecisionStore(AsyncDatabase(settings.audit_db_url)) as store:
             if args.ai_decision_show is not None:
                 decision = await store.get_decision_by_id(args.ai_decision_show)
                 if decision is None:
@@ -1520,8 +1523,8 @@ async def run_ai_eval_replay(args: argparse.Namespace, settings: Settings) -> in
             api_key=settings.llm_api_key or "not-needed",
         )
         async with (
-            AIDecisionStore(settings.audit_db_url) as ai_store,
-            EvalStore(settings.audit_db_url) as eval_store,
+            AIDecisionStore(AsyncDatabase(settings.audit_db_url)) as ai_store,
+            EvalStore(AsyncDatabase(settings.audit_db_url)) as eval_store,
         ):
             run = await run_replay(
                 ai_store=ai_store,
@@ -1563,7 +1566,7 @@ async def run_ai_eval_replay(args: argparse.Namespace, settings: Settings) -> in
 
 async def run_audit_query(args: argparse.Namespace, settings: Settings) -> int:
     """Run an audit query and print results to stdout."""
-    audit_store = AuditStore(settings.audit_db_url, strict_mode=False)
+    audit_store = AuditStore(AsyncDatabase(settings.audit_db_url), strict_mode=False)
     await audit_store.__aenter__()
     try:
         if args.batches:
@@ -1631,8 +1634,6 @@ async def run_audit_query(args: argparse.Namespace, settings: Settings) -> int:
 
 async def run_measure_durability(db_path: str, window_days: int = 14) -> int:
     """Print a durability snapshot from audit_events and exit."""
-    import aiosqlite
-
     from errander.observability.durability import (
         compute_durability_report,
         print_durability_report,
@@ -1640,9 +1641,11 @@ async def run_measure_durability(db_path: str, window_days: int = 14) -> int:
     from errander.safety.migrations import run_migrations
 
     try:
-        async with aiosqlite.connect(db_path) as db:
-            await run_migrations(db)
-            report = await compute_durability_report(db, window_days)
+        db = AsyncDatabase(db_path)
+        async with db.begin() as conn:
+            await run_migrations(conn, db.dialect)
+        report = await compute_durability_report(db, window_days)
+        await db.close()
     except Exception as exc:  # noqa: BLE001
         print(f"Error reading audit database '{db_path}': {exc}")
         return 1
@@ -1695,7 +1698,7 @@ async def run_env_batch(
     from errander.safety.ai_audit import AIDecisionStore
 
     ai_db_path = settings.audit_db_url  # share same SQLite file
-    ai_decision_store = AIDecisionStore(ai_db_path)
+    ai_decision_store = AIDecisionStore(AsyncDatabase(ai_db_path))
     await ai_decision_store.initialize()
 
     # AsyncSqliteSaver: LangGraph checkpoint persistence (Project A, A5).
@@ -2140,9 +2143,12 @@ async def async_main(args: argparse.Namespace) -> int:
     from errander.config.inventory import load_inventory as _load_inventory
     flat_inventory = _load_inventory(inventory_path)
 
+    # --- Shared AsyncDatabase instance for all stores ---
+    _db = AsyncDatabase(settings.audit_db_url)
+
     # --- Overrides store: must be initialized before building components so
     #     DB-persisted LLM settings are applied on restart (finding #4). ---
-    _early_overrides_store = OverridesStore(settings.audit_db_url)
+    _early_overrides_store = OverridesStore(_db)
     await _early_overrides_store.initialize()
     _db_overrides = await _early_overrides_store.get_settings_overrides()
     if _db_overrides:
@@ -2181,14 +2187,14 @@ async def async_main(args: argparse.Namespace) -> int:
 
     # --- Audit store ---
     audit_store = AuditStore(
-        settings.audit_db_url,
+        _db,
         strict_mode=(settings.audit_mode == "strict"),
     )
     await audit_store.__aenter__()
 
     # --- Agent lease: single-process enforcement (Project A, A5) ---
     from errander.safety.agent_lease import AgentLease, AgentLeaseError
-    _agent_lease = AgentLease(audit_store._db)  # type: ignore[arg-type]
+    _agent_lease = AgentLease(_db)
     try:
         await _agent_lease.acquire()
     except AgentLeaseError as _lease_exc:
@@ -2201,12 +2207,12 @@ async def async_main(args: argparse.Namespace) -> int:
     AGENT_STARTS_TOTAL.inc()
 
     from errander.observability.startup_scan import scan_orphan_batches
-    _interrupted = await scan_orphan_batches(audit_store._db)  # type: ignore[arg-type]
+    _interrupted = await scan_orphan_batches(_db)
     if _interrupted > 0:
         BATCHES_INTERRUPTED_TOTAL.inc(_interrupted)
 
     # --- Deferred execution store (same DB file, separate table) ---
-    deferred_store = DeferredExecutionStore(settings.audit_db_url)
+    deferred_store = DeferredExecutionStore(_db)
     await deferred_store.initialize()
 
     # --- Overrides store (same DB, separate tables) ---
@@ -2217,13 +2223,13 @@ async def async_main(args: argparse.Namespace) -> int:
     from errander.safety.disk_history import VMDiskHistoryStore
     from errander.safety.vm_state import VMStateStore as _VMStateStore
 
-    disk_history_store = VMDiskHistoryStore(settings.audit_db_url)
+    disk_history_store = VMDiskHistoryStore(_db)
     await disk_history_store.initialize()
 
-    baseline_store = BaselineStore(settings.audit_db_url)
+    baseline_store = BaselineStore(_db)
     await baseline_store.initialize()
 
-    vm_state_store = _VMStateStore(settings.audit_db_url)
+    vm_state_store = _VMStateStore(_db)
     await vm_state_store.initialize()
 
     # --- Approval managers (shared between graph and web UI) ---
@@ -2232,7 +2238,7 @@ async def async_main(args: argparse.Namespace) -> int:
 
     # --- AI decision store for Web UI (read-only, separate connection from batch store) ---
     from errander.safety.ai_audit import AIDecisionStore as _AIDecisionStore
-    ai_decision_store_ui = _AIDecisionStore(settings.audit_db_url)
+    ai_decision_store_ui = _AIDecisionStore(_db)
     await ai_decision_store_ui.initialize()
 
     try:

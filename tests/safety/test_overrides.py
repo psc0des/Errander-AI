@@ -5,13 +5,14 @@ from __future__ import annotations
 import pytest
 import pytest_asyncio
 
+from errander.db.core import AsyncDatabase
 from errander.safety.overrides import OverridesStore
 
 
 @pytest_asyncio.fixture
 async def store(tmp_path):
     db_path = str(tmp_path / "test.sqlite")
-    async with OverridesStore(db_path) as s:
+    async with OverridesStore(AsyncDatabase(db_path)) as s:
         yield s
 
 
@@ -160,8 +161,8 @@ class TestInventoryOverrides:
         assert "staging" in env_names
 
     async def test_invalid_source_raises(self, store):
-        import aiosqlite
-        with pytest.raises(aiosqlite.IntegrityError):
+        from sqlalchemy.exc import IntegrityError
+        with pytest.raises(IntegrityError):
             await store.upsert_inventory_override(
                 "production", "web-01", "invalid_source"
             )
@@ -173,14 +174,14 @@ class TestInventoryOverrides:
 class TestContextManager:
     async def test_aenter_aexit(self, tmp_path):
         db_path = str(tmp_path / "ctx.sqlite")
-        async with OverridesStore(db_path) as s:
+        async with OverridesStore(AsyncDatabase(db_path)) as s:
             await s.set_setting_override("ERRANDER_LLM_MODEL", "test")
             result = await s.get_settings_overrides()
             assert result["ERRANDER_LLM_MODEL"] == "test"
 
     async def test_close_is_idempotent(self, tmp_path):
         db_path = str(tmp_path / "idem.sqlite")
-        s = OverridesStore(db_path)
+        s = OverridesStore(AsyncDatabase(db_path))
         await s.initialize()
         await s.close()
         await s.close()  # second close must not raise

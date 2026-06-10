@@ -20,13 +20,14 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
-import aiosqlite
+from sqlalchemy import text
 
 from errander.safety.migrations import run_migrations
 
 if TYPE_CHECKING:
+    from errander.db.core import AsyncDatabase
     from errander.integrations.llm import LLMClient
     from errander.safety.ai_audit import AIDecision, AIDecisionStore
 
@@ -174,56 +175,54 @@ class EvalRun:
 _INSERT_RUN_SQL = """
 INSERT INTO ai_eval_runs
     (run_id, model, decision_type, source_count, pass_count, fail_count, error_count, timestamp)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+VALUES (:run_id, :model, :decision_type, :source_count, :pass_count, :fail_count, :error_count, :timestamp)
 """
 
 _INSERT_RESULT_SQL = """
 INSERT INTO ai_eval_results
     (run_id, original_id, decision_type, model, prompt_hash,
      response_raw, outcome, violations, latency_ms, timestamp)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+VALUES (:run_id, :original_id, :decision_type, :model, :prompt_hash,
+        :response_raw, :outcome, :violations, :latency_ms, :timestamp)
 """
 
 _SELECT_RUNS_SQL = """
 SELECT run_id, model, decision_type, source_count, pass_count, fail_count, error_count, timestamp
 FROM ai_eval_runs
 ORDER BY timestamp DESC
-LIMIT ?
+LIMIT :limit
 """
 
 _SELECT_RESULTS_SQL = """
 SELECT run_id, original_id, decision_type, model, prompt_hash,
        response_raw, outcome, violations, latency_ms, timestamp
 FROM ai_eval_results
-WHERE run_id = ?
+WHERE run_id = :run_id
 ORDER BY id ASC
 """
 
 
 class EvalStore:
-    """Async SQLite store for replay eval runs and per-decision results.
+    """Async store for replay eval runs and per-decision results.
 
-    Uses the same DB file as the rest of the audit stores.
+    Uses the same DB as the rest of the audit stores.
     Tables are created via migration 9.
 
     Usage::
 
-        async with EvalStore(":memory:") as store:
+        async with EvalStore(AsyncDatabase(":memory:")) as store:
             await store.save_run(run)
     """
 
-    def __init__(self, db_path: str) -> None:
-        self._db_path = db_path
-        self._db: aiosqlite.Connection | None = None
+    def __init__(self, db: AsyncDatabase) -> None:
+        self._db = db
 
     async def initialize(self) -> None:
-        self._db = await aiosqlite.connect(self._db_path)
-        await run_migrations(self._db)
+        async with self._db.begin() as conn:
+            await run_migrations(conn, self._db.dialect)
 
     async def close(self) -> None:
-        if self._db is not None:
-            await self._db.close()
-            self._db = None
+        await self._db.close()
 
     async def __aenter__(self) -> EvalStore:
         await self.initialize()
@@ -232,59 +231,58 @@ class EvalStore:
     async def __aexit__(self, *args: object) -> None:
         await self.close()
 
-    def _ensure_connected(self) -> aiosqlite.Connection:
-        if self._db is None:
-            raise RuntimeError("EvalStore not initialized")
-        return self._db
-
     async def save_run(self, run: EvalRun) -> None:
         """Persist the EvalRun header and all its EvalResults."""
-        db = self._ensure_connected()
-        await db.execute(
-            _INSERT_RUN_SQL,
-            (
-                run.run_id,
-                run.model,
-                run.decision_type,
-                run.source_count,
-                run.pass_count,
-                run.fail_count,
-                run.error_count,
-                run.timestamp.isoformat(),
-            ),
-        )
-        for result in run.results:
-            await db.execute(
-                _INSERT_RESULT_SQL,
-                (
-                    result.run_id,
-                    result.original_id,
-                    result.decision_type,
-                    result.model,
-                    result.prompt_hash,
-                    result.response_raw,
-                    result.outcome,
-                    json.dumps(result.violations) if result.violations else None,
-                    result.latency_ms,
-                    result.timestamp.isoformat(),
-                ),
+        async with self._db.begin() as conn:
+            await conn.execute(
+                text(_INSERT_RUN_SQL),
+                {
+                    "run_id": run.run_id,
+                    "model": run.model,
+                    "decision_type": run.decision_type,
+                    "source_count": run.source_count,
+                    "pass_count": run.pass_count,
+                    "fail_count": run.fail_count,
+                    "error_count": run.error_count,
+                    "timestamp": run.timestamp.isoformat(),
+                },
             )
-        await db.commit()
+            if run.results:
+                await conn.execute(
+                    text(_INSERT_RESULT_SQL),
+                    [
+                        {
+                            "run_id": r.run_id,
+                            "original_id": r.original_id,
+                            "decision_type": r.decision_type,
+                            "model": r.model,
+                            "prompt_hash": r.prompt_hash,
+                            "response_raw": r.response_raw,
+                            "outcome": r.outcome,
+                            "violations": json.dumps(r.violations) if r.violations else None,
+                            "latency_ms": r.latency_ms,
+                            "timestamp": r.timestamp.isoformat(),
+                        }
+                        for r in run.results
+                    ],
+                )
 
     async def get_runs(self, limit: int = 20) -> list[EvalRun]:
         """Return recent eval runs, newest first."""
-        db = self._ensure_connected()
-        rows = list(await db.execute_fetchall(_SELECT_RUNS_SQL, (limit,)))
+        async with self._db.begin() as conn:
+            result = await conn.execute(text(_SELECT_RUNS_SQL), {"limit": limit})
+            rows = result.fetchall()
         return [_row_to_run(r) for r in rows]
 
     async def get_results(self, run_id: str) -> list[EvalResult]:
         """Return all per-decision results for a run."""
-        db = self._ensure_connected()
-        rows = list(await db.execute_fetchall(_SELECT_RESULTS_SQL, (run_id,)))
+        async with self._db.begin() as conn:
+            result = await conn.execute(text(_SELECT_RESULTS_SQL), {"run_id": run_id})
+            rows = result.fetchall()
         return [_row_to_result(r) for r in rows]
 
 
-def _row_to_run(row: aiosqlite.Row) -> EvalRun:
+def _row_to_run(row: Any) -> EvalRun:
     return EvalRun(
         run_id=str(row[0]),
         model=str(row[1]),
@@ -297,7 +295,7 @@ def _row_to_run(row: aiosqlite.Row) -> EvalRun:
     )
 
 
-def _row_to_result(row: aiosqlite.Row) -> EvalResult:
+def _row_to_result(row: Any) -> EvalResult:
     violations_raw = row[7]
     violations: list[str] = json.loads(str(violations_raw)) if violations_raw else []
     return EvalResult(

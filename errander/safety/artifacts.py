@@ -1,9 +1,8 @@
 """ArtifactStore — external blob storage for oversized graph state fields.
 
 Subgraph state fields that exceed 4 KB when serialized (primarily
-``patch_output`` from PatchingGraphState and ``prune_output`` from
-DockerPruneGraphState) are stored here instead of in LangGraph checkpoint
-state, keeping checkpoint rows small and fast.
+``patch_output`` from PatchingGraphState) are stored here instead of in
+LangGraph checkpoint state, keeping checkpoint rows small and fast.
 
 Migration #6 creates the ``artifacts`` table.
 
@@ -24,9 +23,10 @@ import uuid
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:
-    import aiosqlite
+from sqlalchemy import text
 
+if TYPE_CHECKING:
+    from errander.db.core import AsyncDatabase
 logger = logging.getLogger(__name__)
 
 
@@ -34,10 +34,10 @@ class ArtifactStore:
     """Read/write the ``artifacts`` table.
 
     Args:
-        db: Open aiosqlite connection.  Caller owns the lifecycle.
+        db: AsyncDatabase shared with the caller.  Caller owns the lifecycle.
     """
 
-    def __init__(self, db: aiosqlite.Connection) -> None:
+    def __init__(self, db: AsyncDatabase) -> None:
         self._db = db
 
     # ------------------------------------------------------------------
@@ -58,7 +58,7 @@ class ArtifactStore:
             batch_id: Owning batch (for purge and audit correlation).
             vm_id: Owning VM (for display).
             artifact_kind: Logical name — e.g. ``"patch_output"``,
-                ``"prune_output"``, ``"rotation_output"``.
+                ``"rotation_output"``.
             content: The raw string blob to store.
 
         Returns:
@@ -66,15 +66,22 @@ class ArtifactStore:
         """
         artifact_id = str(uuid.uuid4())
         now = datetime.now(tz=UTC).isoformat()
-        await self._db.execute(
-            """
-            INSERT INTO artifacts
-                (id, batch_id, vm_id, artifact_kind, content, created_at)
-            VALUES (?, ?, ?, ?, ?, ?)
-            """,
-            (artifact_id, batch_id, vm_id, artifact_kind, content, now),
-        )
-        await self._db.commit()
+        async with self._db.begin() as conn:
+            await conn.execute(
+                text("""
+                INSERT INTO artifacts
+                    (id, batch_id, vm_id, artifact_kind, content, created_at)
+                VALUES (:id, :batch_id, :vm_id, :artifact_kind, :content, :created_at)
+                """),
+                {
+                    "id": artifact_id,
+                    "batch_id": batch_id,
+                    "vm_id": vm_id,
+                    "artifact_kind": artifact_kind,
+                    "content": content,
+                    "created_at": now,
+                },
+            )
         logger.debug(
             "ArtifactStore: stored %s/%s/%s → %s (%d bytes)",
             batch_id, vm_id, artifact_kind, artifact_id[:8], len(content),
@@ -87,11 +94,12 @@ class ArtifactStore:
 
     async def retrieve(self, artifact_id: str) -> str | None:
         """Return the stored blob content, or None if not found."""
-        cursor = await self._db.execute(
-            "SELECT content FROM artifacts WHERE id = ?",
-            (artifact_id,),
-        )
-        row = await cursor.fetchone()
+        async with self._db.begin() as conn:
+            result = await conn.execute(
+                text("SELECT content FROM artifacts WHERE id = :id"),
+                {"id": artifact_id},
+            )
+            row = result.fetchone()
         return str(row[0]) if row is not None else None
 
     async def retrieve_by_kind(
@@ -104,13 +112,16 @@ class ArtifactStore:
 
         Ordered oldest-first.  Typically returns one entry per subgraph run.
         """
-        cursor = await self._db.execute(
-            "SELECT content FROM artifacts "
-            "WHERE batch_id = ? AND vm_id = ? AND artifact_kind = ? "
-            "ORDER BY created_at",
-            (batch_id, vm_id, artifact_kind),
-        )
-        rows = await cursor.fetchall()
+        async with self._db.begin() as conn:
+            result = await conn.execute(
+                text(
+                    "SELECT content FROM artifacts "
+                    "WHERE batch_id = :batch_id AND vm_id = :vm_id AND artifact_kind = :kind "
+                    "ORDER BY created_at"
+                ),
+                {"batch_id": batch_id, "vm_id": vm_id, "kind": artifact_kind},
+            )
+            rows = result.fetchall()
         return [str(r[0]) for r in rows]
 
     # ------------------------------------------------------------------
@@ -122,12 +133,12 @@ class ArtifactStore:
 
         Returns the number of rows deleted.
         """
-        cursor = await self._db.execute(
-            "DELETE FROM artifacts WHERE created_at < ?",
-            (cutoff_iso,),
-        )
-        await self._db.commit()
-        deleted = cursor.rowcount
+        async with self._db.begin() as conn:
+            result = await conn.execute(
+                text("DELETE FROM artifacts WHERE created_at < :cutoff"),
+                {"cutoff": cutoff_iso},
+            )
+            deleted = result.rowcount
         if deleted:
             logger.info("ArtifactStore: purged %d artifacts older than %s", deleted, cutoff_iso)
         return deleted

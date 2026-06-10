@@ -143,7 +143,8 @@ curl -fsSL https://raw.githubusercontent.com/psc0des/Errander-AI/main/scripts/bo
 ```bash
 sudo su - errander-agent
 cd ~/errander
-uv sync --extra dev
+uv sync --extra dev           # SQLite (default)
+# uv sync --extra dev --extra postgres   # add for PostgreSQL deployments
 uv run python -c "import errander; print('OK')"
 ```
 
@@ -869,7 +870,7 @@ Type `yes` at the prompt. Removes: the `errander-agent` user + home (repo, `.env
 | `ERRANDER_LLM_BASE_URL` | Yes | — | LLM endpoint — any OpenAI-compatible API (cloud, Ollama, LM Studio, or vLLM) |
 | `ERRANDER_LLM_MODEL` | Yes | — | Model ID for the chosen provider, e.g. `gpt-4o-mini`, `qwen3:8b`, `Qwen/Qwen3-8B-AWQ` |
 | `ERRANDER_LLM_API_KEY` | No | `not-needed` | API key if your LLM server requires auth (required for Azure Foundry, OpenAI, Groq, etc.) |
-| `ERRANDER_AUDIT_DB_URL` | No | `errander.sqlite` | SQLite file path |
+| `ERRANDER_AUDIT_DB_URL` | No | `errander.sqlite` | SQLite file path OR `postgresql+asyncpg://user:pass@host/db` (requires `--extra postgres`) |
 | `ERRANDER_SLACK_BOT_TOKEN` | No | — | Slack bot token (`xoxb-...`). If omitted, approval falls back to web UI at `/ui/approvals` |
 | `ERRANDER_SLACK_CHANNEL_ID` | No | — | Slack approvals channel ID (`C...`). Required if `ERRANDER_SLACK_BOT_TOKEN` is set |
 | `ERRANDER_LLM_TEMPERATURE` | No | `0.1` | Sampling temperature (0.0–2.0; keep low for JSON output) |

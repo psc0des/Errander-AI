@@ -15,8 +15,10 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
+from sqlalchemy import text
+
 if TYPE_CHECKING:
-    import aiosqlite
+    from errander.db.core import AsyncDatabase
 
 logger = logging.getLogger(__name__)
 
@@ -71,47 +73,44 @@ def _parse_ts(s: str) -> datetime:
 
 
 async def compute_durability_report(
-    db: aiosqlite.Connection,
+    db: AsyncDatabase,
     window_days: int,
 ) -> DurabilityReport:
-    """Query audit_events and compute a DurabilityReport.
-
-    Args:
-        db: Open aiosqlite connection with migrations applied.
-        window_days: Look-back window in days.
-
-    Returns:
-        Populated DurabilityReport dataclass.
-    """
+    """Query audit_events and compute a DurabilityReport."""
     cutoff = (datetime.now(tz=UTC) - timedelta(days=window_days)).isoformat()
 
     # ── 1. Batch starts in window ───────────────────────────────────────────
-    batch_start_rows = await db.execute_fetchall(
-        """
-        SELECT batch_id, MIN(timestamp) AS start_at
-        FROM audit_events
-        WHERE event_type = 'batch_started' AND timestamp >= ?
-        GROUP BY batch_id
-        """,
-        [cutoff],
-    )
+    async with db.begin() as conn:
+        result = await conn.execute(
+            text("""
+            SELECT batch_id, MIN(timestamp) AS start_at
+            FROM audit_events
+            WHERE event_type = 'batch_started' AND timestamp >= :cutoff
+            GROUP BY batch_id
+            """),
+            {"cutoff": cutoff},
+        )
+        batch_start_rows = result.fetchall()
+
     batch_starts: dict[str, str] = {str(r[0]): str(r[1]) for r in batch_start_rows}
     total_batches = len(batch_starts)
 
     # ── 2. Batch terminal events ────────────────────────────────────────────
-    batch_term_rows = await db.execute_fetchall(
-        """
-        SELECT batch_id, event_type, MIN(timestamp) AS end_at
-        FROM audit_events
-        WHERE event_type IN ('batch_completed', 'fleet_abort')
-          AND batch_id IN (
-              SELECT DISTINCT batch_id FROM audit_events
-              WHERE event_type = 'batch_started' AND timestamp >= ?
-          )
-        GROUP BY batch_id, event_type
-        """,
-        [cutoff],
-    )
+    async with db.begin() as conn:
+        result = await conn.execute(
+            text("""
+            SELECT batch_id, event_type, MIN(timestamp) AS end_at
+            FROM audit_events
+            WHERE event_type IN ('batch_completed', 'fleet_abort')
+              AND batch_id IN (
+                  SELECT DISTINCT batch_id FROM audit_events
+                  WHERE event_type = 'batch_started' AND timestamp >= :cutoff
+              )
+            GROUP BY batch_id, event_type
+            """),
+            {"cutoff": cutoff},
+        )
+        batch_term_rows = result.fetchall()
 
     batch_completed: dict[str, str] = {}
     batch_aborted: dict[str, str] = {}
@@ -141,25 +140,31 @@ async def compute_durability_report(
             pass
 
     # ── 4. Approval wait stats ───────────────────────────────────────────────
-    appr_req_rows = await db.execute_fetchall(
-        """
-        SELECT batch_id, MIN(timestamp) AS req_at
-        FROM audit_events
-        WHERE event_type = 'approval_requested' AND timestamp >= ?
-        GROUP BY batch_id
-        """,
-        [cutoff],
-    )
+    async with db.begin() as conn:
+        result = await conn.execute(
+            text("""
+            SELECT batch_id, MIN(timestamp) AS req_at
+            FROM audit_events
+            WHERE event_type = 'approval_requested' AND timestamp >= :cutoff
+            GROUP BY batch_id
+            """),
+            {"cutoff": cutoff},
+        )
+        appr_req_rows = result.fetchall()
+
     appr_reqs: dict[str, str] = {str(r[0]): str(r[1]) for r in appr_req_rows}
 
-    appr_term_rows = await db.execute_fetchall(
-        """
-        SELECT batch_id, event_type, MIN(timestamp) AS resp_at
-        FROM audit_events
-        WHERE event_type IN ('approval_granted', 'approval_rejected', 'approval_timeout')
-        GROUP BY batch_id, event_type
-        """,
-    )
+    async with db.begin() as conn:
+        result = await conn.execute(
+            text("""
+            SELECT batch_id, event_type, MIN(timestamp) AS resp_at
+            FROM audit_events
+            WHERE event_type IN ('approval_granted', 'approval_rejected', 'approval_timeout')
+            GROUP BY batch_id, event_type
+            """),
+        )
+        appr_term_rows = result.fetchall()
+
     appr_terms: dict[str, tuple[str, str]] = {}
     for row in appr_term_rows:
         bid, etype, ts = str(row[0]), str(row[1]), str(row[2])
@@ -186,26 +191,31 @@ async def compute_durability_report(
             rejected_count += 1
 
     # ── 5. Per-action duration stats ─────────────────────────────────────────
-    act_start_rows = await db.execute_fetchall(
-        """
-        SELECT batch_id, COALESCE(vm_id, ''), action_type, MIN(timestamp) AS start_at
-        FROM audit_events
-        WHERE event_type = 'action_started' AND timestamp >= ?
-          AND action_type IS NOT NULL
-        GROUP BY batch_id, COALESCE(vm_id, ''), action_type
-        """,
-        [cutoff],
-    )
+    async with db.begin() as conn:
+        result = await conn.execute(
+            text("""
+            SELECT batch_id, COALESCE(vm_id, ''), action_type, MIN(timestamp) AS start_at
+            FROM audit_events
+            WHERE event_type = 'action_started' AND timestamp >= :cutoff
+              AND action_type IS NOT NULL
+            GROUP BY batch_id, COALESCE(vm_id, ''), action_type
+            """),
+            {"cutoff": cutoff},
+        )
+        act_start_rows = result.fetchall()
 
-    act_term_rows = await db.execute_fetchall(
-        """
-        SELECT batch_id, COALESCE(vm_id, ''), action_type, MIN(timestamp) AS end_at
-        FROM audit_events
-        WHERE event_type IN ('action_completed', 'action_failed')
-          AND action_type IS NOT NULL
-        GROUP BY batch_id, COALESCE(vm_id, ''), action_type
-        """,
-    )
+    async with db.begin() as conn:
+        result = await conn.execute(
+            text("""
+            SELECT batch_id, COALESCE(vm_id, ''), action_type, MIN(timestamp) AS end_at
+            FROM audit_events
+            WHERE event_type IN ('action_completed', 'action_failed')
+              AND action_type IS NOT NULL
+            GROUP BY batch_id, COALESCE(vm_id, ''), action_type
+            """),
+        )
+        act_term_rows = result.fetchall()
+
     act_term_map: dict[tuple[str, str, str], str] = {
         (str(r[0]), str(r[1]), str(r[2])): str(r[3])
         for r in act_term_rows

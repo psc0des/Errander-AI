@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-import aiosqlite
 import pytest
 import pytest_asyncio
 
+from errander.db.core import AsyncDatabase
 from errander.models.batches import BatchRecord, BatchStatus
 from errander.safety.batches import BatchStore
 from errander.safety.migrations import run_migrations
@@ -16,10 +16,12 @@ from errander.safety.migrations import run_migrations
 
 @pytest_asyncio.fixture
 async def db():
-    """In-memory aiosqlite DB with all migrations applied."""
-    async with aiosqlite.connect(":memory:") as conn:
-        await run_migrations(conn)
-        yield conn
+    """In-memory AsyncDatabase with all migrations applied."""
+    db = AsyncDatabase(":memory:")
+    async with db.begin() as conn:
+        await run_migrations(conn, "sqlite")
+    yield db
+    await db.close()
 
 
 @pytest_asyncio.fixture

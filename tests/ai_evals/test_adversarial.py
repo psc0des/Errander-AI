@@ -18,6 +18,7 @@ import pytest
 from openai import APIConnectionError, APITimeoutError
 
 from errander.agent.decisions import _INJECTION_RE, _parse_action_types, prioritize_actions
+from errander.db.core import AsyncDatabase
 from errander.models.actions import ActionType
 from errander.models.vm import OSFamily, VMInfo
 from errander.safety.ai_audit import AIDecisionStore
@@ -200,7 +201,7 @@ class TestAuditOutcomesOnErrors:
     @pytest.mark.asyncio
     async def test_no_llm_outcome_logged_as_no_llm(self) -> None:
         vm = _vm()
-        async with AIDecisionStore(":memory:") as store:
+        async with AIDecisionStore(AsyncDatabase(":memory:")) as store:
             await prioritize_actions(
                 vm,
                 llm_client=None,
@@ -218,7 +219,7 @@ class TestAuditOutcomesOnErrors:
         client._model = "mock-model"
         client._base_url = "http://mock"
         client.complete = AsyncMock(return_value=None)
-        async with AIDecisionStore(":memory:") as store:
+        async with AIDecisionStore(AsyncDatabase(":memory:")) as store:
             await prioritize_actions(
                 vm,
                 llm_client=client,
@@ -233,7 +234,7 @@ class TestAuditOutcomesOnErrors:
     async def test_injection_fallback_outcome_is_fallback_not_success(self) -> None:
         vm = _vm()
         llm = _mock_llm_with_action_types(["patching; rm -rf /", "disk_cleanup$(id)"])
-        async with AIDecisionStore(":memory:") as store:
+        async with AIDecisionStore(AsyncDatabase(":memory:")) as store:
             await prioritize_actions(
                 vm,
                 llm_client=llm,

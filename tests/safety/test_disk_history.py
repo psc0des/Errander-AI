@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
-import pytest
-
+from errander.db.core import AsyncDatabase
 from errander.safety.disk_history import VMDiskHistoryStore
 from errander.safety.migrations import run_migrations
 
@@ -13,11 +12,10 @@ _GB = 1_000_000_000
 
 
 async def _make_store() -> VMDiskHistoryStore:
-    store = VMDiskHistoryStore(":memory:")
-    await store.initialize()
-    assert store._db is not None
-    await run_migrations(store._db)
-    return store
+    db = AsyncDatabase(":memory:")
+    async with db.begin() as conn:
+        await run_migrations(conn, "sqlite")
+    return VMDiskHistoryStore(db)
 
 
 def _ts(days_ago: int = 0) -> datetime:
@@ -26,16 +24,16 @@ def _ts(days_ago: int = 0) -> datetime:
 
 class TestVMDiskHistoryStoreLifecycle:
     async def test_context_manager(self) -> None:
-        store = VMDiskHistoryStore(":memory:")
-        await store.initialize()
-        assert store._db is not None
-        await store.close()
-        assert store._db is None
+        db = AsyncDatabase(":memory:")
+        async with db.begin() as conn:
+            await run_migrations(conn, "sqlite")
+        async with VMDiskHistoryStore(db) as store:
+            assert store._db is db
 
-    async def test_operations_without_init_raise(self) -> None:
-        store = VMDiskHistoryStore(":memory:")
-        with pytest.raises(RuntimeError, match="not initialized"):
-            await store.get_window("dev/web-01", "/", 7)
+    async def test_double_close_is_safe(self) -> None:
+        store = await _make_store()
+        await store.close()
+        await store.close()
 
 
 class TestVMDiskHistoryRecord:

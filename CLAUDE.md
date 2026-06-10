@@ -13,7 +13,7 @@ A supervised agentic AI SRE platform that eliminates operational toil while keep
 - Notifications & Approval: Slack API (outbound HTTPS only, polling-based approval via reactions)
 - Scheduling: APScheduler (built-in, agent owns its own schedule)
 - Observability: Prometheus + Grafana (metrics + dashboards) + structured JSON logging
-- Database: SQLite v1, PostgreSQL v2 (audit trail, scan history, reports)
+- Database: SQLite default (zero-config, `aiosqlite`), PostgreSQL optional (`uv sync --extra postgres`, `asyncpg`) — dual-backend via SQLAlchemy Core async + `AsyncDatabase` wrapper (`errander/db/core.py`)
 - Queue/Cache: Valkey v2 (BSD-licensed Redis fork) for VM locking and approval queues
 - Testing: pytest + pytest-asyncio
 - Linting: ruff

@@ -28,10 +28,10 @@ import time
 from typing import TYPE_CHECKING, Any
 
 import aiohttp
+from sqlalchemy import text
 
 if TYPE_CHECKING:
-    import aiosqlite
-
+    from errander.db.core import AsyncDatabase
     from errander.models.vm import VMTarget
 
 logger = logging.getLogger(__name__)
@@ -227,7 +227,7 @@ class MetricsCollector:
 
     async def collect_all(
         self,
-        db: aiosqlite.Connection,
+        db: AsyncDatabase,
         targets: list[VMTarget],
     ) -> None:
         """Probe all VMs concurrently and write results to the DB.
@@ -243,16 +243,20 @@ class MetricsCollector:
             if not metrics:
                 return
             rows = [
-                (target.hostname, metric, value, ts)
+                {"hostname": target.hostname, "metric": metric, "value_pct": value, "ts": ts}
                 for metric, value in metrics.items()
             ]
             try:
-                await db.executemany(
-                    "INSERT OR REPLACE INTO vm_metrics "
-                    "(hostname, metric, value_pct, ts) VALUES (?, ?, ?, ?)",
-                    rows,
-                )
-                await db.commit()
+                async with db.begin() as conn:
+                    await conn.execute(
+                        text(
+                            "INSERT INTO vm_metrics (hostname, metric, value_pct, ts) "
+                            "VALUES (:hostname, :metric, :value_pct, :ts) "
+                            "ON CONFLICT(hostname, metric, ts) DO UPDATE SET "
+                            "value_pct = EXCLUDED.value_pct"
+                        ),
+                        rows,
+                    )
             except Exception as exc:  # noqa: BLE001
                 logger.warning(
                     "vm_metrics write failed for %s: %s", target.vm_id, exc
@@ -479,14 +483,17 @@ class MetricsCollector:
 # ---------------------------------------------------------------------------
 
 async def cleanup_old_metrics(
-    db: aiosqlite.Connection,
+    db: AsyncDatabase,
     retention_days: int = 8,
 ) -> None:
     """Delete rows older than retention_days from vm_metrics. Called hourly."""
     cutoff = int(time.time()) - retention_days * 86400
     try:
-        await db.execute("DELETE FROM vm_metrics WHERE ts < ?", (cutoff,))
-        await db.commit()
+        async with db.begin() as conn:
+            await conn.execute(
+                text("DELETE FROM vm_metrics WHERE ts < :cutoff"),
+                {"cutoff": cutoff},
+            )
         logger.debug(
             "cleanup_old_metrics: deleted rows older than %d days", retention_days
         )
@@ -511,7 +518,7 @@ _WINDOWS: dict[str, tuple[int, int]] = {
 
 
 async def query_metrics(
-    db: aiosqlite.Connection,
+    db: AsyncDatabase,
     hostname: str,
     window: str,
 ) -> dict[str, Any]:
@@ -541,8 +548,9 @@ async def query_metrics(
     """
     result: dict[str, Any] = {"cpu": [], "mem": [], "disk": {}}
     try:
-        cursor = await db.execute(sql, {"b": bucket, "h": hostname, "since": since})
-        rows = await cursor.fetchall()
+        async with db.begin() as conn:
+            db_result = await conn.execute(text(sql), {"b": bucket, "h": hostname, "since": since})
+            rows = db_result.fetchall()
     except Exception as exc:  # noqa: BLE001
         logger.warning("query_metrics %s %s: %s", hostname, window, exc)
         return result

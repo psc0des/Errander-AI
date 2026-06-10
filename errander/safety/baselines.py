@@ -16,10 +16,12 @@ import json
 import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
-import aiosqlite
+from sqlalchemy import text
 
+if TYPE_CHECKING:
+    from errander.db.core import AsyncDatabase
 logger = logging.getLogger(__name__)
 
 
@@ -75,24 +77,12 @@ class BaselineComparison:
 
 
 class DriftCheck(Protocol):
-    """Interface for per-kind drift checks.
-
-    Each concrete implementation captures one type of resource snapshot
-    from a remote VM via SSH and returns one BaselineCapture per scope_key.
-    """
+    """Interface for per-kind drift checks."""
 
     kind: str
 
     async def capture(self, ssh: object, vm: object) -> list[BaselineCapture]:
-        """Capture the current resource state.
-
-        Args:
-            ssh: An open asyncssh connection or connection manager.
-            vm: The VMTarget being scanned.
-
-        Returns:
-            One BaselineCapture per scope_key.  Empty list on unrecoverable error.
-        """
+        """Capture the current resource state."""
         ...
 
 
@@ -102,32 +92,28 @@ class DriftCheck(Protocol):
 
 
 class BaselineStore:
-    """Async SQLite-backed store for per-kind drift baselines.
+    """Async database-backed store for per-kind drift baselines.
 
-    The caller (AuditStore) must have already run migrations so the
-    vm_baselines table exists before this store is used.
+    The caller must have already run migrations so the vm_baselines table exists.
 
-    Usage:
-        async with BaselineStore("errander.sqlite") as store:
+    Usage::
+
+        db = AsyncDatabase("errander.sqlite")
+        async with BaselineStore(db) as store:
             comparison = await store.compare_and_save("prod/web-01", capture)
             if comparison.changed:
                 print(comparison.unified_diff)
     """
 
-    def __init__(self, db_path: str, retention_captures: int = 30) -> None:
-        self._db_path = db_path
+    def __init__(self, db: AsyncDatabase, retention_captures: int = 30) -> None:
+        self._db = db
         self._retention = retention_captures
-        self._db: aiosqlite.Connection | None = None
 
     async def initialize(self) -> None:
-        """Open the database connection."""
-        self._db = await aiosqlite.connect(self._db_path)
+        pass
 
     async def close(self) -> None:
-        """Close the database connection."""
-        if self._db is not None:
-            await self._db.close()
-            self._db = None
+        await self._db.close()
 
     async def __aenter__(self) -> BaselineStore:
         await self.initialize()
@@ -136,39 +122,25 @@ class BaselineStore:
     async def __aexit__(self, *args: object) -> None:
         await self.close()
 
-    def _ensure_connected(self) -> aiosqlite.Connection:
-        if self._db is None:
-            msg = (
-                "BaselineStore not initialized — call initialize() or use as async context manager"
-            )
-            raise RuntimeError(msg)
-        return self._db
-
     async def latest(
         self,
         vm_id: str,
         kind: str,
         scope_key: str = "",
     ) -> BaselineCapture | None:
-        """Return the most recent baseline for (vm_id, kind, scope_key), or None.
-
-        Args:
-            vm_id: VM identifier.
-            kind: Resource type.
-            scope_key: Per-scope discriminator ('' for single-scope kinds).
-        """
-        db = self._ensure_connected()
-        cursor = await db.execute(
-            """
-            SELECT baseline_kind, scope_key, content_blob, metadata
-            FROM vm_baselines
-            WHERE vm_id = ? AND baseline_kind = ? AND scope_key = ?
-            ORDER BY captured_at DESC, id DESC
-            LIMIT 1
-            """,
-            (vm_id, kind, scope_key),
-        )
-        row = await cursor.fetchone()
+        """Return the most recent baseline for (vm_id, kind, scope_key), or None."""
+        async with self._db.begin() as conn:
+            result = await conn.execute(
+                text("""
+                SELECT baseline_kind, scope_key, content_blob, metadata
+                FROM vm_baselines
+                WHERE vm_id = :vm_id AND baseline_kind = :kind AND scope_key = :scope_key
+                ORDER BY captured_at DESC, id DESC
+                LIMIT 1
+                """),
+                {"vm_id": vm_id, "kind": kind, "scope_key": scope_key},
+            )
+            row = result.fetchone()
         if row is None:
             return None
 
@@ -189,49 +161,54 @@ class BaselineStore:
         )
 
     async def save(self, vm_id: str, capture: BaselineCapture) -> None:
-        """Persist a new baseline capture and prune old rows.
-
-        Args:
-            vm_id: VM identifier.
-            capture: The snapshot to persist.
-        """
-        db = self._ensure_connected()
+        """Persist a new baseline capture and prune old rows."""
         now = datetime.now(tz=UTC).isoformat()
         meta_json = json.dumps(capture.metadata, ensure_ascii=False)
 
-        await db.execute(
-            """
-            INSERT INTO vm_baselines
-                (vm_id, baseline_kind, scope_key, captured_at, content_hash, content_blob, metadata)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                vm_id,
-                capture.kind,
-                capture.scope_key,
-                now,
-                capture.content_hash,
-                capture.content,
-                meta_json,
-            ),
-        )
-        await db.commit()
-        await self._prune(db, vm_id, capture.kind, capture.scope_key)
+        async with self._db.begin() as conn:
+            await conn.execute(
+                text("""
+                INSERT INTO vm_baselines
+                    (vm_id, baseline_kind, scope_key, captured_at, content_hash, content_blob, metadata)
+                VALUES (:vm_id, :kind, :scope_key, :captured_at, :content_hash, :content_blob, :metadata)
+                """),
+                {
+                    "vm_id": vm_id,
+                    "kind": capture.kind,
+                    "scope_key": capture.scope_key,
+                    "captured_at": now,
+                    "content_hash": capture.content_hash,
+                    "content_blob": capture.content,
+                    "metadata": meta_json,
+                },
+            )
+            # Prune within the same transaction to keep retention consistent.
+            await conn.execute(
+                text("""
+                DELETE FROM vm_baselines
+                WHERE vm_id = :vm_id AND baseline_kind = :kind AND scope_key = :scope_key
+                  AND id NOT IN (
+                      SELECT id
+                      FROM vm_baselines
+                      WHERE vm_id = :vm_id AND baseline_kind = :kind AND scope_key = :scope_key
+                      ORDER BY captured_at DESC, id DESC
+                      LIMIT :retention
+                  )
+                """),
+                {
+                    "vm_id": vm_id,
+                    "kind": capture.kind,
+                    "scope_key": capture.scope_key,
+                    "retention": self._retention,
+                },
+            )
 
     async def compare_and_save(
         self,
         vm_id: str,
         capture: BaselineCapture,
     ) -> BaselineComparison:
-        """Compare capture against the latest stored baseline, then save it.
-
-        Returns a BaselineComparison describing whether this is the first run,
-        whether the content changed, and (if changed) a unified diff.
-
-        Args:
-            vm_id: VM identifier.
-            capture: Freshly captured resource snapshot.
-        """
+        """Compare capture against the latest stored baseline, then save it."""
         previous = await self.latest(vm_id, capture.kind, capture.scope_key)
         await self.save(vm_id, capture)
 
@@ -268,27 +245,3 @@ class BaselineStore:
             current=capture,
             unified_diff="".join(diff_lines),
         )
-
-    async def _prune(
-        self,
-        db: aiosqlite.Connection,
-        vm_id: str,
-        kind: str,
-        scope_key: str,
-    ) -> None:
-        """Delete rows beyond retention_captures for (vm_id, kind, scope_key)."""
-        await db.execute(
-            """
-            DELETE FROM vm_baselines
-            WHERE vm_id = ? AND baseline_kind = ? AND scope_key = ?
-              AND id NOT IN (
-                  SELECT id
-                  FROM vm_baselines
-                  WHERE vm_id = ? AND baseline_kind = ? AND scope_key = ?
-                  ORDER BY captured_at DESC, id DESC
-                  LIMIT ?
-              )
-            """,
-            (vm_id, kind, scope_key, vm_id, kind, scope_key, self._retention),
-        )
-        await db.commit()

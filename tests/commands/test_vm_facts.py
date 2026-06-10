@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
-import aiosqlite
 import pytest
+from sqlalchemy import text
 
 from errander.commands.vm_facts import cmd_vm_facts
+from errander.db.core import AsyncDatabase
 from errander.safety.migrations import run_migrations
 
 # ---------------------------------------------------------------------------
@@ -19,32 +20,35 @@ from errander.safety.migrations import run_migrations
 async def db_path(tmp_path):
     """In-file SQLite DB with schema applied."""
     path = str(tmp_path / "test.sqlite")
-    async with aiosqlite.connect(path) as db:
-        await run_migrations(db)
+    db = AsyncDatabase(path)
+    async with db.begin() as conn:
+        await run_migrations(conn, "sqlite")
+    await db.close()
     return path
 
 
 async def _insert_events(db_path: str, rows: list[dict]) -> None:
     """Insert raw audit_events rows for test setup."""
-    async with aiosqlite.connect(db_path) as db:
+    db = AsyncDatabase(db_path)
+    async with db.begin() as conn:
         for r in rows:
-            await db.execute(
-                """
-                INSERT INTO audit_events
-                  (event_type, batch_id, vm_id, action_type, detail, metadata, timestamp)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    r.get("event_type", "action_completed"),
-                    r.get("batch_id", "batch-1"),
-                    r.get("vm_id"),
-                    r.get("action_type"),
-                    r.get("detail", ""),
-                    r.get("metadata", "{}"),
-                    r.get("timestamp", datetime.now(tz=UTC).isoformat()),
+            await conn.execute(
+                text(
+                    "INSERT INTO audit_events"
+                    " (event_type, batch_id, vm_id, action_type, detail, metadata, timestamp)"
+                    " VALUES (:et, :bid, :vid, :at, :det, :meta, :ts)"
                 ),
+                {
+                    "et": r.get("event_type", "action_completed"),
+                    "bid": r.get("batch_id", "batch-1"),
+                    "vid": r.get("vm_id"),
+                    "at": r.get("action_type"),
+                    "det": r.get("detail", ""),
+                    "meta": r.get("metadata", "{}"),
+                    "ts": r.get("timestamp", datetime.now(tz=UTC).isoformat()),
+                },
             )
-        await db.commit()
+    await db.close()
 
 
 def _make_args(vm_id: str | None = None, action: str | None = None):

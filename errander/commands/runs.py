@@ -16,6 +16,8 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+from errander.db.core import AsyncDatabase
+
 if TYPE_CHECKING:
     import argparse
 
@@ -28,15 +30,15 @@ logger = logging.getLogger(__name__)
 
 async def run_list(db_path: str, limit: int = 20) -> int:
     """Print a table of recent batches."""
-    import aiosqlite
-
     from errander.safety.batches import BatchStore
     from errander.safety.migrations import run_migrations
 
-    async with aiosqlite.connect(db_path) as db:
-        await run_migrations(db)
-        store = BatchStore(db)
-        batches = await store.list_recent(limit=limit)
+    db = AsyncDatabase(db_path)
+    async with db.begin() as conn:
+        await run_migrations(conn, db.dialect)
+    store = BatchStore(db)
+    batches = await store.list_recent(limit=limit)
+    await db.close()
 
     if not batches:
         print("No batch runs recorded.")
@@ -75,15 +77,15 @@ async def run_list(db_path: str, limit: int = 20) -> int:
 
 async def run_inspect(db_path: str, batch_id: str) -> int:
     """Print full details for one batch including LangGraph checkpoint state."""
-    import aiosqlite
-
     from errander.safety.batches import BatchStore
     from errander.safety.migrations import run_migrations
 
-    async with aiosqlite.connect(db_path) as db:
-        await run_migrations(db)
-        store = BatchStore(db)
-        rec = await store.get(batch_id)
+    db = AsyncDatabase(db_path)
+    async with db.begin() as conn:
+        await run_migrations(conn, db.dialect)
+    store = BatchStore(db)
+    rec = await store.get(batch_id)
+    await db.close()
 
     if rec is None:
         print(f"Batch {batch_id!r} not found.")
@@ -159,8 +161,6 @@ async def run_resume(db_path: str, batch_id: str, *, force: bool = False) -> int
       - If force=True (OPERATOR_FORCE_RESUME): resumes regardless of node,
         emits a NEEDS_OPERATOR_REVIEW audit event for the record.
     """
-    import aiosqlite
-
     from errander.agent.graph import SAFE_RESUME_NODES
     from errander.models.batches import BatchStatus
     from errander.models.events import AuditEvent, EventType
@@ -168,10 +168,11 @@ async def run_resume(db_path: str, batch_id: str, *, force: bool = False) -> int
     from errander.safety.batches import BatchStore
     from errander.safety.migrations import run_migrations
 
-    async with aiosqlite.connect(db_path) as db:
-        await run_migrations(db)
-        store = BatchStore(db)
-        rec = await store.get(batch_id)
+    db = AsyncDatabase(db_path)
+    async with db.begin() as conn:
+        await run_migrations(conn, db.dialect)
+    store = BatchStore(db)
+    rec = await store.get(batch_id)
 
     if rec is None:
         print(f"Batch {batch_id!r} not found.")
@@ -203,19 +204,20 @@ async def run_resume(db_path: str, batch_id: str, *, force: bool = False) -> int
             "Use --force to override (OPERATOR_FORCE_RESUME — adds audit event)."
         )
         # Mark as NEEDS_OPERATOR_REVIEW so ops dashboard highlights it
-        async with aiosqlite.connect(db_path) as db2:
-            store2 = BatchStore(db2)
-            await store2.update_status(
-                batch_id,
-                BatchStatus.NEEDS_OPERATOR_REVIEW,
-                error=f"crashed at unsafe node {next_node!r} — operator review required",
-            )
+        db2 = AsyncDatabase(db_path)
+        store2 = BatchStore(db2)
+        await store2.update_status(
+            batch_id,
+            BatchStatus.NEEDS_OPERATOR_REVIEW,
+            error=f"crashed at unsafe node {next_node!r} — operator review required",
+        )
+        await db2.close()
         print(f"Batch {batch_id} status set to NEEDS_OPERATOR_REVIEW.")
         return 1
 
     if force and next_node not in SAFE_RESUME_NODES:
         # Emit OPERATOR_FORCE_RESUME audit event
-        audit_store = AuditStore(db_path, strict_mode=False)
+        audit_store = AuditStore(AsyncDatabase(db_path), strict_mode=False)
         await audit_store.initialize()
         await audit_store.log_event(AuditEvent(
             event_type=EventType.OPERATOR_FORCE_RESUME,

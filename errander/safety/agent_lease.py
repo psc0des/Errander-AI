@@ -1,8 +1,8 @@
 """Agent lease — single-process enforcement for Errander-AI.
 
 Prevents two agent processes from running simultaneously against the same
-SQLite database, which would corrupt LangGraph checkpoints and produce
-duplicate batch audit events.
+database, which would corrupt LangGraph checkpoints and produce duplicate
+batch audit events.
 
 The lease is a single row in the ``agent_lease`` table (migration #7).
 On startup, the agent calls ``acquire()`` — it succeeds if the table is
@@ -14,8 +14,8 @@ Design notes:
   - TTL default: 90 seconds.  An agent that crashes without releasing
     the lease will be evicted after 90 s of silence.
   - Heartbeat default: 30 seconds (TTL / 3 — keeps headroom).
-  - NOT a distributed lock — SQLite is single-writer.  The lease is
-    a safety net against accidental concurrent runs, not a cluster lock.
+  - NOT a distributed lock — the lease is a safety net against accidental
+    concurrent runs, not a cluster lock.
   - The table holds at most one row (PRIMARY KEY on a fixed ``id = 1``).
 """
 
@@ -27,9 +27,10 @@ import socket
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:
-    import aiosqlite
+from sqlalchemy import text
 
+if TYPE_CHECKING:
+    from errander.db.core import AsyncDatabase
 logger = logging.getLogger(__name__)
 
 _LEASE_TTL_SECONDS = 90
@@ -44,7 +45,7 @@ class AgentLease:
     """Read/write the ``agent_lease`` table.
 
     Args:
-        db: Open aiosqlite connection.  Caller owns the lifecycle.
+        db: AsyncDatabase.  Caller owns the lifecycle.
         ttl_seconds: Seconds after which a silent lease is considered expired.
         pid: Process ID (defaults to ``os.getpid()``).
         hostname: Hostname (defaults to ``socket.gethostname()``).
@@ -52,7 +53,7 @@ class AgentLease:
 
     def __init__(
         self,
-        db: aiosqlite.Connection,
+        db: AsyncDatabase,
         *,
         ttl_seconds: int = _LEASE_TTL_SECONDS,
         pid: int | None = None,
@@ -78,36 +79,45 @@ class AgentLease:
         now = datetime.now(tz=UTC)
         expiry_cutoff = (now - timedelta(seconds=self._ttl)).isoformat()
 
-        # Delete any expired lease (idempotent — no-op if table is empty).
-        await self._db.execute(
-            "DELETE FROM agent_lease WHERE last_heartbeat < ?",
-            (expiry_cutoff,),
-        )
-        await self._db.commit()
-
-        # Check if a live lease exists.
-        cursor = await self._db.execute("SELECT pid, hostname, last_heartbeat FROM agent_lease")
-        row = await cursor.fetchone()
-        if row is not None:
-            pid, hostname, heartbeat = row
-            raise AgentLeaseError(
-                f"Another agent process holds the lease: "
-                f"pid={pid} hostname={hostname} last_heartbeat={heartbeat}. "
-                f"If that process is dead, wait {self._ttl}s for the lease to expire."
+        async with self._db.begin() as conn:
+            # Delete any expired lease (idempotent — no-op if table is empty).
+            await conn.execute(
+                text("DELETE FROM agent_lease WHERE last_heartbeat < :cutoff"),
+                {"cutoff": expiry_cutoff},
             )
 
-        # Insert our lease (REPLACE handles the edge case of two simultaneous acquires).
-        await self._db.execute(
-            """
-            INSERT OR REPLACE INTO agent_lease (id, pid, hostname, acquired_at, last_heartbeat)
-            VALUES (1, ?, ?, ?, ?)
-            """,
-            (self._pid, self._hostname, now.isoformat(), now.isoformat()),
-        )
-        await self._db.commit()
-        logger.info(
-            "Agent lease acquired: pid=%d hostname=%s", self._pid, self._hostname,
-        )
+            # Check if a live lease exists.
+            result = await conn.execute(
+                text("SELECT pid, hostname, last_heartbeat FROM agent_lease")
+            )
+            row = result.fetchone()
+            if row is not None:
+                pid, hostname, heartbeat = row
+                raise AgentLeaseError(
+                    f"Another agent process holds the lease: "
+                    f"pid={pid} hostname={hostname} last_heartbeat={heartbeat}. "
+                    f"If that process is dead, wait {self._ttl}s for the lease to expire."
+                )
+
+            # Insert our lease (ON CONFLICT handles the edge case of two simultaneous acquires).
+            await conn.execute(
+                text("""
+                INSERT INTO agent_lease (id, pid, hostname, acquired_at, last_heartbeat)
+                VALUES (1, :pid, :hostname, :acquired_at, :last_heartbeat)
+                ON CONFLICT(id) DO UPDATE SET
+                    pid            = EXCLUDED.pid,
+                    hostname       = EXCLUDED.hostname,
+                    acquired_at    = EXCLUDED.acquired_at,
+                    last_heartbeat = EXCLUDED.last_heartbeat
+                """),
+                {
+                    "pid": self._pid,
+                    "hostname": self._hostname,
+                    "acquired_at": now.isoformat(),
+                    "last_heartbeat": now.isoformat(),
+                },
+            )
+        logger.info("Agent lease acquired: pid=%d hostname=%s", self._pid, self._hostname)
 
     async def heartbeat(self) -> None:
         """Renew the lease by updating last_heartbeat.
@@ -117,11 +127,11 @@ class AgentLease:
         heartbeat cycle will re-detect the missing lease.
         """
         now = datetime.now(tz=UTC).isoformat()
-        await self._db.execute(
-            "UPDATE agent_lease SET last_heartbeat = ? WHERE id = 1 AND pid = ?",
-            (now, self._pid),
-        )
-        await self._db.commit()
+        async with self._db.begin() as conn:
+            await conn.execute(
+                text("UPDATE agent_lease SET last_heartbeat = :ts WHERE id = 1 AND pid = :pid"),
+                {"ts": now, "pid": self._pid},
+            )
         logger.debug("Agent lease heartbeat: pid=%d", self._pid)
 
     async def release(self) -> None:
@@ -129,11 +139,11 @@ class AgentLease:
 
         Only deletes the row if this process owns it (pid match).
         """
-        await self._db.execute(
-            "DELETE FROM agent_lease WHERE id = 1 AND pid = ?",
-            (self._pid,),
-        )
-        await self._db.commit()
+        async with self._db.begin() as conn:
+            await conn.execute(
+                text("DELETE FROM agent_lease WHERE id = 1 AND pid = :pid"),
+                {"pid": self._pid},
+            )
         logger.info("Agent lease released: pid=%d", self._pid)
 
     # ------------------------------------------------------------------
@@ -142,10 +152,11 @@ class AgentLease:
 
     async def current_holder(self) -> dict[str, object] | None:
         """Return the current lease holder dict, or None if no lease exists."""
-        cursor = await self._db.execute(
-            "SELECT pid, hostname, acquired_at, last_heartbeat FROM agent_lease WHERE id = 1"
-        )
-        row = await cursor.fetchone()
+        async with self._db.begin() as conn:
+            result = await conn.execute(
+                text("SELECT pid, hostname, acquired_at, last_heartbeat FROM agent_lease WHERE id = 1")
+            )
+            row = result.fetchone()
         if row is None:
             return None
         pid, hostname, acquired_at, last_heartbeat = row

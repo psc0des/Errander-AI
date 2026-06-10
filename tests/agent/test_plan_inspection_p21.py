@@ -142,6 +142,7 @@ class TestPlanShowCLI:
         from pathlib import Path
         assert isinstance(tmp_path, Path)
 
+        from errander.db.core import AsyncDatabase
         from errander.main import run_plan_show
         from errander.safety.audit import AuditStore
 
@@ -168,7 +169,7 @@ class TestPlanShowCLI:
             ],
         })
 
-        async with AuditStore(db_path, strict_mode=False) as store:
+        async with AuditStore(AsyncDatabase(db_path), strict_mode=False) as store:
             await store.save_plan_snapshot(
                 plan_id="plan-test",
                 batch_id="batch-test",

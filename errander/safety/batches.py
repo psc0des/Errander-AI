@@ -1,7 +1,7 @@
 """BatchStore — persistent lifecycle tracking for maintenance batch runs.
 
-Wraps the ``batches`` SQLite table (migration #5).  All public methods are
-async and use the shared aiosqlite connection owned by AuditStore.
+Wraps the ``batches`` table (migration #5).  All public methods are async
+and use the shared AsyncDatabase owned by AuditStore.
 
 Lifecycle:
   insert(batch_id, env, dry_run, vm_count)   → RUNNING row
@@ -16,11 +16,12 @@ import logging
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+from sqlalchemy import text
+
 from errander.models.batches import BatchRecord, BatchStatus
 
 if TYPE_CHECKING:
-    import aiosqlite
-
+    from errander.db.core import AsyncDatabase
 logger = logging.getLogger(__name__)
 
 
@@ -28,10 +29,10 @@ class BatchStore:
     """Read/write the ``batches`` table.
 
     Args:
-        db: Open aiosqlite connection.  Caller owns the lifecycle.
+        db: AsyncDatabase shared with the caller.  Caller owns the lifecycle.
     """
 
-    def __init__(self, db: aiosqlite.Connection) -> None:
+    def __init__(self, db: AsyncDatabase) -> None:
         self._db = db
 
     # ------------------------------------------------------------------
@@ -48,19 +49,27 @@ class BatchStore:
     ) -> None:
         """Insert a new RUNNING batch row.
 
-        Idempotent — INSERT OR IGNORE so a crash-restart that re-calls
+        Idempotent — ON CONFLICT DO NOTHING so a crash-restart that re-calls
         init_batch_node does not duplicate the row.
         """
         now = datetime.now(tz=UTC).isoformat()
-        await self._db.execute(
-            """
-            INSERT OR IGNORE INTO batches
-                (id, env_name, status, started_at, finished_at, dry_run, vm_count, error)
-            VALUES (?, ?, ?, ?, NULL, ?, ?, NULL)
-            """,
-            (batch_id, env_name, BatchStatus.RUNNING.value, now, int(dry_run), vm_count),
-        )
-        await self._db.commit()
+        async with self._db.begin() as conn:
+            await conn.execute(
+                text("""
+                INSERT INTO batches
+                    (id, env_name, status, started_at, finished_at, dry_run, vm_count, error)
+                VALUES (:id, :env_name, :status, :started_at, NULL, :dry_run, :vm_count, NULL)
+                ON CONFLICT(id) DO NOTHING
+                """),
+                {
+                    "id": batch_id,
+                    "env_name": env_name,
+                    "status": BatchStatus.RUNNING.value,
+                    "started_at": now,
+                    "dry_run": int(dry_run),
+                    "vm_count": vm_count,
+                },
+            )
         logger.debug("BatchStore: inserted batch %s as RUNNING", batch_id)
 
     async def update_status(
@@ -76,15 +85,21 @@ class BatchStore:
         so a double-call (e.g. from retry on crash) is safe.
         """
         now = datetime.now(tz=UTC).isoformat()
-        await self._db.execute(
-            """
-            UPDATE batches
-               SET status = ?, finished_at = ?, error = ?
-             WHERE id = ? AND status = ?
-            """,
-            (status.value, now, error, batch_id, BatchStatus.RUNNING.value),
-        )
-        await self._db.commit()
+        async with self._db.begin() as conn:
+            await conn.execute(
+                text("""
+                UPDATE batches
+                   SET status = :status, finished_at = :finished_at, error = :error
+                 WHERE id = :id AND status = :running_status
+                """),
+                {
+                    "status": status.value,
+                    "finished_at": now,
+                    "error": error,
+                    "id": batch_id,
+                    "running_status": BatchStatus.RUNNING.value,
+                },
+            )
         logger.debug("BatchStore: batch %s → %s", batch_id, status.value)
 
     # ------------------------------------------------------------------
@@ -93,24 +108,30 @@ class BatchStore:
 
     async def get(self, batch_id: str) -> BatchRecord | None:
         """Return the BatchRecord for *batch_id*, or None if not found."""
-        cursor = await self._db.execute(
-            "SELECT id, env_name, status, started_at, finished_at, dry_run, vm_count, error "
-            "FROM batches WHERE id = ?",
-            (batch_id,),
-        )
-        row = await cursor.fetchone()
+        async with self._db.begin() as conn:
+            result = await conn.execute(
+                text(
+                    "SELECT id, env_name, status, started_at, finished_at, dry_run, vm_count, error "
+                    "FROM batches WHERE id = :id"
+                ),
+                {"id": batch_id},
+            )
+            row = result.fetchone()
         if row is None:
             return None
         return self._row_to_record(tuple(row))
 
     async def list_recent(self, limit: int = 50) -> list[BatchRecord]:
         """Return up to *limit* batches, most-recent first."""
-        cursor = await self._db.execute(
-            "SELECT id, env_name, status, started_at, finished_at, dry_run, vm_count, error "
-            "FROM batches ORDER BY started_at DESC LIMIT ?",
-            (limit,),
-        )
-        rows = await cursor.fetchall()
+        async with self._db.begin() as conn:
+            result = await conn.execute(
+                text(
+                    "SELECT id, env_name, status, started_at, finished_at, dry_run, vm_count, error "
+                    "FROM batches ORDER BY started_at DESC LIMIT :limit"
+                ),
+                {"limit": limit},
+            )
+            rows = result.fetchall()
         return [self._row_to_record(tuple(r)) for r in rows]
 
     # ------------------------------------------------------------------

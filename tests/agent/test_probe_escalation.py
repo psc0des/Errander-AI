@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from errander.agent.probe import _check_escalation, run_env_probe
+from errander.db.core import AsyncDatabase
 from errander.models.reports import ProbeVMResult
 
 # ---------------------------------------------------------------------------
@@ -133,7 +134,7 @@ class TestRunEnvProbeEscalation:
 
         critical_result = _make_result("vm-01", disk_pct=91.0)
 
-        async with AuditStore(":memory:") as store:
+        async with AuditStore(AsyncDatabase(":memory:")) as store:
             with patch("errander.agent.probe.probe_vm", new=AsyncMock(return_value=critical_result)):
                 from errander.config.settings import SRESignalSettings
                 report = await run_env_probe(
@@ -157,7 +158,7 @@ class TestRunEnvProbeEscalation:
 
         healthy_result = _make_result("vm-01", disk_pct=50.0)
 
-        async with AuditStore(":memory:") as store:
+        async with AuditStore(AsyncDatabase(":memory:")) as store:
             with patch("errander.agent.probe.probe_vm", new=AsyncMock(return_value=healthy_result)):
                 from errander.config.settings import SRESignalSettings
                 report = await run_env_probe(

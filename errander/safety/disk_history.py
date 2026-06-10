@@ -13,9 +13,12 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from typing import TYPE_CHECKING, Any
 
-import aiosqlite
+from sqlalchemy import text
 
+if TYPE_CHECKING:
+    from errander.db.core import AsyncDatabase
 logger = logging.getLogger(__name__)
 
 
@@ -37,29 +40,25 @@ class DiskDataPoint:
 
 
 class VMDiskHistoryStore:
-    """Async SQLite-backed store for per-VM disk usage history.
+    """Async database-backed store for per-VM disk usage history.
 
-    The caller (AuditStore) must have already run migrations so the
-    vm_disk_history table exists before this store is used.
+    The caller must have already run migrations so the vm_disk_history table exists.
 
-    Usage:
-        async with VMDiskHistoryStore("errander.sqlite") as store:
+    Usage::
+
+        db = AsyncDatabase("errander.sqlite")
+        async with VMDiskHistoryStore(db) as store:
             await store.record_batch("prod/web-01", [("/", 10*GB, 50*GB)])
     """
 
-    def __init__(self, db_path: str) -> None:
-        self._db_path = db_path
-        self._db: aiosqlite.Connection | None = None
+    def __init__(self, db: AsyncDatabase) -> None:
+        self._db = db
 
     async def initialize(self) -> None:
-        """Open the database connection."""
-        self._db = await aiosqlite.connect(self._db_path)
+        pass
 
     async def close(self) -> None:
-        """Close the database connection."""
-        if self._db is not None:
-            await self._db.close()
-            self._db = None
+        await self._db.close()
 
     async def __aenter__(self) -> VMDiskHistoryStore:
         await self.initialize()
@@ -67,15 +66,6 @@ class VMDiskHistoryStore:
 
     async def __aexit__(self, *args: object) -> None:
         await self.close()
-
-    def _ensure_connected(self) -> aiosqlite.Connection:
-        if self._db is None:
-            msg = (
-                "VMDiskHistoryStore not initialized — call initialize() or use as "
-                "async context manager"
-            )
-            raise RuntimeError(msg)
-        return self._db
 
     async def record(
         self,
@@ -85,23 +75,17 @@ class VMDiskHistoryStore:
         total_bytes: int,
         captured_at: datetime | None = None,
     ) -> None:
-        """Record a single mountpoint measurement.
-
-        Args:
-            vm_id: VM identifier.
-            mountpoint: Mount path (e.g. '/', '/var').
-            used_bytes: Bytes in use.
-            total_bytes: Total filesystem capacity.
-            captured_at: Timestamp override (defaults to now UTC).
-        """
-        db = self._ensure_connected()
+        """Record a single mountpoint measurement."""
         ts = (captured_at or datetime.now(tz=UTC)).isoformat()
-        await db.execute(
-            "INSERT INTO vm_disk_history (vm_id, captured_at, mountpoint, used_bytes, total_bytes) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (vm_id, ts, mountpoint, used_bytes, total_bytes),
-        )
-        await db.commit()
+        async with self._db.begin() as conn:
+            await conn.execute(
+                text(
+                    "INSERT INTO vm_disk_history (vm_id, captured_at, mountpoint, used_bytes, total_bytes) "
+                    "VALUES (:vm_id, :captured_at, :mountpoint, :used_bytes, :total_bytes)"
+                ),
+                {"vm_id": vm_id, "captured_at": ts, "mountpoint": mountpoint,
+                 "used_bytes": used_bytes, "total_bytes": total_bytes},
+            )
 
     async def record_batch(
         self,
@@ -109,23 +93,23 @@ class VMDiskHistoryStore:
         datapoints: list[tuple[str, int, int]],
         captured_at: datetime | None = None,
     ) -> None:
-        """Record multiple mountpoints in a single transaction.
-
-        Args:
-            vm_id: VM identifier.
-            datapoints: List of (mountpoint, used_bytes, total_bytes) tuples.
-            captured_at: Shared timestamp for all datapoints (defaults to now UTC).
-        """
+        """Record multiple mountpoints in a single transaction."""
         if not datapoints:
             return
-        db = self._ensure_connected()
         ts = (captured_at or datetime.now(tz=UTC)).isoformat()
-        await db.executemany(
-            "INSERT INTO vm_disk_history (vm_id, captured_at, mountpoint, used_bytes, total_bytes) "
-            "VALUES (?, ?, ?, ?, ?)",
-            [(vm_id, ts, mp, used, total) for mp, used, total in datapoints],
-        )
-        await db.commit()
+        rows = [
+            {"vm_id": vm_id, "captured_at": ts, "mountpoint": mp,
+             "used_bytes": used, "total_bytes": total}
+            for mp, used, total in datapoints
+        ]
+        async with self._db.begin() as conn:
+            await conn.execute(
+                text(
+                    "INSERT INTO vm_disk_history (vm_id, captured_at, mountpoint, used_bytes, total_bytes) "
+                    "VALUES (:vm_id, :captured_at, :mountpoint, :used_bytes, :total_bytes)"
+                ),
+                rows,
+            )
 
     async def get_window(
         self,
@@ -133,59 +117,43 @@ class VMDiskHistoryStore:
         mountpoint: str,
         window_days: int,
     ) -> list[DiskDataPoint]:
-        """Return data points for a mountpoint within the trailing window.
-
-        Args:
-            vm_id: VM identifier.
-            mountpoint: Mount path to query.
-            window_days: How many days back to look.
-
-        Returns:
-            Data points ordered oldest → newest.
-        """
-        db = self._ensure_connected()
+        """Return data points for a mountpoint within the trailing window."""
         cutoff = (datetime.now(tz=UTC) - timedelta(days=window_days)).isoformat()
-        rows = await db.execute_fetchall(
-            """
-            SELECT vm_id, captured_at, mountpoint, used_bytes, total_bytes
-            FROM vm_disk_history
-            WHERE vm_id = ? AND mountpoint = ? AND captured_at >= ?
-            ORDER BY captured_at ASC
-            """,
-            (vm_id, mountpoint, cutoff),
-        )
+        async with self._db.begin() as conn:
+            result = await conn.execute(
+                text("""
+                SELECT vm_id, captured_at, mountpoint, used_bytes, total_bytes
+                FROM vm_disk_history
+                WHERE vm_id = :vm_id AND mountpoint = :mountpoint AND captured_at >= :cutoff
+                ORDER BY captured_at ASC
+                """),
+                {"vm_id": vm_id, "mountpoint": mountpoint, "cutoff": cutoff},
+            )
+            rows = result.fetchall()
         return [_row_to_datapoint(row) for row in rows]
 
     async def get_distinct_mountpoints(self, vm_id: str) -> list[str]:
-        """Return all mountpoints ever seen for a VM.
-
-        Args:
-            vm_id: VM identifier.
-        """
-        db = self._ensure_connected()
-        rows = await db.execute_fetchall(
-            "SELECT DISTINCT mountpoint FROM vm_disk_history WHERE vm_id = ? ORDER BY mountpoint",
-            (vm_id,),
-        )
+        """Return all mountpoints ever seen for a VM."""
+        async with self._db.begin() as conn:
+            result = await conn.execute(
+                text(
+                    "SELECT DISTINCT mountpoint FROM vm_disk_history "
+                    "WHERE vm_id = :vm_id ORDER BY mountpoint"
+                ),
+                {"vm_id": vm_id},
+            )
+            rows = result.fetchall()
         return [str(row[0]) for row in rows]
 
     async def prune_old_records(self, retention_days: int = 90) -> int:
-        """Delete records older than retention_days.
-
-        Args:
-            retention_days: Records older than this are deleted.
-
-        Returns:
-            Number of rows deleted.
-        """
-        db = self._ensure_connected()
+        """Delete records older than retention_days. Returns number of rows deleted."""
         cutoff = (datetime.now(tz=UTC) - timedelta(days=retention_days)).isoformat()
-        cursor = await db.execute(
-            "DELETE FROM vm_disk_history WHERE captured_at < ?",
-            (cutoff,),
-        )
-        await db.commit()
-        count = cursor.rowcount or 0
+        async with self._db.begin() as conn:
+            result = await conn.execute(
+                text("DELETE FROM vm_disk_history WHERE captured_at < :cutoff"),
+                {"cutoff": cutoff},
+            )
+            count = result.rowcount or 0
         if count:
             logger.info(
                 "Pruned %d old vm_disk_history rows (older than %dd)", count, retention_days
@@ -193,7 +161,7 @@ class VMDiskHistoryStore:
         return count
 
 
-def _row_to_datapoint(row: aiosqlite.Row) -> DiskDataPoint:
+def _row_to_datapoint(row: Any) -> DiskDataPoint:
     return DiskDataPoint(
         vm_id=str(row[0]),
         captured_at=datetime.fromisoformat(str(row[1])),

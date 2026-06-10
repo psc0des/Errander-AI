@@ -4,7 +4,7 @@ When a dry-run batch is approved outside the maintenance window, the approval
 is persisted here. The window-opener scheduler job picks it up at the next
 window start and triggers a live run_env_batch().
 
-Table lives in the same SQLite file as the audit trail (one DB, two tables).
+Table is created by migration 0012 in errander/safety/migrations.py.
 """
 
 from __future__ import annotations
@@ -12,50 +12,32 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from typing import TYPE_CHECKING, Any
 
-import aiosqlite
+from sqlalchemy import text
 
+if TYPE_CHECKING:
+    from errander.db.core import AsyncDatabase
 logger = logging.getLogger(__name__)
 
 #: Days after window_start before a pending record is auto-expired.
 _EXPIRY_DAYS = 7
 
-_CREATE_TABLE_SQL = """
-CREATE TABLE IF NOT EXISTS deferred_executions (
-    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    batch_id     TEXT    NOT NULL UNIQUE,
-    env_name     TEXT    NOT NULL,
-    approved_at  TEXT    NOT NULL,
-    approved_by  TEXT,
-    window_start TEXT    NOT NULL,
-    expiry_at    TEXT    NOT NULL,
-    status       TEXT    NOT NULL DEFAULT 'pending',
-    created_at   TEXT    NOT NULL,
-    executed_at  TEXT,
-    plan_json    TEXT,
-    plan_hash    TEXT
-)
-"""
-
-_CREATE_INDEX_SQL = [
-    "CREATE INDEX IF NOT EXISTS idx_deferred_env_status ON deferred_executions (env_name, status)",
-    "CREATE INDEX IF NOT EXISTS idx_deferred_window     ON deferred_executions (window_start)",
-]
-
 _UPSERT_SQL = """
 INSERT INTO deferred_executions
     (batch_id, env_name, approved_at, approved_by, window_start, expiry_at, status, created_at,
      plan_json, plan_hash)
-VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)
+VALUES (:batch_id, :env_name, :approved_at, :approved_by, :window_start, :expiry_at,
+        'pending', :created_at, :plan_json, :plan_hash)
 ON CONFLICT(batch_id) DO UPDATE SET
-    approved_at  = excluded.approved_at,
-    approved_by  = excluded.approved_by,
-    window_start = excluded.window_start,
-    expiry_at    = excluded.expiry_at,
+    approved_at  = EXCLUDED.approved_at,
+    approved_by  = EXCLUDED.approved_by,
+    window_start = EXCLUDED.window_start,
+    expiry_at    = EXCLUDED.expiry_at,
     status       = 'pending',
     executed_at  = NULL,
-    plan_json    = excluded.plan_json,
-    plan_hash    = excluded.plan_hash
+    plan_json    = EXCLUDED.plan_json,
+    plan_hash    = EXCLUDED.plan_hash
 """
 
 
@@ -77,42 +59,29 @@ class DeferredExecution:
 
 
 class DeferredExecutionStore:
-    """Async SQLite store for deferred execution records.
+    """Async database store for deferred execution records.
 
-    Shares the same DB file as AuditStore — initialise with the same db_path.
+    Shares the same DB as AuditStore — pass the same AsyncDatabase instance.
+    The deferred_executions table is created by migration #12.
 
     Usage::
 
-        store = DeferredExecutionStore("errander.sqlite")
+        store = DeferredExecutionStore(db)
         await store.initialize()
-        try:
-            await store.save(batch_id, env_name, approved_by, window_start)
-            pending = await store.get_pending("production")
-        finally:
-            await store.close()
+        await store.save(batch_id, env_name, approved_by, window_start)
+        pending = await store.get_pending("production")
     """
 
-    def __init__(self, db_path: str) -> None:
-        self._db_path = db_path
-        self._db: aiosqlite.Connection | None = None
+    def __init__(self, db: AsyncDatabase) -> None:
+        self._db = db
 
     async def initialize(self) -> None:
-        """Open the DB connection and create the table if needed."""
-        self._db = await aiosqlite.connect(self._db_path)
-        self._db.row_factory = aiosqlite.Row
-        await self._db.execute(_CREATE_TABLE_SQL)
-        for idx_sql in _CREATE_INDEX_SQL:
-            await self._db.execute(idx_sql)
-        await self._db.commit()
-        # P0-2 migration: add plan_json / plan_hash columns to existing tables
-        for col, col_type in [("plan_json", "TEXT"), ("plan_hash", "TEXT")]:
-            try:
-                await self._db.execute(
-                    f"ALTER TABLE deferred_executions ADD COLUMN {col} {col_type}"  # noqa: S608
-                )
-                await self._db.commit()
-            except Exception:
-                pass  # column already exists
+        from errander.safety.migrations import run_migrations
+        async with self._db.begin() as conn:
+            await run_migrations(conn, self._db.dialect)
+
+    async def close(self) -> None:
+        await self._db.close()
 
     async def save(
         self,
@@ -126,26 +95,24 @@ class DeferredExecutionStore:
         """Persist a deferred execution approval.
 
         If a record with the same batch_id already exists it is replaced.
-        plan_json and plan_hash store the exact approved artifact for P0-2 replay.
         """
-        assert self._db is not None, "Call initialize() first"
         now = datetime.now(tz=UTC)
         expiry_at = window_start + timedelta(days=_EXPIRY_DAYS)
-        await self._db.execute(
-            _UPSERT_SQL,
-            (
-                batch_id,
-                env_name,
-                now.isoformat(),
-                approved_by,
-                window_start.isoformat(),
-                expiry_at.isoformat(),
-                now.isoformat(),
-                plan_json,
-                plan_hash,
-            ),
-        )
-        await self._db.commit()
+        async with self._db.begin() as conn:
+            await conn.execute(
+                text(_UPSERT_SQL),
+                {
+                    "batch_id": batch_id,
+                    "env_name": env_name,
+                    "approved_at": now.isoformat(),
+                    "approved_by": approved_by,
+                    "window_start": window_start.isoformat(),
+                    "expiry_at": expiry_at.isoformat(),
+                    "created_at": now.isoformat(),
+                    "plan_json": plan_json,
+                    "plan_hash": plan_hash,
+                },
+            )
         logger.info(
             "Deferred execution saved",
             extra={
@@ -157,65 +124,62 @@ class DeferredExecutionStore:
 
     async def get_pending(self, env_name: str) -> list[DeferredExecution]:
         """Return all non-expired pending records for an environment."""
-        assert self._db is not None, "Call initialize() first"
         now = datetime.now(tz=UTC).isoformat()
-        cursor = await self._db.execute(
-            """
-            SELECT batch_id, env_name, approved_at, approved_by,
-                   window_start, expiry_at, status, created_at, executed_at,
-                   plan_json, plan_hash
-            FROM   deferred_executions
-            WHERE  env_name = ?
-              AND  status   = 'pending'
-              AND  expiry_at > ?
-            ORDER  BY window_start ASC
-            """,
-            (env_name, now),
-        )
-        rows = await cursor.fetchall()
+        async with self._db.begin() as conn:
+            result = await conn.execute(
+                text("""
+                SELECT batch_id, env_name, approved_at, approved_by,
+                       window_start, expiry_at, status, created_at, executed_at,
+                       plan_json, plan_hash
+                FROM   deferred_executions
+                WHERE  env_name = :env_name
+                  AND  status   = 'pending'
+                  AND  expiry_at > :now
+                ORDER  BY window_start ASC
+                """),
+                {"env_name": env_name, "now": now},
+            )
+            rows = result.mappings().fetchall()
         return [_row_to_deferred(row) for row in rows]
 
     async def mark_executing(self, batch_id: str) -> None:
         """Transition a record from pending → executing."""
-        assert self._db is not None, "Call initialize() first"
-        await self._db.execute(
-            "UPDATE deferred_executions SET status = 'executing' WHERE batch_id = ?",
-            (batch_id,),
-        )
-        await self._db.commit()
+        async with self._db.begin() as conn:
+            await conn.execute(
+                text("UPDATE deferred_executions SET status = 'executing' WHERE batch_id = :batch_id"),
+                {"batch_id": batch_id},
+            )
 
     async def mark_done(self, batch_id: str) -> None:
         """Transition a record from executing → done and stamp executed_at."""
-        assert self._db is not None, "Call initialize() first"
         now = datetime.now(tz=UTC).isoformat()
-        await self._db.execute(
-            "UPDATE deferred_executions SET status = 'done', executed_at = ? WHERE batch_id = ?",
-            (now, batch_id),
-        )
-        await self._db.commit()
+        async with self._db.begin() as conn:
+            await conn.execute(
+                text(
+                    "UPDATE deferred_executions SET status = 'done', executed_at = :ts "
+                    "WHERE batch_id = :batch_id"
+                ),
+                {"ts": now, "batch_id": batch_id},
+            )
 
     async def expire_old(self) -> int:
         """Mark all past-expiry pending records as expired. Returns count expired."""
-        assert self._db is not None, "Call initialize() first"
         now = datetime.now(tz=UTC).isoformat()
-        cursor = await self._db.execute(
-            "UPDATE deferred_executions SET status = 'expired' WHERE status = 'pending' AND expiry_at <= ?",
-            (now,),
-        )
-        await self._db.commit()
-        count: int = cursor.rowcount
+        async with self._db.begin() as conn:
+            result = await conn.execute(
+                text(
+                    "UPDATE deferred_executions SET status = 'expired' "
+                    "WHERE status = 'pending' AND expiry_at <= :now"
+                ),
+                {"now": now},
+            )
+            count: int = result.rowcount
         if count:
             logger.info("Expired %d stale deferred execution(s)", count)
         return count
 
-    async def close(self) -> None:
-        """Close the DB connection."""
-        if self._db is not None:
-            await self._db.close()
-            self._db = None
 
-
-def _row_to_deferred(row: aiosqlite.Row) -> DeferredExecution:
+def _row_to_deferred(row: Any) -> DeferredExecution:
     def _dt(s: str | None) -> datetime | None:
         return datetime.fromisoformat(s) if s else None
 

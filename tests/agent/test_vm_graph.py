@@ -23,6 +23,7 @@ from errander.agent.vm_graph import (
     route_after_lock,
     route_check_more,
 )
+from errander.db.core import AsyncDatabase
 from errander.execution.sandbox import SandboxExecutor
 from errander.execution.ssh import SSHConnectionManager, SSHResult
 from errander.models.actions import ActionStatus, ActionType
@@ -323,7 +324,7 @@ class TestDispatchActionNode:
 class TestAuditResultsNode:
     @pytest.mark.asyncio
     async def test_logs_successful_results(self) -> None:
-        async with AuditStore(":memory:") as store:
+        async with AuditStore(AsyncDatabase(":memory:")) as store:
             state = _base_state(
                 results=[{
                     "action_type": "disk_cleanup",
@@ -339,7 +340,7 @@ class TestAuditResultsNode:
 
     @pytest.mark.asyncio
     async def test_logs_failed_results(self) -> None:
-        async with AuditStore(":memory:") as store:
+        async with AuditStore(AsyncDatabase(":memory:")) as store:
             state = _base_state(
                 results=[{
                     "action_type": "disk_cleanup",
@@ -354,7 +355,7 @@ class TestAuditResultsNode:
 
     @pytest.mark.asyncio
     async def test_logs_vm_level_error(self) -> None:
-        async with AuditStore(":memory:") as store:
+        async with AuditStore(AsyncDatabase(":memory:")) as store:
             state = _base_state(error="Discovery failed: SSH refused")
             await audit_results_node(state, audit_store=store)
             events = await store.get_events(vm_id="dev/web-01")
@@ -363,7 +364,7 @@ class TestAuditResultsNode:
 
     @pytest.mark.asyncio
     async def test_noop_on_empty_results(self) -> None:
-        async with AuditStore(":memory:") as store:
+        async with AuditStore(AsyncDatabase(":memory:")) as store:
             state = _base_state()
             await audit_results_node(state, audit_store=store)
             events = await store.get_events(batch_id="batch-test-001")
@@ -495,7 +496,7 @@ class TestDriftCheckNode:
     @pytest.mark.asyncio
     async def test_disabled_returns_empty(self) -> None:
         state = _base_state(drift_detection_enabled=False)
-        async with AuditStore(":memory:") as store:
+        async with AuditStore(AsyncDatabase(":memory:")) as store:
             result = await drift_check_node(state, audit_store=store)
         assert result == {}
 
@@ -511,7 +512,7 @@ class TestDriftCheckNode:
                 "pending_packages": 3,
             },
         )
-        async with AuditStore(":memory:") as store:
+        async with AuditStore(AsyncDatabase(":memory:")) as store:
             result = await drift_check_node(state, audit_store=store)
 
         assert result["drift_result"]["has_drift"] is False
@@ -529,7 +530,7 @@ class TestDriftCheckNode:
             "uptime_seconds": 86400.0,
             "pending_packages": 3,
         }
-        async with AuditStore(":memory:") as store:
+        async with AuditStore(AsyncDatabase(":memory:")) as store:
             await save_baseline(store, "dev/web-01", vm_info)
             state = _base_state(
                 drift_detection_enabled=True,
@@ -558,7 +559,7 @@ class TestDriftCheckNode:
             "uptime_seconds": 86400.0,
             "pending_packages": 3,
         }
-        async with AuditStore(":memory:") as store:
+        async with AuditStore(AsyncDatabase(":memory:")) as store:
             await save_baseline(store, "dev/web-01", baseline_info)
             state = _base_state(
                 drift_detection_enabled=True,
@@ -588,7 +589,7 @@ class TestDriftCheckNode:
             "uptime_seconds": 86400.0,
             "pending_packages": 3,
         }
-        async with AuditStore(":memory:") as store:
+        async with AuditStore(AsyncDatabase(":memory:")) as store:
             await save_baseline(store, "dev/web-01", baseline_info)
             state = _base_state(
                 drift_detection_enabled=True,
@@ -605,7 +606,7 @@ class TestDriftCheckNode:
     async def test_disabled_no_vm_info_returns_empty(self) -> None:
         state = _base_state(drift_detection_enabled=True)
         # No vm_info in state
-        async with AuditStore(":memory:") as store:
+        async with AuditStore(AsyncDatabase(":memory:")) as store:
             result = await drift_check_node(state, audit_store=store)
         assert result == {}
 
@@ -679,7 +680,7 @@ class TestAuditSavesBaseline:
             ],
             error=None,
         )
-        async with AuditStore(":memory:") as store:
+        async with AuditStore(AsyncDatabase(":memory:")) as store:
             await audit_results_node(state, audit_store=store)
             events = await store.get_events(
                 vm_id="dev/web-01",
@@ -762,7 +763,7 @@ class TestSubgraphExceptionSafety:
     @pytest.mark.asyncio
     async def test_baseline_save_failure_does_not_crash_audit(self) -> None:
         """save_baseline raising must not prevent audit_results_node from returning {}."""
-        async with AuditStore(":memory:") as store:
+        async with AuditStore(AsyncDatabase(":memory:")) as store:
             state = _base_state(
                 drift_detection_enabled=True,
                 vm_info={

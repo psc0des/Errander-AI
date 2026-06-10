@@ -4,10 +4,6 @@ Aggregates evidence-based facts from existing audit stores: action success rates
 reboot patterns, and approval rejection history.  Layer A only — read-only.  No
 new tables; computes on demand from audit_events data already collected by the
 agent.
-
-The caller (OperatorAssistant) passes these facts into the LLM prompt so the
-model can reason about historical patterns ("patching often fails on this VM
-due to dpkg lock", "this action was repeatedly rejected by humans").
 """
 
 from __future__ import annotations
@@ -16,11 +12,13 @@ import logging
 from collections import defaultdict
 from contextlib import suppress
 from datetime import UTC, datetime, timedelta
-from typing import TypedDict
+from typing import TYPE_CHECKING, TypedDict
 
-import aiosqlite
 from pydantic import BaseModel, computed_field
+from sqlalchemy import text
 
+if TYPE_CHECKING:
+    from errander.db.core import AsyncDatabase
 logger = logging.getLogger(__name__)
 
 _SAMPLE_SIZE = 20
@@ -28,7 +26,6 @@ _REJECTION_WINDOW_DAYS = 90
 
 
 def _sample_confidence(sample_size: int) -> str:
-    """Confidence tier derived from sample size: high ≥10, medium ≥5, else low."""
     if sample_size >= 10:
         return "high"
     if sample_size >= 5:
@@ -37,7 +34,6 @@ def _sample_confidence(sample_size: int) -> str:
 
 
 def _rejection_confidence(rejections: int) -> str:
-    """Confidence tier derived from rejection count: high ≥5, medium ≥2, else low."""
     if rejections >= 5:
         return "high"
     if rejections >= 2:
@@ -58,7 +54,6 @@ class ActionOutcomeFact(BaseModel):
     @computed_field  # type: ignore[prop-decorator]
     @property
     def confidence(self) -> str:
-        """Confidence tier derived from sample_size: high ≥10, medium ≥5, else low."""
         return _sample_confidence(self.sample_size)
 
 
@@ -72,7 +67,6 @@ class VMRebootPatternFact(BaseModel):
     @computed_field  # type: ignore[prop-decorator]
     @property
     def confidence(self) -> str:
-        """Confidence tier derived from sample_size: high ≥10, medium ≥5, else low."""
         return _sample_confidence(self.sample_size)
 
 
@@ -86,34 +80,29 @@ class ActionRejectionFact(BaseModel):
     @computed_field  # type: ignore[prop-decorator]
     @property
     def confidence(self) -> str:
-        """Confidence tier derived from rejections_last_90d: high ≥5, medium ≥2, else low."""
         return _rejection_confidence(self.rejections_last_90d)
 
 
 class VMFactsStore:
     """Read-only store that computes operational-learning facts on demand.
 
-    All queries run against the existing audit_events table — no migrations
-    or new tables required.
+    All queries run against the existing audit_events table — no new tables.
 
-    Usage:
-        async with VMFactsStore("errander.sqlite") as store:
+    Usage::
+
+        db = AsyncDatabase("errander.sqlite")
+        async with VMFactsStore(db) as store:
             outcomes = await store.action_outcomes("prod/web-01")
     """
 
-    def __init__(self, db_path: str) -> None:
-        self._db_path = db_path
-        self._db: aiosqlite.Connection | None = None
+    def __init__(self, db: AsyncDatabase) -> None:
+        self._db = db
 
     async def initialize(self) -> None:
-        """Open the database connection."""
-        self._db = await aiosqlite.connect(self._db_path)
+        pass
 
     async def close(self) -> None:
-        """Close the database connection."""
-        if self._db is not None:
-            await self._db.close()
-            self._db = None
+        await self._db.close()
 
     async def __aenter__(self) -> VMFactsStore:
         await self.initialize()
@@ -122,37 +111,28 @@ class VMFactsStore:
     async def __aexit__(self, *args: object) -> None:
         await self.close()
 
-    def _ensure_connected(self) -> aiosqlite.Connection:
-        if self._db is None:
-            msg = "VMFactsStore not initialized — call initialize() or use as async context manager"
-            raise RuntimeError(msg)
-        return self._db
-
     async def action_outcomes(
         self,
         vm_id: str,
         action_type: str | None = None,
     ) -> list[ActionOutcomeFact]:
-        """Return success-rate facts for a VM, optionally filtered by action_type.
-
-        Uses the last _SAMPLE_SIZE (20) terminal events per action_type.
-        """
-        db = self._ensure_connected()
-
+        """Return success-rate facts for a VM, optionally filtered by action_type."""
         query = """
             SELECT event_type, action_type, detail, timestamp
             FROM audit_events
-            WHERE vm_id = ?
+            WHERE vm_id = :vm_id
               AND event_type IN ('action_completed', 'action_failed')
               AND action_type IS NOT NULL
         """
-        params: list[str] = [vm_id]
+        params: dict[str, object] = {"vm_id": vm_id}
         if action_type is not None:
-            query += " AND action_type = ?"
-            params.append(action_type)
+            query += " AND action_type = :action_type"
+            params["action_type"] = action_type
         query += " ORDER BY timestamp DESC"
 
-        rows = await db.execute_fetchall(query, params)
+        async with self._db.begin() as conn:
+            result = await conn.execute(text(query), params)
+            rows = result.fetchall()
 
         groups: dict[str, list[tuple[str, str, str]]] = defaultdict(list)
         for row in rows:
@@ -188,29 +168,30 @@ class VMFactsStore:
 
     async def reboot_pattern(self, vm_id: str) -> VMRebootPatternFact | None:
         """Return reboot pattern fact for a VM, or None if no patching history."""
-        db = self._ensure_connected()
+        async with self._db.begin() as conn:
+            reboot_result = await conn.execute(
+                text("""
+                SELECT COUNT(*)
+                FROM audit_events
+                WHERE vm_id = :vm_id AND event_type = 'reboot_required_detected'
+                """),
+                {"vm_id": vm_id},
+            )
+            reboot_row = reboot_result.fetchone()
+            reboot_count = int(str(reboot_row[0])) if reboot_row else 0
 
-        reboot_rows = list(await db.execute_fetchall(
-            """
-            SELECT COUNT(*)
-            FROM audit_events
-            WHERE vm_id = ? AND event_type = 'reboot_required_detected'
-            """,
-            [vm_id],
-        ))
-        reboot_count = int(str(reboot_rows[0][0])) if reboot_rows else 0
-
-        patching_rows = list(await db.execute_fetchall(
-            """
-            SELECT COUNT(*)
-            FROM audit_events
-            WHERE vm_id = ?
-              AND action_type = 'patching'
-              AND event_type IN ('action_completed', 'action_failed')
-            """,
-            [vm_id],
-        ))
-        sample = int(str(patching_rows[0][0])) if patching_rows else 0
+            patching_result = await conn.execute(
+                text("""
+                SELECT COUNT(*)
+                FROM audit_events
+                WHERE vm_id = :vm_id
+                  AND action_type = 'patching'
+                  AND event_type IN ('action_completed', 'action_failed')
+                """),
+                {"vm_id": vm_id},
+            )
+            patching_row = patching_result.fetchone()
+            sample = int(str(patching_row[0])) if patching_row else 0
 
         if sample == 0:
             return None
@@ -222,28 +203,24 @@ class VMFactsStore:
         )
 
     async def rejection_facts(self) -> list[ActionRejectionFact]:
-        """Return per-action-type rejection counts for the last 90 days.
-
-        Infers action_type from ACTION_PLANNED/ACTION_STARTED events in the
-        same batches that received APPROVAL_REJECTED.
-        """
-        db = self._ensure_connected()
+        """Return per-action-type rejection counts for the last 90 days."""
         cutoff = (datetime.now(tz=UTC) - timedelta(days=_REJECTION_WINDOW_DAYS)).isoformat()
 
-        rejected_rows = await db.execute_fetchall(
-            """
-            SELECT batch_id, detail
-            FROM audit_events
-            WHERE event_type = 'approval_rejected' AND timestamp >= ?
-            """,
-            [cutoff],
-        )
+        async with self._db.begin() as conn:
+            rejected_result = await conn.execute(
+                text("""
+                SELECT batch_id, detail
+                FROM audit_events
+                WHERE event_type = 'approval_rejected' AND timestamp >= :cutoff
+                """),
+                {"cutoff": cutoff},
+            )
+            rejected_rows = rejected_result.fetchall()
+
         if not rejected_rows:
             return []
 
-        rejected_batches: dict[str, str] = {
-            str(r[0]): str(r[1]) for r in rejected_rows
-        }
+        rejected_batches: dict[str, str] = {str(r[0]): str(r[1]) for r in rejected_rows}
 
         class _Entry(TypedDict):
             count: int
@@ -252,18 +229,18 @@ class VMFactsStore:
         action_type_data: dict[str, _Entry] = {}
 
         for batch_id, reason in rejected_batches.items():
-            planned_rows = await db.execute_fetchall(
-                """
-                SELECT DISTINCT action_type
-                FROM audit_events
-                WHERE batch_id = ? AND action_type IS NOT NULL
-                """,
-                [batch_id],
-            )
-            action_types = (
-                [str(r[0]) for r in planned_rows]
-                if planned_rows else ["(unknown)"]
-            )
+            async with self._db.begin() as conn:
+                planned_result = await conn.execute(
+                    text("""
+                    SELECT DISTINCT action_type
+                    FROM audit_events
+                    WHERE batch_id = :batch_id AND action_type IS NOT NULL
+                    """),
+                    {"batch_id": batch_id},
+                )
+                planned_rows = planned_result.fetchall()
+
+            action_types = [str(r[0]) for r in planned_rows] if planned_rows else ["(unknown)"]
             for at in action_types:
                 if at not in action_type_data:
                     action_type_data[at] = {"count": 0, "reasons": []}

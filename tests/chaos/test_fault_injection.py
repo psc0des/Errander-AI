@@ -14,12 +14,14 @@ Tests assert SYSTEM BEHAVIOR under fault conditions, not happy-path correctness:
 from __future__ import annotations
 
 import asyncio
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from errander.db.core import AsyncDatabase
 from errander.execution.ssh import SSHConnectionManager, SSHResult
 from errander.models.actions import ActionStatus, ActionType
 from errander.models.events import AuditEvent, EventType
@@ -243,61 +245,70 @@ class TestAuditFaultInjection:
     @pytest.mark.asyncio
     async def test_strict_mode_raises_on_db_failure(self) -> None:
         """Live action with strict audit aborts when DB write fails."""
-        import aiosqlite
+        from sqlalchemy.exc import OperationalError as SAOperErr
 
-        async with AuditStore(":memory:", strict_mode=True) as store:
-            with patch.object(
-                store._db,  # type: ignore[union-attr]
-                "execute",
-                side_effect=aiosqlite.OperationalError("database is locked"),
+        async with AuditStore(AsyncDatabase(":memory:"), strict_mode=True) as store:
+            @asynccontextmanager
+            async def _fail():
+                raise SAOperErr(None, None, Exception("database is locked"))
+                yield  # noqa: B901
+
+            with (
+                patch.object(store._db, "begin", side_effect=lambda: _fail()),
+                pytest.raises(AuditWriteError, match="strict mode"),
             ):
-                with pytest.raises(AuditWriteError, match="strict mode"):
-                    await store.log_event(_make_event(), dry_run=False)
+                await store.log_event(_make_event(), dry_run=False)
 
     @pytest.mark.asyncio
     async def test_best_effort_swallows_db_failure(self) -> None:
         """Dry-run audit failures are swallowed — batch continues."""
-        import aiosqlite
+        from sqlalchemy.exc import OperationalError as SAOperErr
 
-        async with AuditStore(":memory:", strict_mode=True) as store:
-            with patch.object(
-                store._db,  # type: ignore[union-attr]
-                "execute",
-                side_effect=aiosqlite.OperationalError("database is locked"),
-            ):
+        async with AuditStore(AsyncDatabase(":memory:"), strict_mode=True) as store:
+            @asynccontextmanager
+            async def _fail():
+                raise SAOperErr(None, None, Exception("database is locked"))
+                yield  # noqa: B901
+
+            with patch.object(store._db, "begin", side_effect=lambda: _fail()):
                 # dry_run=True → best-effort regardless of strict_mode
                 await store.log_event(_make_event(), dry_run=True)  # must not raise
 
     @pytest.mark.asyncio
     async def test_non_strict_mode_swallows_failure(self) -> None:
         """strict_mode=False always swallows failures."""
-        import aiosqlite
+        from sqlalchemy.exc import OperationalError as SAOperErr
 
-        async with AuditStore(":memory:", strict_mode=False) as store:
-            with patch.object(
-                store._db,  # type: ignore[union-attr]
-                "execute",
-                side_effect=aiosqlite.OperationalError("disk full"),
-            ):
+        async with AuditStore(AsyncDatabase(":memory:"), strict_mode=False) as store:
+            @asynccontextmanager
+            async def _fail():
+                raise SAOperErr(None, None, Exception("disk full"))
+                yield  # noqa: B901
+
+            with patch.object(store._db, "begin", side_effect=lambda: _fail()):
                 await store.log_event(_make_event(), dry_run=False)  # must not raise
 
     @pytest.mark.asyncio
     async def test_strict_retry_then_raises(self) -> None:
         """Both retry attempts fail in strict mode → AuditWriteError after 2 attempts."""
-        import aiosqlite
+        from sqlalchemy.exc import OperationalError as SAOperErr
 
-        async with AuditStore(":memory:", strict_mode=True) as store:
+        async with AuditStore(AsyncDatabase(":memory:"), strict_mode=True) as store:
             call_count = 0
 
-            async def _always_fail(sql, params=()):
+            def _always_fail():
                 nonlocal call_count
                 call_count += 1
-                if "INSERT" in str(sql):
-                    raise aiosqlite.OperationalError("disk full")
-                return await store._db.execute(sql, params)  # type: ignore
+
+                @asynccontextmanager
+                async def _ctx():
+                    raise SAOperErr(None, None, Exception("disk full"))
+                    yield  # noqa: B901
+
+                return _ctx()
 
             with (
-                patch.object(store._db, "execute", side_effect=_always_fail),  # type: ignore
+                patch.object(store._db, "begin", side_effect=_always_fail),
                 pytest.raises(AuditWriteError),
             ):
                 await store.log_event(_make_event(), dry_run=False)
@@ -374,7 +385,7 @@ class TestLLMFaultInjection:
             disk_usage={"/": 55.0}, docker_available=True,
             pending_packages=2, uptime_seconds=3600.0,
         )
-        async with AIDecisionStore(":memory:") as store:
+        async with AIDecisionStore(AsyncDatabase(":memory:")) as store:
             await prioritize_actions(
                 vm,
                 llm_client=None,
@@ -459,7 +470,7 @@ class TestFleetAbortChaos:
         """check_fleet_health_node emits FLEET_ABORT and sets error when threshold exceeded."""
         from errander.agent.graph import check_fleet_health_node
 
-        async with AuditStore(":memory:") as store:
+        async with AuditStore(AsyncDatabase(":memory:")) as store:
             state = {
                 "batch_id": "chaos-fleet",
                 "healthy_targets": [],
@@ -493,5 +504,5 @@ class TestWindowsTempDirSafety:
     def test_ai_decision_store_uses_memory_db_in_tests(self) -> None:
         """Tests should use ':memory:' SQLite for AI decision store — never disk paths."""
         from errander.safety.ai_audit import AIDecisionStore
-        store = AIDecisionStore(":memory:")
-        assert store._db_path == ":memory:"
+        store = AIDecisionStore(AsyncDatabase(":memory:"))
+        assert ":memory:" in store._db._url

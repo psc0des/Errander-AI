@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-import aiosqlite
 import pytest
 import pytest_asyncio
+from sqlalchemy import text
 
+from errander.db.core import AsyncDatabase
 from errander.safety.artifacts import ArtifactStore
 from errander.safety.migrations import run_migrations
 
@@ -15,9 +16,11 @@ from errander.safety.migrations import run_migrations
 
 @pytest_asyncio.fixture
 async def db():
-    async with aiosqlite.connect(":memory:") as conn:
-        await run_migrations(conn)
-        yield conn
+    db = AsyncDatabase(":memory:")
+    async with db.begin() as conn:
+        await run_migrations(conn, "sqlite")
+    yield db
+    await db.close()
 
 
 @pytest_asyncio.fixture
@@ -161,13 +164,16 @@ async def test_retrieve_by_kind_filters_by_batch(store):
 @pytest.mark.asyncio
 async def test_purge_before_deletes_old_artifacts(store, db):
     # Insert an artifact with an old timestamp directly
-    await db.execute(
-        "INSERT INTO artifacts (id, batch_id, vm_id, artifact_kind, content, created_at) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
-        ("old-id", "batch-old", "prod/web-01", "patch_output", "old content",
-         "2020-01-01T00:00:00+00:00"),
-    )
-    await db.commit()
+    async with db.begin() as conn:
+        await conn.execute(
+            text(
+                "INSERT INTO artifacts (id, batch_id, vm_id, artifact_kind, content, created_at)"
+                " VALUES (:id, :bid, :vid, :kind, :content, :cat)"
+            ),
+            {"id": "old-id", "bid": "batch-old", "vid": "prod/web-01",
+             "kind": "patch_output", "content": "old content",
+             "cat": "2020-01-01T00:00:00+00:00"},
+        )
 
     deleted = await store.purge_before("2025-01-01T00:00:00+00:00")
     assert deleted == 1
@@ -189,13 +195,16 @@ async def test_purge_before_preserves_recent_artifacts(store):
 
 @pytest.mark.asyncio
 async def test_purge_before_returns_count(store, db):
-    for i in range(5):
-        await db.execute(
-            "INSERT INTO artifacts (id, batch_id, vm_id, artifact_kind, content, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            (f"old-{i}", "batch-old", "prod/web-01", "patch_output", f"content-{i}",
-             "2020-01-01T00:00:00+00:00"),
-        )
-    await db.commit()
+    async with db.begin() as conn:
+        for i in range(5):
+            await conn.execute(
+                text(
+                    "INSERT INTO artifacts (id, batch_id, vm_id, artifact_kind, content, created_at)"
+                    " VALUES (:id, :bid, :vid, :kind, :content, :cat)"
+                ),
+                {"id": f"old-{i}", "bid": "batch-old", "vid": "prod/web-01",
+                 "kind": "patch_output", "content": f"content-{i}",
+                 "cat": "2020-01-01T00:00:00+00:00"},
+            )
     deleted = await store.purge_before("2025-01-01T00:00:00+00:00")
     assert deleted == 5

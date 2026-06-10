@@ -10,7 +10,6 @@ import os
 import time
 from typing import Any
 
-import aiosqlite
 from aiohttp import web
 
 from .evidence import (
@@ -4921,7 +4920,7 @@ async def handle_vm(request: web.Request) -> web.Response:
     env = vm["env"] if vm else "PROD"
 
     metrics_by_window: dict[str, Any] | None = None
-    db: aiosqlite.Connection | None = request.app.get("db")
+    db = request.app.get("db")
     if db is not None:
         try:
             metrics_by_window = {}
@@ -5044,6 +5043,7 @@ async def handle_plan_view(request: web.Request) -> web.Response:
     The signed token prevents enumeration — only the agent (which holds
     ERRANDER_SIGNING_SECRET) can issue valid tokens.
     """
+    from errander.db.core import AsyncDatabase
     from errander.integrations.signed_url import (
         InvalidSignedTokenError,
         SigningSecretMissingError,
@@ -5067,7 +5067,7 @@ async def handle_plan_view(request: web.Request) -> web.Response:
 
     db_path = os.environ.get("ERRANDER_AUDIT_DB_URL", "errander.sqlite")
     try:
-        async with AuditStore(db_path, strict_mode=False) as store:
+        async with AuditStore(AsyncDatabase(db_path), strict_mode=False) as store:
             snapshot = await store.get_plan_snapshot(plan_id)
     except Exception as exc:  # noqa: BLE001
         return web.Response(status=500, text=f"DB error: {exc}")
@@ -5498,7 +5498,7 @@ async def handle_metrics_api(request: web.Request) -> web.Response:
     if known and hostname not in known:
         raise web.HTTPNotFound(reason=f"VM {hostname!r} not in inventory")
     window = request.rel_url.query.get("window", "24h")
-    db: aiosqlite.Connection | None = request.app.get("db")
+    db = request.app.get("db")
     if db is None:
         return web.Response(
             text='{"cpu":[],"mem":[],"disk":{}}',
@@ -5540,14 +5540,14 @@ async def _on_startup(app: web.Application) -> None:
 
     from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
+    from errander.db.core import AsyncDatabase
     from errander.observability.vm_metrics import MetricsCollector, cleanup_old_metrics
     from errander.safety.migrations import run_migrations
 
     db_url = _os.environ.get("ERRANDER_AUDIT_DB_URL", "errander.sqlite")
-    db = await aiosqlite.connect(db_url, timeout=30)
-    await db.execute("PRAGMA journal_mode=WAL")
-    await db.execute("PRAGMA busy_timeout=10000")
-    await run_migrations(db)
+    db = AsyncDatabase(db_url)
+    async with db.begin() as _conn:
+        await run_migrations(_conn, db.dialect)
     app["db"] = db
     logger.info("DB opened: %s (migrations applied)", db_url)
 
@@ -5640,7 +5640,7 @@ async def _on_cleanup(app: web.Application) -> None:
     collector = app.get("metrics_collector")
     if collector is not None:
         await collector.close()
-    db: aiosqlite.Connection | None = app.get("db")
+    db = app.get("db")
     if db is not None:
         await db.close()
         logger.info("DB closed")

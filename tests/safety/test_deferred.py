@@ -4,9 +4,11 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
-import pytest
+from sqlalchemy import text
 
+from errander.db.core import AsyncDatabase
 from errander.safety.deferred import DeferredExecutionStore
+from errander.safety.migrations import run_migrations
 
 
 def _utc(*args: int) -> datetime:
@@ -19,28 +21,27 @@ WINDOW_START = datetime.now(tz=UTC).replace(
 ) + timedelta(days=30)
 
 
+async def _make_store() -> DeferredExecutionStore:
+    db = AsyncDatabase(":memory:")
+    async with db.begin() as conn:
+        await run_migrations(conn, "sqlite")
+    return DeferredExecutionStore(db)
+
+
 # ---------------------------------------------------------------------------
 # Lifecycle
 # ---------------------------------------------------------------------------
 
 class TestDeferredStoreLifecycle:
     async def test_initialize_and_close(self) -> None:
-        store = DeferredExecutionStore(":memory:")
-        await store.initialize()
+        store = await _make_store()
         assert store._db is not None
         await store.close()
-        assert store._db is None
 
     async def test_double_close_is_safe(self) -> None:
-        store = DeferredExecutionStore(":memory:")
-        await store.initialize()
+        store = await _make_store()
         await store.close()
         await store.close()  # should not raise
-
-    async def test_operations_without_init_raise(self) -> None:
-        store = DeferredExecutionStore(":memory:")
-        with pytest.raises(AssertionError):
-            await store.save("b-001", "dev", None, WINDOW_START)
 
 
 # ---------------------------------------------------------------------------
@@ -49,8 +50,7 @@ class TestDeferredStoreLifecycle:
 
 class TestDeferredStoreSave:
     async def test_save_writes_record(self) -> None:
-        store = DeferredExecutionStore(":memory:")
-        await store.initialize()
+        store = await _make_store()
         try:
             await store.save("b-001", "production", "alice", WINDOW_START)
             pending = await store.get_pending("production")
@@ -66,8 +66,7 @@ class TestDeferredStoreSave:
             await store.close()
 
     async def test_save_sets_expiry_7_days_after_window_start(self) -> None:
-        store = DeferredExecutionStore(":memory:")
-        await store.initialize()
+        store = await _make_store()
         try:
             await store.save("b-001", "dev", None, WINDOW_START)
             pending = await store.get_pending("dev")
@@ -76,8 +75,7 @@ class TestDeferredStoreSave:
             await store.close()
 
     async def test_save_upsert_replaces_existing(self) -> None:
-        store = DeferredExecutionStore(":memory:")
-        await store.initialize()
+        store = await _make_store()
         try:
             await store.save("b-001", "dev", "alice", WINDOW_START)
             new_window = WINDOW_START + timedelta(days=7)
@@ -90,8 +88,7 @@ class TestDeferredStoreSave:
             await store.close()
 
     async def test_save_null_approved_by(self) -> None:
-        store = DeferredExecutionStore(":memory:")
-        await store.initialize()
+        store = await _make_store()
         try:
             await store.save("b-001", "dev", None, WINDOW_START)
             pending = await store.get_pending("dev")
@@ -106,8 +103,7 @@ class TestDeferredStoreSave:
 
 class TestDeferredStoreGetPending:
     async def test_get_pending_returns_only_target_env(self) -> None:
-        store = DeferredExecutionStore(":memory:")
-        await store.initialize()
+        store = await _make_store()
         try:
             await store.save("b-001", "production", None, WINDOW_START)
             await store.save("b-002", "staging", None, WINDOW_START)
@@ -121,8 +117,7 @@ class TestDeferredStoreGetPending:
             await store.close()
 
     async def test_get_pending_excludes_non_pending_status(self) -> None:
-        store = DeferredExecutionStore(":memory:")
-        await store.initialize()
+        store = await _make_store()
         try:
             await store.save("b-001", "dev", None, WINDOW_START)
             await store.mark_executing("b-001")
@@ -131,8 +126,7 @@ class TestDeferredStoreGetPending:
             await store.close()
 
     async def test_get_pending_excludes_expired(self) -> None:
-        store = DeferredExecutionStore(":memory:")
-        await store.initialize()
+        store = await _make_store()
         try:
             await store.save("b-001", "dev", None, WINDOW_START)
             await store.expire_old()
@@ -149,8 +143,7 @@ class TestDeferredStoreGetPending:
             await store.close()
 
     async def test_get_pending_returns_empty_list_when_none(self) -> None:
-        store = DeferredExecutionStore(":memory:")
-        await store.initialize()
+        store = await _make_store()
         try:
             assert await store.get_pending("dev") == []
         finally:
@@ -163,8 +156,7 @@ class TestDeferredStoreGetPending:
 
 class TestDeferredStoreTransitions:
     async def test_mark_executing(self) -> None:
-        store = DeferredExecutionStore(":memory:")
-        await store.initialize()
+        store = await _make_store()
         try:
             await store.save("b-001", "dev", None, WINDOW_START)
             await store.mark_executing("b-001")
@@ -174,19 +166,20 @@ class TestDeferredStoreTransitions:
             await store.close()
 
     async def test_mark_done_stamps_executed_at(self) -> None:
-        store = DeferredExecutionStore(":memory:")
-        await store.initialize()
+        store = await _make_store()
         try:
             await store.save("b-001", "dev", None, WINDOW_START)
             await store.mark_executing("b-001")
             await store.mark_done("b-001")
-            # Query directly — done records are not returned by get_pending
-            assert store._db is not None
-            cursor = await store._db.execute(
-                "SELECT status, executed_at FROM deferred_executions WHERE batch_id = ?",
-                ("b-001",),
-            )
-            row = await cursor.fetchone()
+            async with store._db.begin() as conn:
+                result = await conn.execute(
+                    text(
+                        "SELECT status, executed_at FROM deferred_executions"
+                        " WHERE batch_id = :bid"
+                    ),
+                    {"bid": "b-001"},
+                )
+                row = result.mappings().fetchone()
             assert row is not None
             assert row["status"] == "done"
             assert row["executed_at"] is not None
@@ -200,8 +193,7 @@ class TestDeferredStoreTransitions:
 
 class TestDeferredStoreExpireOld:
     async def test_expire_old_returns_count(self) -> None:
-        store = DeferredExecutionStore(":memory:")
-        await store.initialize()
+        store = await _make_store()
         try:
             past = _utc(2020, 1, 1, 0, 0, 0)
             await store.save("b-001", "dev", None, past)
@@ -212,8 +204,7 @@ class TestDeferredStoreExpireOld:
             await store.close()
 
     async def test_expire_old_ignores_non_expired(self) -> None:
-        store = DeferredExecutionStore(":memory:")
-        await store.initialize()
+        store = await _make_store()
         try:
             await store.save("b-001", "dev", None, WINDOW_START)
             count = await store.expire_old()
@@ -223,8 +214,7 @@ class TestDeferredStoreExpireOld:
             await store.close()
 
     async def test_expire_old_skips_non_pending(self) -> None:
-        store = DeferredExecutionStore(":memory:")
-        await store.initialize()
+        store = await _make_store()
         try:
             past = _utc(2020, 1, 1, 0, 0, 0)
             await store.save("b-001", "dev", None, past)

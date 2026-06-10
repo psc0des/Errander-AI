@@ -1,11 +1,13 @@
 """Database schema migration framework.
 
 Numbered, idempotent migrations tracked in the schema_migrations table.
-SQL is written for PostgreSQL portability — no SQLite-specific types or
-pragmas. The INTEGER PRIMARY KEY in SQLite maps to SERIAL/BIGSERIAL in PG.
+Works with both SQLite (aiosqlite) and PostgreSQL (asyncpg) via SQLAlchemy Core.
 
-Called by AuditStore.initialize() on every startup. Each migration runs in
+Called by AuditStore.initialize() on every startup.  Each migration runs in
 its own transaction so a partial failure leaves prior migrations intact.
+
+_adapt_ddl() translates the SQLite DDL written in this file to PostgreSQL DDL
+at runtime.  The only substitution needed is AUTOINCREMENT → BIGSERIAL.
 """
 
 from __future__ import annotations
@@ -14,10 +16,24 @@ import logging
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:
-    import aiosqlite
+from sqlalchemy import text
 
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncConnection
 logger = logging.getLogger(__name__)
+
+
+def _adapt_ddl(sql: str, dialect: str) -> str:
+    """Rewrite SQLite DDL to PostgreSQL DDL when dialect='postgresql'.
+
+    The only DDL difference is auto-increment primary keys:
+    SQLite: INTEGER PRIMARY KEY AUTOINCREMENT
+    PostgreSQL: BIGSERIAL PRIMARY KEY
+    """
+    if dialect == "sqlite":
+        return sql
+    return sql.replace("INTEGER PRIMARY KEY AUTOINCREMENT", "BIGSERIAL PRIMARY KEY")
+
 
 # ---------------------------------------------------------------------------
 # Migration registry
@@ -26,7 +42,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 _MIGRATIONS: list[tuple[int, str]] = [
-    # 0000 — original audit_events table (moved from inline DDL in AuditStore)
+    # 0000 — original audit_events table
     (
         0,
         """
@@ -101,11 +117,10 @@ _MIGRATIONS: list[tuple[int, str]] = [
     #
     # Collected every 60 s by errander.observability.vm_metrics.collect_all().
     # Retention: 8 days (cleaned up hourly by cleanup_old_metrics()).
-    # At 60 s cadence, ~6 metrics/VM, 11 VMs → ~790 k rows/week → trivial for SQLite.
     #
     # metric examples: 'cpu', 'mem', 'disk_/', 'disk_/var', 'disk_/tmp'
     # value_pct is 0-100 float (percentage utilisation)
-    # ts is Unix epoch integer seconds (consistent with strftime('%s','now') in SQLite)
+    # ts is Unix epoch integer seconds
     (
         4,
         """
@@ -120,15 +135,9 @@ _MIGRATIONS: list[tuple[int, str]] = [
             ON vm_metrics (hostname, metric, ts DESC)
         """,
     ),
-    # 0005 — batch lifecycle table for LangGraph workflow durability (Project A, A2)
+    # 0005 — batch lifecycle table for LangGraph workflow durability
     #
-    # One row per batch run. Inserted as RUNNING at batch start; updated to a
-    # terminal status (completed, completed_with_failures, aborted,
-    # needs_operator_review) when the orchestrator graph finishes or aborts.
-    #
-    # dry_run is stored as INTEGER (0/1, SQLite boolean convention).
-    # finished_at is NULL while the batch is still running.
-    # error captures the abort reason for non-success terminal states.
+    # One row per batch run.  dry_run stored as INTEGER (0/1).
     (
         5,
         """
@@ -148,15 +157,7 @@ _MIGRATIONS: list[tuple[int, str]] = [
             ON batches (started_at DESC)
         """,
     ),
-    # 0006 — artifact store for oversized graph state blobs (Project A, A4)
-    #
-    # Subgraph state fields exceeding 4 KB (patch_output, prune_output,
-    # rotation_output, version_snapshot) are stored here instead of inside
-    # LangGraph checkpoint state.  The subgraph stores the artifact_id (a
-    # UUID4 string, ~36 bytes) and looks up the blob for reporting.
-    #
-    # Retention: blobs are purged by ArtifactStore.purge_before() after
-    # batch reporting completes.  No auto-vacuum — caller is responsible.
+    # 0006 — artifact store for oversized graph state blobs
     (
         6,
         """
@@ -174,12 +175,10 @@ _MIGRATIONS: list[tuple[int, str]] = [
             ON artifacts (created_at)
         """,
     ),
-    # 0007 — agent lease table for single-process enforcement (Project A, A5)
+    # 0007 — agent lease table for single-process enforcement
     #
-    # Exactly one row (id=1) when an agent process is running.
-    # Acquired at startup via AgentLease.acquire(); released at shutdown via
-    # AgentLease.release().  Heartbeat updated every 30 s.  Leases older
-    # than 90 s are considered expired and can be evicted by a new agent.
+    # Exactly one row (id=1).  CHECK constraint enforces the singleton.
+    # Note: no AUTOINCREMENT — DEFAULT 1 is used; works identically on PG.
     (
         7,
         """
@@ -194,9 +193,6 @@ _MIGRATIONS: list[tuple[int, str]] = [
         """,
     ),
     # 0008 — plan_snapshots: persists full plan JSON for each approval gate
-    # invocation so operators can inspect the complete package list before
-    # approving (P2-1). TTL-expired rows are not auto-deleted but are treated
-    # as stale by the web endpoint (read-only, safe to leave).
     (
         8,
         """
@@ -213,11 +209,6 @@ _MIGRATIONS: list[tuple[int, str]] = [
         """,
     ),
     # 0009 — replay eval tables (AI Trust Layer Phase 2)
-    #
-    # ai_eval_runs: one row per --ai-eval-replay CLI invocation.
-    # ai_eval_results: one row per replayed ai_decisions entry.
-    # original_id references ai_decisions.id (soft FK — no enforced constraint
-    # so the eval DB can be separate from the audit DB if needed).
     (
         9,
         """
@@ -253,45 +244,129 @@ _MIGRATIONS: list[tuple[int, str]] = [
             ON ai_eval_results (timestamp DESC)
         """,
     ),
+    # 0010 — settings and inventory overrides (previously in OverridesStore.initialize())
+    (
+        10,
+        """
+        CREATE TABLE IF NOT EXISTS settings_overrides (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL,
+            is_secret INTEGER NOT NULL DEFAULT 0,
+            updated_at TEXT NOT NULL,
+            updated_by TEXT NOT NULL DEFAULT 'ui',
+            note TEXT DEFAULT ''
+        );
+        CREATE TABLE IF NOT EXISTS inventory_overrides (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            env_name TEXT NOT NULL,
+            vm_name TEXT NOT NULL,
+            source TEXT NOT NULL CHECK (source IN ('yaml_override', 'db_addition')),
+            disabled INTEGER NOT NULL DEFAULT 0,
+            host TEXT,
+            ssh_user TEXT,
+            ssh_key_path TEXT,
+            os_family TEXT,
+            updated_at TEXT NOT NULL,
+            updated_by TEXT NOT NULL DEFAULT 'ui',
+            note TEXT DEFAULT '',
+            UNIQUE(env_name, vm_name)
+        )
+        """,
+    ),
+    # 0011 — AI decision audit log (previously in AIDecisionStore.initialize())
+    (
+        11,
+        """
+        CREATE TABLE IF NOT EXISTS ai_decisions (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            batch_id    TEXT NOT NULL,
+            vm_id       TEXT,
+            decision_type TEXT NOT NULL,
+            model       TEXT NOT NULL,
+            base_url    TEXT NOT NULL,
+            prompt_template_id TEXT NOT NULL,
+            prompt_hash TEXT NOT NULL,
+            response_raw TEXT,
+            outcome     TEXT NOT NULL,
+            latency_ms  REAL,
+            prompt_tokens  INTEGER,
+            completion_tokens INTEGER,
+            timestamp   TEXT NOT NULL,
+            prompt_full TEXT,
+            context_snapshot TEXT,
+            model_params TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_ai_batch ON ai_decisions (batch_id);
+        CREATE INDEX IF NOT EXISTS idx_ai_vm    ON ai_decisions (vm_id);
+        CREATE INDEX IF NOT EXISTS idx_ai_ts    ON ai_decisions (timestamp DESC)
+        """,
+    ),
+    # 0012 — deferred execution store (previously in DeferredExecutionStore.initialize())
+    (
+        12,
+        """
+        CREATE TABLE IF NOT EXISTS deferred_executions (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            batch_id     TEXT    NOT NULL UNIQUE,
+            env_name     TEXT    NOT NULL,
+            approved_at  TEXT    NOT NULL,
+            approved_by  TEXT,
+            window_start TEXT    NOT NULL,
+            expiry_at    TEXT    NOT NULL,
+            status       TEXT    NOT NULL DEFAULT 'pending',
+            created_at   TEXT    NOT NULL,
+            executed_at  TEXT,
+            plan_json    TEXT,
+            plan_hash    TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_deferred_env_status
+            ON deferred_executions (env_name, status);
+        CREATE INDEX IF NOT EXISTS idx_deferred_window
+            ON deferred_executions (window_start)
+        """,
+    ),
 ]
 
 
-async def run_migrations(db: aiosqlite.Connection) -> None:
+async def run_migrations(conn: AsyncConnection, dialect: str = "sqlite") -> None:
     """Apply any pending database schema migrations.
 
-    Idempotent — safe to call on every startup.  Each migration is wrapped
-    in its own implicit transaction (aiosqlite commits per execute + commit).
+    Idempotent — safe to call on every startup.  Each migration is applied
+    within the caller's transaction (conn is already inside engine.begin()).
 
     Args:
-        db: Open aiosqlite connection.  The caller owns the connection lifecycle.
+        conn: Open SQLAlchemy AsyncConnection (inside an active transaction).
+        dialect: 'sqlite' or 'postgresql'.  Controls DDL substitution.
     """
     # Bootstrap: schema_migrations must exist before we can read from it.
-    # This CREATE is idempotent; migration 0 will also run it (harmless).
-    await db.execute("""
+    await conn.execute(text("""
         CREATE TABLE IF NOT EXISTS schema_migrations (
             version INTEGER PRIMARY KEY,
             applied_at TEXT NOT NULL
         )
-    """)
-    await db.commit()
+    """))
 
-    cursor = await db.execute("SELECT version FROM schema_migrations ORDER BY version")
-    rows = await cursor.fetchall()
-    applied: set[int] = {int(str(row[0])) for row in rows}
+    result = await conn.execute(
+        text("SELECT version FROM schema_migrations ORDER BY version")
+    )
+    applied: set[int] = {int(row[0]) for row in result.fetchall()}
 
     for version, sql in _MIGRATIONS:
         if version in applied:
             continue
 
         logger.info("Applying database migration %04d", version)
-        for raw_stmt in sql.split(";"):
+        adapted = _adapt_ddl(sql, dialect)
+        for raw_stmt in adapted.split(";"):
             stmt = raw_stmt.strip()
             if stmt:
-                await db.execute(stmt)
+                await conn.execute(text(stmt))
 
-        await db.execute(
-            "INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)",
-            (version, datetime.now(tz=UTC).isoformat()),
+        await conn.execute(
+            text(
+                "INSERT INTO schema_migrations (version, applied_at)"
+                " VALUES (:version, :applied_at)"
+            ),
+            {"version": version, "applied_at": datetime.now(tz=UTC).isoformat()},
         )
-        await db.commit()
         logger.info("Migration %04d applied", version)

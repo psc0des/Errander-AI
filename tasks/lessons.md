@@ -1,5 +1,45 @@
 # Errander-AI — Lessons Learned
 
+## 2026-06-10 — SQLAlchemy StaticPool is non-negotiable for `:memory:` SQLite across multiple `begin()` calls
+
+Without `StaticPool`, each `AsyncEngine.begin()` call on a `:memory:` URL opens a brand-new
+SQLite connection — the first `begin()` runs migrations, the second sees an empty database.
+`StaticPool` forces all connections from the same engine to share the same in-memory DB.
+
+**Why:** Discovered when migration tests passed individually but store tests that create a separate
+`begin()` block failed with "no such table" — all state was gone between calls.
+
+**How to apply:** Always use `StaticPool` (+ `check_same_thread: False`) for `:memory:` URLs in
+`AsyncDatabase`. File-based SQLite uses `NullPool` (single-writer pattern, no pool overhead). Postgres
+uses the default async pool. This is encoded in `_engine_kwargs()` in `errander/db/core.py`.
+
+## 2026-06-10 — TYPE_CHECKING blocks for constructor-parameter type imports
+
+When `from __future__ import annotations` is in a file, ALL annotations are strings at runtime.
+So imports used only in type signatures (constructor params, return types) can be safely moved to
+`if TYPE_CHECKING:` blocks — ruff's `TC001/TC002/TC003` rules enforce this. The imports ARE still
+needed by IDEs and mypy, just not at Python runtime.
+
+**Why:** After adding `AsyncDatabase` imports to 14 source files, ruff TC001 flagged them all because
+they appeared only in type annotations (constructor signatures) not in runtime code.
+
+**How to apply:** When adding a new import to a source file that has `from __future__ import annotations`,
+check if it's used at runtime (e.g. `isinstance()`, constructing an instance) or only as an annotation.
+If annotation-only, put it in `if TYPE_CHECKING:`.
+
+## 2026-06-10 — Batch-replace scripts need careful multiline import parsing
+
+When writing a Python script to mechanically update imports across many files, naive string
+replacement of multiline imports can corrupt the file (e.g. leaving an open parenthesis with
+content moved inside an `if TYPE_CHECKING:` block). Always test the script on one file first
+and verify the output before running across 14+ files.
+
+**Why:** The `_fix_tc.py` script mangled `errander/db/core.py` by moving import items inside
+the `if TYPE_CHECKING:` block instead of moving only the standalone import line.
+
+**How to apply:** For complex mechanical refactors, write the script to a file and test on a
+single known file before running on the full set. Check file output immediately after each run.
+
 ## 2026-06-10 — Scope mypy excludes in pyproject.toml rather than chasing 621 test-file errors
 
 When `uv run mypy .` fails with hundreds of errors in `tests/` and `scripts/` but the

@@ -4,6 +4,45 @@
 2026-06-10
 
 ## Current Phase
+**§8d Step 1 — R4: PostgreSQL Dual-Backend + DB Layer (2026-06-10, COMPLETE).**
+
+Replaced all `aiosqlite` direct usage across 15 store files and 30+ test files with SQLAlchemy Core async (`text()` + named `:param` style) via a new `AsyncDatabase` wrapper class. Added dialect-aware migration runner with migrations #10-#12 folding in three previously-orphaned inline DDL blocks. Added Postgres CI job with role-grant verification. All 2446 tests pass (SQLite `:memory:`), mypy clean, ruff clean.
+
+### Files changed (2026-06-10 — §8d Step 1 PostgreSQL dual-backend)
+- `errander/db/__init__.py` — NEW: package marker
+- `errander/db/core.py` — NEW: `AsyncDatabase` class (URL normalization, `begin()`, `dialect`, `close()`)
+- `errander/safety/migrations.py` — ported to `AsyncConnection` + named params; `_adapt_ddl()` for SQLite→PG DDL; migrations #10 (settings_overrides/inventory_overrides), #11 (ai_decisions), #12 (deferred_executions)
+- `errander/safety/audit.py` — ported to SQLAlchemy; `GROUP_CONCAT` → `STRING_AGG` dialect switch; `INSERT OR IGNORE` → `ON CONFLICT DO NOTHING`
+- `errander/safety/batches.py` — ported; `INSERT OR IGNORE` → `ON CONFLICT DO NOTHING`
+- `errander/safety/artifacts.py` — ported
+- `errander/safety/agent_lease.py` — ported; `INSERT OR REPLACE` → `ON CONFLICT(id) DO UPDATE`
+- `errander/safety/vm_state.py` — ported
+- `errander/safety/baselines.py` — ported
+- `errander/safety/disk_history.py` — ported
+- `errander/safety/vm_facts.py` — ported; `GROUP_CONCAT` → dialect switch
+- `errander/safety/deferred.py` — ported; `initialize()` calls `run_migrations()`
+- `errander/safety/overrides.py` — ported; `initialize()` calls `run_migrations()`
+- `errander/safety/ai_audit.py` — ported; inline ALTER TABLE guards removed
+- `errander/observability/vm_metrics.py` — ported; `INSERT OR REPLACE` → `ON CONFLICT DO UPDATE`
+- `errander/observability/durability.py` — ported
+- `errander/observability/startup_scan.py` — ported; `rowid DESC` → dialect-aware `id` fallback
+- `errander/evals/replay.py` — ported
+- `errander/web/providers.py` — `GROUP_CONCAT` → `STRING_AGG` dialect switch
+- `errander/web/server.py` — wrap `AuditStore` with `AsyncDatabase` in plan-show endpoint
+- `errander/main.py` — construct one `AsyncDatabase`; pass to all stores
+- `pyproject.toml` — add `sqlalchemy[asyncio]>=2.0`; add `postgres = ["asyncpg>=0.29"]` extra
+- `tests/conftest.py` — `TEST_DB_URL` at module level; `session_db` + `async_db` fixtures
+- `tests/safety/test_migrations.py` — use `TEST_DB_URL`; dialect-agnostic table introspection via `sa_inspect`
+- `tests/safety/test_*.py` (12 files) — updated to use `AsyncDatabase`
+- `tests/agent/test_*.py` (8 files) — updated to use `AsyncDatabase`
+- `tests/ai_evals/test_*.py` (3 files) — updated to use `AsyncDatabase`
+- `tests/observability/test_*.py` (3 files) — updated to use `AsyncDatabase`
+- `tests/chaos/test_fault_injection.py` — updated; patch `store._db.begin`; fix noqa directives
+- `tests/test_main.py` — updated to use `AsyncDatabase`
+- `.github/workflows/ci.yml` — add `test-postgres` job with Postgres service + role-grant verification
+- `deploy/postgres-setup.sql` — NEW: `errander_agent` + `errander_web` role grants for production
+
+## Previous Phase
 **§8d Step 0 — CI (2026-06-10, COMPLETE).**
 
 GitHub Actions CI added following a zero-trust review by Fable 5 (senior SRE / enterprise AI architect). CI runs on every push to `main` and every PR: `ruff check .`, `mypy errander/`, `pytest` (2,626 tests, excluding Playwright/staging), and `gitleaks` secret scan. Three ruff errors fixed (B904 in metrics.py, E501 in metrics.py, I001 in test_prompts.py). mypy `exclude` added to `pyproject.toml` so `uv run mypy .` passes (tests/scripts were the source of 621 pre-existing errors; errander/ package was already clean).

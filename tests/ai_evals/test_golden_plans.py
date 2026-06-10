@@ -28,6 +28,7 @@ from errander.agent.decisions import (
     _parse_action_types,
     prioritize_actions,
 )
+from errander.db.core import AsyncDatabase
 from errander.models.actions import ACTION_RISK_TIERS, ActionType, RiskTier
 from errander.models.vm import OSFamily, VMInfo
 
@@ -269,7 +270,7 @@ class TestAIDecisionAudit:
         vm = _vm()
         llm = _mock_llm(["disk_cleanup", "log_rotation"])
 
-        async with AIDecisionStore(":memory:") as store:
+        async with AIDecisionStore(AsyncDatabase(":memory:")) as store:
             await prioritize_actions(
                 vm,
                 llm_client=llm,
@@ -294,7 +295,7 @@ class TestAIDecisionAudit:
         client._base_url = "http://mock"
         client.complete = AsyncMock(return_value=None)
 
-        async with AIDecisionStore(":memory:") as store:
+        async with AIDecisionStore(AsyncDatabase(":memory:")) as store:
             await prioritize_actions(
                 vm,
                 llm_client=client,
@@ -312,7 +313,7 @@ class TestAIDecisionAudit:
 
         vm = _vm()
 
-        async with AIDecisionStore(":memory:") as store:
+        async with AIDecisionStore(AsyncDatabase(":memory:")) as store:
             await prioritize_actions(
                 vm,
                 llm_client=None,
@@ -341,7 +342,7 @@ class TestAIDecisionAudit:
 
         from errander.safety.ai_audit import AIDecision, AIDecisionStore
 
-        async with AIDecisionStore(":memory:") as store:
+        async with AIDecisionStore(AsyncDatabase(":memory:")) as store:
             d = AIDecision(
                 batch_id="b-001",
                 vm_id="vm-01",

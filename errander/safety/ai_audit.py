@@ -4,51 +4,26 @@ Every call to LLMClient.complete() that influences a maintenance decision
 is logged here: model, base URL, prompt template ID, SHA-256 prompt hash,
 raw response, latency, token counts, and outcome (success/fallback/error).
 
-Schema is designed for PostgreSQL migration (TEXT types, ISO timestamps).
+Schema is created by migration 0011 in errander/safety/migrations.py.
 """
 
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import hashlib
 import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING, Any
 
-import aiosqlite
+from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
 
 from errander.safety.migrations import run_migrations
 
+if TYPE_CHECKING:
+    from errander.db.core import AsyncDatabase
 logger = logging.getLogger(__name__)
-
-_CREATE_TABLE_SQL = """
-CREATE TABLE IF NOT EXISTS ai_decisions (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    batch_id    TEXT NOT NULL,
-    vm_id       TEXT,
-    decision_type TEXT NOT NULL,
-    model       TEXT NOT NULL,
-    base_url    TEXT NOT NULL,
-    prompt_template_id TEXT NOT NULL,
-    prompt_hash TEXT NOT NULL,
-    response_raw TEXT,
-    outcome     TEXT NOT NULL,
-    latency_ms  REAL,
-    prompt_tokens  INTEGER,
-    completion_tokens INTEGER,
-    timestamp   TEXT NOT NULL,
-    prompt_full TEXT,
-    context_snapshot TEXT,
-    model_params TEXT
-)
-"""
-
-_CREATE_INDEX_SQL = [
-    "CREATE INDEX IF NOT EXISTS idx_ai_batch ON ai_decisions (batch_id)",
-    "CREATE INDEX IF NOT EXISTS idx_ai_vm    ON ai_decisions (vm_id)",
-    "CREATE INDEX IF NOT EXISTS idx_ai_ts    ON ai_decisions (timestamp DESC)",
-]
 
 _INSERT_SQL = """
 INSERT INTO ai_decisions
@@ -56,7 +31,10 @@ INSERT INTO ai_decisions
      prompt_template_id, prompt_hash, response_raw, outcome,
      latency_ms, prompt_tokens, completion_tokens, timestamp,
      prompt_full, context_snapshot, model_params)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+VALUES (:batch_id, :vm_id, :decision_type, :model, :base_url,
+        :prompt_template_id, :prompt_hash, :response_raw, :outcome,
+        :latency_ms, :prompt_tokens, :completion_tokens, :timestamp,
+        :prompt_full, :context_snapshot, :model_params)
 """
 
 _SELECT_SQL = """
@@ -113,46 +91,28 @@ class AIDecision:
 
 
 class AIDecisionStore:
-    """Async SQLite-backed store for per-LLM-decision audit records.
+    """Async database-backed store for per-LLM-decision audit records.
 
-    Usage:
-        async with AIDecisionStore("errander.sqlite") as store:
+    Usage::
+
+        db = AsyncDatabase("errander.sqlite")
+        async with AIDecisionStore(db) as store:
             await store.log(decision)
             decisions = await store.get_decisions(batch_id="run-123")
 
-    For testing, use ":memory:" as the database path.
+    For testing, use AsyncDatabase(":memory:").
     """
 
-    def __init__(self, db_path: str) -> None:
-        self._db_path = db_path
-        self._db: aiosqlite.Connection | None = None
-
-    # D1 columns added idempotently — ALTER TABLE raises OperationalError if column
-    # already exists (fresh install via _CREATE_TABLE_SQL).  suppress() is correct here.
-    _D1_COLUMNS = (
-        "prompt_full TEXT",
-        "context_snapshot TEXT",
-        "model_params TEXT",
-    )
+    def __init__(self, db: AsyncDatabase) -> None:
+        self._db = db
 
     async def initialize(self) -> None:
-        self._db = await aiosqlite.connect(self._db_path)
-        await self._db.execute(_CREATE_TABLE_SQL)
-        for idx in _CREATE_INDEX_SQL:
-            await self._db.execute(idx)
-        await self._db.commit()
-        await run_migrations(self._db)
-        for col_def in self._D1_COLUMNS:
-            with contextlib.suppress(aiosqlite.OperationalError):
-                await self._db.execute(
-                    f"ALTER TABLE ai_decisions ADD COLUMN {col_def}"
-                )
-        await self._db.commit()
+        """Apply all pending schema migrations (including ai_decisions table)."""
+        async with self._db.begin() as conn:
+            await run_migrations(conn, self._db.dialect)
 
     async def close(self) -> None:
-        if self._db is not None:
-            await self._db.close()
-            self._db = None
+        await self._db.close()
 
     async def __aenter__(self) -> AIDecisionStore:
         await self.initialize()
@@ -161,38 +121,32 @@ class AIDecisionStore:
     async def __aexit__(self, *args: object) -> None:
         await self.close()
 
-    def _ensure_connected(self) -> aiosqlite.Connection:
-        if self._db is None:
-            raise RuntimeError("AIDecisionStore not initialized")
-        return self._db
-
     async def log(self, decision: AIDecision) -> None:
         """Write a decision record. Best-effort — never raises on DB error."""
-        db = self._ensure_connected()
-        params = (
-            decision.batch_id,
-            decision.vm_id,
-            decision.decision_type,
-            decision.model,
-            decision.base_url,
-            decision.prompt_template_id,
-            decision.prompt_hash,
-            decision.response_raw,
-            decision.outcome,
-            decision.latency_ms,
-            decision.prompt_tokens,
-            decision.completion_tokens,
-            decision.timestamp.isoformat(),
-            decision.prompt_full,
-            decision.context_snapshot,
-            decision.model_params,
-        )
+        params = {
+            "batch_id": decision.batch_id,
+            "vm_id": decision.vm_id,
+            "decision_type": decision.decision_type,
+            "model": decision.model,
+            "base_url": decision.base_url,
+            "prompt_template_id": decision.prompt_template_id,
+            "prompt_hash": decision.prompt_hash,
+            "response_raw": decision.response_raw,
+            "outcome": decision.outcome,
+            "latency_ms": decision.latency_ms,
+            "prompt_tokens": decision.prompt_tokens,
+            "completion_tokens": decision.completion_tokens,
+            "timestamp": decision.timestamp.isoformat(),
+            "prompt_full": decision.prompt_full,
+            "context_snapshot": decision.context_snapshot,
+            "model_params": decision.model_params,
+        }
         for attempt in (1, 2):
             try:
-                await db.execute(_INSERT_SQL, params)
-                await db.commit()
+                async with self._db.begin() as conn:
+                    await conn.execute(text(_INSERT_SQL), params)
                 return
-            except aiosqlite.Error as exc:
+            except SQLAlchemyError as exc:
                 if attempt == 1:
                     await asyncio.sleep(0.05)
                     continue
@@ -207,40 +161,43 @@ class AIDecisionStore:
         limit: int = 50,
     ) -> list[AIDecision]:
         """Query AI decision records with optional filters."""
-        db = self._ensure_connected()
-
         clauses: list[str] = []
-        params: list[str | int] = []
+        params_dict: dict[str, object] = {}
 
         if batch_id is not None:
-            clauses.append("batch_id = ?")
-            params.append(batch_id)
+            clauses.append("batch_id = :batch_id")
+            params_dict["batch_id"] = batch_id
         if vm_id is not None:
-            clauses.append("vm_id = ?")
-            params.append(vm_id)
+            clauses.append("vm_id = :vm_id")
+            params_dict["vm_id"] = vm_id
         if decision_type is not None:
-            clauses.append("decision_type = ?")
-            params.append(decision_type)
+            clauses.append("decision_type = :decision_type")
+            params_dict["decision_type"] = decision_type
+
+        params_dict["limit"] = limit
 
         query = _SELECT_SQL
         if clauses:
             query += " WHERE " + " AND ".join(clauses)
-        query += " ORDER BY timestamp DESC, id DESC LIMIT ?"
-        params.append(limit)
+        query += " ORDER BY timestamp DESC, id DESC LIMIT :limit"
 
-        rows = await db.execute_fetchall(query, params)
+        async with self._db.begin() as conn:
+            result = await conn.execute(text(query), params_dict)
+            rows = result.fetchall()
         return [_row_to_decision(row) for row in rows]
 
     async def get_decision_by_id(self, decision_id: int) -> AIDecision | None:
         """Return a single AI decision by its primary key, or None if not found."""
-        db = self._ensure_connected()
-        rows = list(await db.execute_fetchall(
-            f"{_SELECT_SQL} WHERE id = ? LIMIT 1", (decision_id,)
-        ))
+        async with self._db.begin() as conn:
+            result = await conn.execute(
+                text(f"{_SELECT_SQL} WHERE id = :id LIMIT 1"),
+                {"id": decision_id},
+            )
+            rows = result.fetchall()
         return _row_to_decision(rows[0]) if rows else None
 
 
-def _row_to_decision(row: aiosqlite.Row) -> AIDecision:
+def _row_to_decision(row: Any) -> AIDecision:
     return AIDecision(
         batch_id=str(row[0]),
         vm_id=str(row[1]) if row[1] is not None else None,

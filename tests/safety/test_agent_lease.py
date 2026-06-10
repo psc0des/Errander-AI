@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-import aiosqlite
 import pytest
 import pytest_asyncio
+from sqlalchemy import text
 
+from errander.db.core import AsyncDatabase
 from errander.safety.agent_lease import AgentLease, AgentLeaseError
 from errander.safety.migrations import run_migrations
 
@@ -15,9 +16,11 @@ from errander.safety.migrations import run_migrations
 
 @pytest_asyncio.fixture
 async def db():
-    async with aiosqlite.connect(":memory:") as conn:
-        await run_migrations(conn)
-        yield conn
+    db = AsyncDatabase(":memory:")
+    async with db.begin() as conn:
+        await run_migrations(conn, "sqlite")
+    yield db
+    await db.close()
 
 
 @pytest_asyncio.fixture
@@ -62,12 +65,14 @@ async def test_acquire_with_live_lease_raises(db):
 @pytest.mark.asyncio
 async def test_acquire_evicts_expired_lease(db):
     # Insert a stale lease manually
-    await db.execute(
-        "INSERT INTO agent_lease (id, pid, hostname, acquired_at, last_heartbeat) "
-        "VALUES (1, 99999, 'dead-host', ?, ?)",
-        ("2020-01-01T00:00:00+00:00", "2020-01-01T00:00:00+00:00"),
-    )
-    await db.commit()
+    async with db.begin() as conn:
+        await conn.execute(
+            text(
+                "INSERT INTO agent_lease (id, pid, hostname, acquired_at, last_heartbeat)"
+                " VALUES (1, 99999, 'dead-host', :acq, :hb)"
+            ),
+            {"acq": "2020-01-01T00:00:00+00:00", "hb": "2020-01-01T00:00:00+00:00"},
+        )
 
     lease = AgentLease(db, pid=12345, hostname="new-host", ttl_seconds=90)
     await lease.acquire()  # must succeed — old lease is expired
@@ -177,12 +182,14 @@ async def test_is_expired_false_for_live_lease(lease):
 
 @pytest.mark.asyncio
 async def test_is_expired_true_for_stale_lease(db):
-    await db.execute(
-        "INSERT INTO agent_lease (id, pid, hostname, acquired_at, last_heartbeat) "
-        "VALUES (1, 99999, 'dead-host', ?, ?)",
-        ("2020-01-01T00:00:00+00:00", "2020-01-01T00:00:00+00:00"),
-    )
-    await db.commit()
+    async with db.begin() as conn:
+        await conn.execute(
+            text(
+                "INSERT INTO agent_lease (id, pid, hostname, acquired_at, last_heartbeat)"
+                " VALUES (1, 99999, 'dead-host', :acq, :hb)"
+            ),
+            {"acq": "2020-01-01T00:00:00+00:00", "hb": "2020-01-01T00:00:00+00:00"},
+        )
 
     lease = AgentLease(db, pid=12345, hostname="test-host", ttl_seconds=90)
     result = await lease.is_expired()

@@ -8,9 +8,10 @@ from datetime import UTC, datetime, timedelta
 from io import StringIO
 from unittest.mock import patch
 
-import aiosqlite
 import pytest
+from sqlalchemy import text
 
+from errander.db.core import AsyncDatabase
 from errander.observability.durability import (
     compute_durability_report,
     print_durability_report,
@@ -22,14 +23,18 @@ from errander.safety.migrations import run_migrations
 # ---------------------------------------------------------------------------
 
 @asynccontextmanager
-async def _make_db() -> AsyncIterator[aiosqlite.Connection]:
-    async with aiosqlite.connect(":memory:") as db:
-        await run_migrations(db)
+async def _make_db() -> AsyncIterator[AsyncDatabase]:
+    db = AsyncDatabase(":memory:")
+    async with db.begin() as conn:
+        await run_migrations(conn, "sqlite")
+    try:
         yield db
+    finally:
+        await db.close()
 
 
 async def _insert(
-    db: aiosqlite.Connection,
+    db: AsyncDatabase,
     event_type: str,
     batch_id: str,
     timestamp: datetime,
@@ -37,15 +42,16 @@ async def _insert(
     action_type: str | None = None,
     detail: str = "",
 ) -> None:
-    await db.execute(
-        """
-        INSERT INTO audit_events
-            (event_type, batch_id, vm_id, action_type, detail, timestamp, metadata)
-        VALUES (?, ?, ?, ?, ?, ?, '{}')
-        """,
-        [event_type, batch_id, vm_id, action_type, detail, timestamp.isoformat()],
-    )
-    await db.commit()
+    async with db.begin() as conn:
+        await conn.execute(
+            text(
+                "INSERT INTO audit_events"
+                " (event_type, batch_id, vm_id, action_type, detail, timestamp, metadata)"
+                " VALUES (:et, :bid, :vid, :at, :det, :ts, '{}')"
+            ),
+            {"et": event_type, "bid": batch_id, "vid": vm_id,
+             "at": action_type, "det": detail, "ts": timestamp.isoformat()},
+        )
 
 
 def _ts(offset_seconds: float = 0.0) -> datetime:

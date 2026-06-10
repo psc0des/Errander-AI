@@ -13,6 +13,7 @@ from errander.agent.graph import (
     route_after_fleet_check,
     validate_targets_node,
 )
+from errander.db.core import AsyncDatabase
 from errander.execution.ssh import SSHConnectionManager, SSHResult
 from errander.execution.target_validation import TargetReadiness
 from errander.models.actions import Action, ActionType, RiskTier
@@ -114,7 +115,7 @@ class TestFleetAbort:
 
     @pytest.mark.asyncio
     async def test_abort_when_all_targets_fail(self) -> None:
-        async with AuditStore(":memory:") as store:
+        async with AuditStore(AsyncDatabase(":memory:")) as store:
             state = _batch_state(
                 healthy_targets=[],
                 failed_targets=[_make_target("vm-01"), _make_target("vm-02")],
@@ -126,7 +127,7 @@ class TestFleetAbort:
 
     @pytest.mark.asyncio
     async def test_abort_emits_fleet_abort_audit_event(self) -> None:
-        async with AuditStore(":memory:") as store:
+        async with AuditStore(AsyncDatabase(":memory:")) as store:
             state = _batch_state(
                 batch_id="batch-fleet-test",
                 healthy_targets=[],
@@ -141,7 +142,7 @@ class TestFleetAbort:
 
     @pytest.mark.asyncio
     async def test_no_abort_when_below_threshold(self) -> None:
-        async with AuditStore(":memory:") as store:
+        async with AuditStore(AsyncDatabase(":memory:")) as store:
             state = _batch_state(
                 healthy_targets=[_make_target("vm-01"), _make_target("vm-02")],
                 failed_targets=[_make_target("vm-03")],  # 1/3 = 33% < 50%
@@ -152,7 +153,7 @@ class TestFleetAbort:
 
     @pytest.mark.asyncio
     async def test_no_abort_when_all_healthy(self) -> None:
-        async with AuditStore(":memory:") as store:
+        async with AuditStore(AsyncDatabase(":memory:")) as store:
             state = _batch_state(
                 healthy_targets=[_make_target("vm-01"), _make_target("vm-02")],
                 failed_targets=[],
@@ -163,7 +164,7 @@ class TestFleetAbort:
 
     @pytest.mark.asyncio
     async def test_empty_targets_returns_error(self) -> None:
-        async with AuditStore(":memory:") as store:
+        async with AuditStore(AsyncDatabase(":memory:")) as store:
             state = _batch_state(healthy_targets=[], failed_targets=[])
             result = await check_fleet_health_node(state, audit_store=store)
 
@@ -184,7 +185,7 @@ class TestFleetAbort:
     @pytest.mark.asyncio
     async def test_threshold_boundary_inclusive(self) -> None:
         """Exactly at threshold does NOT abort (> threshold aborts, not >=)."""
-        async with AuditStore(":memory:") as store:
+        async with AuditStore(AsyncDatabase(":memory:")) as store:
             state = _batch_state(
                 healthy_targets=[_make_target("vm-01")],
                 failed_targets=[_make_target("vm-02")],  # 1/2 = 50% == threshold
@@ -206,7 +207,7 @@ class TestOSVerification:
     async def test_ubuntu_match_is_healthy(self) -> None:
         ssh = SSHConnectionManager()
         ready = TargetReadiness(vm_id="dev/web-01", hostname="10.0.1.10")
-        async with AuditStore(":memory:") as store:
+        async with AuditStore(AsyncDatabase(":memory:")) as store:
             with (
                 patch.object(ssh, "execute", AsyncMock(return_value=_ssh_result(_OS_RELEASE_UBUNTU))),
                 patch("errander.execution.target_validation.check_target", new=AsyncMock(return_value=ready)),
@@ -222,7 +223,7 @@ class TestOSVerification:
     async def test_os_mismatch_goes_to_failed(self) -> None:
         """Inventory declares 'ubuntu' but host runs 'rhel' → OS_MISMATCH."""
         ssh = SSHConnectionManager()
-        async with AuditStore(":memory:") as store:
+        async with AuditStore(AsyncDatabase(":memory:")) as store:
             with patch.object(ssh, "execute", AsyncMock(return_value=_ssh_result(_OS_RELEASE_RHEL))):
                 # Declare ubuntu, but host returns rhel os-release
                 state = _batch_state(targets=[_make_target(os_family="ubuntu")])
@@ -235,7 +236,7 @@ class TestOSVerification:
     async def test_os_mismatch_logs_audit_event(self) -> None:
         """OS_MISMATCH emits an audit event with declared vs detected."""
         ssh = SSHConnectionManager()
-        async with AuditStore(":memory:") as store:
+        async with AuditStore(AsyncDatabase(":memory:")) as store:
             with patch.object(ssh, "execute", AsyncMock(return_value=_ssh_result(_OS_RELEASE_RHEL))):
                 state = _batch_state(batch_id="batch-os-test", targets=[_make_target(os_family="ubuntu")])
                 await validate_targets_node(state, ssh_manager=ssh, audit_store=store)
@@ -252,7 +253,7 @@ class TestOSVerification:
         """os-release with unknown ID goes to failed_targets."""
         ssh = SSHConnectionManager()
         unknown_release = 'ID=freebsd\nVERSION_ID="13.0"\n'
-        async with AuditStore(":memory:") as store:
+        async with AuditStore(AsyncDatabase(":memory:")) as store:
             with patch.object(ssh, "execute", AsyncMock(return_value=_ssh_result(unknown_release))):
                 state = _batch_state(targets=[_make_target(os_family="ubuntu")])
                 result = await validate_targets_node(state, ssh_manager=ssh, audit_store=store)
@@ -264,7 +265,7 @@ class TestOSVerification:
     async def test_ssh_failure_goes_to_failed(self) -> None:
         """SSH connection error goes to failed_targets."""
         ssh = SSHConnectionManager()
-        async with AuditStore(":memory:") as store:
+        async with AuditStore(AsyncDatabase(":memory:")) as store:
             with patch.object(ssh, "execute", AsyncMock(side_effect=ConnectionError("refused"))):
                 state = _batch_state(targets=[_make_target()])
                 result = await validate_targets_node(state, ssh_manager=ssh, audit_store=store)
@@ -277,7 +278,7 @@ class TestOSVerification:
         """Detected OS family and version are stored in the target dict."""
         ssh = SSHConnectionManager()
         ready = TargetReadiness(vm_id="dev/web-01", hostname="10.0.1.10")
-        async with AuditStore(":memory:") as store:
+        async with AuditStore(AsyncDatabase(":memory:")) as store:
             with (
                 patch.object(ssh, "execute", AsyncMock(return_value=_ssh_result(_OS_RELEASE_UBUNTU))),
                 patch("errander.execution.target_validation.check_target", new=AsyncMock(return_value=ready)),
@@ -294,7 +295,7 @@ class TestOSVerification:
         """rhel declared + rhel detected → healthy."""
         ssh = SSHConnectionManager()
         ready = TargetReadiness(vm_id="dev/web-01", hostname="10.0.1.10")
-        async with AuditStore(":memory:") as store:
+        async with AuditStore(AsyncDatabase(":memory:")) as store:
             with (
                 patch.object(ssh, "execute", AsyncMock(return_value=_ssh_result(_OS_RELEASE_RHEL))),
                 patch("errander.execution.target_validation.check_target", new=AsyncMock(return_value=ready)),

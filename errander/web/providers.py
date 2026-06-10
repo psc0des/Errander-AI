@@ -15,7 +15,12 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
+
+from sqlalchemy import text
+
+if TYPE_CHECKING:
+    from errander.db.core import AsyncDatabase
 
 logger = logging.getLogger(__name__)
 
@@ -227,7 +232,7 @@ class LiveProvider:
 
     async def refresh(
         self,
-        db: Any | None = None,
+        db: AsyncDatabase | None = None,
         approval_manager: Any | None = None,
         deferred_store: Any | None = None,
         inventory_path: Any | None = None,
@@ -276,11 +281,14 @@ class LiveProvider:
 
         if db is not None:
             try:
-                rows = await db.execute_fetchall(
-                    "SELECT event_type, batch_id, vm_id, action_type, detail, timestamp "
-                    "FROM audit_events ORDER BY timestamp DESC, id DESC LIMIT 200",
-                    [],
-                )
+                async with db.begin() as _conn:
+                    _r = await _conn.execute(
+                        text(
+                            "SELECT event_type, batch_id, vm_id, action_type, detail, timestamp "
+                            "FROM audit_events ORDER BY timestamp DESC, id DESC LIMIT 200"
+                        )
+                    )
+                    rows = _r.fetchall()
                 for row in rows:
                     action_label = (
                         str(row[3]) if row[3] else str(row[0])
@@ -299,19 +307,25 @@ class LiveProvider:
                     if row[2] is not None:
                         vm_actions.setdefault(str(row[2]), []).append(d)
 
-                batch_rows = await db.execute_fetchall(
-                    """
-                    SELECT batch_id,
-                           MIN(timestamp) AS started_at,
-                           COUNT(*)       AS event_count,
-                           GROUP_CONCAT(DISTINCT vm_id) AS vm_ids
-                    FROM audit_events
-                    GROUP BY batch_id
-                    ORDER BY started_at DESC
-                    LIMIT 50
-                    """,
-                    [],
+                _gc = (
+                    "GROUP_CONCAT(DISTINCT vm_id)"
+                    if db.dialect == "sqlite"
+                    else "STRING_AGG(DISTINCT vm_id, ',')"
                 )
+                async with db.begin() as _conn:
+                    _br = await _conn.execute(
+                        text(f"""
+                        SELECT batch_id,
+                               MIN(timestamp) AS started_at,
+                               COUNT(*)       AS event_count,
+                               {_gc} AS vm_ids
+                        FROM audit_events
+                        GROUP BY batch_id
+                        ORDER BY started_at DESC
+                        LIMIT 50
+                        """)
+                    )
+                    batch_rows = _br.fetchall()
                 for b in batch_rows:
                     vm_ids_str = str(b[3]) if b[3] is not None else ""
                     vm_ids = [v for v in vm_ids_str.split(",") if v and v != "None"]

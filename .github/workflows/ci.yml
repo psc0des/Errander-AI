@@ -31,9 +31,6 @@ jobs:
       - name: mypy
         run: uv run mypy errander/
 
-  # TODO R4: add a second matrix leg here for PostgreSQL once the dual-backend
-  # DB layer lands (§8c). The postgres job will add a services: postgres: block
-  # and pass ERRANDER_AUDIT_DB_URL=postgresql://... to pytest.
   test:
     name: Test (SQLite)
     runs-on: ubuntu-latest
@@ -53,6 +50,57 @@ jobs:
             --ignore=tests/ui \
             --ignore=tests/staging \
             -q --tb=short
+
+  test-postgres:
+    name: Test (PostgreSQL)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: errander_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s --health-timeout 5s --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v4
+        with:
+          python-version: "3.12"
+
+      - name: Install (with postgres extra)
+        run: uv sync --extra dev --extra postgres
+
+      - name: Create roles
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h localhost -U postgres -c "
+            CREATE ROLE errander_agent WITH LOGIN PASSWORD 'ci_agent';
+            CREATE ROLE errander_web   WITH LOGIN PASSWORD 'ci_web';
+            GRANT errander_agent TO postgres;
+            GRANT USAGE ON SCHEMA public TO errander_agent;
+            GRANT USAGE ON SCHEMA public TO errander_web;"
+
+      - name: Test (Postgres backend)
+        env:
+          ERRANDER_TEST_DB_URL: "postgresql+asyncpg://errander_agent:ci_agent@localhost/errander_test"
+        run: |
+          uv run pytest tests/safety/ tests/observability/ tests/ai_evals/ \
+            --ignore=tests/ui -q --tb=short
+
+      - name: Verify errander_web cannot INSERT on audit_events
+        env:
+          PGPASSWORD: ci_web
+        run: |
+          psql -h localhost -U errander_web -d errander_test \
+            -c "INSERT INTO audit_events VALUES ('x','x','x','x','x','x','x','{}')" \
+            && echo "FAIL: web role should be rejected" && exit 1 \
+            || echo "OK: INSERT correctly rejected"
 
   secrets:
     name: Secret scan

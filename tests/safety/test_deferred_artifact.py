@@ -9,7 +9,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from errander.db.core import AsyncDatabase
 from errander.safety.deferred import DeferredExecution, DeferredExecutionStore
+from errander.safety.migrations import run_migrations
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -20,8 +22,10 @@ def _future_window() -> datetime:
 
 
 async def _make_store(tmp_path: Path) -> DeferredExecutionStore:
-    store = DeferredExecutionStore(str(tmp_path / "test.sqlite"))
-    await store.initialize()
+    db = AsyncDatabase(str(tmp_path / "test.sqlite"))
+    async with db.begin() as conn:
+        await run_migrations(conn, "sqlite")
+    store = DeferredExecutionStore(db)
     return store
 
 
@@ -105,34 +109,13 @@ async def test_round_trip_vm_plans(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_migration_adds_columns(tmp_path: Path) -> None:
-    """initialize() must add plan_json/plan_hash to tables that predate P0-2."""
-    import aiosqlite
-
-    db_path = str(tmp_path / "legacy.sqlite")
-    # Create legacy table without the new columns
-    async with aiosqlite.connect(db_path) as db:
-        await db.execute("""
-            CREATE TABLE deferred_executions (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                batch_id TEXT NOT NULL UNIQUE,
-                env_name TEXT NOT NULL,
-                approved_at TEXT NOT NULL,
-                approved_by TEXT,
-                window_start TEXT NOT NULL,
-                expiry_at TEXT NOT NULL,
-                status TEXT NOT NULL DEFAULT 'pending',
-                created_at TEXT NOT NULL,
-                executed_at TEXT
-            )
-        """)
-        await db.commit()
-
-    # Now initialise store over the legacy DB — migration should succeed
-    store = DeferredExecutionStore(db_path)
-    await store.initialize()
+async def test_migration_creates_table_with_columns(tmp_path: Path) -> None:
+    """Migration creates deferred_executions with plan_json and plan_hash columns."""
+    db = AsyncDatabase(str(tmp_path / "mig.sqlite"))
+    async with db.begin() as conn:
+        await run_migrations(conn, "sqlite")
+    store = DeferredExecutionStore(db)
     try:
-        # Insert using the new save() — must not fail due to missing columns
         window = _future_window()
         await store.save("batch-mig", "dev", None, window, plan_json='{"v":1}', plan_hash="c" * 64)
         pending = await store.get_pending("dev")

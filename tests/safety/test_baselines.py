@@ -2,18 +2,18 @@
 
 from __future__ import annotations
 
-import pytest
+from sqlalchemy import text
 
+from errander.db.core import AsyncDatabase
 from errander.safety.baselines import BaselineCapture, BaselineStore
 from errander.safety.migrations import run_migrations
 
 
 async def _make_store(retention: int = 30) -> BaselineStore:
-    store = BaselineStore(":memory:", retention_captures=retention)
-    await store.initialize()
-    assert store._db is not None
-    await run_migrations(store._db)
-    return store
+    db = AsyncDatabase(":memory:")
+    async with db.begin() as conn:
+        await run_migrations(conn, "sqlite")
+    return BaselineStore(db, retention_captures=retention)
 
 
 def _capture(
@@ -27,16 +27,16 @@ def _capture(
 
 class TestBaselineStoreLifecycle:
     async def test_context_manager(self) -> None:
-        store = BaselineStore(":memory:")
-        await store.initialize()
-        assert store._db is not None
-        await store.close()
-        assert store._db is None
+        db = AsyncDatabase(":memory:")
+        async with db.begin() as conn:
+            await run_migrations(conn, "sqlite")
+        async with BaselineStore(db) as store:
+            assert store._db is db
 
-    async def test_operations_without_init_raise(self) -> None:
-        store = BaselineStore(":memory:")
-        with pytest.raises(RuntimeError, match="not initialized"):
-            await store.latest("dev/web-01", "sudoers")
+    async def test_double_close_is_safe(self) -> None:
+        store = await _make_store()
+        await store.close()
+        await store.close()
 
 
 class TestBaselineStoreLatest:
@@ -124,12 +124,15 @@ class TestBaselineStorePruning:
         store = await _make_store(retention=3)
         for i in range(6):
             await store.save("dev/web-01", _capture(f"version-{i}"))
-        assert store._db is not None
-        cursor = await store._db.execute(
-            "SELECT COUNT(*) FROM vm_baselines WHERE vm_id = ? AND baseline_kind = ?",
-            ("dev/web-01", "sudoers"),
-        )
-        row = await cursor.fetchone()
+        async with store._db.begin() as conn:
+            result = await conn.execute(
+                text(
+                    "SELECT COUNT(*) FROM vm_baselines"
+                    " WHERE vm_id = :vid AND baseline_kind = :kind"
+                ),
+                {"vid": "dev/web-01", "kind": "sudoers"},
+            )
+            row = result.fetchone()
         assert int(str(row[0])) == 3
         await store.close()
 
@@ -150,17 +153,23 @@ class TestBaselineStorePruning:
         for i in range(4):
             cap = _capture(f"bob-{i}", scope_key="bob", kind="authorized_keys")
             await store.save("dev/web-01", cap)
-        assert store._db is not None
-        cursor = await store._db.execute(
-            "SELECT COUNT(*) FROM vm_baselines WHERE vm_id = ? AND scope_key = ?",
-            ("dev/web-01", "alice"),
-        )
-        row = await cursor.fetchone()
-        assert int(str(row[0])) == 2
-        cursor2 = await store._db.execute(
-            "SELECT COUNT(*) FROM vm_baselines WHERE vm_id = ? AND scope_key = ?",
-            ("dev/web-01", "bob"),
-        )
-        row2 = await cursor2.fetchone()
-        assert int(str(row2[0])) == 2
+        async with store._db.begin() as conn:
+            res_alice = await conn.execute(
+                text(
+                    "SELECT COUNT(*) FROM vm_baselines"
+                    " WHERE vm_id = :vid AND scope_key = :sk"
+                ),
+                {"vid": "dev/web-01", "sk": "alice"},
+            )
+            row_alice = res_alice.fetchone()
+            res_bob = await conn.execute(
+                text(
+                    "SELECT COUNT(*) FROM vm_baselines"
+                    " WHERE vm_id = :vid AND scope_key = :sk"
+                ),
+                {"vid": "dev/web-01", "sk": "bob"},
+            )
+            row_bob = res_bob.fetchone()
+        assert int(str(row_alice[0])) == 2
+        assert int(str(row_bob[0])) == 2
         await store.close()

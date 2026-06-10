@@ -1,5 +1,26 @@
 # Errander-AI Command Log
 
+## §8d Step 1 — PostgreSQL dual-backend (2026-06-10)
+
+```bash
+# Run full test suite (excluding ui + staging)
+uv run pytest tests/ --ignore=tests/ui --ignore=tests/staging -q --tb=short
+
+# Install SQLAlchemy + asyncpg extras
+uv sync --extra dev
+
+# Fix ruff TC001/TC002/TC003 type-checking import violations
+uv run ruff check . --fix
+
+# Verify mypy clean on errander/ package
+uv run mypy errander/
+
+# Final verification — 2446 tests, ruff clean, mypy clean
+uv run pytest tests/ --ignore=tests/ui --ignore=tests/staging -q
+uv run ruff check .
+uv run mypy errander/
+```
+
 ## §8d Step 0 — CI setup (2026-06-10)
 
 ```bash

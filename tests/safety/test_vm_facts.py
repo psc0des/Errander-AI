@@ -6,6 +6,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
+from errander.db.core import AsyncDatabase
 from errander.safety.audit import AuditStore
 from errander.safety.vm_facts import (
     VMFactsStore,
@@ -15,12 +16,11 @@ from errander.safety.vm_facts import (
 # Helpers
 # ---------------------------------------------------------------------------
 
-async def _make_store(db_path: str = ":memory:") -> tuple[AuditStore, VMFactsStore]:
-    audit = AuditStore(db_path, strict_mode=False)
+async def _make_stores() -> tuple[AuditStore, VMFactsStore]:
+    db = AsyncDatabase(":memory:")
+    audit = AuditStore(db, strict_mode=False)
     await audit.initialize()
-    facts = VMFactsStore(db_path)
-    await facts._db.__class__  # type check only
-    facts._db = audit._db  # share the in-memory connection
+    facts = VMFactsStore(db)
     return audit, facts
 
 
@@ -61,19 +61,13 @@ async def _insert_event(
 
 class TestActionOutcomes:
     async def test_empty_db_returns_empty(self) -> None:
-        audit = AuditStore(":memory:", strict_mode=False)
-        await audit.initialize()
-        facts = VMFactsStore.__new__(VMFactsStore)
-        facts._db = audit._db
+        audit, facts = await _make_stores()
         results = await facts.action_outcomes("prod/vm1")
         assert results == []
         await audit.close()
 
     async def test_success_rate_all_completed(self) -> None:
-        audit = AuditStore(":memory:", strict_mode=False)
-        await audit.initialize()
-        facts = VMFactsStore.__new__(VMFactsStore)
-        facts._db = audit._db
+        audit, facts = await _make_stores()
 
         for _ in range(5):
             await _insert_event(
@@ -90,10 +84,7 @@ class TestActionOutcomes:
         await audit.close()
 
     async def test_success_rate_mixed(self) -> None:
-        audit = AuditStore(":memory:", strict_mode=False)
-        await audit.initialize()
-        facts = VMFactsStore.__new__(VMFactsStore)
-        facts._db = audit._db
+        audit, facts = await _make_stores()
 
         for _ in range(3):
             await _insert_event(
@@ -119,10 +110,7 @@ class TestActionOutcomes:
         await audit.close()
 
     async def test_last_failure_reason_captured(self) -> None:
-        audit = AuditStore(":memory:", strict_mode=False)
-        await audit.initialize()
-        facts = VMFactsStore.__new__(VMFactsStore)
-        facts._db = audit._db
+        audit, facts = await _make_stores()
 
         await _insert_event(
             audit,
@@ -145,10 +133,7 @@ class TestActionOutcomes:
         await audit.close()
 
     async def test_last_success_at_captured(self) -> None:
-        audit = AuditStore(":memory:", strict_mode=False)
-        await audit.initialize()
-        facts = VMFactsStore.__new__(VMFactsStore)
-        facts._db = audit._db
+        audit, facts = await _make_stores()
 
         ts = datetime.now(tz=UTC) - timedelta(hours=2)
         await _insert_event(
@@ -165,10 +150,7 @@ class TestActionOutcomes:
         await audit.close()
 
     async def test_sample_size_capped_at_20(self) -> None:
-        audit = AuditStore(":memory:", strict_mode=False)
-        await audit.initialize()
-        facts = VMFactsStore.__new__(VMFactsStore)
-        facts._db = audit._db
+        audit, facts = await _make_stores()
 
         for _ in range(30):
             await _insert_event(
@@ -183,10 +165,7 @@ class TestActionOutcomes:
         await audit.close()
 
     async def test_filter_by_action_type(self) -> None:
-        audit = AuditStore(":memory:", strict_mode=False)
-        await audit.initialize()
-        facts = VMFactsStore.__new__(VMFactsStore)
-        facts._db = audit._db
+        audit, facts = await _make_stores()
 
         await _insert_event(
             audit, event_type="action_completed", vm_id="vm1", action_type="patching",
@@ -201,10 +180,7 @@ class TestActionOutcomes:
         await audit.close()
 
     async def test_different_vms_isolated(self) -> None:
-        audit = AuditStore(":memory:", strict_mode=False)
-        await audit.initialize()
-        facts = VMFactsStore.__new__(VMFactsStore)
-        facts._db = audit._db
+        audit, facts = await _make_stores()
 
         await _insert_event(
             audit, event_type="action_completed", vm_id="vm1", action_type="patching",
@@ -227,19 +203,13 @@ class TestActionOutcomes:
 
 class TestRebootPattern:
     async def test_no_patching_history_returns_none(self) -> None:
-        audit = AuditStore(":memory:", strict_mode=False)
-        await audit.initialize()
-        facts = VMFactsStore.__new__(VMFactsStore)
-        facts._db = audit._db
+        audit, facts = await _make_stores()
         result = await facts.reboot_pattern("vm1")
         assert result is None
         await audit.close()
 
     async def test_reboot_count_computed(self) -> None:
-        audit = AuditStore(":memory:", strict_mode=False)
-        await audit.initialize()
-        facts = VMFactsStore.__new__(VMFactsStore)
-        facts._db = audit._db
+        audit, facts = await _make_stores()
 
         # 3 patching completions
         for _ in range(3):
@@ -267,19 +237,13 @@ class TestRebootPattern:
 
 class TestRejectionFacts:
     async def test_empty_db_returns_empty(self) -> None:
-        audit = AuditStore(":memory:", strict_mode=False)
-        await audit.initialize()
-        facts = VMFactsStore.__new__(VMFactsStore)
-        facts._db = audit._db
+        audit, facts = await _make_stores()
         result = await facts.rejection_facts()
         assert result == []
         await audit.close()
 
     async def test_rejection_counted_and_reason_captured(self) -> None:
-        audit = AuditStore(":memory:", strict_mode=False)
-        await audit.initialize()
-        facts = VMFactsStore.__new__(VMFactsStore)
-        facts._db = audit._db
+        audit, facts = await _make_stores()
 
         await _insert_event(
             audit,
@@ -307,10 +271,7 @@ class TestRejectionFacts:
         await audit.close()
 
     async def test_multiple_rejections_for_same_action_type(self) -> None:
-        audit = AuditStore(":memory:", strict_mode=False)
-        await audit.initialize()
-        facts = VMFactsStore.__new__(VMFactsStore)
-        facts._db = audit._db
+        audit, facts = await _make_stores()
 
         for i in range(3):
             bid = f"rej-{i}"
@@ -333,10 +294,7 @@ class TestRejectionFacts:
         await audit.close()
 
     async def test_rejection_outside_90d_window_excluded(self) -> None:
-        audit = AuditStore(":memory:", strict_mode=False)
-        await audit.initialize()
-        facts = VMFactsStore.__new__(VMFactsStore)
-        facts._db = audit._db
+        audit, facts = await _make_stores()
 
         old_ts = datetime.now(tz=UTC) - timedelta(days=100)
         await _insert_event(
@@ -365,10 +323,7 @@ class TestRejectionFacts:
 
 class TestConfidenceLabels:
     async def test_action_outcome_low_confidence_small_sample(self) -> None:
-        audit = AuditStore(":memory:", strict_mode=False)
-        await audit.initialize()
-        facts = VMFactsStore.__new__(VMFactsStore)
-        facts._db = audit._db
+        audit, facts = await _make_stores()
 
         for _ in range(3):
             await _insert_event(
@@ -380,10 +335,7 @@ class TestConfidenceLabels:
         await audit.close()
 
     async def test_action_outcome_medium_confidence(self) -> None:
-        audit = AuditStore(":memory:", strict_mode=False)
-        await audit.initialize()
-        facts = VMFactsStore.__new__(VMFactsStore)
-        facts._db = audit._db
+        audit, facts = await _make_stores()
 
         for _ in range(7):
             await _insert_event(
@@ -395,10 +347,7 @@ class TestConfidenceLabels:
         await audit.close()
 
     async def test_action_outcome_high_confidence_large_sample(self) -> None:
-        audit = AuditStore(":memory:", strict_mode=False)
-        await audit.initialize()
-        facts = VMFactsStore.__new__(VMFactsStore)
-        facts._db = audit._db
+        audit, facts = await _make_stores()
 
         for _ in range(12):
             await _insert_event(
@@ -410,10 +359,7 @@ class TestConfidenceLabels:
         await audit.close()
 
     async def test_reboot_pattern_confidence_low(self) -> None:
-        audit = AuditStore(":memory:", strict_mode=False)
-        await audit.initialize()
-        facts = VMFactsStore.__new__(VMFactsStore)
-        facts._db = audit._db
+        audit, facts = await _make_stores()
 
         for _ in range(2):
             await _insert_event(
@@ -429,10 +375,7 @@ class TestConfidenceLabels:
         await audit.close()
 
     async def test_reboot_pattern_confidence_high(self) -> None:
-        audit = AuditStore(":memory:", strict_mode=False)
-        await audit.initialize()
-        facts = VMFactsStore.__new__(VMFactsStore)
-        facts._db = audit._db
+        audit, facts = await _make_stores()
 
         for _ in range(15):
             await _insert_event(
@@ -449,10 +392,7 @@ class TestConfidenceLabels:
         await audit.close()
 
     async def test_rejection_fact_confidence_low_one_rejection(self) -> None:
-        audit = AuditStore(":memory:", strict_mode=False)
-        await audit.initialize()
-        facts = VMFactsStore.__new__(VMFactsStore)
-        facts._db = audit._db
+        audit, facts = await _make_stores()
 
         await _insert_event(audit, event_type="batch_started", batch_id="b-rej1")
         await _insert_event(
@@ -468,10 +408,7 @@ class TestConfidenceLabels:
         await audit.close()
 
     async def test_rejection_fact_confidence_medium(self) -> None:
-        audit = AuditStore(":memory:", strict_mode=False)
-        await audit.initialize()
-        facts = VMFactsStore.__new__(VMFactsStore)
-        facts._db = audit._db
+        audit, facts = await _make_stores()
 
         for i in range(3):
             bid = f"b-med-{i}"
@@ -489,10 +426,7 @@ class TestConfidenceLabels:
         await audit.close()
 
     async def test_rejection_fact_confidence_high(self) -> None:
-        audit = AuditStore(":memory:", strict_mode=False)
-        await audit.initialize()
-        facts = VMFactsStore.__new__(VMFactsStore)
-        facts._db = audit._db
+        audit, facts = await _make_stores()
 
         for i in range(6):
             bid = f"b-high-{i}"
@@ -510,10 +444,7 @@ class TestConfidenceLabels:
         await audit.close()
 
     async def test_confidence_boundary_exactly_5_is_medium(self) -> None:
-        audit = AuditStore(":memory:", strict_mode=False)
-        await audit.initialize()
-        facts = VMFactsStore.__new__(VMFactsStore)
-        facts._db = audit._db
+        audit, facts = await _make_stores()
 
         for _ in range(5):
             await _insert_event(
@@ -525,10 +456,7 @@ class TestConfidenceLabels:
         await audit.close()
 
     async def test_confidence_boundary_exactly_10_is_high(self) -> None:
-        audit = AuditStore(":memory:", strict_mode=False)
-        await audit.initialize()
-        facts = VMFactsStore.__new__(VMFactsStore)
-        facts._db = audit._db
+        audit, facts = await _make_stores()
 
         for _ in range(10):
             await _insert_event(

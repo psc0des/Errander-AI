@@ -19,6 +19,8 @@ import asyncio
 import logging
 from typing import TYPE_CHECKING
 
+from errander.db.core import AsyncDatabase
+
 if TYPE_CHECKING:
     import argparse
 
@@ -50,29 +52,30 @@ def _fmt_ts(ts: object) -> str:
 
 
 async def _print_outcomes(
-    db_path: str,
+    db: AsyncDatabase,
     vm_id: str | None,
     action_type: str | None,
 ) -> None:
     """Print action outcome facts for one VM or all VMs for one action type."""
+    from sqlalchemy import text
+
     from errander.safety.vm_facts import VMFactsStore
 
-    async with VMFactsStore(db_path) as store:
+    async with VMFactsStore(db) as store:
         if vm_id is not None:
             facts = await store.action_outcomes(vm_id, action_type=action_type)
         else:
             # Cross-fleet: query every distinct VM that has the action_type
-            import aiosqlite
-
-            async with aiosqlite.connect(db_path) as _db:
-                rows = await _db.execute_fetchall(
-                    """
+            async with db.begin() as conn:
+                result = await conn.execute(
+                    text("""
                     SELECT DISTINCT vm_id FROM audit_events
-                    WHERE action_type = ? AND vm_id IS NOT NULL
+                    WHERE action_type = :action_type AND vm_id IS NOT NULL
                       AND event_type IN ('action_completed', 'action_failed')
-                    """,
-                    [action_type],
+                    """),
+                    {"action_type": action_type},
                 )
+                rows = result.fetchall()
             vms = [str(r[0]) for r in rows]
             facts = []
             for vid in vms:
@@ -103,11 +106,11 @@ async def _print_outcomes(
         )
 
 
-async def _print_reboot(db_path: str, vm_id: str) -> None:
+async def _print_reboot(db: AsyncDatabase, vm_id: str) -> None:
     """Print reboot pattern fact for one VM."""
     from errander.safety.vm_facts import VMFactsStore
 
-    async with VMFactsStore(db_path) as store:
+    async with VMFactsStore(db) as store:
         fact = await store.reboot_pattern(vm_id)
 
     if fact is None:
@@ -121,11 +124,11 @@ async def _print_reboot(db_path: str, vm_id: str) -> None:
     print(f"  {vm_id}: {ratio}")
 
 
-async def _print_rejections(db_path: str) -> None:
+async def _print_rejections(db: AsyncDatabase) -> None:
     """Print approval rejection counts (all action types, last 90 days)."""
     from errander.safety.vm_facts import VMFactsStore
 
-    async with VMFactsStore(db_path) as store:
+    async with VMFactsStore(db) as store:
         facts = await store.rejection_facts()
 
     if not facts:
@@ -157,30 +160,30 @@ async def cmd_vm_facts(args: argparse.Namespace, db_path: str) -> int:
         print("  errander vm-facts --action patching   # cross-fleet")
         return 1
 
-    import aiosqlite
-
     from errander.safety.migrations import run_migrations
 
-    # Ensure schema exists
-    async with aiosqlite.connect(db_path) as db:
-        await run_migrations(db)
+    db = AsyncDatabase(db_path)
+    async with db.begin() as conn:
+        await run_migrations(conn, db.dialect)
 
     # ── Outcomes table ────────────────────────────────────────────────────────
     scope = vm_id if vm_id else f"all VMs (action={action_type})"
     print(f"\nAction outcomes — {scope}")
     print(_SEP)
-    await _print_outcomes(db_path, vm_id, action_type)
+    await _print_outcomes(db, vm_id, action_type)
 
     # ── Reboot pattern (only makes sense per-VM) ──────────────────────────────
     if vm_id is not None:
         print(f"\nReboot pattern — {vm_id}")
         print(_SEP)
-        await _print_reboot(db_path, vm_id)
+        await _print_reboot(db, vm_id)
 
     # ── Rejection facts (fleet-wide, not per-VM or per-action) ───────────────
     print("\nApproval rejections — last 90 days (fleet-wide)")
     print(_SEP)
-    await _print_rejections(db_path)
+    await _print_rejections(db)
+
+    await db.close()
 
     print()
     return 0

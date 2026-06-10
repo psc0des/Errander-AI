@@ -13,9 +13,10 @@ from __future__ import annotations
 import time
 from unittest.mock import AsyncMock, MagicMock
 
-import aiosqlite
 import pytest
+from sqlalchemy import text
 
+from errander.db.core import AsyncDatabase
 from errander.observability.vm_metrics import (
     MetricsCollector,
     _parse_prom_text,
@@ -42,9 +43,10 @@ def _fake_target(
     return t
 
 
-async def _mem_db() -> aiosqlite.Connection:
-    db = await aiosqlite.connect(":memory:")
-    await run_migrations(db)
+async def _mem_db() -> AsyncDatabase:
+    db = AsyncDatabase(":memory:")
+    async with db.begin() as conn:
+        await run_migrations(conn, "sqlite")
     return db
 
 
@@ -428,11 +430,12 @@ class TestCollectAll:
 
         await c.collect_all(db, [target])
 
-        cursor = await db.execute(
-            "SELECT metric, value_pct FROM vm_metrics WHERE hostname=?",
-            ("10.1.1.10",),
-        )
-        rows = {str(r[0]): float(str(r[1])) for r in await cursor.fetchall()}
+        async with db.begin() as conn:
+            result = await conn.execute(
+                text("SELECT metric, value_pct FROM vm_metrics WHERE hostname=:h"),
+                {"h": "10.1.1.10"},
+            )
+            rows = {str(r[0]): float(str(r[1])) for r in result.fetchall()}
         assert rows["cpu"] == pytest.approx(42.0)
         assert rows["mem"] == pytest.approx(78.0)
         assert rows["disk_/"] == pytest.approx(38.0)
@@ -452,8 +455,9 @@ class TestCollectAll:
 
         await c.collect_all(db, [target])
 
-        cursor = await db.execute("SELECT COUNT(*) FROM vm_metrics")
-        row = await cursor.fetchone()
+        async with db.begin() as conn:
+            result = await conn.execute(text("SELECT COUNT(*) FROM vm_metrics"))
+            row = result.fetchone()
         assert int(str(row[0])) == 0  # nothing written
         await db.close()
 
@@ -478,8 +482,11 @@ class TestCollectAll:
         await c.collect_all(db, targets)
 
         assert sorted(call_log) == ["vm-a", "vm-b"]
-        cursor = await db.execute("SELECT COUNT(DISTINCT hostname) FROM vm_metrics")
-        row = await cursor.fetchone()
+        async with db.begin() as conn:
+            result = await conn.execute(
+                text("SELECT COUNT(DISTINCT hostname) FROM vm_metrics")
+            )
+            row = result.fetchone()
         assert int(str(row[0])) == 2
         await db.close()
 
@@ -493,17 +500,20 @@ class TestQueryMetrics:
         db = await _mem_db()
         now = int(time.time())
         rows = [
-            ("host1", "cpu", 42.0, now - 120),
-            ("host1", "cpu", 55.0, now - 60),
-            ("host1", "cpu", 61.0, now),
-            ("host1", "mem", 78.0, now),
-            ("host1", "disk_/", 38.0, now),
+            {"hostname": "host1", "metric": "cpu", "value_pct": 42.0, "ts": now - 120},
+            {"hostname": "host1", "metric": "cpu", "value_pct": 55.0, "ts": now - 60},
+            {"hostname": "host1", "metric": "cpu", "value_pct": 61.0, "ts": now},
+            {"hostname": "host1", "metric": "mem", "value_pct": 78.0, "ts": now},
+            {"hostname": "host1", "metric": "disk_/", "value_pct": 38.0, "ts": now},
         ]
-        await db.executemany(
-            "INSERT INTO vm_metrics (hostname, metric, value_pct, ts) VALUES (?,?,?,?)",
-            rows,
-        )
-        await db.commit()
+        async with db.begin() as conn:
+            await conn.execute(
+                text(
+                    "INSERT INTO vm_metrics (hostname, metric, value_pct, ts)"
+                    " VALUES (:hostname, :metric, :value_pct, :ts)"
+                ),
+                rows,
+            )
 
         result = await query_metrics(db, "host1", "15m")
         assert len(result["cpu"]) >= 1

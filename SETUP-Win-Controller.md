@@ -88,7 +88,8 @@ ERRANDER_LLM_BASE_URL=<base-url>
 ERRANDER_LLM_MODEL=<model>
 ERRANDER_LLM_API_KEY=<api-key>
 
-ERRANDER_AUDIT_DB_URL=errander.sqlite
+# PostgreSQL — `docker compose up -d` in the repo root provides this instance
+ERRANDER_AUDIT_DB_URL=postgresql://errander:errander@localhost:5432/errander
 
 ERRANDER_INVENTORY_PATH=inventory.yaml
 
@@ -214,7 +215,7 @@ Use **Task Scheduler** to run the agent as a background service.
 set ERRANDER_LLM_BASE_URL=http://10.0.1.5:8000/v1
 set ERRANDER_SLACK_BOT_TOKEN=xoxb-your-token-here
 set ERRANDER_SLACK_CHANNEL_ID=C0123456789
-set ERRANDER_AUDIT_DB_URL=C:\Users\<you>\errander\errander.sqlite
+set ERRANDER_AUDIT_DB_URL=postgresql://errander:errander@localhost:5432/errander
 C:\Users\<you>\errander\.venv\Scripts\python.exe -m errander ^
   --inventory C:\Users\<you>\errander\inventory.yaml ^
   --config C:\Users\<you>\errander\settings.yaml

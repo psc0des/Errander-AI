@@ -75,7 +75,7 @@ graph TB
             agent["Errander-AI Agent"]
             sched["APScheduler"]
             poller["Slack Poller"]
-            db["SQLite Audit DB"]
+            db["PostgreSQL Audit DB"]
             metrics_ep["/metrics endpoint"]
             health_ep["/health endpoint"]
         end
@@ -1032,7 +1032,7 @@ async def call_llm(
 
 - **Library**: APScheduler (Python-native, lightweight)
 - **Integration**: Built into the agent process. The agent owns its own schedule — no external cron or systemd timers.
-- **Persistence**: APScheduler job store in SQLite (same DB as audit trail) so scheduled jobs survive restarts
+- **Persistence**: APScheduler job store in PostgreSQL (same DB as audit trail) so scheduled jobs survive restarts
 
 ### Schedule Configuration
 
@@ -1293,7 +1293,7 @@ ERRANDER_SLACK_BOT_TOKEN      # posting messages + polling reactions
 ERRANDER_SLACK_CHANNEL_ID     # dedicated approvals channel
 ERRANDER_LLM_BASE_URL         # private vLLM endpoint (e.g., http://10.0.0.5:8000/v1)
 ERRANDER_LLM_API_KEY          # if vLLM requires auth (may be empty)
-ERRANDER_AUDIT_DB_URL         # SQLite path (e.g., /var/lib/errander/audit.sqlite)
+ERRANDER_AUDIT_DB_URL         # PostgreSQL URL (e.g., postgresql://errander:errander@localhost:5432/errander)
 ```
 
 SSH keys: referenced by file path in inventory config, never inlined. Agent validates all key paths are readable at startup.
@@ -1346,7 +1346,7 @@ Exposed at `/metrics` endpoint on the agent process.
 
 - **Separate stream** from operational logs
 - **Purpose**: Compliance — immutable record of every action taken on every VM
-- **Storage**: Dedicated audit log file AND SQLite database (v1), PostgreSQL (v2)
+- **Storage**: Dedicated audit log file AND PostgreSQL database (PostgreSQL-only since 2026-06-10)
 - **Retention**: Indefinite
 
 Each audit event contains:
@@ -1604,7 +1604,7 @@ These are explicitly deferred from v1 but the v1 architecture should make them e
 
 | Feature | V1 | V2 |
 |---|---|---|
-| Audit storage | SQLite (designed for PostgreSQL from day one) | PostgreSQL |
+| Audit storage | PostgreSQL | PostgreSQL |
 | VM locking | File-based (single agent VM) | Valkey (BSD-licensed Redis fork, distributed) |
 | Secrets | Environment variables | HashiCorp Vault |
 | Approval | Slack reaction polling | Slack webhooks via nginx reverse proxy (lower latency) |
@@ -1649,7 +1649,7 @@ errander/
 │   ├── rollback.py         # Rollback per action type
 │   ├── approval.py         # Slack polling approval gate
 │   ├── locking.py          # VM-level locking (file v1, Redis v2)
-│   └── audit.py            # Audit trail (SQLite v1, PostgreSQL v2)
+│   └── audit.py            # Audit trail (PostgreSQL)
 ├── execution/
 │   ├── ssh.py              # asyncssh connection management + pooling
 │   ├── commands.py         # Strategy pattern: PackageManager interface

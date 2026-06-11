@@ -69,7 +69,7 @@ The chat depends on the investigation engine through a narrow contract — **not
 
 ### 4a. Conversation state / multi-turn memory  *(the core new work)*
 - A conversation store: thread id, ordered messages (role, content, timestamp), owner (the logged-in UI user).
-- Suggested storage: a new SQLite table in the existing audit DB (PostgreSQL-compatible types, per the project's v2 path) — e.g. `chat_threads` / `chat_messages`. Follow the `AuditStore`/migrations pattern (`errander/safety/`).
+- Suggested storage: new PostgreSQL tables in the existing audit DB — e.g. `chat_threads` / `chat_messages`. Follow the `AuditStore`/migrations pattern (`errander/safety/`).
 - **Context-window management across turns:** cap history length fed to the engine; apply `ContextBudgeter` to the assembled history; summarize/elide old turns if needed. Long threads must not blow the budget or cost.
 
 ### 4b. Web UI surface

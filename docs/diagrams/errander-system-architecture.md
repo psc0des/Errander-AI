@@ -29,7 +29,7 @@ flowchart TB
       CHATIF["Operator Chat Interface<br/>· planned ·<br/>answers /ui/chat"]:::planned
       AG{"HUMAN APPROVAL GATE<br/>Slack ✅/❌ · Web UI<br/>every live change"}:::appr
       LB["LAYER B — Hands (deterministic, NO LLM)<br/>patching · disk_cleanup · log_rotation<br/>docker_hygiene · backup_verify · service_restart<br/>validate → execute → verify → rollback → audit"]:::layerB
-      DB[("Audit DB SQLite<br/>audit_events · ai_decisions<br/>plan_snapshots")]:::store
+      DB[("Audit DB PostgreSQL<br/>audit_events · ai_decisions<br/>plan_snapshots")]:::store
       PROM["Controller Prometheus :9091<br/>scrapes agent /metrics<br/>monitors Errander itself"]:::infra
     end
 

@@ -122,9 +122,14 @@ class TestBuildMaintenanceWindow:
 
 class TestAsyncMainRunNow:
     @pytest.mark.asyncio
-    async def test_missing_env_flag_returns_error(self, tmp_path: Path) -> None:
+    async def test_missing_env_flag_returns_error(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """--run-now without --env should return exit code 1."""
         from errander.main import async_main
+
+        # Route DB access at the test database, never the runtime default
+        monkeypatch.setenv("ERRANDER_AUDIT_DB_URL", TEST_DB_URL)
 
         # Create a minimal inventory
         inventory_file = tmp_path / "inventory.yaml"
@@ -149,9 +154,13 @@ class TestAsyncMainRunNow:
         assert result == 1
 
     @pytest.mark.asyncio
-    async def test_unknown_env_returns_error(self, tmp_path: Path) -> None:
+    async def test_unknown_env_returns_error(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """--run-now with unknown env name should return exit code 1."""
         from errander.main import async_main
+
+        monkeypatch.setenv("ERRANDER_AUDIT_DB_URL", TEST_DB_URL)
 
         inventory_file = tmp_path / "inventory.yaml"
         inventory_file.write_text(
@@ -186,9 +195,13 @@ class TestAsyncMainRunNow:
         assert result == 1
 
     @pytest.mark.asyncio
-    async def test_force_without_reason_returns_error(self, tmp_path: Path) -> None:
+    async def test_force_without_reason_returns_error(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """--force without --force-reason should return exit code 1."""
         from errander.main import async_main
+
+        monkeypatch.setenv("ERRANDER_AUDIT_DB_URL", TEST_DB_URL)
 
         inventory_file = tmp_path / "inventory.yaml"
         inventory_file.write_text(

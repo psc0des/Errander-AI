@@ -50,7 +50,6 @@ async def scan_orphan_batches(db: AsyncDatabase) -> int:
         started_rows = result.fetchall()
 
     interrupted: list[dict[str, str]] = []
-    order_col = "rowid" if db.dialect == "sqlite" else "id"
     for row in started_rows:
         batch_id = str(row[0])
         started_at = str(row[1])
@@ -73,11 +72,11 @@ async def scan_orphan_batches(db: AsyncDatabase) -> int:
 
         async with db.begin() as conn:
             result = await conn.execute(
-                text(f"""
+                text("""
                 SELECT event_type, timestamp AS last_at
                 FROM audit_events
                 WHERE batch_id = :batch_id
-                ORDER BY timestamp DESC, {order_col} DESC
+                ORDER BY timestamp DESC, id DESC
                 LIMIT 1
                 """),
                 {"batch_id": batch_id},

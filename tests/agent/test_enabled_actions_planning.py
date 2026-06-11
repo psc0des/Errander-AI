@@ -21,6 +21,7 @@ from errander.agent.decisions import DEFAULT_PRIORITY, prioritize_actions
 from errander.agent.graph import BatchGraphState, plan_vm_node, route_plan_vms
 from errander.models.actions import ActionType
 from errander.models.vm import OSFamily, VMInfo
+from tests.conftest import TEST_DB_URL
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -139,7 +140,7 @@ class TestPlanVmNodeEnabledActions:
             "os_family": "ubuntu",
             "env_policy": "moderate",
             "batch_id": "batch-test-001",
-            "ai_db_path": ":memory:",
+            "ai_db_path": TEST_DB_URL,
             "enabled_actions": [
                 "patching", "disk_cleanup", "log_rotation", "backup_verify"
             ],  # docker_prune deliberately excluded
@@ -187,7 +188,7 @@ class TestPlanVmNodeEnabledActions:
             "os_family": "ubuntu",
             "env_policy": "moderate",
             "batch_id": "batch-test-001",
-            "ai_db_path": ":memory:",
+            "ai_db_path": TEST_DB_URL,
             # enabled_actions intentionally absent
         }
 

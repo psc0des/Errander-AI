@@ -21,6 +21,7 @@ from errander.safety.baselines import BaselineStore
 from errander.safety.disk_history import VMDiskHistoryStore
 from errander.safety.locking import FileLocker
 from errander.safety.vm_state import VMStateStore
+from tests.conftest import TEST_DB_URL
 
 
 def _ok(stdout: str = "") -> SSHResult:
@@ -293,7 +294,7 @@ class TestRunEnvBatchSREWiring:
 
         from errander.config.settings import Settings
         settings = MagicMock(spec=Settings)
-        settings.audit_db_url = ":memory:"
+        settings.audit_db_url = TEST_DB_URL
         settings.sre_signals = SRESignalSettings()
 
         captured: dict[str, object] = {}
@@ -340,7 +341,7 @@ class TestRunEnvBatchSREWiring:
 
         from errander.config.settings import Settings
         settings = MagicMock(spec=Settings)
-        settings.audit_db_url = ":memory:"
+        settings.audit_db_url = TEST_DB_URL
         settings.sre_signals = SRESignalSettings()
 
         disk_store = MagicMock(spec=VMDiskHistoryStore)

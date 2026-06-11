@@ -164,7 +164,7 @@ async def cmd_vm_facts(args: argparse.Namespace, db_path: str) -> int:
 
     db = AsyncDatabase(db_path)
     async with db.begin() as conn:
-        await run_migrations(conn, db.dialect)
+        await run_migrations(conn)
 
     # ── Outcomes table ────────────────────────────────────────────────────────
     scope = vm_id if vm_id else f"all VMs (action={action_type})"

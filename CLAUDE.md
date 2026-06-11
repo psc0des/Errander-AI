@@ -13,7 +13,7 @@ A supervised agentic AI SRE platform that eliminates operational toil while keep
 - Notifications & Approval: Slack API (outbound HTTPS only, polling-based approval via reactions)
 - Scheduling: APScheduler (built-in, agent owns its own schedule)
 - Observability: Prometheus + Grafana (metrics + dashboards) + structured JSON logging
-- Database: SQLite default (zero-config, `aiosqlite`), PostgreSQL optional (`uv sync --extra postgres`, `asyncpg`) — dual-backend via SQLAlchemy Core async + `AsyncDatabase` wrapper (`errander/db/core.py`)
+- Database: PostgreSQL only (`asyncpg` via SQLAlchemy Core async + `AsyncDatabase` wrapper, `errander/db/core.py`) — owner decision 2026-06-10: one standard. Local dev/test: `docker compose up -d` (postgres:16). SQLite support was removed.
 - Queue/Cache: Valkey v2 (BSD-licensed Redis fork) for VM locking and approval queues
 - Testing: pytest + pytest-asyncio
 - Linting: ruff
@@ -50,7 +50,7 @@ A supervised agentic AI SRE platform that eliminates operational toil while keep
 │  │ LLM (vLLM)   │◄────│  - Errander-AI agent    │  │
 │  │ (private IP)  │     │  - APScheduler        │  │
 │  └──────────────┘     │  - Slack poller        │  │
-│                        │  - Audit DB (SQLite)   │  │
+│                        │  - Audit DB (Postgres)  │  │
 │                        │  - Prometheus /metrics  │  │
 │                        └──────┬───────┬────────┘  │
 │                               │       │           │
@@ -300,7 +300,8 @@ ERRANDER_SLACK_BOT_TOKEN      # posting messages + polling reactions
 ERRANDER_SLACK_CHANNEL_ID     # dedicated approvals channel
 ERRANDER_LLM_BASE_URL         # private vLLM endpoint
 ERRANDER_LLM_API_KEY          # if vLLM requires auth
-ERRANDER_AUDIT_DB_URL         # SQLite path for v1
+ERRANDER_AUDIT_DB_URL         # PostgreSQL URL — defaults to the docker-compose
+                              # local instance (postgresql://errander:errander@localhost:5432/errander)
 ERRANDER_SIGNING_SECRET       # HMAC secret for signed web-approval URLs
                               # 32+ random bytes: head -c 32 /dev/urandom | base64
 ERRANDER_WEB_BASE_URL         # externally-reachable base URL for agent VM web UI
@@ -312,7 +313,7 @@ SSH keys: referenced by file path in inventory config, never inlined.
 `.gitignore` must include: `.env`, `*.pem`, `*.key`, `*.sqlite`
 
 ### V2 Upgrade Path
-- PostgreSQL for audit trail (replace SQLite) — design data models for PostgreSQL from v1
+- ~~PostgreSQL for audit trail~~ — DONE (2026-06-10): PostgreSQL is now the only backend
 - Valkey (BSD-licensed Redis fork) for VM locking and approval queues (replace file-based)
 - HashiCorp Vault for secrets (replace env vars)
 - Slack webhooks via nginx reverse proxy (replace polling if latency matters)
@@ -401,6 +402,7 @@ The repo is fully self-contained — everything needed to run the project is in 
 git clone https://github.com/psc0des/Errander-AI.git
 cd Errander-AI
 uv sync --extra dev        # rebuilds virtualenv
+docker compose up -d       # local PostgreSQL (errander + errander_test databases)
 cp example/inventory.yaml inventory.yaml   # edit with real VM IPs
 ```
 
@@ -410,12 +412,12 @@ ERRANDER_LLM_BASE_URL=...
 ERRANDER_LLM_MODEL=...
 ERRANDER_SLACK_BOT_TOKEN=...
 ERRANDER_SLACK_CHANNEL_ID=...
-ERRANDER_AUDIT_DB_URL=errander.sqlite
+ERRANDER_AUDIT_DB_URL=postgresql://errander:errander@localhost:5432/errander  # default — omit if using docker compose
 ERRANDER_SIGNING_SECRET=...   # required for docker_hygiene web approval (v1.1)
 ERRANDER_WEB_BASE_URL=...     # e.g. http://10.0.0.5:9090 — optional, enables signed URL in Slack
 ```
 
-Nothing else is needed. `.venv/` and `.sqlite` are always regenerated locally.
+Nothing else is needed. `.venv/` is always regenerated locally; the database lives in the Docker volume.
 
 ---
 

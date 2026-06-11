@@ -19,6 +19,7 @@ import pytest
 from errander.observability.metrics import start_metrics_server
 from errander.safety.audit import AuditStore
 from errander.safety.overrides import OverridesStore
+from tests.conftest import make_test_db
 
 if TYPE_CHECKING:
     from playwright.sync_api import Page
@@ -35,9 +36,9 @@ def _start_server(
     ctx: dict[str, object] = {}
 
     async def _run() -> None:
-        audit = AuditStore(":memory:")
+        audit = AuditStore(make_test_db())
         await audit.initialize()
-        overrides = OverridesStore(":memory:")
+        overrides = OverridesStore(make_test_db())
         await overrides.initialize()
 
         runner = await start_metrics_server(

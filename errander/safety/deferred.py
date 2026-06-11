@@ -78,7 +78,7 @@ class DeferredExecutionStore:
     async def initialize(self) -> None:
         from errander.safety.migrations import run_migrations
         async with self._db.begin() as conn:
-            await run_migrations(conn, self._db.dialect)
+            await run_migrations(conn)
 
     async def close(self) -> None:
         await self._db.close()

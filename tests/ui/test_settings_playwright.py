@@ -17,6 +17,7 @@ from playwright.sync_api import Page, expect
 from errander.observability.metrics import start_metrics_server
 from errander.safety.audit import AuditStore
 from errander.safety.overrides import OverridesStore
+from tests.conftest import make_test_db
 
 # ---------------------------------------------------------------------------
 # Server fixture
@@ -29,10 +30,10 @@ def settings_base_url() -> str:  # type: ignore[return]
     ctx: dict[str, object] = {}
 
     async def _run() -> None:
-        audit = AuditStore(":memory:")
+        audit = AuditStore(make_test_db())
         await audit.initialize()
 
-        overrides = OverridesStore(":memory:")
+        overrides = OverridesStore(make_test_db())
         await overrides.initialize()
 
         runner = await start_metrics_server(

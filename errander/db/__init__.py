@@ -1,8 +1,4 @@
-"""Async database abstraction layer (SQLAlchemy Core).
-
-Supports SQLite (aiosqlite driver, default) and PostgreSQL (asyncpg driver).
-Install asyncpg for PostgreSQL: uv sync --extra postgres
-"""
+"""Async database abstraction layer (SQLAlchemy Core, PostgreSQL/asyncpg)."""
 
 from errander.db.core import AsyncDatabase
 

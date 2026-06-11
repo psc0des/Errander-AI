@@ -1,5 +1,10 @@
 # 54 — PostgreSQL Dual-Backend (SQLAlchemy Core Async)
 
+> **Superseded (same day):** the owner subsequently decided to drop SQLite entirely —
+> Errander-AI is now PostgreSQL-only. The SQLAlchemy Core async layer described here
+> survives unchanged; the SQLite half (StaticPool, `_adapt_ddl`, dialect switches) was
+> removed. See `55-postgresql-only.md` for the follow-up and its lessons.
+
 ## What was built and why
 
 Errander-AI's v1 stores all use SQLite via `aiosqlite` directly. For v2 (hardened

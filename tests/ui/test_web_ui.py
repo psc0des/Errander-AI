@@ -20,6 +20,7 @@ from playwright.sync_api import Page, expect
 from errander.models.events import AuditEvent, EventType
 from errander.observability.metrics import start_metrics_server
 from errander.safety.audit import AuditStore
+from tests.conftest import make_test_db
 
 # ---------------------------------------------------------------------------
 # Test data
@@ -31,7 +32,7 @@ def _ts(year: int, month: int, day: int, hour: int = 0, minute: int = 0) -> date
 
 async def _setup_server() -> tuple[AuditStore, object, int]:
     """Initialise store, seed data, start server. Returns (store, runner, port)."""
-    store = AuditStore(":memory:")
+    store = AuditStore(make_test_db())
     await store.initialize()
 
     b1, b2 = "batch-2026-04-01", "batch-2026-04-03"

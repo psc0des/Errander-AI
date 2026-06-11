@@ -1,3 +1,20 @@
+## PostgreSQL-Only Migration (2026-06-10, COMPLETE — owner decision, supersedes §8c dual-backend)
+
+- [x] pyproject: asyncpg core, drop `postgres` extra, +langgraph-checkpoint-postgres/psycopg, −aiosqlite/−langgraph-checkpoint-sqlite
+- [x] `errander/db/core.py` — Postgres-only; reject other URLs with SETUP.md-pointing error
+- [x] `errander/safety/migrations.py` — drop dialect/_adapt_ddl; BIGSERIAL/BIGINT DDL (int32 fix)
+- [x] Dialect branches removed (STRING_AGG, id-ordering); runs.py checkpoint probes ported
+- [x] `main.py` checkpointer → AsyncPostgresSaver (psycopg URL + setup())
+- [x] settings default + web/server fallbacks → postgresql://errander:errander@localhost:5432/errander
+- [x] `docker-compose.yml` (postgres:16) + `deploy/postgres-init/01-create-test-db.sql`
+- [x] conftest: `make_test_db()` + session migrations + autouse TRUNCATE; ~40 test files converted
+- [x] CI: single Test (PostgreSQL) job, full suite, web-role INSERT-denied check
+- [x] configure.sh PostgreSQL URL prompt
+- [x] 2445 tests green on Postgres, ruff clean, mypy clean
+- [ ] NEXT: §8d Step 2 — `approval_requests` DB-backed store (plan ready, includes replay-hash bug fix)
+
+---
+
 ## §8d Step 1 — R4: PostgreSQL Dual-Backend + DB Layer (2026-06-10, COMPLETE)
 
 - [x] `errander/db/__init__.py` + `errander/db/core.py` — `AsyncDatabase` wrapper

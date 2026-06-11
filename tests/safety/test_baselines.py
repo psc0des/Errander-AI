@@ -4,15 +4,15 @@ from __future__ import annotations
 
 from sqlalchemy import text
 
-from errander.db.core import AsyncDatabase
 from errander.safety.baselines import BaselineCapture, BaselineStore
 from errander.safety.migrations import run_migrations
+from tests.conftest import make_test_db
 
 
 async def _make_store(retention: int = 30) -> BaselineStore:
-    db = AsyncDatabase(":memory:")
+    db = make_test_db()
     async with db.begin() as conn:
-        await run_migrations(conn, "sqlite")
+        await run_migrations(conn)
     return BaselineStore(db, retention_captures=retention)
 
 
@@ -27,9 +27,9 @@ def _capture(
 
 class TestBaselineStoreLifecycle:
     async def test_context_manager(self) -> None:
-        db = AsyncDatabase(":memory:")
+        db = make_test_db()
         async with db.begin() as conn:
-            await run_migrations(conn, "sqlite")
+            await run_migrations(conn)
         async with BaselineStore(db) as store:
             assert store._db is db
 

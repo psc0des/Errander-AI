@@ -4,6 +4,27 @@
 2026-06-10
 
 ## Current Phase
+**PostgreSQL-Only Migration (2026-06-10, COMPLETE).**
+
+Owner decision: drop SQLite entirely — one standard, less headache for users (supersedes the §8c dual-backend "Grafana model"). `AsyncDatabase` now rejects non-Postgres URLs; all dialect branches removed; DDL written in Postgres flavor (INTEGER→BIGINT for byte counts — int32 overflow caught on first run); LangGraph checkpointer moved to `AsyncPostgresSaver`; repo ships `docker-compose.yml` (postgres:16, `errander` + `errander_test` DBs) so clone → `docker compose up -d` → run stays zero-config. Test suite (2445 tests) runs against real Postgres via `make_test_db()` + per-test TRUNCATE isolation (~5 min). CI: single PostgreSQL test job (full suite) + web-role least-privilege verification. configure.sh asks for the PostgreSQL URL.
+
+### Files changed (2026-06-10 — PostgreSQL-only)
+- `errander/db/core.py` — Postgres-only URL normalization, ValueError on anything else; pools/dialect removed
+- `errander/safety/migrations.py` — `run_migrations(conn)` (no dialect), `_adapt_ddl` deleted, BIGSERIAL/BIGINT DDL
+- `errander/safety/audit.py`, `errander/web/providers.py` — STRING_AGG only; `errander/observability/startup_scan.py` — `id` ordering only
+- `errander/commands/runs.py` — checkpoint probes ported from raw sqlite3 to AsyncDatabase/Postgres
+- `errander/main.py` — AsyncPostgresSaver checkpointer (psycopg URL + `.setup()`)
+- `errander/config/settings.py` — default `postgresql://errander:errander@localhost:5432/errander`
+- `errander/web/server.py` — Postgres default fallbacks
+- `pyproject.toml` — asyncpg core dep; `postgres` extra deleted; +langgraph-checkpoint-postgres, psycopg[binary]; −aiosqlite, −langgraph-checkpoint-sqlite
+- `docker-compose.yml` — NEW; `deploy/postgres-init/01-create-test-db.sql` — NEW
+- `tests/conftest.py` — `make_test_db()`, session migration fixture, autouse TRUNCATE cleanup
+- ~40 test files — `AsyncDatabase(":memory:")` → `make_test_db()`; sqlite-path fixtures → TEST_DB_URL
+- `.github/workflows/ci.yml` — single Test (PostgreSQL) job, full suite, postgres:16
+- `scripts/configure.sh` — PostgreSQL URL prompt; `.env` writes the URL
+- Docs: CLAUDE.md, AGENTS.md, README.md, SETUP.md (+ SQLite-migration note), example/settings.yaml, docs/OBSERVABILITY.md, docs/SECRETS.md, fable.md §8c superseded note, docs/learning/55-postgresql-only.md
+
+## Previous Phase
 **§8d Step 1 — R4: PostgreSQL Dual-Backend + DB Layer (2026-06-10, COMPLETE).**
 
 Replaced all `aiosqlite` direct usage across 15 store files and 30+ test files with SQLAlchemy Core async (`text()` + named `:param` style) via a new `AsyncDatabase` wrapper class. Added dialect-aware migration runner with migrations #10-#12 folding in three previously-orphaned inline DDL blocks. Added Postgres CI job with role-grant verification. All 2446 tests pass (SQLite `:memory:`), mypy clean, ruff clean.

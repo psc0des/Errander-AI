@@ -14,7 +14,6 @@ from errander.agent.decisions import (
     generate_report,
     prioritize_actions,
 )
-from errander.db.core import AsyncDatabase
 from errander.models.actions import (
     ActionResult,
     ActionStatus,
@@ -22,6 +21,7 @@ from errander.models.actions import (
     RiskTier,
 )
 from errander.models.vm import OSFamily, VMInfo
+from tests.conftest import make_test_db
 
 
 def _make_vm_info(**overrides: object) -> VMInfo:
@@ -291,7 +291,7 @@ class TestRedactionInDecisionPaths:
         from errander.safety.ai_audit import AIDecisionStore
 
         client = _make_llm("{}")
-        async with AIDecisionStore(AsyncDatabase(":memory:")) as store:
+        async with AIDecisionStore(make_test_db()) as store:
             await prioritize_actions(
                 self._vm(),
                 llm_client=client,
@@ -313,7 +313,7 @@ class TestRedactionInDecisionPaths:
 
         signals = StoredSignalContext(disk_trend_summary=f"trend ok. key={self._SECRET}")
         client = _make_llm("{}")
-        async with AIDecisionStore(AsyncDatabase(":memory:")) as store:
+        async with AIDecisionStore(make_test_db()) as store:
             await prioritize_actions(
                 self._vm(),
                 llm_client=client,

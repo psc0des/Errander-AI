@@ -1,7 +1,7 @@
 """Audit logging for all agent actions.
 
 Every action is logged to the audit trail BEFORE and AFTER execution.
-Audit events are immutable — written to SQLite (v1) / PostgreSQL (v2).
+Audit events are immutable — written to PostgreSQL.
 
 The audit trail answers: what happened, when, to which VM, by which batch,
 and what was the outcome.
@@ -39,13 +39,6 @@ class AuditWriteError(RuntimeError):
     """
 
 
-def _group_concat(col: str, dialect: str) -> str:
-    """Return dialect-appropriate aggregate for distinct string concatenation."""
-    if dialect == "sqlite":
-        return f"GROUP_CONCAT(DISTINCT {col})"
-    return f"STRING_AGG(DISTINCT {col}, ',')"
-
-
 _INSERT_SQL = """
 INSERT INTO audit_events (event_type, batch_id, vm_id, action_type, detail, timestamp, metadata)
 VALUES (:event_type, :batch_id, :vm_id, :action_type, :detail, :timestamp, :metadata)
@@ -58,16 +51,16 @@ FROM audit_events
 
 
 class AuditStore:
-    """Async database-backed audit event store (SQLite or PostgreSQL).
+    """Async database-backed audit event store (PostgreSQL).
 
     Usage::
 
-        db = AsyncDatabase("audit.sqlite")
+        db = AsyncDatabase("postgresql://errander:errander@localhost/errander")
         async with AuditStore(db) as store:
             await store.log_event(event)
             events = await store.get_events(batch_id="run-123")
 
-    For testing, use AsyncDatabase(":memory:").
+    For testing, use the make_test_db() helper from tests/conftest.py.
     """
 
     def __init__(self, db: AsyncDatabase, strict_mode: bool = True) -> None:
@@ -77,7 +70,7 @@ class AuditStore:
     async def initialize(self) -> None:
         """Apply all pending schema migrations."""
         async with self._db.begin() as conn:
-            await run_migrations(conn, self._db.dialect)
+            await run_migrations(conn)
 
     async def close(self) -> None:
         """Dispose the underlying database engine."""
@@ -215,13 +208,12 @@ class AuditStore:
         Returns:
             List of batch summaries, most recent first.
         """
-        agg = _group_concat("vm_id", self._db.dialect)
-        query = f"""
+        query = """
         SELECT
             batch_id,
             MIN(timestamp) AS started_at,
             COUNT(*) AS event_count,
-            {agg} AS vm_ids
+            STRING_AGG(DISTINCT vm_id, ',') AS vm_ids
         FROM audit_events
         GROUP BY batch_id
         ORDER BY started_at DESC

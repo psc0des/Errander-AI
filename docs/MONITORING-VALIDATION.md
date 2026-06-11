@@ -20,7 +20,7 @@ This doc records what to compare, how to compare it, known differences, and the 
 
 **Direct DB check:**
 ```bash
-sqlite3 errander.sqlite \
+docker exec errander-postgres psql -U errander -d errander -c \
   "SELECT event_type, COUNT(*) FROM audit_events
    WHERE event_type IN ('action_completed','action_failed')
    AND timestamp >= datetime('now','-30 days')
@@ -34,7 +34,7 @@ sqlite3 errander.sqlite \
 **Built-in only** — Grafana has no approval panel. The built-in page is the only visualization of this data. Cross-check directly against the DB:
 
 ```bash
-sqlite3 errander.sqlite \
+docker exec errander-postgres psql -U errander -d errander -c \
   "SELECT event_type, COUNT(*) FROM audit_events
    WHERE event_type LIKE 'approval%'
    AND timestamp >= datetime('now','-30 days')
@@ -53,7 +53,7 @@ sqlite3 errander.sqlite \
 
 **How to check for restarts:**
 ```bash
-sqlite3 errander.sqlite \
+docker exec errander-postgres psql -U errander -d errander -c \
   "SELECT COUNT(*) FROM audit_events WHERE event_type='agent_starts'"
 # or look at the agent_starts counter on /ui/monitoring itself
 ```
@@ -67,7 +67,7 @@ If agent_starts > 1 during your window, the duration averages will diverge.
 **Built-in only** — Grafana has no safety signal panels. No cross-check possible from Prometheus. Verify via DB:
 
 ```bash
-sqlite3 errander.sqlite \
+docker exec errander-postgres psql -U errander -d errander -c \
   "SELECT event_type, COUNT(*) FROM audit_events
    WHERE event_type IN (
      'drift_detected','drift_kind_changed',

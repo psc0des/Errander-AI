@@ -19,6 +19,7 @@ from playwright.sync_api import Page, expect
 from errander.observability.metrics import start_metrics_server
 from errander.safety.approval import ApprovalManager
 from errander.safety.audit import AuditStore
+from tests.conftest import make_test_db
 
 # ---------------------------------------------------------------------------
 # Server fixture — runs in a background thread, includes ApprovalManager
@@ -31,7 +32,7 @@ def approvals_base_url() -> str:  # type: ignore[return]
     ctx: dict[str, object] = {}
 
     async def _run() -> None:
-        store = AuditStore(":memory:")
+        store = AuditStore(make_test_db())
         await store.initialize()
 
         manager = ApprovalManager()

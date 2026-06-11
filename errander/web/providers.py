@@ -307,18 +307,13 @@ class LiveProvider:
                     if row[2] is not None:
                         vm_actions.setdefault(str(row[2]), []).append(d)
 
-                _gc = (
-                    "GROUP_CONCAT(DISTINCT vm_id)"
-                    if db.dialect == "sqlite"
-                    else "STRING_AGG(DISTINCT vm_id, ',')"
-                )
                 async with db.begin() as _conn:
                     _br = await _conn.execute(
-                        text(f"""
+                        text("""
                         SELECT batch_id,
                                MIN(timestamp) AS started_at,
                                COUNT(*)       AS event_count,
-                               {_gc} AS vm_ids
+                               STRING_AGG(DISTINCT vm_id, ',') AS vm_ids
                         FROM audit_events
                         GROUP BY batch_id
                         ORDER BY started_at DESC

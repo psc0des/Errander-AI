@@ -10,20 +10,84 @@ Provides common test fixtures:
 
 from __future__ import annotations
 
+import asyncio
 import os
-from collections.abc import AsyncGenerator
-from typing import TYPE_CHECKING
+from collections.abc import AsyncIterator
 
 import pytest
 import pytest_asyncio
 
+from errander.db.core import AsyncDatabase
 from errander.models.vm import OSFamily, VMTarget
 
-if TYPE_CHECKING:
-    from errander.db.core import AsyncDatabase
-
 # Read at import time so clean_errander_env's monkeypatch loop does not affect it.
-TEST_DB_URL: str = os.getenv("ERRANDER_TEST_DB_URL", ":memory:")
+# Default matches the errander_test database created by docker-compose.yml.
+TEST_DB_URL: str = os.getenv(
+    "ERRANDER_TEST_DB_URL",
+    "postgresql+asyncpg://errander:errander@localhost:5432/errander_test",
+)
+
+# Migration/version bookkeeping tables that per-test cleanup must never touch.
+_PRESERVED_TABLES = frozenset({"schema_migrations", "checkpoint_migrations"})
+
+
+def make_test_db() -> AsyncDatabase:
+    """Return an AsyncDatabase bound to the shared test database.
+
+    Migrations are applied once per session (see _migrate_test_db); all tables
+    are truncated before every test (see _clean_test_db), so each test sees
+    the same empty-database state a fresh in-memory DB used to provide.
+    """
+    return AsyncDatabase(TEST_DB_URL)
+
+
+async def _run_session_migrations() -> None:
+    from errander.safety.migrations import run_migrations
+
+    db = AsyncDatabase(TEST_DB_URL)
+    try:
+        async with db.begin() as conn:
+            await run_migrations(conn)
+    finally:
+        await db.close()
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _migrate_test_db() -> None:
+    """Apply schema migrations to the test database once per session.
+
+    Sync fixture running its own event loop so it works regardless of
+    pytest-asyncio loop scoping.
+    """
+    try:
+        asyncio.run(_run_session_migrations())
+    except Exception as exc:  # noqa: BLE001 — translate to a clear operator message
+        pytest.exit(
+            f"Cannot reach the test PostgreSQL at {TEST_DB_URL!r}: {exc}\n"
+            "Start it with `docker compose up -d` (see SETUP.md), or set "
+            "ERRANDER_TEST_DB_URL to a reachable PostgreSQL.",
+            returncode=1,
+        )
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def _clean_test_db(_migrate_test_db: None) -> AsyncIterator[None]:
+    """Truncate all tables before each test — same isolation a fresh DB gave."""
+    from sqlalchemy import text
+
+    db = AsyncDatabase(TEST_DB_URL)
+    try:
+        async with db.begin() as conn:
+            result = await conn.execute(text(
+                "SELECT tablename FROM pg_tables WHERE schemaname = 'public'"
+            ))
+            tables = [str(r[0]) for r in result.fetchall() if str(r[0]) not in _PRESERVED_TABLES]
+            if tables:
+                quoted = ", ".join(f'"{t}"' for t in tables)
+                await conn.execute(text(f"TRUNCATE TABLE {quoted} RESTART IDENTITY CASCADE"))
+    finally:
+        await db.close()
+    yield
 
 
 @pytest.fixture(autouse=True)
@@ -37,45 +101,6 @@ def clean_errander_env(monkeypatch: pytest.MonkeyPatch) -> None:
     for key in list(os.environ.keys()):
         if key.startswith("ERRANDER_"):
             monkeypatch.delenv(key, raising=False)
-
-
-@pytest_asyncio.fixture(scope="session")
-async def session_db() -> AsyncGenerator[AsyncDatabase, None]:
-    """Session-scoped AsyncDatabase using TEST_DB_URL.
-
-    When ERRANDER_TEST_DB_URL is set to a Postgres URL (e.g. in CI), all tests
-    that opt in via the async_db fixture run against Postgres. Otherwise falls
-    back to a shared in-memory SQLite DB.
-    """
-    from errander.db.core import AsyncDatabase
-    from errander.safety.migrations import run_migrations
-
-    db = AsyncDatabase(TEST_DB_URL)
-    async with db.begin() as conn:
-        await run_migrations(conn, db.dialect)
-    yield db
-    await db.close()
-
-
-@pytest_asyncio.fixture
-async def async_db(session_db: AsyncDatabase) -> AsyncGenerator[AsyncDatabase, None]:
-    """Per-test AsyncDatabase.
-
-    For in-memory SQLite: yields a fresh isolated DB (no cross-test state).
-    For Postgres or file SQLite: yields the shared session_db (tests must use
-    unique IDs to avoid conflicts).
-    """
-    from errander.db.core import AsyncDatabase
-    from errander.safety.migrations import run_migrations
-
-    if ":memory:" in TEST_DB_URL:
-        db = AsyncDatabase(":memory:")
-        async with db.begin() as conn:
-            await run_migrations(conn, "sqlite")
-        yield db
-        await db.close()
-    else:
-        yield session_db
 
 
 @pytest.fixture

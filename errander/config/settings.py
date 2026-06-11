@@ -77,7 +77,7 @@ class Settings:
         llm_model: Model ID for the provider.
         llm_api_key: LLM API key.
         llm_temperature: Sampling temperature.
-        audit_db_url: SQLite database path.
+        audit_db_url: PostgreSQL connection URL (postgresql://...).
         llm_timeout_seconds: LLM request timeout.
         llm_max_retries: LLM max retry attempts.
         approval_timeout_seconds: Slack approval timeout.
@@ -99,7 +99,9 @@ class Settings:
     slack_channel_id: str = ""
     llm_base_url: str = ""
     llm_api_key: str = "not-needed"
-    audit_db_url: str = "errander.sqlite"
+    # Default matches the repo's docker-compose.yml — `docker compose up -d`
+    # gives a working local PostgreSQL with zero configuration.
+    audit_db_url: str = "postgresql://errander:errander@localhost:5432/errander"
     prometheus_base_url: str = ""  # ERRANDER_PROMETHEUS_BASE_URL; empty = disabled
     elk_base_url: str = ""          # ERRANDER_ELK_BASE_URL; empty = disabled
     elk_api_key: str = ""           # ERRANDER_ELK_API_KEY; optional
@@ -374,7 +376,10 @@ def load_settings(
         slack_channel_id=_str("ERRANDER_SLACK_CHANNEL_ID", None),
         llm_base_url=_str("ERRANDER_LLM_BASE_URL", None),
         llm_api_key=_str("ERRANDER_LLM_API_KEY", None, "not-needed"),
-        audit_db_url=_str("ERRANDER_AUDIT_DB_URL", None, "errander.sqlite"),
+        audit_db_url=_str(
+            "ERRANDER_AUDIT_DB_URL", None,
+            "postgresql://errander:errander@localhost:5432/errander",
+        ),
         # LLM settings — support DB overrides for runtime switching
         llm_model=_str("ERRANDER_LLM_MODEL", llm.model if llm else None),
         llm_temperature=_float_field(

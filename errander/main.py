@@ -1643,7 +1643,7 @@ async def run_measure_durability(db_path: str, window_days: int = 14) -> int:
     try:
         db = AsyncDatabase(db_path)
         async with db.begin() as conn:
-            await run_migrations(conn, db.dialect)
+            await run_migrations(conn)
         report = await compute_durability_report(db, window_days)
         await db.close()
     except Exception as exc:  # noqa: BLE001
@@ -1697,22 +1697,26 @@ async def run_env_batch(
 
     from errander.safety.ai_audit import AIDecisionStore
 
-    ai_db_path = settings.audit_db_url  # share same SQLite file
+    ai_db_path = settings.audit_db_url  # share same PostgreSQL database
     ai_decision_store = AIDecisionStore(AsyncDatabase(ai_db_path))
     await ai_decision_store.initialize()
 
-    # AsyncSqliteSaver: LangGraph checkpoint persistence (Project A, A5).
+    # AsyncPostgresSaver: LangGraph checkpoint persistence (Project A, A5).
     # Each batch run gets a unique thread_id so checkpoints don't collide.
-    # The same DB file is used for audit + checkpoints (separate tables).
+    # The same database is used for audit + checkpoints (separate tables).
+    # Note: langgraph-checkpoint-postgres uses psycopg3, which wants a plain
+    # postgresql:// URL (no +asyncpg driver suffix).
     _thread_id = f"batch-{_uuid.uuid4().hex[:12]}"
     _checkpointer_cm: Any = None
     try:
-        from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver as _AsyncSqliteSaver
-        _checkpointer_cm = _AsyncSqliteSaver.from_conn_string(settings.audit_db_url)
+        from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver as _AsyncPostgresSaver
+        _pg_url = settings.audit_db_url.replace("postgresql+asyncpg://", "postgresql://", 1)
+        _checkpointer_cm = _AsyncPostgresSaver.from_conn_string(_pg_url)
         _checkpointer = await _checkpointer_cm.__aenter__()
+        await _checkpointer.setup()  # idempotent — creates checkpoint tables
         _checkpointer_entered = True
     except Exception as _exc:
-        logger.warning("Could not init AsyncSqliteSaver — running without checkpointing: %s", _exc)
+        logger.warning("Could not init AsyncPostgresSaver — running without checkpointing: %s", _exc)
         _checkpointer = None
         _checkpointer_entered = False
 

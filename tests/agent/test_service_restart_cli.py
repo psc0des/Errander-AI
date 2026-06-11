@@ -13,6 +13,7 @@ import pytest
 import yaml
 
 from errander.main import run_restart_service
+from tests.conftest import TEST_DB_URL
 
 _INVENTORY = {
     "environments": {
@@ -54,7 +55,7 @@ def _mock_locker(*, acquired: bool = True) -> MagicMock:
 
 def _mock_settings(*, has_slack: bool = True) -> MagicMock:
     s = MagicMock()
-    s.audit_db_url = ":memory:"
+    s.audit_db_url = TEST_DB_URL
     s.approval_timeout_seconds = 30
     s.approval_poll_interval_seconds = 1
     if has_slack:

@@ -21,12 +21,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from errander.db.core import AsyncDatabase
 from errander.execution.ssh import SSHConnectionManager, SSHResult
 from errander.models.actions import ActionStatus, ActionType
 from errander.models.events import AuditEvent, EventType
 from errander.safety.audit import AuditStore, AuditWriteError
 from errander.safety.locking import FileLocker
+from tests.conftest import make_test_db
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -247,7 +247,7 @@ class TestAuditFaultInjection:
         """Live action with strict audit aborts when DB write fails."""
         from sqlalchemy.exc import OperationalError as SAOperErr
 
-        async with AuditStore(AsyncDatabase(":memory:"), strict_mode=True) as store:
+        async with AuditStore(make_test_db(), strict_mode=True) as store:
             @asynccontextmanager
             async def _fail():
                 raise SAOperErr(None, None, Exception("database is locked"))
@@ -264,7 +264,7 @@ class TestAuditFaultInjection:
         """Dry-run audit failures are swallowed — batch continues."""
         from sqlalchemy.exc import OperationalError as SAOperErr
 
-        async with AuditStore(AsyncDatabase(":memory:"), strict_mode=True) as store:
+        async with AuditStore(make_test_db(), strict_mode=True) as store:
             @asynccontextmanager
             async def _fail():
                 raise SAOperErr(None, None, Exception("database is locked"))
@@ -279,7 +279,7 @@ class TestAuditFaultInjection:
         """strict_mode=False always swallows failures."""
         from sqlalchemy.exc import OperationalError as SAOperErr
 
-        async with AuditStore(AsyncDatabase(":memory:"), strict_mode=False) as store:
+        async with AuditStore(make_test_db(), strict_mode=False) as store:
             @asynccontextmanager
             async def _fail():
                 raise SAOperErr(None, None, Exception("disk full"))
@@ -293,7 +293,7 @@ class TestAuditFaultInjection:
         """Both retry attempts fail in strict mode → AuditWriteError after 2 attempts."""
         from sqlalchemy.exc import OperationalError as SAOperErr
 
-        async with AuditStore(AsyncDatabase(":memory:"), strict_mode=True) as store:
+        async with AuditStore(make_test_db(), strict_mode=True) as store:
             call_count = 0
 
             def _always_fail():
@@ -385,7 +385,7 @@ class TestLLMFaultInjection:
             disk_usage={"/": 55.0}, docker_available=True,
             pending_packages=2, uptime_seconds=3600.0,
         )
-        async with AIDecisionStore(AsyncDatabase(":memory:")) as store:
+        async with AIDecisionStore(make_test_db()) as store:
             await prioritize_actions(
                 vm,
                 llm_client=None,
@@ -470,7 +470,7 @@ class TestFleetAbortChaos:
         """check_fleet_health_node emits FLEET_ABORT and sets error when threshold exceeded."""
         from errander.agent.graph import check_fleet_health_node
 
-        async with AuditStore(AsyncDatabase(":memory:")) as store:
+        async with AuditStore(make_test_db()) as store:
             state = {
                 "batch_id": "chaos-fleet",
                 "healthy_targets": [],
@@ -501,8 +501,8 @@ class TestWindowsTempDirSafety:
         locker = FileLocker(lock_dir=tmp_path / "locks")
         assert locker is not None
 
-    def test_ai_decision_store_uses_memory_db_in_tests(self) -> None:
-        """Tests should use ':memory:' SQLite for AI decision store — never disk paths."""
+    def test_ai_decision_store_uses_test_db_in_tests(self) -> None:
+        """Tests use the shared PostgreSQL test database — never ad-hoc disk paths."""
         from errander.safety.ai_audit import AIDecisionStore
-        store = AIDecisionStore(AsyncDatabase(":memory:"))
-        assert ":memory:" in store._db._url
+        store = AIDecisionStore(make_test_db())
+        assert store._db._url.startswith("postgresql+asyncpg://")

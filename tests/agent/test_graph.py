@@ -20,7 +20,6 @@ from errander.agent.graph import (
     validate_targets_node,
     validate_window_node,
 )
-from errander.db.core import AsyncDatabase
 from errander.execution.sandbox import SandboxExecutor
 from errander.execution.ssh import SSHConnectionManager, SSHResult
 from errander.models.actions import ActionStatus
@@ -28,6 +27,7 @@ from errander.safety.approval import ApprovalManager
 from errander.safety.audit import AuditStore
 from errander.safety.locking import FileLocker
 from errander.scheduling.windows import MaintenanceWindow
+from tests.conftest import make_test_db
 
 # --- Helpers ---
 
@@ -181,7 +181,7 @@ class TestValidateWindowNode:
         ssh_mgr = SSHConnectionManager()
         executor = _make_executor()
         locker = FileLocker(lock_dir=tmp_path / "locks")
-        async with AuditStore(AsyncDatabase(":memory:")) as store:
+        async with AuditStore(make_test_db()) as store:
             graph = build_batch_graph(
                 executor, locker, store, ssh_mgr, window=window,
             ).compile()
@@ -206,7 +206,7 @@ class TestValidateTargetsNode:
         ssh = SSHConnectionManager()
         os_release = 'ID=ubuntu\nVERSION_ID="22.04"\nPRETTY_NAME="Ubuntu 22.04"\n'
         ready = TargetReadiness(vm_id="dev/web-01", hostname="10.0.1.10")
-        async with AuditStore(AsyncDatabase(":memory:")) as store:
+        async with AuditStore(make_test_db()) as store:
             with (
                 patch.object(ssh, "execute", AsyncMock(return_value=_make_ssh_result(os_release))),
                 patch("errander.execution.target_validation.check_target", new=AsyncMock(return_value=ready)),
@@ -225,7 +225,7 @@ class TestValidateTargetsNode:
     @pytest.mark.asyncio
     async def test_failed_target_on_ssh_error(self) -> None:
         ssh = SSHConnectionManager()
-        async with AuditStore(AsyncDatabase(":memory:")) as store:
+        async with AuditStore(make_test_db()) as store:
             with patch.object(
                 ssh, "execute",
                 AsyncMock(side_effect=ConnectionError("refused")),
@@ -242,7 +242,7 @@ class TestValidateTargetsNode:
     @pytest.mark.asyncio
     async def test_failed_target_on_nonzero_exit(self) -> None:
         ssh = SSHConnectionManager()
-        async with AuditStore(AsyncDatabase(":memory:")) as store:
+        async with AuditStore(make_test_db()) as store:
             with patch.object(
                 ssh, "execute",
                 AsyncMock(return_value=_make_ssh_result("", exit_code=1)),
@@ -270,7 +270,7 @@ class TestValidateTargetsNode:
             _make_ssh_result("", exit_code=1),     # web-02 fails
         ]
         ready = TargetReadiness(vm_id="dev/web-01", hostname="10.0.1.10")
-        async with AuditStore(AsyncDatabase(":memory:")) as store:
+        async with AuditStore(make_test_db()) as store:
             with (
                 patch.object(ssh, "execute", AsyncMock(side_effect=ssh_results)),
                 patch("errander.execution.target_validation.check_target", new=AsyncMock(return_value=ready)),
@@ -606,7 +606,7 @@ class TestApprovalGateDeferred:
         # Monday outside window — dry-run should still NOT be deferred
         monday_10am = datetime(2030, 1, 7, 10, 0, 0, tzinfo=UTC)
 
-        deferred_store = DeferredExecutionStore(AsyncDatabase(":memory:"))
+        deferred_store = DeferredExecutionStore(make_test_db())
         await deferred_store.initialize()
 
         try:
@@ -640,7 +640,7 @@ class TestApprovalGateDeferred:
         )
         monday_3am = datetime(2026, 4, 6, 3, 0, 0, tzinfo=UTC)
 
-        deferred_store = DeferredExecutionStore(AsyncDatabase(":memory:"))
+        deferred_store = DeferredExecutionStore(make_test_db())
         await deferred_store.initialize()
 
         try:
@@ -673,7 +673,7 @@ class TestApprovalGateDeferred:
         # 2030-01-07 is a Monday at 10:00 UTC — outside [02:00, 06:00).
         monday_10am = datetime(2030, 1, 7, 10, 0, 0, tzinfo=UTC)
 
-        deferred_store = DeferredExecutionStore(AsyncDatabase(":memory:"))
+        deferred_store = DeferredExecutionStore(make_test_db())
         await deferred_store.initialize()
 
         try:
@@ -705,7 +705,7 @@ class TestApprovalGateDeferred:
         from errander.agent.graph import approval_gate_node
         from errander.safety.deferred import DeferredExecutionStore
 
-        deferred_store = DeferredExecutionStore(AsyncDatabase(":memory:"))
+        deferred_store = DeferredExecutionStore(make_test_db())
         await deferred_store.initialize()
 
         try:
@@ -736,7 +736,7 @@ class TestApprovalGateDeferred:
         slack_client = MagicMock()
         slack_client.post_alert = AsyncMock()
 
-        deferred_store = DeferredExecutionStore(AsyncDatabase(":memory:"))
+        deferred_store = DeferredExecutionStore(make_test_db())
         await deferred_store.initialize()
 
         try:
@@ -778,10 +778,10 @@ class TestApprovalGateDeferred:
         )
         monday_10am = datetime(2030, 1, 7, 10, 0, 0, tzinfo=UTC)
 
-        deferred_store = DeferredExecutionStore(AsyncDatabase(":memory:"))
+        deferred_store = DeferredExecutionStore(make_test_db())
         await deferred_store.initialize()
 
-        async with AuditStore(AsyncDatabase(":memory:")) as audit_store:
+        async with AuditStore(make_test_db()) as audit_store:
             try:
                 state = self._make_approval_state(dry_run=False)
                 mgr = MagicMock(spec=ApprovalManager)

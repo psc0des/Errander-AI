@@ -5,10 +5,10 @@ from __future__ import annotations
 import pytest
 import pytest_asyncio
 
-from errander.db.core import AsyncDatabase
 from errander.models.batches import BatchRecord, BatchStatus
 from errander.safety.batches import BatchStore
 from errander.safety.migrations import run_migrations
+from tests.conftest import make_test_db
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -17,9 +17,9 @@ from errander.safety.migrations import run_migrations
 @pytest_asyncio.fixture
 async def db():
     """In-memory AsyncDatabase with all migrations applied."""
-    db = AsyncDatabase(":memory:")
+    db = make_test_db()
     async with db.begin() as conn:
-        await run_migrations(conn, "sqlite")
+        await run_migrations(conn)
     yield db
     await db.close()
 

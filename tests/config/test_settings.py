@@ -27,7 +27,7 @@ class TestLoadSettingsEnvVars:
         settings = load_settings()
         assert settings.slack_bot_token == ""
         assert settings.llm_api_key == "not-needed"
-        assert settings.audit_db_url == "errander.sqlite"
+        assert settings.audit_db_url == "postgresql://errander:errander@localhost:5432/errander"
         assert settings.metrics_port == 9090
         assert settings.dry_run_default is True
         assert settings.approval_timeout_seconds == 1800
@@ -36,7 +36,7 @@ class TestLoadSettingsEnvVars:
         monkeypatch.setenv("ERRANDER_SLACK_BOT_TOKEN", "xoxb-test-token")
         monkeypatch.setenv("ERRANDER_SLACK_CHANNEL_ID", "C123456")
         monkeypatch.setenv("ERRANDER_LLM_BASE_URL", "http://10.0.0.5:8000/v1")
-        monkeypatch.setenv("ERRANDER_AUDIT_DB_URL", "/var/lib/errander/audit.sqlite")
+        monkeypatch.setenv("ERRANDER_AUDIT_DB_URL", "postgresql://u:p@db.internal:5432/errander")
         monkeypatch.setenv("ERRANDER_METRICS_PORT", "8080")
         monkeypatch.setenv("ERRANDER_DRY_RUN", "false")
 
@@ -44,7 +44,7 @@ class TestLoadSettingsEnvVars:
         assert settings.slack_bot_token == "xoxb-test-token"
         assert settings.slack_channel_id == "C123456"
         assert settings.llm_base_url == "http://10.0.0.5:8000/v1"
-        assert settings.audit_db_url == "/var/lib/errander/audit.sqlite"
+        assert settings.audit_db_url == "postgresql://u:p@db.internal:5432/errander"
         assert settings.metrics_port == 8080
         assert settings.dry_run_default is False
 

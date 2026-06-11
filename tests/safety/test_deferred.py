@@ -6,9 +6,9 @@ from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import text
 
-from errander.db.core import AsyncDatabase
 from errander.safety.deferred import DeferredExecutionStore
 from errander.safety.migrations import run_migrations
+from tests.conftest import make_test_db
 
 
 def _utc(*args: int) -> datetime:
@@ -22,9 +22,9 @@ WINDOW_START = datetime.now(tz=UTC).replace(
 
 
 async def _make_store() -> DeferredExecutionStore:
-    db = AsyncDatabase(":memory:")
+    db = make_test_db()
     async with db.begin() as conn:
-        await run_migrations(conn, "sqlite")
+        await run_migrations(conn)
     return DeferredExecutionStore(db)
 
 

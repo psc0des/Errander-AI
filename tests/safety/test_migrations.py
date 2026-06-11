@@ -17,7 +17,7 @@ from tests.conftest import TEST_DB_URL
 async def _make_db() -> AsyncDatabase:
     db = AsyncDatabase(TEST_DB_URL)
     async with db.begin() as conn:
-        await run_migrations(conn, db.dialect)
+        await run_migrations(conn)
     return db
 
 
@@ -77,7 +77,7 @@ class TestRunMigrations:
         db = await _make_db()
         # Second call must not raise and must not duplicate version records
         async with db.begin() as conn:
-            await run_migrations(conn, db.dialect)
+            await run_migrations(conn)
         async with db.begin() as conn:
             result = await conn.execute(text("SELECT COUNT(*) FROM schema_migrations"))
             row = result.fetchone()

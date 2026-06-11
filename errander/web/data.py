@@ -405,7 +405,7 @@ EXECUTION_TRACE: dict[str, Any] = {
         {
             "name": "Audit Logging",  "started": "02:14:44", "duration_s": 0.8,
             "status": "ok",
-            "detail": "89 events written to SQLite · strict mode active · 0 write failures",
+            "detail": "89 events written to PostgreSQL · strict mode active · 0 write failures",
         },
         {
             "name": "Report",         "started": "02:14:45", "duration_s": 1.1,

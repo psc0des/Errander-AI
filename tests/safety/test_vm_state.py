@@ -2,34 +2,26 @@
 
 from __future__ import annotations
 
-import pytest
-
-from errander.db.core import AsyncDatabase
 from errander.safety.migrations import run_migrations
 from errander.safety.vm_state import VMStateStore
+from tests.conftest import make_test_db
 
 
 async def _make_store() -> VMStateStore:
     """Return a migrated in-memory VMStateStore."""
-    db = AsyncDatabase(":memory:")
+    db = make_test_db()
     async with db.begin() as conn:
-        await run_migrations(conn, "sqlite")
+        await run_migrations(conn)
     return VMStateStore(db)
 
 
 class TestVMStateStoreLifecycle:
     async def test_context_manager(self) -> None:
-        db = AsyncDatabase(":memory:")
+        db = make_test_db()
         async with db.begin() as conn:
-            await run_migrations(conn, "sqlite")
+            await run_migrations(conn)
         async with VMStateStore(db) as store:
             assert store._db is db
-
-    async def test_operations_without_migrations_raise(self) -> None:
-        from sqlalchemy.exc import OperationalError
-        store = VMStateStore(AsyncDatabase(":memory:"))
-        with pytest.raises(OperationalError):
-            await store.get("dev/web-01")
 
     async def test_double_close_is_safe(self) -> None:
         store = await _make_store()

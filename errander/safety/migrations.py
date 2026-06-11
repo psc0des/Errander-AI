@@ -1,13 +1,11 @@
-"""Database schema migration framework.
+"""Database schema migration framework (PostgreSQL).
 
 Numbered, idempotent migrations tracked in the schema_migrations table.
-Works with both SQLite (aiosqlite) and PostgreSQL (asyncpg) via SQLAlchemy Core.
+DDL is written in PostgreSQL flavor — Errander-AI is PostgreSQL-only
+(owner decision 2026-06-10).
 
 Called by AuditStore.initialize() on every startup.  Each migration runs in
 its own transaction so a partial failure leaves prior migrations intact.
-
-_adapt_ddl() translates the SQLite DDL written in this file to PostgreSQL DDL
-at runtime.  The only substitution needed is AUTOINCREMENT → BIGSERIAL.
 """
 
 from __future__ import annotations
@@ -23,18 +21,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def _adapt_ddl(sql: str, dialect: str) -> str:
-    """Rewrite SQLite DDL to PostgreSQL DDL when dialect='postgresql'.
-
-    The only DDL difference is auto-increment primary keys:
-    SQLite: INTEGER PRIMARY KEY AUTOINCREMENT
-    PostgreSQL: BIGSERIAL PRIMARY KEY
-    """
-    if dialect == "sqlite":
-        return sql
-    return sql.replace("INTEGER PRIMARY KEY AUTOINCREMENT", "BIGSERIAL PRIMARY KEY")
-
-
 # ---------------------------------------------------------------------------
 # Migration registry
 # Each entry is (version: int, sql: str).  SQL may contain multiple
@@ -47,7 +33,7 @@ _MIGRATIONS: list[tuple[int, str]] = [
         0,
         """
         CREATE TABLE IF NOT EXISTS audit_events (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id BIGSERIAL PRIMARY KEY,
             event_type TEXT NOT NULL,
             batch_id TEXT NOT NULL,
             vm_id TEXT,
@@ -84,7 +70,7 @@ _MIGRATIONS: list[tuple[int, str]] = [
         2,
         """
         CREATE TABLE IF NOT EXISTS vm_baselines (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id BIGSERIAL PRIMARY KEY,
             vm_id TEXT NOT NULL,
             baseline_kind TEXT NOT NULL,
             scope_key TEXT NOT NULL DEFAULT '',
@@ -102,12 +88,12 @@ _MIGRATIONS: list[tuple[int, str]] = [
         3,
         """
         CREATE TABLE IF NOT EXISTS vm_disk_history (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id BIGSERIAL PRIMARY KEY,
             vm_id TEXT NOT NULL,
             captured_at TEXT NOT NULL,
             mountpoint TEXT NOT NULL,
-            used_bytes INTEGER NOT NULL,
-            total_bytes INTEGER NOT NULL
+            used_bytes BIGINT NOT NULL,
+            total_bytes BIGINT NOT NULL
         );
         CREATE INDEX IF NOT EXISTS idx_vm_disk_history_lookup
             ON vm_disk_history (vm_id, mountpoint, captured_at DESC)
@@ -128,7 +114,7 @@ _MIGRATIONS: list[tuple[int, str]] = [
             hostname   TEXT    NOT NULL,
             metric     TEXT    NOT NULL,
             value_pct  REAL    NOT NULL,
-            ts         INTEGER NOT NULL,
+            ts         BIGINT  NOT NULL,
             PRIMARY KEY (hostname, metric, ts)
         );
         CREATE INDEX IF NOT EXISTS idx_vm_metrics_lookup
@@ -213,7 +199,7 @@ _MIGRATIONS: list[tuple[int, str]] = [
         9,
         """
         CREATE TABLE IF NOT EXISTS ai_eval_runs (
-            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            id           BIGSERIAL PRIMARY KEY,
             run_id       TEXT    NOT NULL UNIQUE,
             model        TEXT    NOT NULL,
             decision_type TEXT,
@@ -226,7 +212,7 @@ _MIGRATIONS: list[tuple[int, str]] = [
         CREATE INDEX IF NOT EXISTS idx_eval_runs_ts
             ON ai_eval_runs (timestamp DESC);
         CREATE TABLE IF NOT EXISTS ai_eval_results (
-            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            id            BIGSERIAL PRIMARY KEY,
             run_id        TEXT    NOT NULL,
             original_id   INTEGER,
             decision_type TEXT    NOT NULL,
@@ -257,7 +243,7 @@ _MIGRATIONS: list[tuple[int, str]] = [
             note TEXT DEFAULT ''
         );
         CREATE TABLE IF NOT EXISTS inventory_overrides (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id BIGSERIAL PRIMARY KEY,
             env_name TEXT NOT NULL,
             vm_name TEXT NOT NULL,
             source TEXT NOT NULL CHECK (source IN ('yaml_override', 'db_addition')),
@@ -278,7 +264,7 @@ _MIGRATIONS: list[tuple[int, str]] = [
         11,
         """
         CREATE TABLE IF NOT EXISTS ai_decisions (
-            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            id          BIGSERIAL PRIMARY KEY,
             batch_id    TEXT NOT NULL,
             vm_id       TEXT,
             decision_type TEXT NOT NULL,
@@ -306,7 +292,7 @@ _MIGRATIONS: list[tuple[int, str]] = [
         12,
         """
         CREATE TABLE IF NOT EXISTS deferred_executions (
-            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            id           BIGSERIAL PRIMARY KEY,
             batch_id     TEXT    NOT NULL UNIQUE,
             env_name     TEXT    NOT NULL,
             approved_at  TEXT    NOT NULL,
@@ -328,7 +314,7 @@ _MIGRATIONS: list[tuple[int, str]] = [
 ]
 
 
-async def run_migrations(conn: AsyncConnection, dialect: str = "sqlite") -> None:
+async def run_migrations(conn: AsyncConnection) -> None:
     """Apply any pending database schema migrations.
 
     Idempotent — safe to call on every startup.  Each migration is applied
@@ -336,7 +322,6 @@ async def run_migrations(conn: AsyncConnection, dialect: str = "sqlite") -> None
 
     Args:
         conn: Open SQLAlchemy AsyncConnection (inside an active transaction).
-        dialect: 'sqlite' or 'postgresql'.  Controls DDL substitution.
     """
     # Bootstrap: schema_migrations must exist before we can read from it.
     await conn.execute(text("""
@@ -356,8 +341,7 @@ async def run_migrations(conn: AsyncConnection, dialect: str = "sqlite") -> None
             continue
 
         logger.info("Applying database migration %04d", version)
-        adapted = _adapt_ddl(sql, dialect)
-        for raw_stmt in adapted.split(";"):
+        for raw_stmt in sql.split(";"):
             stmt = raw_stmt.strip()
             if stmt:
                 await conn.execute(text(stmt))

@@ -152,16 +152,17 @@ ERRANDER_SSH_STRICT_HOST_KEYS=true \
 
 ---
 
-## Step 7 — Chaos: audit DB locked
+## Step 7 — Chaos: audit DB unavailable
 
 ```bash
-# Lock the SQLite file externally, then run
-flock errander.sqlite uv run python -m errander --run-now --env staging-soak --live &
-sleep 2 && kill %1  # release lock after 2s
+# Stop PostgreSQL briefly mid-run, then restore
+docker compose stop postgres && \
+  uv run python -m errander --run-now --env staging-soak --live &
+sleep 2 && docker compose start postgres
 ```
 
 **Pass criteria (strict mode):**
-- [ ] With DB locked for first 2s, live action aborts with `AuditWriteError`
+- [ ] With DB down, live action aborts with `AuditWriteError`
 - [ ] No partial state left on target VM
 
 ---
@@ -171,7 +172,8 @@ sleep 2 && kill %1  # release lock after 2s
 After any run with LLM configured:
 
 ```bash
-sqlite3 errander.sqlite "SELECT decision_type, model, outcome, latency_ms FROM ai_decisions LIMIT 10;"
+docker exec errander-postgres psql -U errander -d errander \
+  -c "SELECT decision_type, model, outcome, latency_ms FROM ai_decisions LIMIT 10;"
 ```
 
 **Pass criteria:**
@@ -186,7 +188,8 @@ sqlite3 errander.sqlite "SELECT decision_type, model, outcome, latency_ms FROM a
 
 ```bash
 az vm delete --name staging-ubuntu staging-debian staging-rhel --yes
-rm errander.sqlite errander_staging.sqlite ~/.ssh/errander_staging_known_hosts
+docker compose down -v   # drops the PostgreSQL volume (audit history)
+rm ~/.ssh/errander_staging_known_hosts
 ```
 
 ---

@@ -5,14 +5,13 @@ from __future__ import annotations
 import pytest
 import pytest_asyncio
 
-from errander.db.core import AsyncDatabase
 from errander.safety.overrides import OverridesStore
+from tests.conftest import make_test_db
 
 
 @pytest_asyncio.fixture
-async def store(tmp_path):
-    db_path = str(tmp_path / "test.sqlite")
-    async with OverridesStore(AsyncDatabase(db_path)) as s:
+async def store():
+    async with OverridesStore(make_test_db()) as s:
         yield s
 
 
@@ -172,16 +171,14 @@ class TestInventoryOverrides:
 
 
 class TestContextManager:
-    async def test_aenter_aexit(self, tmp_path):
-        db_path = str(tmp_path / "ctx.sqlite")
-        async with OverridesStore(AsyncDatabase(db_path)) as s:
+    async def test_aenter_aexit(self):
+        async with OverridesStore(make_test_db()) as s:
             await s.set_setting_override("ERRANDER_LLM_MODEL", "test")
             result = await s.get_settings_overrides()
             assert result["ERRANDER_LLM_MODEL"] == "test"
 
-    async def test_close_is_idempotent(self, tmp_path):
-        db_path = str(tmp_path / "idem.sqlite")
-        s = OverridesStore(AsyncDatabase(db_path))
+    async def test_close_is_idempotent(self):
+        s = OverridesStore(make_test_db())
         await s.initialize()
         await s.close()
         await s.close()  # second close must not raise

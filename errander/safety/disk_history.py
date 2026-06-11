@@ -46,7 +46,7 @@ class VMDiskHistoryStore:
 
     Usage::
 
-        db = AsyncDatabase("errander.sqlite")
+        db = AsyncDatabase("postgresql://errander:errander@localhost/errander")
         async with VMDiskHistoryStore(db) as store:
             await store.record_batch("prod/web-01", [("/", 10*GB, 50*GB)])
     """

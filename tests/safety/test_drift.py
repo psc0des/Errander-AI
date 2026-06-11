@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import pytest
 
-from errander.db.core import AsyncDatabase
 from errander.models.events import EventType
 from errander.safety.audit import AuditStore
 from errander.safety.drift import DriftResult, compare_states, load_baseline, save_baseline
+from tests.conftest import make_test_db
 
 
 def _baseline(**overrides: object) -> dict[str, object]:
@@ -124,7 +124,7 @@ class TestCompareStates:
 class TestSaveAndLoadBaseline:
     @pytest.mark.asyncio
     async def test_save_baseline_stores_event(self) -> None:
-        async with AuditStore(AsyncDatabase(":memory:")) as store:
+        async with AuditStore(make_test_db()) as store:
             vm_info: dict[str, object] = {"os_version": "Ubuntu 22.04", "disk_usage": {"/": 45.0}}
             await save_baseline(store, "dev/web-01", vm_info)
 
@@ -138,7 +138,7 @@ class TestSaveAndLoadBaseline:
 
     @pytest.mark.asyncio
     async def test_load_baseline_returns_data(self) -> None:
-        async with AuditStore(AsyncDatabase(":memory:")) as store:
+        async with AuditStore(make_test_db()) as store:
             vm_info: dict[str, object] = {"os_version": "Ubuntu 22.04", "disk_usage": {"/": 50.0}}
             await save_baseline(store, "dev/web-01", vm_info)
             loaded = await load_baseline(store, "dev/web-01")
@@ -149,14 +149,14 @@ class TestSaveAndLoadBaseline:
 
     @pytest.mark.asyncio
     async def test_load_baseline_no_data_returns_none(self) -> None:
-        async with AuditStore(AsyncDatabase(":memory:")) as store:
+        async with AuditStore(make_test_db()) as store:
             loaded = await load_baseline(store, "dev/unknown-vm")
         assert loaded is None
 
     @pytest.mark.asyncio
     async def test_load_baseline_returns_most_recent(self) -> None:
         """When multiple baselines exist, the most recent is returned."""
-        async with AuditStore(AsyncDatabase(":memory:")) as store:
+        async with AuditStore(make_test_db()) as store:
             await save_baseline(store, "dev/web-01", {"os_version": "Ubuntu 22.04"})
             await save_baseline(store, "dev/web-01", {"os_version": "Ubuntu 24.04"})
             loaded = await load_baseline(store, "dev/web-01")

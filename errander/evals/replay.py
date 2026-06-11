@@ -169,7 +169,7 @@ class EvalRun:
 
 
 # ---------------------------------------------------------------------------
-# EvalStore — async SQLite persistence for runs and results
+# EvalStore — async PostgreSQL persistence for runs and results
 # ---------------------------------------------------------------------------
 
 _INSERT_RUN_SQL = """
@@ -219,7 +219,7 @@ class EvalStore:
 
     async def initialize(self) -> None:
         async with self._db.begin() as conn:
-            await run_migrations(conn, self._db.dialect)
+            await run_migrations(conn)
 
     async def close(self) -> None:
         await self._db.close()

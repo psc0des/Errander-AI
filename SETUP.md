@@ -15,7 +15,7 @@ Step-by-step instructions for getting Errander-AI running from scratch.
 │  │  (Linux controller)   │                            │
 │  │  Errander-AI agent    │                            │
 │  │  APScheduler          │                            │
-│  │  SQLite audit DB      │                            │
+│  │  PostgreSQL audit DB  │                            │
 │  │  Web UI :9090         │                            │
 │  └──────────┬────────────┘                            │
 │             │ SSH port 22 (key-based, private IP)     │
@@ -33,7 +33,7 @@ Step-by-step instructions for getting Errander-AI running from scratch.
 
 | Machine | What runs there |
 |---|---|
-| **Master VM / Controller** | Errander-AI agent, SQLite, web UI — a Linux VM (Windows controller: see [SETUP-Win-Controller.md](SETUP-Win-Controller.md)) |
+| **Master VM / Controller** | Errander-AI agent, PostgreSQL, web UI — a Linux VM (Windows controller: see [SETUP-Win-Controller.md](SETUP-Win-Controller.md)) |
 | **Target VMs** | The Linux VMs being maintained — Ubuntu 20.04+, Debian 11+, RHEL 8+ |
 | **LLM endpoint** *(optional)* | Any OpenAI-compatible API: a cloud API (Azure AI Foundry, OpenAI, Groq, etc.), a local LLM on the controller (Ollama, LM Studio), or a self-hosted vLLM on a dedicated GPU VM (16 GB VRAM recommended) |
 
@@ -143,10 +143,17 @@ curl -fsSL https://raw.githubusercontent.com/psc0des/Errander-AI/main/scripts/bo
 ```bash
 sudo su - errander-agent
 cd ~/errander
-uv sync --extra dev           # SQLite (default)
-# uv sync --extra dev --extra postgres   # add for PostgreSQL deployments
+uv sync --extra dev
+# PostgreSQL is required (the only supported database). Easiest path: Docker —
+#   docker compose up -d        # provides postgresql://errander:errander@localhost:5432/errander
+# or point ERRANDER_AUDIT_DB_URL at an existing PostgreSQL server.
 uv run python -c "import errander; print('OK')"
 ```
+
+> **Migrating from a pre-PostgreSQL (SQLite) build?** Errander-AI is now PostgreSQL-only.
+> There is no automated data migration — re-run `configure.sh` against a PostgreSQL URL and
+> start fresh. Audit history from the old `errander.sqlite` file does not carry over; keep the
+> file if you need the old records for reference.
 
 **All remaining steps run as `errander-agent`.** Continue to Step 2 — `configure.sh` comes later in Step 5 once SSH keys and target VMs are set up.
 
@@ -738,7 +745,7 @@ What happens:
 1. SSH connects to each target VM and detects OS + disk state
 2. Plans actions (disk cleanup, etc.)
 3. Simulates all commands — prints `[DRY-RUN]` output, nothing is changed on the VMs
-4. Writes results to `errander.sqlite`
+4. Writes results to the PostgreSQL audit database
 
 ---
 
@@ -870,7 +877,7 @@ Type `yes` at the prompt. Removes: the `errander-agent` user + home (repo, `.env
 | `ERRANDER_LLM_BASE_URL` | Yes | — | LLM endpoint — any OpenAI-compatible API (cloud, Ollama, LM Studio, or vLLM) |
 | `ERRANDER_LLM_MODEL` | Yes | — | Model ID for the chosen provider, e.g. `gpt-4o-mini`, `qwen3:8b`, `Qwen/Qwen3-8B-AWQ` |
 | `ERRANDER_LLM_API_KEY` | No | `not-needed` | API key if your LLM server requires auth (required for Azure Foundry, OpenAI, Groq, etc.) |
-| `ERRANDER_AUDIT_DB_URL` | No | `errander.sqlite` | SQLite file path OR `postgresql+asyncpg://user:pass@host/db` (requires `--extra postgres`) |
+| `ERRANDER_AUDIT_DB_URL` | No | `postgresql://errander:errander@localhost:5432/errander` | PostgreSQL URL — default matches the repo's docker-compose.yml |
 | `ERRANDER_SLACK_BOT_TOKEN` | No | — | Slack bot token (`xoxb-...`). If omitted, approval falls back to web UI at `/ui/approvals` |
 | `ERRANDER_SLACK_CHANNEL_ID` | No | — | Slack approvals channel ID (`C...`). Required if `ERRANDER_SLACK_BOT_TOKEN` is set |
 | `ERRANDER_LLM_TEMPERATURE` | No | `0.1` | Sampling temperature (0.0–2.0; keep low for JSON output) |
@@ -1140,7 +1147,7 @@ ERRANDER_LLM_BASE_URL=<base-url>
 ERRANDER_LLM_MODEL=<model>
 ERRANDER_LLM_API_KEY=<api-key>
 
-ERRANDER_AUDIT_DB_URL=errander.sqlite
+ERRANDER_AUDIT_DB_URL=postgresql://errander:errander@localhost:5432/errander
 
 # Inventory path (used by the web UI in live mode)
 ERRANDER_INVENTORY_PATH=inventory.yaml
@@ -1232,7 +1239,7 @@ The UI covers:
 - `/ui/inventory` — disable YAML VMs or add ad-hoc VMs before the next run
 - `/ui/ai-decisions` — AI decision log (LLM calls, outcomes, latencies)
 
-Settings changed via the UI are stored in SQLite. Precedence chain:
+Settings changed via the UI are stored in PostgreSQL. Precedence chain:
 ```
 env var  >  DB (UI)  >  settings.yaml  >  built-in default
 ```

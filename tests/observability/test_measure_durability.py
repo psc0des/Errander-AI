@@ -17,6 +17,7 @@ from errander.observability.durability import (
     print_durability_report,
 )
 from errander.safety.migrations import run_migrations
+from tests.conftest import make_test_db
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -24,9 +25,9 @@ from errander.safety.migrations import run_migrations
 
 @asynccontextmanager
 async def _make_db() -> AsyncIterator[AsyncDatabase]:
-    db = AsyncDatabase(":memory:")
+    db = make_test_db()
     async with db.begin() as conn:
-        await run_migrations(conn, "sqlite")
+        await run_migrations(conn)
     try:
         yield db
     finally:

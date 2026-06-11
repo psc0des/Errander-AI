@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from errander.main import _parse_args, run_env_probe_main
+from tests.conftest import TEST_DB_URL
 
 # ---------------------------------------------------------------------------
 # CLI flag parsing
@@ -82,7 +83,7 @@ async def test_run_env_probe_main_calls_probe_runner(tmp_path: Path) -> None:
     with (
         patch("errander.agent.probe.run_env_probe", new=AsyncMock(return_value=fake_report)),
         patch("errander.config.settings.load_settings", return_value=MagicMock(
-            audit_db_url=":memory:",
+            audit_db_url=TEST_DB_URL,
             audit_mode="best_effort",
             slack_bot_token="",
             slack_channel_id="",
@@ -142,7 +143,7 @@ async def test_run_env_probe_main_posts_to_slack_when_configured(tmp_path: Path)
     with (
         patch("errander.agent.probe.run_env_probe", new=AsyncMock(return_value=fake_report)),
         patch("errander.config.settings.load_settings", return_value=MagicMock(
-            audit_db_url=":memory:",
+            audit_db_url=TEST_DB_URL,
             audit_mode="best_effort",
             slack_bot_token="xoxb-test",
             slack_channel_id="C123",

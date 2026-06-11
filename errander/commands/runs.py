@@ -35,7 +35,7 @@ async def run_list(db_path: str, limit: int = 20) -> int:
 
     db = AsyncDatabase(db_path)
     async with db.begin() as conn:
-        await run_migrations(conn, db.dialect)
+        await run_migrations(conn)
     store = BatchStore(db)
     batches = await store.list_recent(limit=limit)
     await db.close()
@@ -82,7 +82,7 @@ async def run_inspect(db_path: str, batch_id: str) -> int:
 
     db = AsyncDatabase(db_path)
     async with db.begin() as conn:
-        await run_migrations(conn, db.dialect)
+        await run_migrations(conn)
     store = BatchStore(db)
     rec = await store.get(batch_id)
     await db.close()
@@ -105,7 +105,7 @@ async def run_inspect(db_path: str, batch_id: str) -> int:
     # The checkpoint thread_id is not the batch_id (it's a separate UUID
     # generated in run_env_batch). We search by matching channel values.
     print()
-    _checkpoint_note = _inspect_checkpoint(db_path, batch_id)
+    _checkpoint_note = await _inspect_checkpoint(db_path, batch_id)
     if _checkpoint_note:
         print("Checkpoint:")
         print(f"  {_checkpoint_note}")
@@ -115,28 +115,29 @@ async def run_inspect(db_path: str, batch_id: str) -> int:
     return 0
 
 
-def _inspect_checkpoint(db_path: str, batch_id: str) -> str | None:
-    """Synchronously probe the LangGraph checkpoint DB for this batch_id."""
+async def _inspect_checkpoint(db_path: str, batch_id: str) -> str | None:
+    """Probe the LangGraph checkpoint tables (Postgres) for this batch_id."""
+    from sqlalchemy import text
+
     try:
-        import sqlite3
-        con = sqlite3.connect(db_path)
-        # LangGraph 3.x stores channel_values as JSON blobs in checkpoints
-        cur = con.execute(
-            """
-            SELECT thread_id, checkpoint_ns, type, checkpoint
-            FROM checkpoints
-            ORDER BY checkpoint_id DESC
-            LIMIT 200
-            """
-        )
-        rows = cur.fetchall()
-        con.close()
+        db = AsyncDatabase(db_path)
+        try:
+            async with db.begin() as conn:
+                result = await conn.execute(text(
+                    """
+                    SELECT thread_id, checkpoint_ns, type, checkpoint::text
+                    FROM checkpoints
+                    ORDER BY checkpoint_id DESC
+                    LIMIT 200
+                    """
+                ))
+                rows = result.fetchall()
+        finally:
+            await db.close()
         # Find a checkpoint whose channel data references our batch_id
         for thread_id, ns, ctype, data in rows:
             try:
-                blob = data if isinstance(data, bytes) else data.encode()
-                # Try to find batch_id in the raw bytes (fast scan)
-                if batch_id.encode() not in blob:
+                if batch_id not in str(data):
                     continue
                 return f"thread_id={thread_id} ns={ns!r} type={ctype}"
             except Exception:
@@ -170,7 +171,7 @@ async def run_resume(db_path: str, batch_id: str, *, force: bool = False) -> int
 
     db = AsyncDatabase(db_path)
     async with db.begin() as conn:
-        await run_migrations(conn, db.dialect)
+        await run_migrations(conn)
     store = BatchStore(db)
     rec = await store.get(batch_id)
 
@@ -185,7 +186,7 @@ async def run_resume(db_path: str, batch_id: str, *, force: bool = False) -> int
         return 1
 
     # Look up checkpoint next_node
-    next_node = _find_next_node_from_checkpoint(db_path, batch_id)
+    next_node = await _find_next_node_from_checkpoint(db_path, batch_id)
 
     if next_node is None:
         print(
@@ -242,23 +243,27 @@ async def run_resume(db_path: str, batch_id: str, *, force: bool = False) -> int
     return 0
 
 
-def _find_next_node_from_checkpoint(db_path: str, batch_id: str) -> str | None:
-    """Probe the LangGraph checkpoint DB to find the next node for batch_id."""
+async def _find_next_node_from_checkpoint(db_path: str, batch_id: str) -> str | None:
+    """Probe the LangGraph checkpoint tables (Postgres) to find the next node."""
+    from sqlalchemy import text
+
     try:
-        import sqlite3
-        con = sqlite3.connect(db_path)
-        cur = con.execute(
-            """
-            SELECT channel_values FROM checkpoint_blobs
-            ORDER BY thread_id DESC, checkpoint_id DESC
-            LIMIT 500
-            """
-        )
-        rows = cur.fetchall()
-        con.close()
+        db = AsyncDatabase(db_path)
+        try:
+            async with db.begin() as conn:
+                result = await conn.execute(text(
+                    """
+                    SELECT blob FROM checkpoint_blobs
+                    ORDER BY thread_id DESC
+                    LIMIT 500
+                    """
+                ))
+                rows = result.fetchall()
+        finally:
+            await db.close()
         for (blob,) in rows:
             try:
-                data = blob if isinstance(blob, bytes) else blob.encode("utf-8")
+                data = blob if isinstance(blob, bytes) else str(blob).encode("utf-8")
                 if batch_id.encode() not in data:
                     continue
                 # Try to find __next__ in the blob (LangGraph channel name)

@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from errander.config.schema import EnvironmentSchema, TargetSchema
 from errander.safety.overrides import OverridesStore
+from tests.conftest import TEST_DB_URL
 
 
 def _make_env(targets: list[dict[str, str]]) -> EnvironmentSchema:
@@ -49,7 +50,7 @@ async def _call_run_env_batch(
     from errander.safety.audit import AuditStore
     from errander.safety.locking import FileLocker
     settings = MagicMock(spec=Settings)
-    settings.audit_db_url = ":memory:"
+    settings.audit_db_url = TEST_DB_URL
     settings.sre_signals = SRESignalSettings()
 
     captured: dict[str, Any] = {}

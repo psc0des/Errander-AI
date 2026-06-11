@@ -145,8 +145,8 @@ class TestPlanShowCLI:
         from errander.db.core import AsyncDatabase
         from errander.main import run_plan_show
         from errander.safety.audit import AuditStore
-
-        db_path = str(tmp_path / "test.sqlite")
+        from tests.conftest import TEST_DB_URL
+        db_path = TEST_DB_URL
         packages = [
             {"name": f"pkg-{i}", "current": "1.0", "target": "2.0"}
             for i in range(15)
@@ -189,14 +189,10 @@ class TestPlanShowCLI:
             assert f"pkg-{i}" in output, f"pkg-{i} missing from plan-show output"
 
     @pytest.mark.asyncio
-    async def test_plan_show_not_found_returns_1(self, tmp_path: object) -> None:
+    async def test_plan_show_not_found_returns_1(self) -> None:
         """run_plan_show must return 1 when plan_id does not exist."""
-        from pathlib import Path
-        assert isinstance(tmp_path, Path)
-
         from errander.main import run_plan_show
+        from tests.conftest import TEST_DB_URL
 
-        db_path = str(tmp_path / "empty.sqlite")
-
-        result = await run_plan_show("plan-does-not-exist", db_path)
+        result = await run_plan_show("plan-does-not-exist", TEST_DB_URL)
         assert result == 1

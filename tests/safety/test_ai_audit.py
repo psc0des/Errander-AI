@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import json
 
-from errander.db.core import AsyncDatabase
 from errander.safety.ai_audit import AIDecision, AIDecisionStore
+from tests.conftest import make_test_db
 
 
 def _decision(**kwargs: object) -> AIDecision:
@@ -24,12 +24,12 @@ def _decision(**kwargs: object) -> AIDecision:
 
 class TestAIDecisionStoreLifecycle:
     async def test_context_manager_opens_and_closes(self) -> None:
-        db = AsyncDatabase(":memory:")
+        db = make_test_db()
         async with AIDecisionStore(db) as store:
             assert store._db is db
 
     async def test_idempotent_initialize(self) -> None:
-        async with AIDecisionStore(AsyncDatabase(":memory:")) as store:
+        async with AIDecisionStore(make_test_db()) as store:
             await store.initialize()  # second call must not raise
             assert store._db is not None
 
@@ -37,9 +37,12 @@ class TestAIDecisionStoreLifecycle:
 class TestAIDecisionStoreSchema:
     async def test_d1_columns_present_after_init(self) -> None:
         from sqlalchemy import text
-        async with AIDecisionStore(AsyncDatabase(":memory:")) as store, store._db.begin() as conn:
-            result = await conn.execute(text("PRAGMA table_info(ai_decisions)"))
-            cols = {str(row[1]) for row in result.fetchall()}
+        async with AIDecisionStore(make_test_db()) as store, store._db.begin() as conn:
+            result = await conn.execute(text(
+                "SELECT column_name FROM information_schema.columns"
+                " WHERE table_name = 'ai_decisions'"
+            ))
+            cols = {str(row[0]) for row in result.fetchall()}
         assert "prompt_full" in cols
         assert "context_snapshot" in cols
         assert "model_params" in cols
@@ -47,7 +50,7 @@ class TestAIDecisionStoreSchema:
 
 class TestAIDecisionLog:
     async def test_log_without_new_fields(self) -> None:
-        async with AIDecisionStore(AsyncDatabase(":memory:")) as store:
+        async with AIDecisionStore(make_test_db()) as store:
             d = _decision()
             await store.log(d)
             results = await store.get_decisions(batch_id="batch-001")
@@ -57,7 +60,7 @@ class TestAIDecisionLog:
         assert results[0].model_params is None
 
     async def test_log_with_prompt_full(self) -> None:
-        async with AIDecisionStore(AsyncDatabase(":memory:")) as store:
+        async with AIDecisionStore(make_test_db()) as store:
             d = _decision(prompt_full="Analyze this VM and prioritize actions.")
             await store.log(d)
             results = await store.get_decisions(batch_id="batch-001")
@@ -69,7 +72,7 @@ class TestAIDecisionLog:
             "vm_info": {"os_family": "ubuntu", "pending_packages": 5},
             "available_actions": ["disk_cleanup", "patching"],
         })
-        async with AIDecisionStore(AsyncDatabase(":memory:")) as store:
+        async with AIDecisionStore(make_test_db()) as store:
             d = _decision(context_snapshot=snapshot)
             await store.log(d)
             results = await store.get_decisions(batch_id="batch-001")
@@ -80,7 +83,7 @@ class TestAIDecisionLog:
 
     async def test_log_with_model_params(self) -> None:
         params = json.dumps({"temperature": 0.1})
-        async with AIDecisionStore(AsyncDatabase(":memory:")) as store:
+        async with AIDecisionStore(make_test_db()) as store:
             d = _decision(model_params=params)
             await store.log(d)
             results = await store.get_decisions(batch_id="batch-001")
@@ -91,7 +94,7 @@ class TestAIDecisionLog:
         prompt = "You are an SRE agent. Prioritize maintenance for ubuntu vm."
         ctx = json.dumps({"vm_info": {"os_family": "ubuntu"}, "available_actions": ["patching"]})
         mp = json.dumps({"temperature": 0.0})
-        async with AIDecisionStore(AsyncDatabase(":memory:")) as store:
+        async with AIDecisionStore(make_test_db()) as store:
             d = _decision(
                 prompt_full=prompt,
                 context_snapshot=ctx,
@@ -106,7 +109,7 @@ class TestAIDecisionLog:
         assert r.model_params == mp
 
     async def test_multiple_decisions_ordered_newest_first(self) -> None:
-        async with AIDecisionStore(AsyncDatabase(":memory:")) as store:
+        async with AIDecisionStore(make_test_db()) as store:
             await store.log(_decision(prompt_full="first"))
             await store.log(_decision(prompt_full="second"))
             results = await store.get_decisions(batch_id="batch-001")
@@ -115,7 +118,7 @@ class TestAIDecisionLog:
         assert results[1].prompt_full == "first"
 
     async def test_new_fields_independent_of_other_filters(self) -> None:
-        async with AIDecisionStore(AsyncDatabase(":memory:")) as store:
+        async with AIDecisionStore(make_test_db()) as store:
             await store.log(_decision(
                 vm_id="dev/web-01",
                 prompt_full="prompt-for-web-01",

@@ -95,7 +95,7 @@ class AIDecisionStore:
 
     Usage::
 
-        db = AsyncDatabase("errander.sqlite")
+        db = AsyncDatabase("postgresql://errander:errander@localhost/errander")
         async with AIDecisionStore(db) as store:
             await store.log(decision)
             decisions = await store.get_decisions(batch_id="run-123")
@@ -109,7 +109,7 @@ class AIDecisionStore:
     async def initialize(self) -> None:
         """Apply all pending schema migrations (including ai_decisions table)."""
         async with self._db.begin() as conn:
-            await run_migrations(conn, self._db.dialect)
+            await run_migrations(conn)
 
     async def close(self) -> None:
         await self._db.close()

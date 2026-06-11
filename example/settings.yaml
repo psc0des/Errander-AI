@@ -7,7 +7,7 @@
 #   ERRANDER_SLACK_BOT_TOKEN     Slack bot OAuth token (xoxb-...)
 #   ERRANDER_SLACK_CHANNEL_ID    Approvals channel ID (C0123456789)
 #   ERRANDER_LLM_BASE_URL        vLLM endpoint (http://10.0.1.5:8000/v1)
-#   ERRANDER_AUDIT_DB_URL        SQLite path (errander.sqlite)
+#   ERRANDER_AUDIT_DB_URL        PostgreSQL URL (postgresql://errander:errander@localhost:5432/errander)
 #
 # Optional overrides:
 #   ERRANDER_LLM_API_KEY         vLLM API key (default: "not-needed")

@@ -375,6 +375,12 @@ The dashboard chat (Plan B) needs: session auth, read access to stores, LLM acce
 
 ## 8c. Implementation Spec — R4: PostgreSQL Now (dual-backend, "Grafana model")
 
+> ⚠️ **SUPERSEDED in part (owner decision, 2026-06-10, after Step 1 shipped):** the owner
+> decided to drop SQLite entirely — **PostgreSQL-only** ("we need to create standard and it
+> will be less headache for users"). The SQLAlchemy Core async layer and Postgres CI from this
+> spec remain; the SQLite default, the `postgres` extra, and the dual-backend test matrix were
+> removed. Local dev/test uses the repo's `docker-compose.yml` (postgres:16).
+
 **Decision (owner + reviewer, 2026-06-10):** move to PostgreSQL **now**, before R2/R3, rather than as a later v2 chore. Rationale:
 
 1. R2/R3/Plan B add the largest batch of new tables in the project's history (`users`, `groups`, `sessions`, `approval_requests`, later `chat_threads`/`chat_messages`). Build once on the final foundation.

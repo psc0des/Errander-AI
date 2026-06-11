@@ -1,5 +1,27 @@
 # Errander-AI Command Log
 
+## PostgreSQL-only migration (2026-06-10)
+
+```bash
+# Swap dependencies (asyncpg core, drop aiosqlite + sqlite checkpointer)
+uv sync --extra dev
+
+# Start the new local Postgres (errander + errander_test databases)
+docker compose up -d
+docker exec errander-postgres pg_isready -U errander -d errander
+
+# Reset test DB after editing migration DDL in place (versions already recorded)
+docker exec errander-postgres psql -U errander -d postgres -c "DROP DATABASE errander_test;"
+docker exec errander-postgres psql -U errander -d postgres -c "CREATE DATABASE errander_test OWNER errander;"
+
+# Full suite against real Postgres (~5 min; was ~35 s on in-memory SQLite)
+uv run pytest tests/ --ignore=tests/ui --ignore=tests/staging -q --tb=line
+
+# Lint + typecheck
+uv run ruff check . --fix
+uv run mypy errander/
+```
+
 ## §8d Step 1 — PostgreSQL dual-backend (2026-06-10)
 
 ```bash

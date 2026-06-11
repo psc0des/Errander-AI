@@ -16,8 +16,8 @@ Errander draws a hard line between **what it produces and owns** and **what you 
 
 | Surface | Layer | Question it answers | Authoritative for | Where |
 |---|---|---|---|---|
-| **Audit trail** | B (hands) | *What exactly did the agent do?* | **What changed on infrastructure** | `audit_events` table (SQLite) |
-| **AI decision log** | A (brain) | *Why did the agent recommend this?* | What the LLM was asked + answered | `ai_decisions` table (SQLite) |
+| **Audit trail** | B (hands) | *What exactly did the agent do?* | **What changed on infrastructure** | `audit_events` table (PostgreSQL) |
+| **AI decision log** | A (brain) | *Why did the agent recommend this?* | What the LLM was asked + answered | `ai_decisions` table (PostgreSQL) |
 | **`/metrics` endpoint** | B (mostly) | *Is execution healthy / fast / frequent?* | (raw counters — see below) | HTTP `:9090/metrics` |
 | **Monitoring dashboard** | B (mostly) | *How healthy is the fleet over time?* | aggregate view (not per-event) | `GET /ui/monitoring` (web UI) |
 | **Structured JSON logs** | both | *What was the play-by-play / diagnostics?* | nothing — diagnostics, may rotate away | stdout |
@@ -48,8 +48,8 @@ The golden rule of which-to-trust:
 **This is the source of truth for what happened to your infrastructure.** It is deterministic Python writing immutable rows before *and* after every action — no LLM involved.
 
 - **Model:** `errander/models/events.py` → `AuditEvent` (`event_type`, `batch_id`, `vm_id`, `action_type`, `detail`, `timestamp`, `metadata`).
-- **Store:** `errander/safety/audit.py` → `AuditStore` (async SQLite v1, PostgreSQL planned v2). Query via `get_events(batch_id, vm_id, event_type, action_type, limit)`.
-- **Storage:** SQLite at `ERRANDER_AUDIT_DB_URL` (e.g. `errander.sqlite`).
+- **Store:** `errander/safety/audit.py` → `AuditStore` (async PostgreSQL). Query via `get_events(batch_id, vm_id, event_type, action_type, limit)`.
+- **Storage:** PostgreSQL at `ERRANDER_AUDIT_DB_URL` (e.g. `postgresql://errander:errander@localhost:5432/errander`).
 - **Guarantee:** for destructive actions, **one row per object** (the Exact-Object Approval invariant — see [CLAUDE.md](../CLAUDE.md)). N approved objects ⇒ N audit outcomes, never a "batch removed N" shortcut.
 
 ### Event types (grouped)

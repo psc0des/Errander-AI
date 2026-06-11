@@ -24,6 +24,7 @@ from errander.observability.vm_metrics import (
     query_metrics,
 )
 from errander.safety.migrations import run_migrations
+from tests.conftest import make_test_db
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -44,9 +45,9 @@ def _fake_target(
 
 
 async def _mem_db() -> AsyncDatabase:
-    db = AsyncDatabase(":memory:")
+    db = make_test_db()
     async with db.begin() as conn:
-        await run_migrations(conn, "sqlite")
+        await run_migrations(conn)
     return db
 
 

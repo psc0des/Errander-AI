@@ -10,6 +10,7 @@ import pytest
 
 from errander.integrations.elk import ElkClient
 from errander.models.reports import DigestReport, ProbeVMResult
+from tests.conftest import TEST_DB_URL
 
 # ---------------------------------------------------------------------------
 # probe_vm tests
@@ -214,7 +215,7 @@ async def test_run_ask_passes_elk_client() -> None:
             environments={"dev": MagicMock(targets=[])},
         )),
         patch("errander.config.settings.load_settings", return_value=MagicMock(
-            audit_db_url=":memory:",
+            audit_db_url=TEST_DB_URL,
             llm_base_url="",
             prometheus_base_url="",
             elk_base_url="http://elk:9200",

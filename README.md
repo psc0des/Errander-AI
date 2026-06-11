@@ -217,7 +217,7 @@ Level 3: Action Sub-Graphs
 |  | (cloud or     |<----| - Errander-AI agent  |  |
 |  |  self-hosted) |     | - APScheduler        |  |
 |  +---------------+     | - Slack poller        |  |
-|                         | - Audit DB (SQLite)  |  |
+|                         | - Audit DB (Postgres)|  |
 |                         | - Prometheus /metrics|  |
 |                         | - Web UI :9090/ui    |  |
 |                         +-----+------+---------+  |
@@ -313,7 +313,7 @@ All Slack communication is outbound HTTPS. No webhooks, no inbound traffic.
 | SSH | asyncssh | Async-native, key-based auth only, connection pooling |
 | Notifications | Slack API | Outbound HTTPS only, reaction polling |
 | Scheduling | APScheduler | Agent owns its own schedule |
-| Audit Trail | SQLite (v1) | PostgreSQL planned for v2 |
+| Audit Trail | PostgreSQL | `asyncpg` via SQLAlchemy Core async; `docker compose up -d` for local dev |
 | Observability | Built-in dashboard | `/ui/monitoring` — approval funnel, safety signals, action trends, duration averages, live counters; `/metrics` Prometheus endpoint for external scraping |
 | VM Locking | File-based (v1) | Valkey (Redis fork) planned for v2 |
 | Testing | pytest + pytest-asyncio + Playwright | 2626 tests |
@@ -346,7 +346,7 @@ errander/
     approval.py             # Dual-channel approval (Slack + Web UI)
     hygiene_approval.py     # docker_hygiene approval surface (Slack formatter + parser + manager)
     locking.py              # VM-level locking (file-based v1)
-    audit.py                # Audit logging (async SQLite)
+    audit.py                # Audit logging (async PostgreSQL)
   execution/                # Command execution layer
     ssh.py                  # asyncssh connection management + pooling
     commands.py             # PackageManager strategy (AptManager, DnfManager)
@@ -418,7 +418,7 @@ Or set env vars manually:
 export ERRANDER_LLM_BASE_URL="https://<resource>.openai.azure.com/openai/v1/"
 export ERRANDER_LLM_MODEL="<deployment-name>"
 export ERRANDER_LLM_API_KEY="<key>"
-export ERRANDER_AUDIT_DB_URL="errander.sqlite"
+export ERRANDER_AUDIT_DB_URL="postgresql://errander:errander@localhost:5432/errander"
 
 # Optional — Web UI auth (omit to disable login)
 export ERRANDER_UI_USER="admin"
@@ -607,7 +607,7 @@ Then open `http://localhost:3000` (Grafana) or `http://localhost:9091/targets` (
 
 ### Audit Trail (Layer B)
 
-The audit trail — not LangSmith, not Prometheus — is the **authoritative record of what happened to your infrastructure**. Every action is logged to SQLite before and after execution (one row per object for destructive actions) with batch ID, VM ID, action type, status, timestamp, and metadata. Query via CLI:
+The audit trail — not LangSmith, not Prometheus — is the **authoritative record of what happened to your infrastructure**. Every action is logged to PostgreSQL before and after execution (one row per object for destructive actions) with batch ID, VM ID, action type, status, timestamp, and metadata. Query via CLI:
 
 ```bash
 uv run python -m errander --audit --batch-id batch-abc123
@@ -665,7 +665,6 @@ These deepen the **agentic** side of the platform, all staying within the Layer 
 
 ### V2
 
-- PostgreSQL for audit trail (replace SQLite)
 - Valkey (BSD-licensed Redis fork) for distributed VM locking
 - React/Next.js dashboard
 - HashiCorp Vault for secrets (replace env vars)

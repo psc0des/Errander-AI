@@ -1553,7 +1553,7 @@ _SETTINGS_SECTIONS = [
     {
         "title": "Safety & Audit", "icon": "🛡", "icon_bg": "#dcfce7",
         "rows": [
-            ("Audit DB Path",  "errander.sqlite", False),
+            ("Audit DB URL",   "postgresql://errander:***@localhost:5432/errander", False),
             ("DB Size",        "2.4 MB",          False),
             ("Log Retention",  "90 days",         False),
             ("Strict Mode",    "ON",              False),
@@ -1564,7 +1564,7 @@ _SETTINGS_SECTIONS = [
 _HEALTH_CHECKS = [
     {"label": "vLLM Endpoint",    "detail": "http://10.0.0.100:8000/v1",  "status": "ok",   "meta": "42 ms"},
     {"label": "Slack API",        "detail": "api.slack.com",               "status": "ok",   "meta": "outbound HTTPS"},
-    {"label": "Audit DB",         "detail": "errander.sqlite · 2.4 MB",   "status": "ok",   "meta": "writable"},
+    {"label": "Audit DB",         "detail": "PostgreSQL · errander",      "status": "ok",   "meta": "writable"},
     {"label": "SSH Keys",         "detail": "11 / 11 key files present",   "status": "ok",   "meta": "/keys/"},
     {"label": "APScheduler",      "detail": "next: 2026-05-14 02:00 UTC",  "status": "ok",   "meta": "running"},
 ]
@@ -1642,7 +1642,7 @@ def layout(title: str, active_url: str, breadcrumb: str, topnav_extra: str, cont
     <div class="sidebar-footer">
       <div class="sys-chip"><span class="sys-dot dot-green"></span>vLLM &nbsp;·&nbsp; ONLINE</div>
       <div class="sys-chip"><span class="sys-dot dot-indigo"></span>APScheduler &nbsp;·&nbsp; RUNNING</div>
-      <div class="sys-version">v1.0.0 &nbsp;·&nbsp; SQLite audit</div>
+      <div class="sys-version">v1.0.0 &nbsp;·&nbsp; PostgreSQL audit</div>
       <a href="/logout" class="signout-link">&#8594; Sign out</a>
     </div>
   </aside>
@@ -3579,7 +3579,7 @@ def page_settings() -> str:
         ("ERRANDER_SLACK_CHANNEL_ID",  "Channel for approval messages + reports",         "set"),
         ("ERRANDER_SLACK_TIMEOUT",     "Approval wait timeout in seconds (default 1800)", "default"),
         ("ERRANDER_SLACK_POLL_INTERVAL","Reaction poll interval in seconds (default 30)", "default"),
-        ("ERRANDER_AUDIT_DB_URL",      "SQLite path or PostgreSQL DSN",                   "set"),
+        ("ERRANDER_AUDIT_DB_URL",      "PostgreSQL connection URL",                       "set"),
         ("ERRANDER_UI_USERNAME",       "Web UI login username (default: admin)",           "default"),
         ("ERRANDER_UI_PASSWORD",       "Web UI login password (default: errander)",        "default"),
         ("ERRANDER_UI_SECRET",         "HMAC cookie signing secret — change in prod",     "default"),
@@ -4052,7 +4052,7 @@ _GLOSS: list[tuple[str, str, str, str, str]] = [
     ("Maintenance Window", "SAFETY",  "#7c3aed", "gloss-chip-safety",
      "Configured time slots when the agent is permitted to run. The agent refuses to act outside these windows unless --force is passed with a mandatory reason."),
     ("Audit Log",          "SAFETY",  "#7c3aed", "gloss-chip-safety",
-     "Immutable before-and-after record of every agent action. Written to SQLite. In strict mode, a write failure halts the batch — audit integrity takes priority over execution."),
+     "Immutable before-and-after record of every agent action. Written to PostgreSQL. In strict mode, a write failure halts the batch — audit integrity takes priority over execution."),
     ("Layer A",            "SAFETY",  "#7c3aed", "gloss-chip-safety",
      "Operator Assistant layer — may use LLM, Prometheus, ELK, Slack context, and runbooks to investigate and recommend. Read-only: produces text and proposals, never executes infrastructure changes. Exposed via --ask and the Sovereign Architect UI."),
     ("Layer B",            "SAFETY",  "#7c3aed", "gloss-chip-safety",
@@ -4501,7 +4501,7 @@ def _layer_partition_html(ag: dict[str, Any]) -> str:
           <div class="layer-pane-row"><span class="lbl">Last batch</span><span class="val">{ag.get('last_batch_id', '—')}</span></div>
           <div class="layer-pane-row"><span class="lbl">Next batch</span><span class="val">{ag.get('next_run', '—')}</span></div>
           <div class="layer-pane-row"><span class="lbl">SSH pool</span><span class="val">{len(get_provider().get_vms())} host(s) · key-auth · no passwords</span></div>
-          <div class="layer-pane-row"><span class="lbl">Audit DB</span><span class="val">SQLite · strict mode · 0 write failures</span></div>
+          <div class="layer-pane-row"><span class="lbl">Audit DB</span><span class="val">PostgreSQL · strict mode · 0 write failures</span></div>
           <div class="layer-pane-row"><span class="lbl">Slack poll</span><span class="val">outbound only · 30s cadence</span></div>
         </div>
       </div>
@@ -5065,7 +5065,10 @@ async def handle_plan_view(request: web.Request) -> web.Response:
     if payload.get("plan_id") != plan_id:
         return web.Response(status=403, text="Token plan_id mismatch")
 
-    db_path = os.environ.get("ERRANDER_AUDIT_DB_URL", "errander.sqlite")
+    db_path = os.environ.get(
+        "ERRANDER_AUDIT_DB_URL",
+        "postgresql://errander:errander@localhost:5432/errander",
+    )
     try:
         async with AuditStore(AsyncDatabase(db_path), strict_mode=False) as store:
             snapshot = await store.get_plan_snapshot(plan_id)
@@ -5544,10 +5547,13 @@ async def _on_startup(app: web.Application) -> None:
     from errander.observability.vm_metrics import MetricsCollector, cleanup_old_metrics
     from errander.safety.migrations import run_migrations
 
-    db_url = _os.environ.get("ERRANDER_AUDIT_DB_URL", "errander.sqlite")
+    db_url = _os.environ.get(
+        "ERRANDER_AUDIT_DB_URL",
+        "postgresql://errander:errander@localhost:5432/errander",
+    )
     db = AsyncDatabase(db_url)
     async with db.begin() as _conn:
-        await run_migrations(_conn, db.dialect)
+        await run_migrations(_conn)
     app["db"] = db
     logger.info("DB opened: %s (migrations applied)", db_url)
 

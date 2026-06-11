@@ -9,6 +9,7 @@ import pytest
 
 from errander.main import _parse_args, run_ask_query
 from errander.models.analysis import AssistantResponse
+from tests.conftest import TEST_DB_URL
 
 # ---------------------------------------------------------------------------
 # CLI flag parsing
@@ -73,7 +74,7 @@ async def test_run_ask_query_exits_0(tmp_path: Path) -> None:
     )
     with (
         patch("errander.config.settings.load_settings", return_value=MagicMock(
-            audit_db_url=":memory:",
+            audit_db_url=TEST_DB_URL,
             audit_mode="best_effort",
             llm_base_url="",
             llm_api_key="",
@@ -112,7 +113,7 @@ async def test_run_ask_query_prints_summary(tmp_path: Path, capsys: pytest.Captu
     )
     with (
         patch("errander.config.settings.load_settings", return_value=MagicMock(
-            audit_db_url=":memory:",
+            audit_db_url=TEST_DB_URL,
             audit_mode="best_effort",
             llm_base_url="",
             llm_api_key="",
@@ -164,7 +165,7 @@ async def test_run_ask_query_scopes_env_to_investigate(tmp_path: Path) -> None:
 
     with (
         patch("errander.config.settings.load_settings", return_value=MagicMock(
-            audit_db_url=":memory:",
+            audit_db_url=TEST_DB_URL,
             audit_mode="best_effort",
             llm_base_url="",
             llm_api_key="",
@@ -202,7 +203,7 @@ async def test_run_ask_query_no_llm_when_base_url_empty(tmp_path: Path) -> None:
 
     with (
         patch("errander.config.settings.load_settings", return_value=MagicMock(
-            audit_db_url=":memory:",
+            audit_db_url=TEST_DB_URL,
             audit_mode="best_effort",
             llm_base_url="",  # empty → no LLM
             llm_api_key="",

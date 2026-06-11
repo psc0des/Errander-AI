@@ -2,7 +2,7 @@
 
 Every action the agent takes — before and after execution — is logged
 as an AuditEvent. These form the immutable audit trail stored in
-SQLite (v1) / PostgreSQL (v2).
+PostgreSQL.
 """
 
 from __future__ import annotations

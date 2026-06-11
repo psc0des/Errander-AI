@@ -1,6 +1,6 @@
 """Drift detection — compare current VM state against a stored baseline.
 
-Baselines are stored as audit events in SQLite. After each successful
+Baselines are stored as audit events in PostgreSQL. After each successful
 VM maintenance run, the discovered state is saved. Before execution,
 the current state is compared to the baseline.
 

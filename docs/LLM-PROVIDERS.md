@@ -224,7 +224,7 @@ Practical workflow for quality testing:
 1. Deploy 2–3 models in Foundry.
 2. Keep separate `.env.foundry-gpt4omini`, `.env.foundry-llama70b`, `.env.foundry-phi4` files.
 3. Symlink/copy the one you want to test to `.env`, run the same dry-run command, save
-   `errander.sqlite` aside per model.
+   the audit database aside per model (e.g. separate PostgreSQL databases).
 4. Diff the LLM-generated report sections to judge output quality.
 
 ---

@@ -14,18 +14,16 @@ dependencies = [
     "prometheus-client>=0.20",
     "aiohttp>=3.9",
     "structlog>=24.0",
-    "aiosqlite>=0.20",
     "sqlalchemy[asyncio]>=2.0",
+    "asyncpg>=0.29",
     "cryptography>=42.0",
-    "langgraph-checkpoint-sqlite>=3.1.0",
+    "langgraph-checkpoint-postgres>=2.0",
+    "psycopg[binary]>=3.2",
     "python-dotenv>=1.2.2",
     "ruamel.yaml>=0.18",
 ]
 
 [project.optional-dependencies]
-postgres = [
-    "asyncpg>=0.29",
-]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.24",
@@ -74,11 +72,6 @@ ignore_missing_imports = true
 [[tool.mypy.overrides]]
 # ruamel.yaml uses a plugin-based type system incompatible with mypy strict
 module = ["ruamel.*"]
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-# asyncpg ships stubs but only when the package is installed (optional dep)
-module = ["asyncpg.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

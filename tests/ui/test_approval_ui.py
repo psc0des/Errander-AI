@@ -19,6 +19,7 @@ from aiohttp.test_utils import TestClient, TestServer
 from errander.observability.metrics import start_metrics_server
 from errander.safety.approval import ApprovalManager
 from errander.safety.audit import AuditStore
+from tests.conftest import make_test_db
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -28,7 +29,7 @@ async def _make_client(
     manager: ApprovalManager | None = None,
 ) -> tuple[TestClient, AuditStore]:
     """Build a test aiohttp app with an in-memory store + approval manager."""
-    store = AuditStore(":memory:")
+    store = AuditStore(make_test_db())
     await store.initialize()
     runner = await start_metrics_server(
         port=0, audit_store=store, approval_manager=manager,

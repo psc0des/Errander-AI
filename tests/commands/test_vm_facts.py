@@ -9,7 +9,7 @@ from sqlalchemy import text
 
 from errander.commands.vm_facts import cmd_vm_facts
 from errander.db.core import AsyncDatabase
-from errander.safety.migrations import run_migrations
+from tests.conftest import TEST_DB_URL
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -17,14 +17,9 @@ from errander.safety.migrations import run_migrations
 
 
 @pytest.fixture
-async def db_path(tmp_path):
-    """In-file SQLite DB with schema applied."""
-    path = str(tmp_path / "test.sqlite")
-    db = AsyncDatabase(path)
-    async with db.begin() as conn:
-        await run_migrations(conn, "sqlite")
-    await db.close()
-    return path
+def db_path() -> str:
+    """Test PostgreSQL URL — schema applied by the session migration fixture."""
+    return TEST_DB_URL
 
 
 async def _insert_events(db_path: str, rows: list[dict]) -> None:

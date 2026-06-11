@@ -28,7 +28,7 @@ class BatchStatus(StrEnum):
 class BatchRecord:
     """A row from the batches table.
 
-    All timestamps are ISO-8601 strings (SQLite TEXT affinity).
+    All timestamps are ISO-8601 strings (TEXT columns).
     finished_at is None while the batch is still RUNNING.
     """
 

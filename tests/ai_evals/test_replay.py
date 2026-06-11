@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 from unittest.mock import AsyncMock, MagicMock
 
-from errander.db.core import AsyncDatabase
 from errander.evals.replay import (
     EvalRun,
     EvalStore,
@@ -13,6 +12,7 @@ from errander.evals.replay import (
     run_replay,
 )
 from errander.safety.ai_audit import AIDecision, AIDecisionStore
+from tests.conftest import make_test_db
 
 # ---------------------------------------------------------------------------
 # Assertion unit tests — check_assertions()
@@ -146,7 +146,7 @@ def _make_run(
 class TestEvalStore:
     async def test_save_and_retrieve_run(self) -> None:
         run = _make_run(pass_count=2, fail_count=1)
-        async with EvalStore(AsyncDatabase(":memory:")) as store:
+        async with EvalStore(make_test_db()) as store:
             await store.save_run(run)
             runs = await store.get_runs(limit=10)
         assert len(runs) == 1
@@ -157,7 +157,7 @@ class TestEvalStore:
 
     async def test_save_run_no_results(self) -> None:
         run = _make_run()
-        async with EvalStore(AsyncDatabase(":memory:")) as store:
+        async with EvalStore(make_test_db()) as store:
             await store.save_run(run)
             results = await store.get_results("run-001")
         assert results == []
@@ -167,7 +167,7 @@ class TestEvalStore:
         run1.run_id = "run-a"
         run2 = _make_run()
         run2.run_id = "run-b"
-        async with EvalStore(AsyncDatabase(":memory:")) as store:
+        async with EvalStore(make_test_db()) as store:
             await store.save_run(run1)
             await store.save_run(run2)
             runs = await store.get_runs(limit=10)
@@ -175,7 +175,7 @@ class TestEvalStore:
         assert {r.run_id for r in runs} == {"run-a", "run-b"}
 
     async def test_unknown_run_id_returns_empty_results(self) -> None:
-        async with EvalStore(AsyncDatabase(":memory:")) as store:
+        async with EvalStore(make_test_db()) as store:
             results = await store.get_results("no-such-run")
         assert results == []
 
@@ -231,9 +231,9 @@ class TestRunReplay:
         valid_resp = json.dumps({"action_types": ["disk_cleanup", "patching"]})
         llm = _mock_llm(valid_resp)
 
-        async with AIDecisionStore(AsyncDatabase(":memory:")) as ai_store:
+        async with AIDecisionStore(make_test_db()) as ai_store:
             await ai_store.log(_decision())
-            async with EvalStore(AsyncDatabase(":memory:")) as eval_store:
+            async with EvalStore(make_test_db()) as eval_store:
                 run = await run_replay(
                     ai_store=ai_store,
                     eval_store=eval_store,
@@ -249,9 +249,9 @@ class TestRunReplay:
         bad_resp = json.dumps({"action_types": ["nuke_everything"]})
         llm = _mock_llm(bad_resp)
 
-        async with AIDecisionStore(AsyncDatabase(":memory:")) as ai_store:
+        async with AIDecisionStore(make_test_db()) as ai_store:
             await ai_store.log(_decision())
-            async with EvalStore(AsyncDatabase(":memory:")) as eval_store:
+            async with EvalStore(make_test_db()) as eval_store:
                 run = await run_replay(
                     ai_store=ai_store,
                     eval_store=eval_store,
@@ -268,9 +268,9 @@ class TestRunReplay:
         d = _decision(prompt_full=None)
         llm = _mock_llm(json.dumps({"action_types": ["disk_cleanup"]}))
 
-        async with AIDecisionStore(AsyncDatabase(":memory:")) as ai_store:
+        async with AIDecisionStore(make_test_db()) as ai_store:
             await ai_store.log(d)
-            async with EvalStore(AsyncDatabase(":memory:")) as eval_store:
+            async with EvalStore(make_test_db()) as eval_store:
                 run = await run_replay(
                     ai_store=ai_store,
                     eval_store=eval_store,
@@ -286,9 +286,9 @@ class TestRunReplay:
     async def test_llm_failure_logged_as_error(self) -> None:
         llm = _mock_llm(None)  # LLM returns None → error
 
-        async with AIDecisionStore(AsyncDatabase(":memory:")) as ai_store:
+        async with AIDecisionStore(make_test_db()) as ai_store:
             await ai_store.log(_decision())
-            async with EvalStore(AsyncDatabase(":memory:")) as eval_store:
+            async with EvalStore(make_test_db()) as eval_store:
                 run = await run_replay(
                     ai_store=ai_store,
                     eval_store=eval_store,
@@ -301,8 +301,8 @@ class TestRunReplay:
     async def test_empty_store_zero_results(self) -> None:
         llm = _mock_llm(json.dumps({"action_types": ["disk_cleanup"]}))
         async with (
-            AIDecisionStore(AsyncDatabase(":memory:")) as ai_store,
-            EvalStore(AsyncDatabase(":memory:")) as eval_store,
+            AIDecisionStore(make_test_db()) as ai_store,
+            EvalStore(make_test_db()) as eval_store,
         ):
             run = await run_replay(
                 ai_store=ai_store,
@@ -317,9 +317,9 @@ class TestRunReplay:
         valid_resp = json.dumps({"action_types": ["log_rotation"]})
         llm = _mock_llm(valid_resp)
 
-        async with AIDecisionStore(AsyncDatabase(":memory:")) as ai_store:
+        async with AIDecisionStore(make_test_db()) as ai_store:
             await ai_store.log(_decision())
-            async with EvalStore(AsyncDatabase(":memory:")) as eval_store:
+            async with EvalStore(make_test_db()) as eval_store:
                 run = await run_replay(
                     ai_store=ai_store,
                     eval_store=eval_store,

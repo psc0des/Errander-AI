@@ -432,6 +432,24 @@ else
     done
 fi
 
+# ── Database (PostgreSQL — the only supported backend) ───────────────────────
+echo ""
+_existing_db_url=""
+if [ -f ".env" ]; then
+    _existing_db_url=$(grep "^ERRANDER_AUDIT_DB_URL=" .env 2>/dev/null | cut -d= -f2- || true)
+fi
+# Drop legacy SQLite values from pre-PostgreSQL installs — fresh start required
+case "$_existing_db_url" in
+    postgres://*|postgresql://*) ;;
+    *) _existing_db_url="" ;;
+esac
+_db_default="${_existing_db_url:-postgresql://errander:errander@localhost:5432/errander}"
+echo "  Errander-AI stores its audit trail in PostgreSQL."
+echo "  The default URL matches the repo's docker-compose.yml — run 'docker compose up -d'"
+echo "  for a zero-config local PostgreSQL, or point at your own server."
+prompt_val "PostgreSQL URL" "$_db_default"
+DB_URL="$REPLY"
+
 # ── Web base URL (auto-detected — enables signed web-approval links in Slack) ──
 # Always this VM's IP + port 9090. No prompt needed — override ERRANDER_WEB_BASE_URL
 # in .env manually if behind a load balancer, NAT, or custom domain.
@@ -577,7 +595,7 @@ _env_signing_secret=""
     echo "ERRANDER_LLM_MODEL=${LLM_MODEL}"
     echo "ERRANDER_LLM_API_KEY=${_env_llm_api_key}"
     echo ""
-    echo "ERRANDER_AUDIT_DB_URL=errander.sqlite"
+    echo "ERRANDER_AUDIT_DB_URL=${DB_URL}"
     echo ""
     if [ -n "$SLACK_BOT_TOKEN" ]; then
         echo "ERRANDER_SLACK_BOT_TOKEN=${_env_slack_token}"

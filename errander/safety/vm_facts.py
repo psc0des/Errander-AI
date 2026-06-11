@@ -90,7 +90,7 @@ class VMFactsStore:
 
     Usage::
 
-        db = AsyncDatabase("errander.sqlite")
+        db = AsyncDatabase("postgresql://errander:errander@localhost/errander")
         async with VMFactsStore(db) as store:
             outcomes = await store.action_outcomes("prod/web-01")
     """

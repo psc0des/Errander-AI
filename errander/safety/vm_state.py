@@ -41,7 +41,7 @@ class VMStateStore:
 
     Usage::
 
-        db = AsyncDatabase("errander.sqlite")
+        db = AsyncDatabase("postgresql://errander:errander@localhost/errander")
         async with VMStateStore(db) as store:
             await store.set_needs_reboot("prod/web-01", "packages", ("linux-image",))
     """

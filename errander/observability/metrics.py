@@ -763,7 +763,7 @@ def _page(
       <span class="sb-ico" aria-hidden="true">&#10006;</span>Sign out
     </a>
   </nav>
-  <div class="sb-foot">v1 &nbsp;&middot;&nbsp; sqlite &nbsp;&middot;&nbsp; {ts}</div>
+  <div class="sb-foot">v1 &nbsp;&middot;&nbsp; postgres &nbsp;&middot;&nbsp; {ts}</div>
 </aside>
 <div class="wrap">
   <header class="topbar">
@@ -1040,7 +1040,7 @@ async def _ui_login_get(request: web.Request) -> web.Response:
       </div>
     </div>
   </div>
-  <div class="l-foot">v1 &nbsp;&middot;&nbsp; errander-ai &nbsp;&middot;&nbsp; sqlite</div>
+  <div class="l-foot">v1 &nbsp;&middot;&nbsp; errander-ai &nbsp;&middot;&nbsp; postgres</div>
 </aside>
 
 <!-- Right: Login form -->

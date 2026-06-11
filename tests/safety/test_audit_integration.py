@@ -1,7 +1,7 @@
 """Integration tests for AuditStore — strengthened API and graph pipeline.
 
-These tests use SQLite :memory: and run real graph nodes (with mocked SSH)
-to assert that the audit trail is correctly written end-to-end.
+These tests use the shared test PostgreSQL and run real graph nodes (with
+mocked SSH) to assert that the audit trail is correctly written end-to-end.
 """
 
 from __future__ import annotations
@@ -15,6 +15,7 @@ import pytest
 from errander.db.core import AsyncDatabase
 from errander.models.events import AuditEvent, EventType
 from errander.safety.audit import AuditStore
+from tests.conftest import make_test_db
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -43,7 +44,7 @@ def _make_event(
 
 class TestGetEventsActionTypeFilter:
     async def test_filter_by_action_type(self) -> None:
-        async with AuditStore(AsyncDatabase(":memory:")) as store:
+        async with AuditStore(make_test_db()) as store:
             await store.log_event(_make_event(action_type="disk_cleanup"))
             await store.log_event(_make_event(action_type="patching"))
             await store.log_event(_make_event(action_type="disk_cleanup"))
@@ -53,13 +54,13 @@ class TestGetEventsActionTypeFilter:
             assert all(e.action_type == "disk_cleanup" for e in events)
 
     async def test_action_type_filter_returns_empty_when_no_match(self) -> None:
-        async with AuditStore(AsyncDatabase(":memory:")) as store:
+        async with AuditStore(make_test_db()) as store:
             await store.log_event(_make_event(action_type="disk_cleanup"))
             events = await store.get_events(action_type="patching")
             assert events == []
 
     async def test_action_type_combined_with_batch_id(self) -> None:
-        async with AuditStore(AsyncDatabase(":memory:")) as store:
+        async with AuditStore(make_test_db()) as store:
             await store.log_event(_make_event(batch_id="A", action_type="disk_cleanup"))
             await store.log_event(_make_event(batch_id="A", action_type="patching"))
             await store.log_event(_make_event(batch_id="B", action_type="disk_cleanup"))
@@ -70,7 +71,7 @@ class TestGetEventsActionTypeFilter:
             assert events[0].action_type == "disk_cleanup"
 
     async def test_action_type_combined_with_vm_id(self) -> None:
-        async with AuditStore(AsyncDatabase(":memory:")) as store:
+        async with AuditStore(make_test_db()) as store:
             await store.log_event(_make_event(vm_id="dev/web-01", action_type="disk_cleanup"))
             await store.log_event(_make_event(vm_id="prod/db-01", action_type="disk_cleanup"))
 
@@ -78,7 +79,7 @@ class TestGetEventsActionTypeFilter:
             assert len(events) == 1
 
     async def test_action_type_none_returns_all(self) -> None:
-        async with AuditStore(AsyncDatabase(":memory:")) as store:
+        async with AuditStore(make_test_db()) as store:
             await store.log_event(_make_event(action_type="disk_cleanup"))
             await store.log_event(_make_event(action_type="patching"))
             await store.log_event(_make_event(action_type=None))
@@ -87,7 +88,7 @@ class TestGetEventsActionTypeFilter:
             assert len(events) == 3
 
     async def test_all_four_filters_combined(self) -> None:
-        async with AuditStore(AsyncDatabase(":memory:")) as store:
+        async with AuditStore(make_test_db()) as store:
             # The one we want
             await store.log_event(_make_event(
                 batch_id="B1",
@@ -125,7 +126,7 @@ class TestGetEventsActionTypeFilter:
 
 class TestGetRecentBatches:
     async def test_returns_batches_most_recent_first(self) -> None:
-        async with AuditStore(AsyncDatabase(":memory:")) as store:
+        async with AuditStore(make_test_db()) as store:
             # Batch A: older
             await store.log_event(AuditEvent(
                 event_type=EventType.BATCH_STARTED,
@@ -147,7 +148,7 @@ class TestGetRecentBatches:
             assert batches[1]["batch_id"] == "batch-A"
 
     async def test_event_count_per_batch(self) -> None:
-        async with AuditStore(AsyncDatabase(":memory:")) as store:
+        async with AuditStore(make_test_db()) as store:
             for _ in range(3):
                 await store.log_event(_make_event(batch_id="batch-X"))
             for _ in range(5):
@@ -158,7 +159,7 @@ class TestGetRecentBatches:
             assert batches["batch-Y"]["event_count"] == 5
 
     async def test_vm_ids_collected(self) -> None:
-        async with AuditStore(AsyncDatabase(":memory:")) as store:
+        async with AuditStore(make_test_db()) as store:
             await store.log_event(_make_event(batch_id="B", vm_id="dev/web-01"))
             await store.log_event(_make_event(batch_id="B", vm_id="dev/web-02"))
             await store.log_event(_make_event(batch_id="B", vm_id="dev/web-01"))  # duplicate
@@ -170,7 +171,7 @@ class TestGetRecentBatches:
             assert "dev/web-02" in vm_ids
 
     async def test_limit_respected(self) -> None:
-        async with AuditStore(AsyncDatabase(":memory:")) as store:
+        async with AuditStore(make_test_db()) as store:
             for i in range(10):
                 await store.log_event(_make_event(batch_id=f"batch-{i:03d}"))
 
@@ -178,12 +179,12 @@ class TestGetRecentBatches:
             assert len(batches) == 3
 
     async def test_empty_store(self) -> None:
-        async with AuditStore(AsyncDatabase(":memory:")) as store:
+        async with AuditStore(make_test_db()) as store:
             batches = await store.get_recent_batches()
             assert batches == []
 
     async def test_batch_with_no_vm_events(self) -> None:
-        async with AuditStore(AsyncDatabase(":memory:")) as store:
+        async with AuditStore(make_test_db()) as store:
             await store.log_event(AuditEvent(
                 event_type=EventType.BATCH_STARTED,
                 batch_id="batch-A",
@@ -197,7 +198,7 @@ class TestGetRecentBatches:
             assert batches[0]["vm_ids"] == []
 
     async def test_started_at_is_earliest_event(self) -> None:
-        async with AuditStore(AsyncDatabase(":memory:")) as store:
+        async with AuditStore(make_test_db()) as store:
             early = datetime(2026, 3, 1, 10, 0, 0, tzinfo=UTC)
             late = datetime(2026, 3, 1, 12, 0, 0, tzinfo=UTC)
 
@@ -256,7 +257,7 @@ class TestVMGraphAuditTrail:
 
         locker = FileLocker(lock_dir=lock_dir)
 
-        async with AuditStore(AsyncDatabase(":memory:")) as audit_store:
+        async with AuditStore(make_test_db()) as audit_store:
             fake_vm_info = VMInfo(
                 os_family=OSFamily.UBUNTU,
                 os_version="22.04",
@@ -353,7 +354,7 @@ class TestVMGraphAuditTrail:
         # Pre-acquire the lock so the graph cannot acquire it
         await locker.acquire(vm_id, "other-batch")
 
-        async with AuditStore(AsyncDatabase(":memory:")) as audit_store:
+        async with AuditStore(make_test_db()) as audit_store:
             graph = build_vm_graph(
                 executor=mock_executor,
                 locker=locker,
@@ -415,7 +416,7 @@ class TestVMGraphAuditTrail:
                 "error": None,
             }
 
-        async with AuditStore(AsyncDatabase(":memory:")) as audit_store:
+        async with AuditStore(make_test_db()) as audit_store:
             graph = build_vm_graph(
                 executor=mock_executor,
                 locker=locker,
@@ -479,11 +480,12 @@ class TestVMGraphAuditTrail:
 # ---------------------------------------------------------------------------
 
 class TestRunAuditQuery:
-    """Test the --audit CLI mode queries against a real SQLite database."""
+    """Test the --audit CLI mode queries against the test PostgreSQL database."""
 
     @pytest.fixture()
-    def db_path(self, tmp_path: Path) -> str:
-        return str(tmp_path / "test-audit.sqlite")
+    def db_path(self) -> str:
+        from tests.conftest import TEST_DB_URL
+        return TEST_DB_URL
 
     async def _seed(self, db_path: str) -> None:
         async with AuditStore(AsyncDatabase(db_path)) as store:

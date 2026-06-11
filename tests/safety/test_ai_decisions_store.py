@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from errander.db.core import AsyncDatabase
 from errander.safety.ai_audit import AIDecision, AIDecisionStore
+from tests.conftest import make_test_db
 
 
 def _decision(**kwargs: object) -> AIDecision:
@@ -26,7 +26,7 @@ def _decision(**kwargs: object) -> AIDecision:
 class TestGetDecisionById:
     @pytest.mark.asyncio
     async def test_get_decision_by_id_returns_correct_record(self) -> None:
-        async with AIDecisionStore(AsyncDatabase(":memory:")) as store:
+        async with AIDecisionStore(make_test_db()) as store:
             await store.log(_decision(batch_id="batch-find-001", outcome="success"))
             decisions = await store.get_decisions(batch_id="batch-find-001")
             assert len(decisions) == 1
@@ -42,13 +42,13 @@ class TestGetDecisionById:
 
     @pytest.mark.asyncio
     async def test_get_decision_by_id_unknown_id_returns_none(self) -> None:
-        async with AIDecisionStore(AsyncDatabase(":memory:")) as store:
+        async with AIDecisionStore(make_test_db()) as store:
             result = await store.get_decision_by_id(99999)
         assert result is None
 
     @pytest.mark.asyncio
     async def test_decision_id_field_populated_after_log_and_query(self) -> None:
-        async with AIDecisionStore(AsyncDatabase(":memory:")) as store:
+        async with AIDecisionStore(make_test_db()) as store:
             await store.log(_decision())
             decisions = await store.get_decisions(batch_id="batch-001")
 
@@ -65,7 +65,7 @@ class TestGetDecisionById:
             context_snapshot='{"vm": "web-01"}',
             model_params='{"temperature": 0.1}',
         )
-        async with AIDecisionStore(AsyncDatabase(":memory:")) as store:
+        async with AIDecisionStore(make_test_db()) as store:
             await store.log(d)
             decisions = await store.get_decisions(batch_id="batch-rt-001")
             assert len(decisions) == 1
@@ -82,7 +82,7 @@ class TestGetDecisionById:
 
     @pytest.mark.asyncio
     async def test_multiple_decisions_have_distinct_ids(self) -> None:
-        async with AIDecisionStore(AsyncDatabase(":memory:")) as store:
+        async with AIDecisionStore(make_test_db()) as store:
             await store.log(_decision(batch_id="batch-a"))
             await store.log(_decision(batch_id="batch-b"))
             all_decisions = await store.get_decisions(limit=10)

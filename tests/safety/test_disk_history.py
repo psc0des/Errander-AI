@@ -4,17 +4,17 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
-from errander.db.core import AsyncDatabase
 from errander.safety.disk_history import VMDiskHistoryStore
 from errander.safety.migrations import run_migrations
+from tests.conftest import make_test_db
 
 _GB = 1_000_000_000
 
 
 async def _make_store() -> VMDiskHistoryStore:
-    db = AsyncDatabase(":memory:")
+    db = make_test_db()
     async with db.begin() as conn:
-        await run_migrations(conn, "sqlite")
+        await run_migrations(conn)
     return VMDiskHistoryStore(db)
 
 
@@ -24,9 +24,9 @@ def _ts(days_ago: int = 0) -> datetime:
 
 class TestVMDiskHistoryStoreLifecycle:
     async def test_context_manager(self) -> None:
-        db = AsyncDatabase(":memory:")
+        db = make_test_db()
         async with db.begin() as conn:
-            await run_migrations(conn, "sqlite")
+            await run_migrations(conn)
         async with VMDiskHistoryStore(db) as store:
             assert store._db is db
 

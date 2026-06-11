@@ -98,7 +98,7 @@ class BaselineStore:
 
     Usage::
 
-        db = AsyncDatabase("errander.sqlite")
+        db = AsyncDatabase("postgresql://errander:errander@localhost/errander")
         async with BaselineStore(db) as store:
             comparison = await store.compare_and_save("prod/web-01", capture)
             if comparison.changed:

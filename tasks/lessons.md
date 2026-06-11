@@ -1,5 +1,40 @@
 # Errander-AI — Lessons Learned
 
+## 2026-06-10 — SQLite INTEGER is 64-bit; PostgreSQL INTEGER is 32-bit
+
+`vm_disk_history.used_bytes INTEGER` held 5 GB byte counts fine on SQLite for months, then
+failed on the first real Postgres run with "value out of int32 range". Use BIGINT for any
+column that could ever exceed 2.1 billion (byte counts, epoch timestamps, counters).
+
+**Why:** SQLite's INTEGER affinity stores up to 8 bytes dynamically; Postgres INTEGER is a
+fixed 4-byte type. Code "tested on both backends" can still hide this if the tests never
+insert large values — ours did only because one schema test used a realistic 5 GB value.
+
+**How to apply:** when porting SQLite DDL to Postgres, audit every INTEGER column for
+plausible range, not just for syntax. Prefer BIGINT when in doubt — the storage cost is noise.
+
+## 2026-06-10 — An env-var-driven test matrix is a lie unless every test routes through the env var
+
+The Step-1 "Postgres CI job" set `ERRANDER_TEST_DB_URL`, but 159 test call sites constructed
+`AsyncDatabase(":memory:")` inline — so the "PostgreSQL" job was mostly re-testing SQLite.
+
+**Why:** the conftest fixtures honored the env var, but nothing forced tests to use those
+fixtures; inline construction silently bypassed the matrix.
+
+**How to apply:** give tests exactly one chokepoint for acquiring a database
+(`make_test_db()` in conftest) and grep-ban direct construction. If a test matrix switches
+backends by env var, verify with a deliberate failure (point it at an unreachable DB and
+confirm the suite actually fails).
+
+## 2026-06-10 — Session-scoped async fixtures: just use asyncio.run() in a sync fixture
+
+pytest-asyncio's loop scoping makes session-scoped *async* fixtures fragile (function-scoped
+event loops by default). For one-time setup like running migrations, a session-scoped *sync*
+fixture calling `asyncio.run(...)` avoids the whole problem.
+
+**How to apply:** reserve async fixtures for per-test resources that must share the test's
+event loop; do session-level async setup in a sync fixture with its own loop.
+
 ## 2026-06-10 — SQLAlchemy StaticPool is non-negotiable for `:memory:` SQLite across multiple `begin()` calls
 
 Without `StaticPool`, each `AsyncEngine.begin()` call on a `:memory:` URL opens a brand-new

@@ -1,0 +1,33 @@
+# Errander-AI local PostgreSQL — the only database backend (PostgreSQL-only).
+#
+# Quick start:
+#   docker compose up -d
+#
+# Provides:
+#   - errander       database (agent runtime — matches the ERRANDER_AUDIT_DB_URL default)
+#   - errander_test  database (pytest suite — matches the tests/conftest.py default)
+#
+# Production deployments point ERRANDER_AUDIT_DB_URL at their own PostgreSQL
+# and apply deploy/postgres-setup.sql for the role model.
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: errander-postgres
+    environment:
+      POSTGRES_USER: errander
+      POSTGRES_PASSWORD: errander
+      POSTGRES_DB: errander
+    ports:
+      - "5432:5432"
+    volumes:
+      - errander-pgdata:/var/lib/postgresql/data
+      - ./deploy/postgres-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U errander -d errander"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  errander-pgdata:

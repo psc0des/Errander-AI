@@ -11,8 +11,8 @@ import yaml
 from sqlalchemy import text
 
 from errander.config.schema import EnvironmentSchema, TargetSchema
-from errander.db.core import AsyncDatabase
 from errander.main import _build_maintenance_window, _parse_args, run_restart_service
+from tests.conftest import TEST_DB_URL, make_test_db
 
 # ---------------------------------------------------------------------------
 # _parse_args
@@ -238,11 +238,11 @@ class TestWindowOpener:
             targets=[target],
         )
 
-        deferred_store = DeferredExecutionStore(AsyncDatabase(":memory:"))
+        deferred_store = DeferredExecutionStore(make_test_db())
         await deferred_store.initialize()
 
-        async with AuditStore(AsyncDatabase(":memory:")) as audit_store:
-            overrides_store = OverridesStore(AsyncDatabase(":memory:"))
+        async with AuditStore(make_test_db()) as audit_store:
+            overrides_store = OverridesStore(make_test_db())
             await overrides_store.initialize()
             try:
                 with patch("errander.main.run_env_batch", new_callable=AsyncMock) as mock_run:
@@ -288,13 +288,13 @@ class TestWindowOpener:
             targets=[target],
         )
 
-        deferred_store = DeferredExecutionStore(AsyncDatabase(":memory:"))
+        deferred_store = DeferredExecutionStore(make_test_db())
         await deferred_store.initialize()
         future_window = datetime.now(tz=UTC).replace(hour=2, minute=0, second=0, microsecond=0) + timedelta(days=30)
         await deferred_store.save("b-test", "dev", "alice", future_window)
 
-        async with AuditStore(AsyncDatabase(":memory:")) as audit_store:
-            overrides_store = OverridesStore(AsyncDatabase(":memory:"))
+        async with AuditStore(make_test_db()) as audit_store:
+            overrides_store = OverridesStore(make_test_db())
             await overrides_store.initialize()
             try:
                 with patch("errander.main.run_env_batch", new_callable=AsyncMock) as mock_run:
@@ -344,13 +344,13 @@ class TestWindowOpener:
             targets=[target],
         )
 
-        deferred_store = DeferredExecutionStore(AsyncDatabase(":memory:"))
+        deferred_store = DeferredExecutionStore(make_test_db())
         await deferred_store.initialize()
         future_window = datetime.now(tz=UTC).replace(hour=2, minute=0, second=0, microsecond=0) + timedelta(days=30)
         await deferred_store.save("b-test", "dev", "alice", future_window)
 
-        async with AuditStore(AsyncDatabase(":memory:")) as audit_store:
-            overrides_store = OverridesStore(AsyncDatabase(":memory:"))
+        async with AuditStore(make_test_db()) as audit_store:
+            overrides_store = OverridesStore(make_test_db())
             await overrides_store.initialize()
             try:
                 with patch("errander.main.run_env_batch", new_callable=AsyncMock):
@@ -640,7 +640,7 @@ class TestRestartServiceCLI:
             patch("errander.main.load_settings") as mock_settings,
             patch("errander.main.AuditStore", return_value=mock_audit),
         ):
-            mock_settings.return_value = MagicMock(audit_db_url=":memory:")
+            mock_settings.return_value = MagicMock(audit_db_url=TEST_DB_URL)
             result = await run_restart_service(
                 env_name="production",
                 unit_name="nginx.service",

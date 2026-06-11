@@ -19,6 +19,7 @@ from errander.models.vm import OSFamily, VMTarget
 from errander.observability.metrics import start_metrics_server
 from errander.safety.audit import AuditStore
 from errander.safety.overrides import OverridesStore
+from tests.conftest import make_test_db
 
 # Base YAML fleet passed to start_metrics_server so yaml_override rows are visible.
 _YAML_FLEET: list[VMTarget] = [
@@ -58,9 +59,9 @@ def _start_server(seed_fn=None, base_inventory=None):  # type: ignore[no-untyped
     ctx: dict[str, object] = {}
 
     async def _run() -> None:
-        audit = AuditStore(":memory:")
+        audit = AuditStore(make_test_db())
         await audit.initialize()
-        overrides = OverridesStore(":memory:")
+        overrides = OverridesStore(make_test_db())
         await overrides.initialize()
         if seed_fn is not None:
             await seed_fn(overrides)

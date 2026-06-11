@@ -9,7 +9,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from errander.db.core import AsyncDatabase
 from errander.safety.deferred import DeferredExecution, DeferredExecutionStore
 from errander.safety.migrations import run_migrations
 
@@ -22,11 +21,8 @@ def _future_window() -> datetime:
 
 
 async def _make_store(tmp_path: Path) -> DeferredExecutionStore:
-    db = AsyncDatabase(str(tmp_path / "test.sqlite"))
-    async with db.begin() as conn:
-        await run_migrations(conn, "sqlite")
-    store = DeferredExecutionStore(db)
-    return store
+    from tests.conftest import make_test_db
+    return DeferredExecutionStore(make_test_db())
 
 
 # ---------------------------------------------------------------------------
@@ -109,11 +105,12 @@ async def test_round_trip_vm_plans(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_migration_creates_table_with_columns(tmp_path: Path) -> None:
+async def test_migration_creates_table_with_columns() -> None:
     """Migration creates deferred_executions with plan_json and plan_hash columns."""
-    db = AsyncDatabase(str(tmp_path / "mig.sqlite"))
+    from tests.conftest import make_test_db
+    db = make_test_db()
     async with db.begin() as conn:
-        await run_migrations(conn, "sqlite")
+        await run_migrations(conn)
     store = DeferredExecutionStore(db)
     try:
         window = _future_window()

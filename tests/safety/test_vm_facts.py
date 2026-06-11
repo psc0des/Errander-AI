@@ -6,18 +6,18 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from errander.db.core import AsyncDatabase
 from errander.safety.audit import AuditStore
 from errander.safety.vm_facts import (
     VMFactsStore,
 )
+from tests.conftest import make_test_db
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
 async def _make_stores() -> tuple[AuditStore, VMFactsStore]:
-    db = AsyncDatabase(":memory:")
+    db = make_test_db()
     audit = AuditStore(db, strict_mode=False)
     await audit.initialize()
     facts = VMFactsStore(db)

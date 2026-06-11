@@ -186,7 +186,7 @@ requires rotating every secret it protected.
 
 Only secrets benefit from encryption. Operational config (model IDs, timeouts,
 hostnames, ssh usernames) stays plaintext for debuggability. The agent never
-encrypts data in the SQLite audit trail — use filesystem encryption (LUKS,
+encrypts data in the PostgreSQL audit trail — use filesystem encryption (LUKS,
 dm-crypt) if the audit DB contains sensitive detail.
 
 ### Notes on specific secrets

@@ -154,9 +154,11 @@ Recorded after review discussion with the project owner:
 - **F1 revisited — owner proposed a stronger design (2026-06-10): Web-UI-only approval.** Supersedes both the "accepted as risk" stance and the reviewer's allowlist suggestion. Approved by reviewer with one hard prerequisite. Spec in §8a.
 - **Reader group debated (2026-06-10): KEEP.** Owner questioned the need; reviewer recommendation is to keep it. Decisive argument: the roadmap's dashboard chat (Plan B) is a read-only surface — its users are exactly the reader group. Without it, anyone needing to *view* fleet status must be granted *approve-live-changes* rights, which fails least-privilege at first security review. Cost is ~zero once RBAC middleware exists.
 - **Process separation approved (2026-06-10):** web UI moves out of the agent process so a compromised UI yields zero fleet access. Owner directive: system design must be enterprise-grade including defense-in-depth. Spec in §8b — note it turns the logical Layer A / Layer B boundary into a physical OS-level boundary.
-- **PostgreSQL move pulled forward (2026-06-10): approved — now, not v2.** Owner: "fix the gaps now rather than keeping it too late." Dual-backend shape (SQLite default for easy adoption, Postgres production tier). Spec §8c.
+- **PostgreSQL move pulled forward (2026-06-10): approved — now, not v2.** Owner: "fix the gaps now rather than keeping it too late." ~~Dual-backend shape (SQLite default for easy adoption, Postgres production tier)~~ — superseded same day, see below. Spec §8c.
 - **CI deferral reversed (2026-06-10):** owner-approved roadmap begins with the DB migration + approval rewrite + process split — reviewer reinstated CI as step 0; owner sequencing accepted. Master roadmap in §8d.
 - **Plan A → Plan B sequencing confirmed** (investigation agent first; chat second, starting with its reconcile step) — matches Plan B's own stated prerequisite.
+- **Dual-backend reversed → PostgreSQL-only (2026-06-10, after Step 1 shipped).** Owner: "we need to create standard and it will be less headache for users." SQLite removed entirely; zero-config adoption story preserved via a repo `docker-compose.yml` (postgres:16) whose URL matches the `ERRANDER_AUDIT_DB_URL` default. The §8c SQLAlchemy Core async layer survives unchanged. Side effects: §8b's "v1 SQLite honesty note" is void — table-level role grants are available from day one; the cross-process `database is locked` risk class no longer exists.
+- **Latent bug found while planning Step 2 (2026-06-10): deferred-replay hash verification can never pass.** The plan hash covers `{batch_id, env_name, vm_plans}`, but every replay generates a fresh `batch_id` (`init_batch_node`), so `load_deferred_artifact_node` recomputes a different hash → every window-time replay would abort as "possible tampering". Hidden because `_window_opener` tests mock `run_env_batch`. Fix (`preloaded_batch_id` carried into replay state) is folded into the Step 2 implementation plan, which also repoints the existing metrics.py per-item UI decide endpoint at the new `approval_requests` store rather than deleting it.
 
 ---
 
@@ -343,7 +345,7 @@ The current `ApprovalManager` is an in-memory dict with `asyncio.Event` signalin
 - Web process never imports executor modules: no `SandboxExecutor`, no `execution/ssh.py`, no subgraphs. Enforce with an import-isolation test (same pattern the investigation-agent plan §5.1 already promises). The existing `errander/web/` package is the natural home; the UI routes currently living in `observability/metrics.py` move there.
 - Agent keeps an optional `/metrics`-only listener (private bind, no UI routes) for Prometheus; the web process exposes its own `/metrics`.
 - Secrets partition: agent gets SSH paths + Slack token + LLM creds; web gets DB path + signing secret + session secret + (for chat later) LLM creds. Neither gets the other's. Split `.env` into `.env.agent` / `.env.web` or use systemd `EnvironmentFile=` per unit.
-- **v1 honesty note (SQLite):** both processes share one SQLite file, so file-level access is shared — table-level privilege separation arrives with Postgres (v2), where `errander-web`'s DB role gets SELECT on read tables + UPDATE only on `approval_requests`/`users`/`sessions`, and **no** write on audit tables. State this limitation in SECURITY.md rather than pretending v1 SQLite gives table grants.
+- ~~**v1 honesty note (SQLite)**~~ **VOID (2026-06-10, PostgreSQL-only):** there is no shared-file limitation anymore. Table-level privilege separation is available from day one — `errander-web`'s DB role gets SELECT on read tables + UPDATE only on `approval_requests`/`users`/`sessions`, and **no** write on audit tables (`deploy/postgres-setup.sql` is the enforcement; CI verifies the web role cannot INSERT on `audit_events`).
 
 ### Where the future chat lands (why this design is chat-ready)
 
@@ -358,7 +360,7 @@ The dashboard chat (Plan B) needs: session auth, read access to stores, LLM acce
 - [ ] `errander/observability/metrics.py` — slims down to metrics + optional private `/metrics` listener for the agent
 - [ ] `deploy/` — two systemd unit files, two OS users, `EnvironmentFile` split, key-permission check in install script, nginx config (Mode 2) pointing at the web unit only
 - [ ] Tests — import isolation (web package imports no executor modules); decision race (two concurrent decides → one wins); agent restart with pending approval → approval still decidable and execution proceeds; timeout written by agent; key-file unreadable by web user (integration/install check)
-- [ ] Docs — SECURITY.md (process/privilege model + SQLite limitation), SETUP.md (two services), RUN.md, AGENTS.md/CLAUDE.md architecture section, langgraph-primer (approval node behavior), learning doc
+- [ ] Docs — SECURITY.md (process/privilege model + Postgres role grants), SETUP.md (two services), RUN.md, AGENTS.md/CLAUDE.md architecture section, langgraph-primer (approval node behavior), learning doc
 
 ### Acceptance criteria
 
@@ -418,9 +420,9 @@ Fix the foundations now, then build the AI features on top. Order is load-bearin
 
 | # | Item | Spec | Why this position |
 |---|---|---|---|
-| 0 | **CI** (pytest + ruff + mypy `errander/` + gitleaks; SQLite + Postgres jobs) | §4-F5 | Reinstated by reviewer despite earlier deferral: steps 1–4 are the riskiest refactors in the project's history (DB migration, approval-store rewrite, process split). No robot watching = silent regression risk in the approval path itself. Half a day. |
-| 1 | **R4: Postgres dual-backend + DB layer** | §8c | Foundation — every later step adds tables. |
-| 2 | **R3 keystone: `approval_requests` DB-backed store** | §8b | Fixes approval durability; enables everything after. |
+| 0 | ✅ **CI** — DONE 2026-06-10 (pytest + ruff + mypy `errander/` + gitleaks; single PostgreSQL test job after the Postgres-only decision) | §4-F5 | Reinstated by reviewer despite earlier deferral: steps 1–4 are the riskiest refactors in the project's history (DB migration, approval-store rewrite, process split). No robot watching = silent regression risk in the approval path itself. Half a day. |
+| 1 | ✅ **R4: Postgres + DB layer** — DONE 2026-06-10 in two commits: SQLAlchemy Core async dual-backend (`e2815c2`), then **PostgreSQL-only** per owner decision (`40323f7`; SQLite removed, docker-compose for zero-config local) | §8c | Foundation — every later step adds tables. |
+| 2 | **R3 keystone: `approval_requests` DB-backed store** — NEXT; detailed plan ready (includes the deferred-replay hash bug fix and repointing the metrics.py per-item UI decide endpoint) | §8b | Fixes approval durability; enables everything after. |
 | 3 | **R2: users/groups RBAC + web-only approval** | §8a | Built directly against the new store; never wired to the in-memory manager being deleted. |
 | 4 | **R3: process split** (two services, two OS users, key + import isolation) | §8b | The physical Layer A/B boundary. |
 | 5 | **R1: advisory-LLM batch planning** | §8 | Touches the approval *message* — lands once, on the final surface. |

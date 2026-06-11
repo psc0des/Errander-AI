@@ -16,7 +16,7 @@
    - `CLAUDE.md` → **AI Safety Invariant (MANDATORY)** and the Doc Sync Rule.
 2. **Internalize the hard boundary (non-negotiable):**
    - This agent is **Layer A**: it investigates and recommends. It produces **text/recommendations only**.
-   - It must **never** import or call `SandboxExecutor`, `FileLocker`, `ApprovalManager`, SSH execution, or any Layer B path.
+   - It must **never** import or call `SandboxExecutor`, `FileLocker`, `ApprovalRequestStore`, SSH execution, or any Layer B path.
    - Every tool it gets is **read-only**. No tool may mutate a target VM, a store, or any state.
    - Its output still flows to the human → deterministic Layer B for any actual change. The agent never executes.
 3. **Confirm git identity** (`psc0des` / `sarathy.vass6@gmail.com`) per CLAUDE.md before the first commit.

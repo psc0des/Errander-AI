@@ -82,7 +82,7 @@ The chat depends on the investigation engine through a narrow contract — **not
 - **v1.1 (optional): streaming** (SSE) for token-by-token UX. In-network only — this is the existing `:9090` UI, so it does **not** introduce an inbound webhook (consistent with the no-inbound network model).
 
 ### 4d. Action handoff to approval  *(v1.1, optional, behind its own flag)*
-- When an answer implies a fix, surface a "propose action" control that **constructs a proposed action and routes it to the existing approval flow** (`ApprovalManager` / the Slack + Web UI approval surface) — exactly the same artifact a normal batch produces.
+- When an answer implies a fix, surface a "propose action" control that **constructs a proposed action and routes it to the existing approval flow** (the durable `ApprovalRequestStore` / the Slack + Web UI approval surface) — exactly the same artifact a normal batch produces.
 - The human approves; deterministic **Layer B** executes; results return to the chat as a follow-up answer.
 - **The chat code must not import or call execution/SSH/rollback.** Add a test asserting no Layer B execution imports in the chat module (mirror Plan A's Layer-A isolation test).
 

@@ -19,7 +19,8 @@ Approvals moved from the in-memory `ApprovalManager` (lost on restart — fable 
 - `errander/web/providers.py` + `errander/web/server.py` — `refresh(approval_store=...)`
 - `.github/workflows/ci.yml` — checkout@v5, setup-uv@v7
 - Tests: `tests/safety/test_approval_store.py` (NEW, incl. AC4 decide race), `tests/test_approval_reconciler.py` (NEW, AC3 restart recovery), rewrites in `tests/safety/test_approval.py`, `tests/agent/test_plan_apply_flow.py`, `tests/agent/test_graph.py`, `tests/agent/test_deferred_replay.py` (+ hash-fix lock-in), `tests/safety/test_deferred_artifact.py`, `tests/chaos/test_fault_injection.py`, `tests/test_main.py`, `tests/ui/test_approval_ui.py`, `tests/ui/test_approvals_playwright.py`
-- Docs: fable.md §8b/§8d, CLAUDE.md architecture, docs/langgraph-primer.md (approval flow rewrite), docs/learning/56-approval-requests-store.md (NEW), tasks/todo.md, tasks/lessons.md, docs/command-log.md
+- Docs: fable.md §8b/§8d, CLAUDE.md + AGENTS.md architecture, README.md (approval flow + structure), docs/langgraph-primer.md (approval flow rewrite), docs/learning/56-approval-requests-store.md (NEW), tasks/todo.md, tasks/lessons.md, docs/command-log.md
+- Doc sweep (2026-06-12 follow-up): RUN.md + SETUP.md live-mode table (ApprovalManager → durable store), docs/SPEC.md §9 as-built note, superseded banners on learning docs 14 + 50, learning README index completed through 56, tasks/dashboard-chat + investigation-agent plans repointed at `ApprovalRequestStore`, tasks/todo.md Project E trigger marked covered
 
 ## Previous Phase
 **PostgreSQL-Only Migration (2026-06-10, COMPLETE).**

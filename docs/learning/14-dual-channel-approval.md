@@ -1,5 +1,12 @@
 # 14 — Dual-Channel Approval: Slack Reactions + Web UI Buttons
 
+> **Superseded (2026-06-11, §8d Step 2):** the in-memory `ApprovalManager` /
+> `await_dual_approval` race described here was replaced by the durable
+> `ApprovalRequestStore` (PostgreSQL `approval_requests` table) — both channels now
+> write into the store and an atomic SQL update settles the race; approvals survive
+> agent restarts. See `56-approval-requests-store.md`. Kept for the asyncio.Event
+> race-pattern learning content.
+
 ## What Was Built and Why
 
 The approval flow previously worked through Slack only: the agent posted a dry-run report

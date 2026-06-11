@@ -1227,7 +1227,7 @@ The agent exposes a web UI at `http://<master-vm-ip>:9090/ui`. The `ERRANDER_UI_
 | `ERRANDER_UI_DATA_MODE` | Behaviour |
 |---|---|
 | `fixture` (default) | Shows realistic demo data — safe for demos and CI. No real stores needed. |
-| `live` | Shows real data from your AuditStore, inventory, and ApprovalManager. Missing stores render "Unavailable" — never shows fake data. |
+| `live` | Shows real data from your AuditStore, inventory, and the durable approval store. Missing stores render "Unavailable" — never shows fake data. |
 
 Set `ERRANDER_UI_DATA_MODE=live` when running against real VMs. Also set `ERRANDER_INVENTORY_PATH` to the path of your `inventory.yaml`.
 

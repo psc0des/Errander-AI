@@ -1013,7 +1013,7 @@ These are intentionally parked. Each has a clear trigger condition for when to p
 
 ### Project E — HITL Interrupt/Resume
 **Trigger:** any of — operators report crash-lost approvals; approval wait p95 routinely > 30 min (check with `errander --measure-durability`); need to run agent in a stateless/restart-tolerant env.
-**What's needed:** Project A (checkpointing) is already in place. Also needs a durable `ApprovalManager` (currently in-memory). Design sketch in `tasks/post-review-implementation-plan.md §8`.
+**What's needed:** Project A (checkpointing) is already in place. ~~Also needs a durable `ApprovalManager` (currently in-memory)~~ — durable approvals shipped 2026-06-11 (`ApprovalRequestStore` + restart reconciler, §8d Step 2), which already covers the "crash-lost approvals" trigger without graph interrupt/resume. Design sketch in `tasks/post-review-implementation-plan.md §8` if true interrupt semantics are ever still wanted.
 
 ---
 

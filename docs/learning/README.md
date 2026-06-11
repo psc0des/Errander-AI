@@ -43,3 +43,22 @@ Index of all learning docs created during development. Each doc explains what wa
 | 35 | [Operator Assistant: Layer A Investigation + --ask CLI](35-operator-assistant.md) | Phase D | `35-operator-assistant.md` |
 | 36 | [Prometheus HTTP Adapter: node_exporter metrics in probe + --ask](36-prometheus-adapter.md) | Phase C | `36-prometheus-adapter.md` |
 | 37 | [Immutable Signed Plan Artifact: assessment at plan time, exact packages in hash](37-immutable-plan-artifact.md) | P0-1 | `37-immutable-plan-artifact.md` |
+| 38 | [ELK journalctl Enrichment](38-elk-journalctl-enrichment.md) | Phase C | `38-elk-journalctl-enrichment.md` |
+| 39 | [LangGraph Signal Integration](39-langgraph-signal-integration.md) | Phase C | `39-langgraph-signal-integration.md` |
+| 40 | [Service Restart Module](40-service-restart-module.md) | v1 actions | `40-service-restart-module.md` |
+| 41 | [Durability Measurement](41-durability-measurement.md) | Phase A1 | `41-durability-measurement.md` |
+| 42 | [D1 Prompt Capture](42-d1-prompt-capture.md) | AI Trust | `42-d1-prompt-capture.md` |
+| 43 | [vm-facts CLI](43-vm-facts-cli.md) · [AI Decision Explainability](43-ai-decision-explainability.md) | B3 / AI Trust | two docs share the number |
+| 44 | [Provider Layer](44-provider-layer.md) · [Context Budget & Redaction](44-context-budget-redaction.md) | Web / AI Trust | two docs share the number |
+| 45 | [docker_hygiene Session 3 Cutover](45-docker-hygiene-session3-cutover.md) · [Replay Evals](45-replay-evals.md) | v1.1 / AI Trust | two docs share the number |
+| 46 | [docker_hygiene v1.2 Scope](46-docker-hygiene-v1.2-scope.md) · [Operational Memory Confidence](46-operational-memory-confidence.md) | v1.2 / AI Trust | two docs share the number |
+| 47 | [docker_hygiene v1.5 Scope](47-docker-hygiene-v1.5-scope.md) · [AI Source Citation](47-ai-source-citation.md) | v1.5 / AI Trust | two docs share the number |
+| 48 | [AI SRE Gap Fix](48-ai-sre-gap-fix.md) · [AI Prefix Caching](48-ai-prefix-caching.md) | SRE / AI Trust | two docs share the number |
+| 49 | [SRE Residual Fixes](49-sre-residual-fixes.md) · [SRE Trust-Gap Fixes](49-sre-trust-gap-fixes.md) | SRE | two docs share the number |
+| 50 | [Per-Item Approval UI + Decision Reasoning](50-per-item-approval.md) | UI | `50-per-item-approval.md` |
+| 51 | [Per-Target Actions](51-per-target-actions.md) | config | `51-per-target-actions.md` |
+| 52 | [Configure Wizard](52-configure-wizard.md) | setup | `52-configure-wizard.md` |
+| 53 | [Wizard Input Validation](53-wizard-input-validation.md) | setup | `53-wizard-input-validation.md` |
+| 54 | [PostgreSQL Dual-Backend (superseded by 55)](54-postgres-dual-backend.md) | §8d-1 | `54-postgres-dual-backend.md` |
+| 55 | [PostgreSQL-Only Migration](55-postgresql-only.md) | §8d-1 | `55-postgresql-only.md` |
+| 56 | [Durable Approval Requests Store](56-approval-requests-store.md) | §8d-2 | `56-approval-requests-store.md` |

@@ -1,5 +1,11 @@
 # 50 — Per-Item Approval UI + Decision Reasoning
 
+> **Plumbing superseded (2026-06-11, §8d Step 2):** the per-item approval *feature*
+> described here is unchanged and shipped, but the `await_dual_approval` /
+> `PendingApproval` plumbing it flowed through was replaced by the durable
+> `ApprovalRequestStore` (`approved_items_json` column) — per-item selections now
+> also survive window defers and agent restarts. See `56-approval-requests-store.md`.
+
 ## What was built and why
 
 Before this feature, the Web UI approval page had a single "Approve All / Reject All" button per batch. This meant an operator who wanted to approve 14 of 16 package upgrades had no way to do it from the UI — they'd have to approve all or reject all.

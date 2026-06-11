@@ -792,6 +792,13 @@ On drift detection, the agent:
 
 ## 9. Approval Mechanism
 
+> **As-built note (2026-06-11):** the shipped implementation differs from this original
+> spec in two ways: (1) there is no `interrupt()`/`Command(resume=)` — the approval gate
+> is a plain async node; (2) approvals are durable rows in the PostgreSQL
+> `approval_requests` table (atomic decide, survives agent restarts, restart reconciler),
+> with Slack reactions and the Web UI both writing into that store. See
+> `docs/langgraph-primer.md` ("Human-in-the-Loop") and `docs/learning/56-approval-requests-store.md`.
+
 ### Flow (Slack Reaction Polling)
 
 ```

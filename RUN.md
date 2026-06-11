@@ -103,7 +103,7 @@ The Operations Hub can run in two modes, controlled by `ERRANDER_UI_DATA_MODE`:
 | Value | Behaviour |
 |---|---|
 | `fixture` (default) | Static demo data from `errander/web/data.py`. Safe for demos and CI. |
-| `live` | Reads from real backend stores (AuditStore, ApprovalManager, inventory). Missing stores show "unavailable" — never silently fall back to fake data. |
+| `live` | Reads from real backend stores (AuditStore, ApprovalRequestStore, inventory). Missing stores show "unavailable" — never silently fall back to fake data. |
 
 ```bash
 # Demo / CI (default — no env var needed)

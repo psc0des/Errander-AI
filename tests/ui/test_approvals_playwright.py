@@ -2,7 +2,7 @@
 
 Architecture:
 - A separate module-scoped server fixture starts aiohttp with an
-  ApprovalManager pre-seeded with multiple pending approvals.
+  ApprovalRequestStore pre-seeded with multiple pending approvals.
 - Tests are grouped by page/feature; click tests use dedicated batch IDs
   so consuming one approval doesn't break other tests.
 - The fixture uses port=0 so it never conflicts with test_web_ui.py.
@@ -17,17 +17,17 @@ import pytest
 from playwright.sync_api import Page, expect
 
 from errander.observability.metrics import start_metrics_server
-from errander.safety.approval import ApprovalManager
+from errander.safety.approval_store import ApprovalRequestStore
 from errander.safety.audit import AuditStore
 from tests.conftest import make_test_db
 
 # ---------------------------------------------------------------------------
-# Server fixture — runs in a background thread, includes ApprovalManager
+# Server fixture — runs in a background thread, includes ApprovalRequestStore
 # ---------------------------------------------------------------------------
 
 @pytest.fixture(scope="module")
 def approvals_base_url() -> str:  # type: ignore[return]
-    """Start aiohttp server with ApprovalManager seeded with pending approvals."""
+    """Start aiohttp server with ApprovalRequestStore seeded with pending approvals."""
     ready = threading.Event()
     ctx: dict[str, object] = {}
 
@@ -35,16 +35,22 @@ def approvals_base_url() -> str:  # type: ignore[return]
         store = AuditStore(make_test_db())
         await store.initialize()
 
-        manager = ApprovalManager()
+        approval_store = ApprovalRequestStore(make_test_db())
         # Seed several pending approvals with distinct batch IDs
-        manager.register("batch-view-01", "Freed 1.2 GB on prod/web-01\nPatched 3 packages.")
-        manager.register("batch-view-02", "Docker prune: 4 images removed.")
-        manager.register("batch-approve-01", "Log rotation completed on staging/app-01.")
-        manager.register("batch-reject-01", "Disk cleanup dry-run on dev/db-01.")
-        manager.register("batch-nav-01", "Backup verify report for prod/db-02.")
+        for batch_id, report in [
+            ("batch-view-01", "Freed 1.2 GB on prod/web-01\nPatched 3 packages."),
+            ("batch-view-02", "Docker prune: 4 images removed."),
+            ("batch-approve-01", "Log rotation completed on staging/app-01."),
+            ("batch-reject-01", "Disk cleanup dry-run on dev/db-01."),
+            ("batch-nav-01", "Backup verify report for prod/db-02."),
+        ]:
+            await approval_store.create(
+                batch_id, env_name="dev", plan_id="plan-pw",
+                plan_hash="a" * 64, report=report,
+            )
 
         runner = await start_metrics_server(
-            port=0, audit_store=store, approval_manager=manager,
+            port=0, audit_store=store, approval_store=approval_store,
         )
         site = list(runner.sites)[0]
         port = site._server.sockets[0].getsockname()[1]  # type: ignore[union-attr]
@@ -233,13 +239,13 @@ class TestApprovalsBadgeAcrossPages:
         page.goto(f"{approvals_base_url}/ui/batches")
         expect(page.get_by_role("link", name="Approval Queue")).to_be_visible()
 
-    def test_health_endpoint_still_works_with_approval_manager(
+    def test_health_endpoint_still_works_with_approval_store(
         self, page: Page, approvals_base_url: str,
     ) -> None:
         page.goto(f"{approvals_base_url}/health")
         expect(page.get_by_text("ok")).to_be_visible()
 
-    def test_metrics_endpoint_still_works_with_approval_manager(
+    def test_metrics_endpoint_still_works_with_approval_store(
         self, page: Page, approvals_base_url: str,
     ) -> None:
         page.goto(f"{approvals_base_url}/metrics")

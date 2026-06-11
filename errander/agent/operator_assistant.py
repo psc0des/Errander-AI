@@ -6,7 +6,7 @@ actionable recommendations.
 
 Layer A contract:
   - Read-only: never writes to any store
-  - No SandboxExecutor, no FileLocker, no ApprovalManager
+  - No SandboxExecutor, no FileLocker, no approval store
   - No SSH connections — queries stores, not live VMs
   - LLM synthesizes; humans decide; Layer B executes
 

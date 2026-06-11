@@ -173,8 +173,8 @@ async def test_load_artifact_node_invalid_approved_at_fails_closed() -> None:
 
 @pytest.mark.asyncio
 async def test_approval_gate_replay_mode_auto_approves() -> None:
-    """is_deferred_replay=True → returns approved=True without calling approval_manager."""
-    approval_manager = AsyncMock()
+    """is_deferred_replay=True → returns approved=True without touching the store."""
+    approval_store = AsyncMock()
 
     state: dict = {
         "batch_id": "b1",
@@ -188,10 +188,32 @@ async def test_approval_gate_replay_mode_auto_approves() -> None:
         "is_deferred_reapproval": False,
     }
 
-    result = await approval_gate_node(state, approval_manager=approval_manager)
+    result = await approval_gate_node(state, approval_store=approval_store)
 
     assert result["approved"] is True
-    approval_manager.await_approval.assert_not_called()
+    approval_store.create.assert_not_called()
+    approval_store.wait_for_decision.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_init_batch_node_reuses_preloaded_batch_id() -> None:
+    """Replay reuses the original batch_id — the approved hash commits to it."""
+    from errander.agent.graph import init_batch_node
+
+    state: dict = {"dry_run": False, "preloaded_batch_id": "batch-original-001"}
+    result = await init_batch_node(state)  # type: ignore[arg-type]
+
+    assert result["batch_id"] == "batch-original-001"
+
+
+@pytest.mark.asyncio
+async def test_init_batch_node_generates_fresh_id_without_preload() -> None:
+    from errander.agent.graph import init_batch_node
+
+    result = await init_batch_node({"dry_run": False})  # type: ignore[arg-type]
+
+    assert result["batch_id"].startswith("batch-")
+    assert result["batch_id"] != "batch-"
 
 
 @pytest.mark.asyncio
@@ -333,7 +355,7 @@ async def test_window_opener_uses_stored_artifact() -> None:
             ssh_manager=MagicMock(),
             audit_store=audit_store,
             deferred_store=deferred_store,
-            approval_manager=MagicMock(),
+            approval_store=AsyncMock(get=AsyncMock(return_value=None)),
             slack_client=None,
             overrides_store=MagicMock(),
         )
@@ -344,6 +366,9 @@ async def test_window_opener_uses_stored_artifact() -> None:
     assert call["preloaded_plan_hash"] == plan_hash
     # approved_at must be passed so load_deferred_artifact_node can check artifact age
     assert call.get("preloaded_approved_at") is not None
+    # Replay must reuse the ORIGINAL batch_id — the stored hash commits to it.
+    # A fresh batch_id made every replay abort at hash verification (R3 fix).
+    assert call.get("preloaded_batch_id") == "batch-deferred"
     # No re-approval flag set
     assert not call.get("is_deferred_reapproval", False)
 
@@ -395,7 +420,7 @@ async def test_window_opener_legacy_fallback() -> None:
             ssh_manager=MagicMock(),
             audit_store=audit_store,
             deferred_store=deferred_store,
-            approval_manager=MagicMock(),
+            approval_store=AsyncMock(get=AsyncMock(return_value=None)),
             slack_client=None,
             overrides_store=MagicMock(),
         )
@@ -462,7 +487,7 @@ async def test_window_opener_passes_hygiene_manager() -> None:
             ssh_manager=MagicMock(),
             audit_store=audit_store,
             deferred_store=deferred_store,
-            approval_manager=MagicMock(),
+            approval_store=AsyncMock(get=AsyncMock(return_value=None)),
             slack_client=None,
             overrides_store=MagicMock(),
             hygiene_manager=hygiene_manager,

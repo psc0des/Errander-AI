@@ -255,7 +255,7 @@ config = {"configurable": {"thread_id": "maint-run-42"}}
 result = graph.invoke(initial_state, config)
 ```
 
-**Errander does not use LangGraph checkpointing.** Human approval is implemented as a regular async node that polls Slack — the graph never pauses mid-run. See "Approval in Errander" below.
+**Errander uses LangGraph checkpointing only for crash forensics** (`AsyncPostgresSaver`, best-effort — see `--runs` inspection commands), never for human-in-the-loop pauses. Human approval is implemented as a regular async node that waits on the durable `approval_requests` store — the graph never pauses mid-run. See "Approval in Errander" below.
 
 ---
 
@@ -278,48 +278,59 @@ def safety_gate(state: State):
 
 **Errander does not use `interrupt()`.** The architecture constraint is that all Slack communication is outbound HTTPS polling — no inbound webhooks, no public endpoints. LangGraph's `interrupt()` requires a checkpointer and an external system to call `graph.invoke(Command(resume=...), config)` to resume the graph, which needs an inbound connection.
 
-Instead, Errander's approval gate is a plain `async def` node that blocks synchronously (from the graph's perspective) while polling Slack reactions:
+Instead, Errander's approval gate is a plain `async def` node that blocks (from the graph's perspective) while waiting on the **durable `approval_requests` store** (R3, migration #13):
 
 ```python
 async def approval_gate_node(state: BatchGraphState, ...) -> dict[str, Any]:
     plan_summary = _format_plan_for_approval(vm_plans, batch_id, plan_id, plan_hash)
 
-    # Post plan to Slack, then poll for ✅/❌ every 30s (outbound HTTPS only)
-    approval_result = await await_dual_approval(
-        approval_manager, slack_client, batch_id, plan_summary,
-        timeout_seconds=1800,
-        poll_interval_seconds=30,
-    )
-    approved, approver, approved_items = approval_result
-    return {"approved": approved}
+    # 1. Durable row FIRST — a crash after this point leaves a recoverable
+    #    pending approval, never an orphaned one.
+    await approval_store.create(batch_id, ..., report=plan_summary, vm_plans=vm_plans)
+
+    # 2. Best-effort Slack notify + transitional reaction watcher (background
+    #    task) — a ✅/❌ reaction is written into the store via atomic decide().
+    slack_ts = await request_approval(slack_client, batch_id, plan_summary)
+    watcher = asyncio.create_task(watch_slack_reactions(slack_client, slack_ts, approval_store, batch_id))
+
+    # 3. Wait on the store: 2 s DB poll + instant in-process event wakeup.
+    #    Timeout transitions the row to 'timeout' (auto-REJECT).
+    request = await approval_store.wait_for_decision(batch_id, timeout_seconds=1800)
+    return {"approved": request.status == "approved"}
 ```
 
-This node runs to completion before the graph routes to the next node — no checkpointing or resume needed. The tradeoff: the agent process must stay alive during the 30-minute approval window.
+The web UI writes its decisions into the same store (`UPDATE ... WHERE status='pending'` — exactly one decider wins). If the agent dies while waiting, the **restart reconciler** (60 s interval job in `main.py`) adopts the orphaned row: it expires overdue requests, re-spawns the Slack watcher for pending ones, and executes approved-but-unclaimed batches through the deferred-replay path. Before any execution — immediate or deferred handoff — the gate atomically claims the approval (`mark_execution_started`) so the reconciler can never double-execute it.
 
 ```mermaid
 sequenceDiagram
     participant Graph as LangGraph
     participant Gate as approval_gate_node
+    participant Store as approval_requests (DB)
     participant Slack as Slack API
     participant Human as Operator
 
     Graph->>Gate: execute node (async)
+    Gate->>Store: INSERT pending row (durable-first)
     Gate->>Slack: POST plan summary to #errander-approvals
-    loop every 30s (outbound HTTPS polling)
+    par reaction watcher (background, every 30s)
         Gate->>Slack: GET reactions on message
-        Slack-->>Gate: reactions list
+        Slack-->>Store: reaction → atomic decide()
+    and store wait (2s poll + event)
+        Gate->>Store: status still pending?
     end
-    Human->>Slack: adds ✅ or ❌ reaction
-    Gate->>Gate: reaction detected → resolve
+    Human->>Store: Web UI approve/reject (or Slack reaction via watcher)
+    Gate->>Store: claim execution (mark_execution_started)
     Gate-->>Graph: return {"approved": True/False}
     Graph->>Graph: route to next node
 ```
 
 **Key rules for the approval gate:**
-- Never wrap `await_dual_approval` in bare `try/except` — propagate timeouts as `approved=False`
+- The pending row is persisted **before** the Slack post — crash-safe by construction
+- Decisions are atomic: `UPDATE ... WHERE status='pending'`, rowcount settles races (Slack watcher vs UI vs timeout)
+- Timeouts are owned by `wait_for_decision`/the reconciler — the Slack watcher writes only genuine reactions
 - Dry-run batches auto-approve — sandbox execution is always safe
 - `require_live_approval=True` (default) forces all live tiers through approval regardless of policy
-- Approval outside the maintenance window → execution is deferred, not run immediately
+- Approval outside the maintenance window → execution is deferred, not run immediately (per-item selections survive via `approved_items_json`)
 
 ---
 
@@ -423,6 +434,7 @@ builder.add_conditional_edges("execute", route_after_execute)
 builder.add_edge("rollback", "report")
 builder.add_edge("report", END)
 
-# Compile (no checkpointer — Errander uses Slack polling for approval)
+# Compile (checkpointer optional — used for crash forensics, not approval;
+# approval waits on the durable approval_requests store)
 graph = builder.compile()
 ```

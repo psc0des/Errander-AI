@@ -23,7 +23,7 @@ from errander.agent.graph import (
 from errander.execution.sandbox import SandboxExecutor
 from errander.execution.ssh import SSHConnectionManager, SSHResult
 from errander.models.actions import ActionStatus
-from errander.safety.approval import ApprovalManager
+from errander.safety.approval_store import ApprovalRequestStore
 from errander.safety.audit import AuditStore
 from errander.safety.locking import FileLocker
 from errander.scheduling.windows import MaintenanceWindow
@@ -678,16 +678,19 @@ class TestApprovalGateDeferred:
 
         try:
             state = self._make_approval_state(dry_run=False)
-            mgr = MagicMock(spec=ApprovalManager)
-            with (
-                patch("errander.agent.graph.datetime") as mock_dt,
-                patch("errander.agent.graph.await_dual_approval", new_callable=AsyncMock) as mock_approval,
-            ):
+            # Pre-decided durable approval: the gate's create() is a no-op on a
+            # decided row and wait_for_decision returns the decision instantly.
+            store = ApprovalRequestStore(make_test_db())
+            await store.create(
+                "unknown", env_name="production", plan_id="plan-x",
+                plan_hash="a" * 64, report="Test report",
+            )
+            await store.decide("unknown", approved=True, decided_by="test-approver")
+            with patch("errander.agent.graph.datetime") as mock_dt:
                 mock_dt.now.return_value = monday_10am
-                mock_approval.return_value = (True, "test-approver", None)
                 result = await approval_gate_node(
                     state,
-                    approval_manager=mgr,
+                    approval_store=store,
                     window=window,
                     deferred_store=deferred_store,
                 )
@@ -735,22 +738,25 @@ class TestApprovalGateDeferred:
 
         slack_client = MagicMock()
         slack_client.post_alert = AsyncMock()
+        slack_client.post_message = AsyncMock(return_value="ts-defer")
+        slack_client.get_reactions = AsyncMock(return_value=[])
 
         deferred_store = DeferredExecutionStore(make_test_db())
         await deferred_store.initialize()
 
         try:
             state = self._make_approval_state(dry_run=False)
-            mgr = MagicMock(spec=ApprovalManager)
-            with (
-                patch("errander.agent.graph.datetime") as mock_dt,
-                patch("errander.agent.graph.await_dual_approval", new_callable=AsyncMock) as mock_approval,
-            ):
+            store = ApprovalRequestStore(make_test_db())
+            await store.create(
+                "unknown", env_name="production", plan_id="plan-x",
+                plan_hash="a" * 64, report="Test report",
+            )
+            await store.decide("unknown", approved=True, decided_by="test-approver")
+            with patch("errander.agent.graph.datetime") as mock_dt:
                 mock_dt.now.return_value = monday_10am
-                mock_approval.return_value = (True, "test-approver", None)
                 await approval_gate_node(
                     state,
-                    approval_manager=mgr,
+                    approval_store=store,
                     window=window,
                     deferred_store=deferred_store,
                     slack_client=slack_client,
@@ -784,16 +790,17 @@ class TestApprovalGateDeferred:
         async with AuditStore(make_test_db()) as audit_store:
             try:
                 state = self._make_approval_state(dry_run=False)
-                mgr = MagicMock(spec=ApprovalManager)
-                with (
-                    patch("errander.agent.graph.datetime") as mock_dt,
-                    patch("errander.agent.graph.await_dual_approval", new_callable=AsyncMock) as mock_approval,
-                ):
+                store = ApprovalRequestStore(make_test_db())
+                await store.create(
+                    "unknown", env_name="production", plan_id="plan-x",
+                    plan_hash="a" * 64, report="Test report",
+                )
+                await store.decide("unknown", approved=True, decided_by="test-approver")
+                with patch("errander.agent.graph.datetime") as mock_dt:
                     mock_dt.now.return_value = monday_10am
-                    mock_approval.return_value = (True, "test-approver", None)
                     await approval_gate_node(
                         state,
-                        approval_manager=mgr,
+                        approval_store=store,
                         window=window,
                         deferred_store=deferred_store,
                         audit_store=audit_store,

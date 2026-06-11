@@ -1,9 +1,27 @@
 # Errander-AI — Project Status
 
 ## Last Updated
-2026-06-10
+2026-06-11
 
 ## Current Phase
+**§8d Step 2 — R3 keystone: durable `approval_requests` store (2026-06-11, COMPLETE).**
+
+Approvals moved from the in-memory `ApprovalManager` (lost on restart — fable finding F9) to a DB-backed `ApprovalRequestStore` (migration #13). The approval gate persists the pending row durable-first, then posts to Slack; a transitional background watcher writes ✅/❌ reactions into the store; the web UI writes its decisions into the same store via atomic `UPDATE ... WHERE status='pending'` (exactly one decider wins). A 60-second restart reconciler expires overdue requests, resumes Slack watchers for orphaned pending rows, and executes approved-but-unclaimed batches through the exact-artifact replay path — guarded by an atomic execution claim (`mark_execution_started`) so no batch can run twice. Rode along: the latent deferred-replay hash bug fix (`preloaded_batch_id` — every replay previously aborted because a fresh batch_id broke the plan hash) and exact-object continuity (per-item selections now survive defer/restart via `approved_items_json`). `ApprovalManager`/`PendingApproval`/`await_dual_approval` deleted. GitHub Actions bumped off Node-20-deprecated majors (checkout@v5, setup-uv@v7).
+
+### Files changed (2026-06-11 — §8d Step 2 approval_requests store)
+- `errander/safety/migrations.py` — migration #13: `approval_requests` table
+- `errander/safety/approval_store.py` — NEW: `ApprovalRequestStore` + `ApprovalRequest` (atomic decide/claim, expire_overdue, wait_for_decision poll+event hybrid)
+- `errander/safety/approval.py` — `ApprovalManager`/`PendingApproval`/`await_dual_approval`/`BatchApprovalResult` deleted; `watch_slack_reactions` added (transitional R3 channel)
+- `errander/agent/graph.py` — gate rewritten on the store (durable-first, claim before execution); `preloaded_batch_id` in state + `init_batch_node`; `build_operator_approved_packages` helper
+- `errander/main.py` — `_approval_reconciler` + 60 s interval job; `ApprovalRequestStore` wiring; `preloaded_batch_id`/`preloaded_approved_items` through `run_env_batch` and `_window_opener`
+- `errander/scheduling/scheduler.py` — `add_interval_job` (max_instances=1)
+- `errander/observability/metrics.py` — `_APPROVAL_STORE_KEY`; all handlers + `_ui_approval_decide` repointed at the store (`decided_by="ui:<username>"`)
+- `errander/web/providers.py` + `errander/web/server.py` — `refresh(approval_store=...)`
+- `.github/workflows/ci.yml` — checkout@v5, setup-uv@v7
+- Tests: `tests/safety/test_approval_store.py` (NEW, incl. AC4 decide race), `tests/test_approval_reconciler.py` (NEW, AC3 restart recovery), rewrites in `tests/safety/test_approval.py`, `tests/agent/test_plan_apply_flow.py`, `tests/agent/test_graph.py`, `tests/agent/test_deferred_replay.py` (+ hash-fix lock-in), `tests/safety/test_deferred_artifact.py`, `tests/chaos/test_fault_injection.py`, `tests/test_main.py`, `tests/ui/test_approval_ui.py`, `tests/ui/test_approvals_playwright.py`
+- Docs: fable.md §8b/§8d, CLAUDE.md architecture, docs/langgraph-primer.md (approval flow rewrite), docs/learning/56-approval-requests-store.md (NEW), tasks/todo.md, tasks/lessons.md, docs/command-log.md
+
+## Previous Phase
 **PostgreSQL-Only Migration (2026-06-10, COMPLETE).**
 
 Owner decision: drop SQLite entirely — one standard, less headache for users (supersedes the §8c dual-backend "Grafana model"). `AsyncDatabase` now rejects non-Postgres URLs; all dialect branches removed; DDL written in Postgres flavor (INTEGER→BIGINT for byte counts — int32 overflow caught on first run); LangGraph checkpointer moved to `AsyncPostgresSaver`; repo ships `docker-compose.yml` (postgres:16, `errander` + `errander_test` DBs) so clone → `docker compose up -d` → run stays zero-config. Test suite (2445 tests) runs against real Postgres via `make_test_db()` + per-test TRUNCATE isolation (~5 min). CI: single PostgreSQL test job (full suite) + web-role least-privilege verification. configure.sh asks for the PostgreSQL URL.

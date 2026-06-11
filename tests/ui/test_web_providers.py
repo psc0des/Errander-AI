@@ -267,7 +267,7 @@ def test_live_provider_refresh_no_stores(live_provider) -> None:
     assert "live" in live_provider.data_freshness()
 
 
-def test_live_provider_refresh_with_approval_manager(live_provider) -> None:
+def test_live_provider_refresh_with_approval_store(live_provider) -> None:
     """Approvals cache is returned by get_approvals() after population."""
     live_provider._approvals = [
         {"id": "batch-xyz", "action": "BATCH APPROVAL", "tier": "MEDIUM", "hostname": "—"},

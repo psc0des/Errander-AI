@@ -134,10 +134,15 @@ async def test_approval_gate_defers_with_artifact(tmp_path: Path) -> None:
     # approved live run but outside window → deferred_store.save() called
     window = MagicMock(spec=MaintenanceWindow)
 
-    from errander.safety.approval import ApprovalManager
+    from errander.safety.approval_store import ApprovalRequestStore
+    from tests.conftest import make_test_db
 
-    approval_manager = AsyncMock(spec=ApprovalManager)
-    approval_manager.await_approval = AsyncMock(return_value=(True, "alice", None))
+    # Pre-decided durable approval — wait_for_decision returns it instantly.
+    approval_store = ApprovalRequestStore(make_test_db())
+    await approval_store.create(
+        "b1", env_name="prod", plan_id="pid-1", plan_hash="d" * 64, report="plan",
+    )
+    await approval_store.decide("b1", approved=True, decided_by="ui:alice")
 
     vm_plans = [{"vm_id": "vm1", "planned_actions": [{"action_type": "patching", "risk_tier": "medium"}]}]
 
@@ -160,11 +165,10 @@ async def test_approval_gate_defers_with_artifact(tmp_path: Path) -> None:
             "errander.agent.graph.next_window_open",
             return_value=datetime.now(tz=UTC) + timedelta(hours=2),
         ),
-        patch("errander.agent.graph.await_dual_approval", new=AsyncMock(return_value=(True, "alice", None))),
     ):
         await approval_gate_node(
             state,
-            approval_manager=approval_manager,
+            approval_store=approval_store,
             deferred_store=deferred_store,
             window=window,
             require_live_approval=True,
@@ -183,9 +187,10 @@ async def test_approval_gate_deferred_audit_event(tmp_path: Path) -> None:
 
     from errander.agent.graph import approval_gate_node
     from errander.models.events import AuditEvent, EventType
-    from errander.safety.approval import ApprovalManager
+    from errander.safety.approval_store import ApprovalRequestStore
     from errander.safety.audit import AuditStore
     from errander.scheduling.windows import MaintenanceWindow
+    from tests.conftest import make_test_db
 
     logged_events: list[AuditEvent] = []
 
@@ -193,7 +198,11 @@ async def test_approval_gate_deferred_audit_event(tmp_path: Path) -> None:
     audit_store.log_event = AsyncMock(side_effect=logged_events.append)
 
     deferred_store = AsyncMock()
-    approval_manager = AsyncMock(spec=ApprovalManager)
+    approval_store = ApprovalRequestStore(make_test_db())
+    await approval_store.create(
+        "b2", env_name="dev", plan_id="pid-2", plan_hash="e" * 64, report="plan",
+    )
+    await approval_store.decide("b2", approved=True, decided_by="ui:bob")
     window = MagicMock(spec=MaintenanceWindow)
 
     state: dict = {
@@ -214,11 +223,10 @@ async def test_approval_gate_deferred_audit_event(tmp_path: Path) -> None:
             "errander.agent.graph.next_window_open",
             return_value=datetime.now(tz=UTC) + timedelta(hours=2),
         ),
-        patch("errander.agent.graph.await_dual_approval", new=AsyncMock(return_value=(True, "bob", None))),
     ):
         await approval_gate_node(
             state,
-            approval_manager=approval_manager,
+            approval_store=approval_store,
             deferred_store=deferred_store,
             audit_store=audit_store,
             window=window,

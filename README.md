@@ -288,13 +288,14 @@ Anything not on this whitelist requires human approval.
 
 ## Approval Flow
 
-Dual-channel approval — Slack reactions and Web UI buttons race:
+Durable, dual-channel approval — every request is a row in PostgreSQL (`approval_requests`), so pending approvals survive agent restarts:
 
-1. Agent completes dry-run and posts the plan to `#errander-approvals` on Slack
-2. **Race**: first channel to decide wins
+1. Agent completes dry-run, **persists the pending approval to the database first**, then posts the plan to `#errander-approvals` on Slack
+2. **Race**: first channel to decide wins — settled by an atomic database update (exactly one decision can ever be recorded)
    - Slack: operator reacts with :white_check_mark: (approve) or :x: (reject) — approves all items
    - Web UI: operator uses `/ui/approvals` — per-item granularity (approve individual packages, service restarts; categorical actions auto-included)
 3. Timeout after 30 minutes (configurable) = auto-reject
+4. If the agent restarts mid-approval, a reconciler job adopts the pending request: the operator can still decide, and an approved batch executes through the exact-artifact replay path — exactly once, guarded by an atomic execution claim
 
 Web UI approval cards show: per-VM / per-action plan with checkboxes for each item, a **Decision Reasoning** section (LLM vs deterministic fallback, model, latency), and the operator's decision is recorded by username (not a generic "ui" label).
 
@@ -343,7 +344,8 @@ errander/
   safety/                   # Safety architecture
     validators.py           # Pre-execution validation (kernel exclusion, whitelist)
     rollback.py             # Rollback strategies per action type
-    approval.py             # Dual-channel approval (Slack + Web UI)
+    approval.py             # Slack approval channel (post + reaction watcher)
+    approval_store.py       # Durable approval requests (DB-backed, atomic decide, survives restarts)
     hygiene_approval.py     # docker_hygiene approval surface (Slack formatter + parser + manager)
     locking.py              # VM-level locking (file-based v1)
     audit.py                # Audit logging (async PostgreSQL)

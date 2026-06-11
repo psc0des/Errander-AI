@@ -1,4 +1,4 @@
-"""Tests for the approval UI routes.
+"""Tests for the approval UI routes (durable ApprovalRequestStore, R3).
 
 Uses aiohttp.test_utils.TestClient — no real TCP port needed.
 Tests cover:
@@ -17,7 +17,7 @@ import pytest
 from aiohttp.test_utils import TestClient, TestServer
 
 from errander.observability.metrics import start_metrics_server
-from errander.safety.approval import ApprovalManager
+from errander.safety.approval_store import ApprovalRequestStore
 from errander.safety.audit import AuditStore
 from tests.conftest import make_test_db
 
@@ -26,19 +26,35 @@ from tests.conftest import make_test_db
 # ---------------------------------------------------------------------------
 
 async def _make_client(
-    manager: ApprovalManager | None = None,
+    approval_store: ApprovalRequestStore | None = None,
 ) -> tuple[TestClient, AuditStore]:
-    """Build a test aiohttp app with an in-memory store + approval manager."""
+    """Build a test aiohttp app with an audit store + durable approval store."""
     store = AuditStore(make_test_db())
     await store.initialize()
     runner = await start_metrics_server(
-        port=0, audit_store=store, approval_manager=manager,
+        port=0, audit_store=store, approval_store=approval_store,
     )
     # Extract the underlying app from the runner
     app = runner._app  # type: ignore[attr-defined]
     client = TestClient(TestServer(app))
     await client.start_server()
     return client, store
+
+
+def _make_approval_store() -> ApprovalRequestStore:
+    return ApprovalRequestStore(make_test_db())
+
+
+async def _register(
+    approval_store: ApprovalRequestStore,
+    batch_id: str,
+    report: str = "report",
+    slack_message_ts: str | None = None,
+) -> None:
+    await approval_store.create(
+        batch_id, env_name="dev", plan_id="plan-ui", plan_hash="a" * 64,
+        report=report, slack_message_ts=slack_message_ts,
+    )
 
 
 async def _csrf_post(
@@ -65,13 +81,13 @@ async def _csrf_post(
 
 
 # ---------------------------------------------------------------------------
-# GET /ui/approvals — no manager
+# GET /ui/approvals — no store
 # ---------------------------------------------------------------------------
 
-class TestApprovalPageNoManager:
+class TestApprovalPageNoStore:
     @pytest.mark.asyncio
-    async def test_page_loads_without_manager(self) -> None:
-        client, store = await _make_client(manager=None)
+    async def test_page_loads_without_store(self) -> None:
+        client, store = await _make_client(approval_store=None)
         try:
             resp = await client.get("/ui/approvals")
             assert resp.status == 200
@@ -88,9 +104,9 @@ class TestApprovalPageNoManager:
 
 class TestApprovalPageEmpty:
     @pytest.mark.asyncio
-    async def test_page_loads_with_empty_manager(self) -> None:
-        manager = ApprovalManager()
-        client, store = await _make_client(manager=manager)
+    async def test_page_loads_with_empty_store(self) -> None:
+        approval_store = _make_approval_store()
+        client, store = await _make_client(approval_store=approval_store)
         try:
             resp = await client.get("/ui/approvals")
             assert resp.status == 200
@@ -102,8 +118,8 @@ class TestApprovalPageEmpty:
 
     @pytest.mark.asyncio
     async def test_page_shows_no_pending_message(self) -> None:
-        manager = ApprovalManager()
-        client, store = await _make_client(manager=manager)
+        approval_store = _make_approval_store()
+        client, store = await _make_client(approval_store=approval_store)
         try:
             resp = await client.get("/ui/approvals")
             text = await resp.text()
@@ -114,8 +130,8 @@ class TestApprovalPageEmpty:
 
     @pytest.mark.asyncio
     async def test_page_shows_nav_link(self) -> None:
-        manager = ApprovalManager()
-        client, store = await _make_client(manager=manager)
+        approval_store = _make_approval_store()
+        client, store = await _make_client(approval_store=approval_store)
         try:
             resp = await client.get("/ui/approvals")
             text = await resp.text()
@@ -132,9 +148,9 @@ class TestApprovalPageEmpty:
 class TestApprovalPageWithPending:
     @pytest.mark.asyncio
     async def test_pending_approval_shown(self) -> None:
-        manager = ApprovalManager()
-        manager.register("batch-test-01", "Freed 1.5 GB on prod/web-01")
-        client, store = await _make_client(manager=manager)
+        approval_store = _make_approval_store()
+        await _register(approval_store, "batch-test-01", "Freed 1.5 GB on prod/web-01")
+        client, store = await _make_client(approval_store=approval_store)
         try:
             resp = await client.get("/ui/approvals")
             text = await resp.text()
@@ -145,9 +161,9 @@ class TestApprovalPageWithPending:
 
     @pytest.mark.asyncio
     async def test_report_excerpt_shown(self) -> None:
-        manager = ApprovalManager()
-        manager.register("batch-test-02", "Freed 1.5 GB on prod/web-01")
-        client, store = await _make_client(manager=manager)
+        approval_store = _make_approval_store()
+        await _register(approval_store, "batch-test-02", "Freed 1.5 GB on prod/web-01")
+        client, store = await _make_client(approval_store=approval_store)
         try:
             resp = await client.get("/ui/approvals")
             text = await resp.text()
@@ -158,9 +174,9 @@ class TestApprovalPageWithPending:
 
     @pytest.mark.asyncio
     async def test_approve_button_present(self) -> None:
-        manager = ApprovalManager()
-        manager.register("batch-test-03", "report")
-        client, store = await _make_client(manager=manager)
+        approval_store = _make_approval_store()
+        await _register(approval_store, "batch-test-03")
+        client, store = await _make_client(approval_store=approval_store)
         try:
             resp = await client.get("/ui/approvals")
             text = await resp.text()
@@ -172,9 +188,9 @@ class TestApprovalPageWithPending:
 
     @pytest.mark.asyncio
     async def test_reject_button_present(self) -> None:
-        manager = ApprovalManager()
-        manager.register("batch-test-04", "report")
-        client, store = await _make_client(manager=manager)
+        approval_store = _make_approval_store()
+        await _register(approval_store, "batch-test-04")
+        client, store = await _make_client(approval_store=approval_store)
         try:
             resp = await client.get("/ui/approvals")
             text = await resp.text()
@@ -186,9 +202,9 @@ class TestApprovalPageWithPending:
 
     @pytest.mark.asyncio
     async def test_slack_channel_note_shown(self) -> None:
-        manager = ApprovalManager()
-        manager.register("batch-test-05", "report", slack_message_ts="1700.1")
-        client, store = await _make_client(manager=manager)
+        approval_store = _make_approval_store()
+        await _register(approval_store, "batch-test-05", slack_message_ts="1700.1")
+        client, store = await _make_client(approval_store=approval_store)
         try:
             resp = await client.get("/ui/approvals")
             text = await resp.text()
@@ -205,9 +221,9 @@ class TestApprovalPageWithPending:
 class TestApprovalDecideApprove:
     @pytest.mark.asyncio
     async def test_approve_redirects_to_approvals_page(self) -> None:
-        manager = ApprovalManager()
-        manager.register("batch-app-01", "report")
-        client, store = await _make_client(manager=manager)
+        approval_store = _make_approval_store()
+        await _register(approval_store, "batch-app-01")
+        client, store = await _make_client(approval_store=approval_store)
         try:
             resp = await _csrf_post(
                 client, "/ui/approvals/batch-app-01/approve", allow_redirects=False,
@@ -219,45 +235,45 @@ class TestApprovalDecideApprove:
             await store.close()
 
     @pytest.mark.asyncio
-    async def test_approve_records_decision_in_manager(self) -> None:
-        manager = ApprovalManager()
-        manager.register("batch-app-02", "report")
-        client, store = await _make_client(manager=manager)
+    async def test_approve_records_decision_in_store(self) -> None:
+        approval_store = _make_approval_store()
+        await _register(approval_store, "batch-app-02")
+        client, store = await _make_client(approval_store=approval_store)
         try:
             await _csrf_post(client, "/ui/approvals/batch-app-02/approve")
 
-            assert len(manager.get_pending()) == 0
-            history = manager.get_history()
+            assert await approval_store.count_pending() == 0
+            history = await approval_store.get_history()
             assert len(history) == 1
             assert history[0].approved is True
-            assert history[0].decided_by == "ui"
+            assert history[0].decided_by == "ui:ui"  # ui:<username>, default "ui"
         finally:
             await client.close()
             await store.close()
 
     @pytest.mark.asyncio
     async def test_approve_signals_waiting_coroutine(self) -> None:
-        """POSTing approve should unblock a coroutine waiting on the event."""
-        manager = ApprovalManager()
-        manager.register("batch-app-03", "report")
-        client, store = await _make_client(manager=manager)
+        """POSTing approve should unblock a coroutine waiting on the store."""
+        approval_store = _make_approval_store()
+        await _register(approval_store, "batch-app-03")
+        client, store = await _make_client(approval_store=approval_store)
         try:
             import asyncio
-            result: list[tuple[bool, str | None]] = []
+            result: list[tuple[bool | None, str | None]] = []
 
             async def _waiter() -> None:
-                approved, user = await manager.wait_for_decision(
+                request = await approval_store.wait_for_decision(
                     "batch-app-03", timeout_seconds=5,
                 )
-                result.append((approved, user))
+                result.append((request.approved, request.decided_by))
 
             task = asyncio.create_task(_waiter())
             await asyncio.sleep(0)  # let the waiter start
 
             await _csrf_post(client, "/ui/approvals/batch-app-03/approve")
-            await asyncio.wait_for(task, timeout=2)
+            await asyncio.wait_for(task, timeout=5)
 
-            assert result == [(True, "ui")]
+            assert result == [(True, "ui:ui")]
         finally:
             await client.close()
             await store.close()
@@ -270,9 +286,9 @@ class TestApprovalDecideApprove:
 class TestApprovalDecideReject:
     @pytest.mark.asyncio
     async def test_reject_redirects_to_approvals_page(self) -> None:
-        manager = ApprovalManager()
-        manager.register("batch-rej-01", "report")
-        client, store = await _make_client(manager=manager)
+        approval_store = _make_approval_store()
+        await _register(approval_store, "batch-rej-01")
+        client, store = await _make_client(approval_store=approval_store)
         try:
             resp = await _csrf_post(
                 client, "/ui/approvals/batch-rej-01/reject", allow_redirects=False,
@@ -284,43 +300,43 @@ class TestApprovalDecideReject:
             await store.close()
 
     @pytest.mark.asyncio
-    async def test_reject_records_decision_in_manager(self) -> None:
-        manager = ApprovalManager()
-        manager.register("batch-rej-02", "report")
-        client, store = await _make_client(manager=manager)
+    async def test_reject_records_decision_in_store(self) -> None:
+        approval_store = _make_approval_store()
+        await _register(approval_store, "batch-rej-02")
+        client, store = await _make_client(approval_store=approval_store)
         try:
             await _csrf_post(client, "/ui/approvals/batch-rej-02/reject")
 
-            history = manager.get_history()
+            history = await approval_store.get_history()
             assert len(history) == 1
             assert history[0].approved is False
-            assert history[0].decided_by == "ui"
+            assert history[0].decided_by == "ui:ui"
         finally:
             await client.close()
             await store.close()
 
     @pytest.mark.asyncio
     async def test_reject_signals_waiting_coroutine(self) -> None:
-        manager = ApprovalManager()
-        manager.register("batch-rej-03", "report")
-        client, store = await _make_client(manager=manager)
+        approval_store = _make_approval_store()
+        await _register(approval_store, "batch-rej-03")
+        client, store = await _make_client(approval_store=approval_store)
         try:
             import asyncio
-            result: list[tuple[bool, str | None]] = []
+            result: list[tuple[bool | None, str | None]] = []
 
             async def _waiter() -> None:
-                approved, user = await manager.wait_for_decision(
+                request = await approval_store.wait_for_decision(
                     "batch-rej-03", timeout_seconds=5,
                 )
-                result.append((approved, user))
+                result.append((request.approved, request.decided_by))
 
             task = asyncio.create_task(_waiter())
             await asyncio.sleep(0)
 
             await _csrf_post(client, "/ui/approvals/batch-rej-03/reject")
-            await asyncio.wait_for(task, timeout=2)
+            await asyncio.wait_for(task, timeout=5)
 
-            assert result == [(False, "ui")]
+            assert result == [(False, "ui:ui")]
         finally:
             await client.close()
             await store.close()
@@ -328,8 +344,8 @@ class TestApprovalDecideReject:
     @pytest.mark.asyncio
     async def test_decide_unknown_batch_is_noop(self) -> None:
         """Posting decide for a batch that was never registered should not error."""
-        manager = ApprovalManager()
-        client, store = await _make_client(manager=manager)
+        approval_store = _make_approval_store()
+        client, store = await _make_client(approval_store=approval_store)
         try:
             resp = await _csrf_post(
                 client, "/ui/approvals/no-such-batch/approve", allow_redirects=False,
@@ -342,13 +358,13 @@ class TestApprovalDecideReject:
 
 
 # ---------------------------------------------------------------------------
-# POST /ui/approvals — no manager (503)
+# POST /ui/approvals — no store (503)
 # ---------------------------------------------------------------------------
 
-class TestApprovalDecideNoManager:
+class TestApprovalDecideNoStore:
     @pytest.mark.asyncio
-    async def test_approve_returns_503_without_manager(self) -> None:
-        client, store = await _make_client(manager=None)
+    async def test_approve_returns_503_without_store(self) -> None:
+        client, store = await _make_client(approval_store=None)
         try:
             resp = await _csrf_post(
                 client, "/ui/approvals/b-any/approve", allow_redirects=False,
@@ -366,9 +382,9 @@ class TestApprovalDecideNoManager:
 class TestDashboardPendingCard:
     @pytest.mark.asyncio
     async def test_dashboard_shows_pending_count(self) -> None:
-        manager = ApprovalManager()
-        manager.register("batch-dash-01", "report")
-        client, store = await _make_client(manager=manager)
+        approval_store = _make_approval_store()
+        await _register(approval_store, "batch-dash-01")
+        client, store = await _make_client(approval_store=approval_store)
         try:
             resp = await client.get("/ui")
             text = await resp.text()
@@ -379,8 +395,8 @@ class TestDashboardPendingCard:
 
     @pytest.mark.asyncio
     async def test_dashboard_zero_pending_no_badge(self) -> None:
-        manager = ApprovalManager()
-        client, store = await _make_client(manager=manager)
+        approval_store = _make_approval_store()
+        client, store = await _make_client(approval_store=approval_store)
         try:
             resp = await client.get("/ui")
             text = await resp.text()

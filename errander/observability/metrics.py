@@ -37,7 +37,7 @@ from errander.models.events import EventType
 if TYPE_CHECKING:
     from errander.models.vm import VMTarget
     from errander.safety.ai_audit import AIDecisionStore
-    from errander.safety.approval import ApprovalManager
+    from errander.safety.approval_store import ApprovalRequestStore
     from errander.safety.audit import AuditStore
     from errander.safety.hygiene_approval import HygieneApprovalManager
     from errander.safety.overrides import OverridesStore
@@ -50,7 +50,7 @@ def _uq(s: str) -> str:
 
 #: Typed app keys for storing shared objects on the aiohttp Application.
 _AUDIT_STORE_KEY: web.AppKey[AuditStore | None] = web.AppKey("audit_store")
-_APPROVAL_MANAGER_KEY: web.AppKey[ApprovalManager | None] = web.AppKey("approval_manager")
+_APPROVAL_STORE_KEY: web.AppKey[ApprovalRequestStore | None] = web.AppKey("approval_store")
 _HYGIENE_MANAGER_KEY: web.AppKey[HygieneApprovalManager | None] = web.AppKey("hygiene_manager")
 _OVERRIDES_STORE_KEY: web.AppKey[OverridesStore | None] = web.AppKey("overrides_store")
 _BASE_INVENTORY_KEY: web.AppKey[list[VMTarget]] = web.AppKey("base_inventory")
@@ -1254,8 +1254,8 @@ _LLM_MODEL_DATALIST = [
 async def _ui_settings_get(request: web.Request) -> web.Response:
     """GET /ui/settings — render LLM settings form."""
     store: OverridesStore | None = request.app.get(_OVERRIDES_STORE_KEY)
-    manager: ApprovalManager | None = request.app.get(_APPROVAL_MANAGER_KEY)
-    pending_count = len(manager.get_pending()) if manager is not None else 0
+    approval_store: ApprovalRequestStore | None = request.app.get(_APPROVAL_STORE_KEY)
+    pending_count = await approval_store.count_pending() if approval_store is not None else 0
 
     db_rows: dict[str, dict[str, object]] = {}
     if store is not None:
@@ -1475,8 +1475,8 @@ async def _ui_inventory_get(request: web.Request) -> web.Response:
     """GET /ui/inventory — show full YAML fleet merged with DB overrides."""
     store: OverridesStore | None = request.app.get(_OVERRIDES_STORE_KEY)
     base_inventory: list[VMTarget] = request.app.get(_BASE_INVENTORY_KEY) or []
-    manager: ApprovalManager | None = request.app.get(_APPROVAL_MANAGER_KEY)
-    pending_count = len(manager.get_pending()) if manager is not None else 0
+    approval_store: ApprovalRequestStore | None = request.app.get(_APPROVAL_STORE_KEY)
+    pending_count = await approval_store.count_pending() if approval_store is not None else 0
 
     flash = request.rel_url.query.get("flash", "")
     flash_err = request.rel_url.query.get("err", "")
@@ -1737,8 +1737,8 @@ async def _ui_inventory_delete(request: web.Request) -> web.Response:
 async def _ui_glossary(request: web.Request) -> web.Response:
     """GET /ui/glossary — render Glossary & Workflow page."""
     from errander.web.server import GLOSS_CSS, page_glossary
-    manager: ApprovalManager | None = request.app.get(_APPROVAL_MANAGER_KEY)
-    pending_count = len(manager.get_pending()) if manager is not None else 0
+    approval_store: ApprovalRequestStore | None = request.app.get(_APPROVAL_STORE_KEY)
+    pending_count = await approval_store.count_pending() if approval_store is not None else 0
     body = f"<style>{GLOSS_CSS}</style>" + page_glossary()
     return _page("Glossary & Workflow", body, pending_count=pending_count)
 
@@ -1749,14 +1749,14 @@ async def _ui_glossary(request: web.Request) -> web.Response:
 
 async def _ui_dashboard(request: web.Request) -> web.Response:
     store: AuditStore | None = request.app.get(_AUDIT_STORE_KEY)
-    manager: ApprovalManager | None = request.app.get(_APPROVAL_MANAGER_KEY)
+    approval_store: ApprovalRequestStore | None = request.app.get(_APPROVAL_STORE_KEY)
 
     if store is None:
         return _page("Dashboard", '<div class="nc">Audit store not connected.</div>', refresh=30)
 
     batches = await store.get_recent_batches(limit=10)
     total = await store.count_events()
-    pending_count = len(manager.get_pending()) if manager is not None else 0
+    pending_count = await approval_store.count_pending() if approval_store is not None else 0
     batch_count = len(batches)
 
     # ── Stat cards ──────────────────────────────────────────────────────────
@@ -1805,8 +1805,8 @@ async def _ui_dashboard(request: web.Request) -> web.Response:
 
 async def _ui_batches(request: web.Request) -> web.Response:
     store: AuditStore | None = request.app.get(_AUDIT_STORE_KEY)
-    manager: ApprovalManager | None = request.app.get(_APPROVAL_MANAGER_KEY)
-    pending_count = len(manager.get_pending()) if manager is not None else 0
+    approval_store: ApprovalRequestStore | None = request.app.get(_APPROVAL_STORE_KEY)
+    pending_count = await approval_store.count_pending() if approval_store is not None else 0
 
     if store is None:
         return _page("Batches", '<div class="nc">Audit store not connected.</div>')
@@ -1830,9 +1830,9 @@ async def _ui_batches(request: web.Request) -> web.Response:
 
 async def _ui_batch_detail(request: web.Request) -> web.Response:
     store: AuditStore | None = request.app.get(_AUDIT_STORE_KEY)
-    manager: ApprovalManager | None = request.app.get(_APPROVAL_MANAGER_KEY)
+    approval_store: ApprovalRequestStore | None = request.app.get(_APPROVAL_STORE_KEY)
     batch_id = request.match_info["batch_id"]
-    pending_count = len(manager.get_pending()) if manager is not None else 0
+    pending_count = await approval_store.count_pending() if approval_store is not None else 0
 
     if store is None:
         return _page(f"Batch: {batch_id}", '<div class="nc">Audit store not connected.</div>')
@@ -1871,9 +1871,9 @@ async def _ui_batch_detail(request: web.Request) -> web.Response:
 
 async def _ui_vm(request: web.Request) -> web.Response:
     store: AuditStore | None = request.app.get(_AUDIT_STORE_KEY)
-    manager: ApprovalManager | None = request.app.get(_APPROVAL_MANAGER_KEY)
+    approval_store: ApprovalRequestStore | None = request.app.get(_APPROVAL_STORE_KEY)
     vm_id = request.match_info["vm_id"]
-    pending_count = len(manager.get_pending()) if manager is not None else 0
+    pending_count = await approval_store.count_pending() if approval_store is not None else 0
 
     if store is None:
         return _page(f"VM: {vm_id}", '<div class="nc">Audit store not connected.</div>')
@@ -2071,14 +2071,14 @@ def _render_approval_reasoning(ai_decisions: list[object]) -> str:
 
 async def _ui_approvals(request: web.Request) -> web.Response:
     """GET /ui/approvals — list pending approvals and recent decisions."""
-    manager: ApprovalManager | None = request.app.get(_APPROVAL_MANAGER_KEY)
-    if manager is None:
-        return _page("Approvals", '<div class="nc">Approval manager not connected.</div>')
+    approval_store: ApprovalRequestStore | None = request.app.get(_APPROVAL_STORE_KEY)
+    if approval_store is None:
+        return _page("Approvals", '<div class="nc">Approval store not connected.</div>')
 
     ai_store: AIDecisionStore | None = request.app.get(_AI_DECISION_STORE_KEY)
 
-    pending = manager.get_pending()
-    history = manager.get_history()
+    pending = await approval_store.get_pending()
+    history = await approval_store.get_history()
     pending_count = len(pending)
 
     # ── Pending ──────────────────────────────────────────────────────────────
@@ -2186,9 +2186,9 @@ async def _ui_approvals(request: web.Request) -> web.Response:
 
 async def _ui_approval_decide(request: web.Request) -> web.Response:
     """POST /ui/approvals/{batch_id}/{action} — approve or reject via web form."""
-    manager: ApprovalManager | None = request.app.get(_APPROVAL_MANAGER_KEY)
-    if manager is None:
-        return web.Response(status=503, text="Approval manager not connected")
+    approval_store: ApprovalRequestStore | None = request.app.get(_APPROVAL_STORE_KEY)
+    if approval_store is None:
+        return web.Response(status=503, text="Approval store not connected")
 
     batch_id = request.match_info["batch_id"]
     action = request.match_info["action"]  # "approve" | "reject"
@@ -2199,9 +2199,10 @@ async def _ui_approval_decide(request: web.Request) -> web.Response:
 
     if approved:
         # Parse per-item selections from the form checkboxes.
-        # Reconstruct using the vm_plans stored on the pending approval.
-        pending_list = [p for p in manager.get_pending() if p.batch_id == batch_id]
-        pending_rec = pending_list[0] if pending_list else None
+        # Reconstruct using the vm_plans stored on the pending approval row.
+        pending_rec = await approval_store.get(batch_id)
+        if pending_rec is not None and pending_rec.status != "pending":
+            pending_rec = None  # already decided — fall through to the no-op decide
 
         if pending_rec is not None and pending_rec.vm_plans:
             data = await request.post()
@@ -2242,13 +2243,20 @@ async def _ui_approval_decide(request: web.Request) -> web.Response:
                         # Categorical — auto-included on approve
                         approved_items.append({"vm_id": vm_id, "action_type": at})
 
-    manager.decide(batch_id, approved=approved, user_id=ui_username, approved_items=approved_items)
+    # Atomic decide — if the Slack watcher won the race, this is a logged no-op.
+    won = await approval_store.decide(
+        batch_id,
+        approved=approved,
+        decided_by=f"ui:{ui_username}",
+        approved_items=approved_items,
+    )
     logger.info(
-        "UI %s for batch %s by %s%s",
+        "UI %s for batch %s by %s%s%s",
         "approved" if approved else "rejected",
         batch_id,
         ui_username,
         f" ({len(approved_items)} item(s) selected)" if approved_items else "",
+        "" if won else " — ignored, already decided",
     )
     raise web.HTTPFound("/ui/approvals")
 
@@ -2549,8 +2557,8 @@ def _redact_base_url(url: str) -> str:
 
 async def _ui_ai_decisions(request: web.Request) -> web.Response:
     store: AIDecisionStore | None = request.app.get(_AI_DECISION_STORE_KEY)
-    manager: ApprovalManager | None = request.app.get(_APPROVAL_MANAGER_KEY)
-    pending_count = len(manager.get_pending()) if manager is not None else 0
+    approval_store: ApprovalRequestStore | None = request.app.get(_APPROVAL_STORE_KEY)
+    pending_count = await approval_store.count_pending() if approval_store is not None else 0
 
     if store is None:
         return _page(
@@ -2596,8 +2604,8 @@ async def _ui_ai_decisions(request: web.Request) -> web.Response:
 async def _ui_ai_decision_detail(request: web.Request) -> web.Response:
     import json as _json
     store: AIDecisionStore | None = request.app.get(_AI_DECISION_STORE_KEY)
-    manager: ApprovalManager | None = request.app.get(_APPROVAL_MANAGER_KEY)
-    pending_count = len(manager.get_pending()) if manager is not None else 0
+    approval_store: ApprovalRequestStore | None = request.app.get(_APPROVAL_STORE_KEY)
+    pending_count = await approval_store.count_pending() if approval_store is not None else 0
     back = '<a class="back-a" href="/ui/ai-decisions">← All AI decisions</a>'
 
     try:
@@ -2859,8 +2867,8 @@ async def _ui_monitoring(request: web.Request) -> web.Response:
     day_plural = "day" if days == 1 else "days"
 
     audit: AuditStore | None = request.app.get(_AUDIT_STORE_KEY)
-    manager: ApprovalManager | None = request.app.get(_APPROVAL_MANAGER_KEY)
-    pending_count = len(manager.get_pending()) if manager is not None else 0
+    approval_store: ApprovalRequestStore | None = request.app.get(_APPROVAL_STORE_KEY)
+    pending_count = await approval_store.count_pending() if approval_store is not None else 0
 
     if audit is not None:
         stats = await audit.get_monitoring_stats(daily_days=days, summary_days=days)
@@ -3202,7 +3210,7 @@ async def _ui_monitoring(request: web.Request) -> web.Response:
 async def start_metrics_server(
     port: int = 9090,
     audit_store: AuditStore | None = None,
-    approval_manager: ApprovalManager | None = None,
+    approval_store: ApprovalRequestStore | None = None,
     hygiene_manager: HygieneApprovalManager | None = None,
     overrides_store: OverridesStore | None = None,
     base_inventory: list[VMTarget] | None = None,
@@ -3240,7 +3248,7 @@ async def start_metrics_server(
     Args:
         port: Port to listen on (default 9090).
         audit_store: Connected AuditStore for UI queries.
-        approval_manager: ApprovalManager for dual-channel approval UI.
+        approval_store: ApprovalRequestStore for the durable approval UI.
         hygiene_manager: HygieneApprovalManager for docker_hygiene object-level approvals.
         overrides_store: OverridesStore for settings/inventory overrides.
         base_inventory: Flat list of VMTarget from inventory.yaml — shown as the base fleet on /ui/inventory.
@@ -3273,7 +3281,7 @@ async def start_metrics_server(
 
     app = web.Application(middlewares=[_session_auth_middleware, _csrf_middleware])  # type: ignore[list-item]
     app[_AUDIT_STORE_KEY] = audit_store
-    app[_APPROVAL_MANAGER_KEY] = approval_manager
+    app[_APPROVAL_STORE_KEY] = approval_store
     app[_HYGIENE_MANAGER_KEY] = hygiene_manager
     app[_OVERRIDES_STORE_KEY] = overrides_store
     app[_BASE_INVENTORY_KEY] = base_inventory or []

@@ -1,5 +1,30 @@
 # Errander-AI Command Log
 
+## §8d Step 2 — approval_requests durable store (2026-06-11)
+
+```bash
+# Local Postgres up before any test run
+docker compose up -d
+
+# Targeted runs while building each piece (store → gate → reconciler → UI)
+uv run pytest tests/safety/test_approval_store.py tests/safety/test_approval.py -q
+uv run pytest tests/agent/test_plan_apply_flow.py -q
+uv run pytest tests/agent/test_graph.py -q
+uv run pytest tests/test_main.py tests/chaos/test_fault_injection.py -q
+uv run pytest tests/agent/test_deferred_replay.py tests/safety/test_deferred_artifact.py -q
+uv run pytest tests/test_approval_reconciler.py tests/ui/test_approval_ui.py tests/ui/test_web_providers.py -q
+
+# Full CI-scope suite (first run caught 2 stale migration-count assertions: 13 → 14)
+uv run pytest tests/ --ignore=tests/ui --ignore=tests/staging -q
+
+# Pre-existing check: tests/ui playwright errors identical on committed main (not a regression)
+git stash; uv run pytest tests/ui -q; git stash pop
+
+# Lint + typecheck
+uv run ruff check .
+uv run mypy errander/
+```
+
 ## PostgreSQL-only migration (2026-06-10)
 
 ```bash

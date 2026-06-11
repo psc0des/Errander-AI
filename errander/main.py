@@ -36,7 +36,7 @@ from errander.integrations.llm import LLMClient
 from errander.integrations.slack import SlackClient
 from errander.models.events import EventType
 from errander.observability.metrics import start_metrics_server
-from errander.safety.approval import ApprovalManager
+from errander.safety.approval_store import ApprovalRequestStore
 from errander.safety.audit import AuditStore
 from errander.safety.deferred import DeferredExecutionStore
 from errander.safety.hygiene_approval import HygieneApprovalManager
@@ -1669,7 +1669,7 @@ async def run_env_batch(
     dry_run: bool = True,
     force: bool = False,
     force_reason: str = "",
-    approval_manager: ApprovalManager | None = None,
+    approval_store: ApprovalRequestStore | None = None,
     slack_client: SlackClient | None = None,
     hygiene_manager: HygieneApprovalManager | None = None,
     overrides_store: OverridesStore | None = None,
@@ -1683,6 +1683,8 @@ async def run_env_batch(
     preloaded_plan_hash: str | None = None,
     preloaded_plan_id: str | None = None,
     preloaded_approved_at: str | None = None,
+    preloaded_batch_id: str | None = None,
+    preloaded_approved_items: list[dict[str, object]] | None = None,
 ) -> None:
     """Run a full maintenance batch for one environment.
 
@@ -1691,7 +1693,7 @@ async def run_env_batch(
     """
     import uuid as _uuid
 
-    from errander.agent.graph import build_batch_graph
+    from errander.agent.graph import build_batch_graph, build_operator_approved_packages
 
     window = _build_maintenance_window(env_schema)
 
@@ -1727,7 +1729,7 @@ async def run_env_batch(
         audit_store=audit_store,
         ssh_manager=ssh_manager,
         window=window,
-        approval_manager=approval_manager,
+        approval_store=approval_store,
         slack_client=slack_client,
         hygiene_manager=hygiene_manager,
         web_base_url=settings.web_base_url,
@@ -1846,7 +1848,15 @@ async def run_env_batch(
         "preloaded_plan_hash": preloaded_plan_hash,
         "preloaded_plan_id": preloaded_plan_id,
         "preloaded_approved_at": preloaded_approved_at,
+        # Replay reuses the original batch_id — the approved plan_hash commits
+        # to it (fresh IDs made every deferred replay abort at hash verify).
+        "preloaded_batch_id": preloaded_batch_id,
         "is_deferred_replay": preloaded_plan_json is not None,
+        # Exact-object approval survives defer/restart: per-item selections
+        # recovered from the approval row filter patching at wave dispatch.
+        "operator_approved_packages": build_operator_approved_packages(
+            preloaded_approved_items,
+        ),
     }
 
     logger.info(
@@ -1893,7 +1903,7 @@ async def _window_opener(
     ssh_manager: SSHConnectionManager,
     audit_store: AuditStore,
     deferred_store: DeferredExecutionStore,
-    approval_manager: ApprovalManager,
+    approval_store: ApprovalRequestStore,
     slack_client: SlackClient | None,
     overrides_store: OverridesStore,
     hygiene_manager: HygieneApprovalManager | None = None,
@@ -1934,6 +1944,10 @@ async def _window_opener(
             ),
             metadata={"replay_mode": _has_artifact},
         ))
+        # Exact-object approval: recover per-item selections from the durable
+        # approval row — a window defer must not widen scope to the full plan.
+        _approval_row = await approval_store.get(record.batch_id)
+        _approved_items = _approval_row.approved_items if _approval_row is not None else None
         try:
             if _has_artifact:
                 # P0-2: replay exact artifact — no re-planning, no Slack re-approval
@@ -1951,7 +1965,7 @@ async def _window_opener(
                         f"P0-2 replay: original approval by {record.approved_by} "
                         f"at {record.approved_at.isoformat()}"
                     ),
-                    approval_manager=approval_manager,
+                    approval_store=approval_store,
                     slack_client=slack_client,
                     hygiene_manager=hygiene_manager,
                     overrides_store=overrides_store,
@@ -1963,6 +1977,8 @@ async def _window_opener(
                     preloaded_plan_json=record.plan_json,
                     preloaded_plan_hash=record.plan_hash,
                     preloaded_approved_at=record.approved_at.isoformat(),
+                    preloaded_batch_id=record.batch_id,
+                    preloaded_approved_items=_approved_items,
                 )
             else:
                 # Legacy records saved before P0-2 — fall back to re-plan + re-approve
@@ -1984,7 +2000,7 @@ async def _window_opener(
                         f"Deferred re-approval: original approval by {record.approved_by} "
                         f"at {record.approved_at.isoformat()} — fresh re-approval required at window time"
                     ),
-                    approval_manager=approval_manager,
+                    approval_store=approval_store,
                     slack_client=slack_client,
                     hygiene_manager=hygiene_manager,
                     overrides_store=overrides_store,
@@ -1997,6 +2013,190 @@ async def _window_opener(
                 )
         finally:
             await deferred_store.mark_done(record.batch_id)
+
+
+# ---------------------------------------------------------------------------
+# Approval reconciler (restart recovery for durable approvals — R3)
+# ---------------------------------------------------------------------------
+
+#: Slack reaction watchers re-spawned by the reconciler for approvals
+#: orphaned by a previous agent process (batch_id → watcher task).
+_resumed_slack_watchers: dict[str, asyncio.Task[None]] = {}
+
+
+async def _approval_reconciler(
+    environments: dict[str, EnvironmentSchema],
+    settings: Settings,
+    executor: SandboxExecutor,
+    locker: FileLocker,
+    ssh_manager: SSHConnectionManager,
+    audit_store: AuditStore,
+    approval_store: ApprovalRequestStore,
+    deferred_store: DeferredExecutionStore,
+    slack_client: SlackClient | None,
+    overrides_store: OverridesStore,
+    hygiene_manager: HygieneApprovalManager | None = None,
+    llm_client: LLMClient | None = None,
+    disk_history_store: object = None,
+    baseline_store: object = None,
+    vm_state_store: object = None,
+) -> None:
+    """Reconcile durable approval state after agent restarts (R3).
+
+    The approval gate persists every live-approval request before waiting on
+    it, so a crash mid-wait leaves recoverable rows instead of orphaned
+    approvals. This job runs on an interval and makes three passes:
+
+    1. Expire — pending requests past expires_at become 'timeout' (auto-REJECT).
+    2. Resume — orphaned pending requests (no in-process waiter) with a Slack
+       message get their reaction watcher re-spawned, so a reaction posted
+       after the restart still lands in the store.
+    3. Execute — approved requests no executor ever claimed are atomically
+       claimed and executed through the exact-artifact replay path (or handed
+       to the deferred store when outside the maintenance window).
+    """
+    import json as _json
+
+    from errander.models.events import AuditEvent, EventType
+    from errander.safety.approval import watch_slack_reactions
+
+    now = datetime.now(tz=UTC)
+
+    # --- Pass 1: expire overdue pending requests ---
+    for batch_id in await approval_store.expire_overdue():
+        await audit_store.log_event(AuditEvent(
+            event_type=EventType.APPROVAL_TIMEOUT,
+            batch_id=batch_id,
+            detail="Reconciler: pending approval expired — auto-rejected",
+            metadata={"reconciler": True},
+        ))
+
+    # --- Pass 2: resume Slack watchers for orphaned pending requests ---
+    for done_id in [b for b, t in _resumed_slack_watchers.items() if t.done()]:
+        del _resumed_slack_watchers[done_id]
+    if slack_client is not None:
+        for req in await approval_store.get_pending():
+            if req.slack_message_ts is None:
+                continue
+            if approval_store.has_waiter(req.batch_id):
+                continue  # a live approval gate owns this request
+            if req.batch_id in _resumed_slack_watchers:
+                continue
+            remaining = int((req.expires_at - now).total_seconds())
+            if remaining <= 0:
+                continue  # next tick's pass 1 expires it
+            logger.info(
+                "Reconciler: resuming Slack watcher for orphaned approval",
+                batch_id=req.batch_id,
+            )
+            _resumed_slack_watchers[req.batch_id] = asyncio.create_task(
+                watch_slack_reactions(
+                    slack_client, req.slack_message_ts, approval_store, req.batch_id,
+                    timeout_seconds=remaining,
+                    poll_interval_seconds=settings.approval_poll_interval_seconds,
+                )
+            )
+
+    # --- Pass 3: execute approved-but-unclaimed requests ---
+    for req in await approval_store.get_orphaned_approved():
+        if approval_store.has_waiter(req.batch_id):
+            continue  # live gate is between decision and claim — let it claim
+        env_schema = environments.get(req.env_name)
+        if env_schema is None:
+            logger.error(
+                "Reconciler: approved batch references unknown environment — skipping",
+                batch_id=req.batch_id, env=req.env_name,
+            )
+            continue
+        if not req.vm_plans or not req.plan_hash:
+            # No replayable artifact — claim so this row stops looping, and
+            # tell the operator a fresh run is needed (fail closed, audited).
+            if await approval_store.mark_execution_started(req.batch_id):
+                await audit_store.log_event(AuditEvent(
+                    event_type=EventType.APPROVAL_GRANTED,
+                    batch_id=req.batch_id,
+                    detail=(
+                        "Reconciler: approved request has no stored plan artifact — "
+                        "cannot replay safely; trigger a fresh run"
+                    ),
+                    metadata={"reconciler": True, "replayable": False},
+                ))
+            continue
+        if not await approval_store.mark_execution_started(req.batch_id):
+            continue  # lost the claim race — another executor owns it
+
+        plan_json = _json.dumps(
+            {"plan_id": req.plan_id, "vm_plans": req.vm_plans}, default=str,
+        )
+        approved_at = (req.decided_at or now).isoformat()
+
+        # Outside the maintenance window → hand off to the deferred store;
+        # the window-opener job replays it at window start.
+        env_window = _build_maintenance_window(env_schema)
+        if env_window is not None and not check_window_from_config(now, env_window):
+            next_open = next_window_open(now, env_window)
+            await deferred_store.save(
+                batch_id=req.batch_id,
+                env_name=req.env_name,
+                approved_by=req.decided_by,
+                window_start=next_open,
+                plan_json=plan_json,
+                plan_hash=req.plan_hash,
+            )
+            await audit_store.log_event(AuditEvent(
+                event_type=EventType.EXECUTION_DEFERRED,
+                batch_id=req.batch_id,
+                detail=f"Reconciler: orphaned approval deferred to {next_open.isoformat()}",
+                metadata={
+                    "reconciler": True,
+                    "window_start": next_open.isoformat(),
+                    "approved_by": req.decided_by,
+                },
+            ))
+            continue
+
+        logger.info(
+            "Reconciler: executing orphaned approved batch",
+            batch_id=req.batch_id, env=req.env_name, approved_by=req.decided_by,
+        )
+        await audit_store.log_event(AuditEvent(
+            event_type=EventType.DEFERRED_EXECUTION_STARTED,
+            batch_id=req.batch_id,
+            detail=(
+                f"Reconciler: executing approved batch orphaned by restart "
+                f"(approved by {req.decided_by} at {approved_at})"
+            ),
+            metadata={"reconciler": True, "replay_mode": True},
+        ))
+        await run_env_batch(
+            env_name=req.env_name,
+            env_schema=env_schema,
+            settings=settings,
+            executor=executor,
+            locker=locker,
+            ssh_manager=ssh_manager,
+            audit_store=audit_store,
+            dry_run=False,
+            force=True,
+            force_reason=(
+                f"R3 reconciler: original approval by {req.decided_by} at {approved_at}"
+            ),
+            approval_store=approval_store,
+            slack_client=slack_client,
+            hygiene_manager=hygiene_manager,
+            overrides_store=overrides_store,
+            deferred_store=deferred_store,
+            llm_client=llm_client,
+            disk_history_store=disk_history_store,
+            baseline_store=baseline_store,
+            vm_state_store=vm_state_store,
+            preloaded_plan_json=plan_json,
+            preloaded_plan_hash=req.plan_hash,
+            preloaded_plan_id=req.plan_id,
+            preloaded_approved_at=approved_at,
+            preloaded_batch_id=req.batch_id,
+            preloaded_approved_items=req.approved_items,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -2236,8 +2436,9 @@ async def async_main(args: argparse.Namespace) -> int:
     vm_state_store = _VMStateStore(_db)
     await vm_state_store.initialize()
 
-    # --- Approval managers (shared between graph and web UI) ---
-    approval_manager = ApprovalManager()
+    # --- Approval stores (shared between graph, web UI, and reconciler) ---
+    approval_store = ApprovalRequestStore(_db)
+    await approval_store.initialize()
     hygiene_manager = HygieneApprovalManager()
 
     # --- AI decision store for Web UI (read-only, separate connection from batch store) ---
@@ -2250,7 +2451,7 @@ async def async_main(args: argparse.Namespace) -> int:
         metrics_runner = await start_metrics_server(
             port=settings.metrics_port,
             audit_store=audit_store,
-            approval_manager=approval_manager,
+            approval_store=approval_store,
             hygiene_manager=hygiene_manager,
             overrides_store=overrides_store,
             base_inventory=flat_inventory,
@@ -2274,7 +2475,7 @@ async def async_main(args: argparse.Namespace) -> int:
                 dry_run=dry_run,
                 force=force,
                 force_reason=force_reason,
-                approval_manager=approval_manager,
+                approval_store=approval_store,
                 slack_client=slack,
                 hygiene_manager=hygiene_manager,
                 overrides_store=overrides_store,
@@ -2312,7 +2513,7 @@ async def async_main(args: argparse.Namespace) -> int:
                     ssh_manager=ssh_manager,
                     audit_store=audit_store,
                     dry_run=dry_run,
-                    approval_manager=approval_manager,
+                    approval_store=approval_store,
                     slack_client=slack,
                     hygiene_manager=hygiene_manager,
                     overrides_store=overrides_store,
@@ -2343,7 +2544,7 @@ async def async_main(args: argparse.Namespace) -> int:
                         ssh_manager=ssh_manager,
                         audit_store=audit_store,
                         deferred_store=deferred_store,
-                        approval_manager=approval_manager,
+                        approval_store=approval_store,
                         slack_client=slack,
                         overrides_store=overrides_store,
                         hygiene_manager=hygiene_manager,
@@ -2422,6 +2623,32 @@ async def async_main(args: argparse.Namespace) -> int:
                     job_id=f"probe-{env_name}",
                 )
                 logger.info("Registered daily probe job", env=env_name, cron=signals_cron)
+
+        # R3: approval reconciler — restart recovery for durable approvals.
+        # Expires overdue requests, resumes orphaned Slack watchers, and
+        # executes approved batches whose executor died before claiming them.
+        async def _reconcile_approvals() -> None:
+            await _approval_reconciler(
+                environments=dict(inventory.environments),
+                settings=settings,
+                executor=executor,
+                locker=locker,
+                ssh_manager=ssh_manager,
+                audit_store=audit_store,
+                approval_store=approval_store,
+                deferred_store=deferred_store,
+                slack_client=slack,
+                overrides_store=overrides_store,
+                hygiene_manager=hygiene_manager,
+                llm_client=llm,
+                disk_history_store=disk_history_store,
+                baseline_store=baseline_store,
+                vm_state_store=vm_state_store,
+            )
+
+        scheduler.add_interval_job(
+            _reconcile_approvals, seconds=60, job_id="approval-reconciler",
+        )
 
         await scheduler.start()
 

@@ -353,13 +353,13 @@ The dashboard chat (Plan B) needs: session auth, read access to stores, LLM acce
 
 ### Files to change (checklist)
 
-- [ ] New `approval_requests` migration + `safety/approval_store.py` (DB-backed store; replaces in-memory `ApprovalManager` usage in the gate path)
-- [ ] `errander/agent/graph.py` — `approval_gate_node`: insert + poll instead of `await_dual_approval`
-- [ ] `errander/safety/approval.py` — retire in-memory manager from the decision path (it may survive transiently for tests until removed)
+- [x] New `approval_requests` migration + `safety/approval_store.py` — DONE 2026-06-11 (migration #13; atomic `decide()` + `mark_execution_started()` claim; `wait_for_decision` = 2 s DB poll + in-process event wakeup)
+- [x] `errander/agent/graph.py` — `approval_gate_node`: durable row first → Slack notify → transitional reaction watcher → store wait — DONE 2026-06-11 (plus restart reconciler interval job in main.py: expire / resume watchers / execute orphans)
+- [x] `errander/safety/approval.py` — in-memory `ApprovalManager`/`await_dual_approval`/`PendingApproval` deleted — DONE 2026-06-11 (`request_approval`/`poll_approval` kept; `watch_slack_reactions` writes reaction decisions into the store until R2 removes the Slack decision channel)
 - [ ] `errander/web/` — becomes the real web service entrypoint (`python -m errander.web`); move UI routes/auth/CSRF out of `observability/metrics.py`; add users/groups/sessions (R2 prerequisite work lands here)
 - [ ] `errander/observability/metrics.py` — slims down to metrics + optional private `/metrics` listener for the agent
 - [ ] `deploy/` — two systemd unit files, two OS users, `EnvironmentFile` split, key-permission check in install script, nginx config (Mode 2) pointing at the web unit only
-- [ ] Tests — import isolation (web package imports no executor modules); decision race (two concurrent decides → one wins); agent restart with pending approval → approval still decidable and execution proceeds; timeout written by agent; key-file unreadable by web user (integration/install check)
+- [ ] Tests — import isolation (web package imports no executor modules); ~~decision race (two concurrent decides → one wins)~~ DONE 2026-06-11 (`test_concurrent_decide_race_has_exactly_one_winner`); ~~agent restart with pending approval → approval still decidable and execution proceeds~~ DONE 2026-06-11 (`tests/test_approval_reconciler.py`); ~~timeout written by agent~~ DONE 2026-06-11; key-file unreadable by web user (integration/install check)
 - [ ] Docs — SECURITY.md (process/privilege model + Postgres role grants), SETUP.md (two services), RUN.md, AGENTS.md/CLAUDE.md architecture section, langgraph-primer (approval node behavior), learning doc
 
 ### Acceptance criteria
@@ -422,8 +422,8 @@ Fix the foundations now, then build the AI features on top. Order is load-bearin
 |---|---|---|---|
 | 0 | ✅ **CI** — DONE 2026-06-10 (pytest + ruff + mypy `errander/` + gitleaks; single PostgreSQL test job after the Postgres-only decision) | §4-F5 | Reinstated by reviewer despite earlier deferral: steps 1–4 are the riskiest refactors in the project's history (DB migration, approval-store rewrite, process split). No robot watching = silent regression risk in the approval path itself. Half a day. |
 | 1 | ✅ **R4: Postgres + DB layer** — DONE 2026-06-10 in two commits: SQLAlchemy Core async dual-backend (`e2815c2`), then **PostgreSQL-only** per owner decision (`40323f7`; SQLite removed, docker-compose for zero-config local) | §8c | Foundation — every later step adds tables. |
-| 2 | **R3 keystone: `approval_requests` DB-backed store** — NEXT; detailed plan ready (includes the deferred-replay hash bug fix and repointing the metrics.py per-item UI decide endpoint) | §8b | Fixes approval durability; enables everything after. |
-| 3 | **R2: users/groups RBAC + web-only approval** | §8a | Built directly against the new store; never wired to the in-memory manager being deleted. |
+| 2 | ✅ **R3 keystone: `approval_requests` DB-backed store** — DONE 2026-06-11: migration #13, `safety/approval_store.py` (atomic `decide()`, atomic execution claim), gate rewritten durable-first with transitional Slack reaction watcher, restart reconciler (60 s interval job: expire / resume watchers / execute orphans), in-memory `ApprovalManager` deleted, web UI repointed at the store. Rode along: the deferred-replay hash bug fix (`preloaded_batch_id` — every replay previously aborted at hash verify) and per-item selections now survive defer/restart (recovered from `approved_items_json`). | §8b | Fixes approval durability; enables everything after. |
+| 3 | **R2: users/groups RBAC + web-only approval** — NEXT | §8a | Built directly against the new store; never wired to the in-memory manager (deleted in step 2). |
 | 4 | **R3: process split** (two services, two OS users, key + import isolation) | §8b | The physical Layer A/B boundary. |
 | 5 | **R1: advisory-LLM batch planning** | §8 | Touches the approval *message* — lands once, on the final surface. |
 | 6 | **Plan A: investigation agent** | `tasks/investigation-agent-implementation-plan.md` | The real AI value. Runs inside the unprivileged web process (per §8b), making its Layer-A guarantee OS-enforced. |

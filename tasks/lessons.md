@@ -1,5 +1,35 @@
 # Errander-AI — Lessons Learned
 
+## 2026-06-11 — A hash that commits to an ID only works if every consumer can reproduce that ID
+
+The plan hash commits to `{batch_id, env_name, vm_plans}` — correct for drift detection within
+one run. But deferred replay generated a *fresh* batch_id, so the recomputed hash could never
+match the stored one: every deferred replay would have aborted at hash verification. The bug
+was invisible because the window-opener tests mocked `run_env_batch`, so the replay path's hash
+verification never actually executed in any test.
+
+**Why:** the hash input set and the replay state were designed in different sessions; nothing
+tied "hash includes batch_id" to "replay must reuse batch_id".
+
+**How to apply:** when a hash/signature commits to identifiers, write one test that exercises
+the full round trip (produce artifact → store → reload in a fresh context → verify) with the
+real verification code, not mocks. If a test mocks the function that contains the check, the
+check is untested.
+
+## 2026-06-11 — Timeout must have exactly one owner
+
+The old dual-channel approval raced a Slack poller against a UI waiter, and both could produce
+"timeout" — which is why timeout handling was duplicated and subtly inconsistent. In the
+store-based rewrite, the Slack watcher writes only genuine reactions (user present); timeouts
+are owned solely by `wait_for_decision`/`expire_overdue`, both atomic against real decisions.
+
+**Why:** when two code paths can write the same terminal state, every race between them needs
+its own analysis. Giving each terminal state one writer collapses the race matrix.
+
+**How to apply:** for any state machine with concurrent writers, list the terminal states and
+assign exactly one writer per state; make all transitions atomic compare-and-swap style
+(`UPDATE ... WHERE status='pending'`), and have losers observe rather than retry.
+
 ## 2026-06-10 — SQLite INTEGER is 64-bit; PostgreSQL INTEGER is 32-bit
 
 `vm_disk_history.used_bytes INTEGER` held 5 GB byte counts fine on SQLite for months, then

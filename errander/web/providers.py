@@ -233,7 +233,7 @@ class LiveProvider:
     async def refresh(
         self,
         db: AsyncDatabase | None = None,
-        approval_manager: Any | None = None,
+        approval_store: Any | None = None,
         deferred_store: Any | None = None,
         inventory_path: Any | None = None,
     ) -> None:
@@ -366,9 +366,9 @@ class LiveProvider:
 
         # ── Approval queue ───────────────────────────────────────────────────
         approvals: list[dict[str, Any]] = []
-        if approval_manager is not None:
+        if approval_store is not None:
             try:
-                for p in approval_manager.get_pending():
+                for p in await approval_store.get_pending():
                     approvals.append({
                         "id":                p.batch_id,
                         "action":            "BATCH APPROVAL",
@@ -393,7 +393,7 @@ class LiveProvider:
                     })
             except Exception as exc:
                 errors.append(f"approvals: {exc}")
-                logger.warning("LiveProvider: approval_manager read failed: %s", exc)
+                logger.warning("LiveProvider: approval_store read failed: %s", exc)
         self._approvals = approvals
 
         # ── Deferred queue ───────────────────────────────────────────────────

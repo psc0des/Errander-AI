@@ -405,57 +405,60 @@ class TestLLMFaultInjection:
 class TestApprovalFaultInjection:
     """Slack unreachable → auto-REJECT after timeout, never auto-approve."""
 
-    @pytest.mark.asyncio
-    async def test_approval_manager_decide_rejects(self) -> None:
-        """ApprovalManager.decide(approved=False) signals waiting coroutine."""
-        from errander.safety.approval import ApprovalManager
+    @staticmethod
+    async def _make_store_with_request(batch_id: str, timeout_seconds: int = 1800):
+        from errander.safety.approval_store import ApprovalRequestStore
+        from tests.conftest import make_test_db
 
-        manager = ApprovalManager()
+        store = ApprovalRequestStore(make_test_db())
+        await store.initialize()
+        await store.create(
+            batch_id, env_name="chaos", plan_id="plan-chaos",
+            plan_hash="a" * 64, report="Test plan",
+            timeout_seconds=timeout_seconds,
+        )
+        return store
+
+    @pytest.mark.asyncio
+    async def test_approval_store_decide_rejects(self) -> None:
+        """decide(approved=False) wakes the waiting coroutine with the rejection."""
         batch_id = "chaos-slack-001"
-        manager.register(batch_id, "Test plan")
+        store = await self._make_store_with_request(batch_id)
 
         # Decide in background after a tiny delay (wait_for_decision must be awaited first)
         async def _reject():
             await asyncio.sleep(0.02)
-            manager.decide(batch_id, approved=False, user_id="chaos-test")
+            await store.decide(batch_id, approved=False, decided_by="ui:chaos-test")
 
-        asyncio.create_task(_reject())
-        approved, approver = await manager.wait_for_decision(batch_id, timeout_seconds=2.0)
+        task = asyncio.create_task(_reject())
+        request = await store.wait_for_decision(batch_id, timeout_seconds=5)
+        await task
 
-        assert not approved
-        assert approver == "chaos-test"
+        assert request.approved is False
+        assert request.decided_by == "ui:chaos-test"
 
     @pytest.mark.asyncio
     async def test_approval_timeout_auto_rejects(self) -> None:
-        """ApprovalManager.wait_for_decision times out → returns (False, None)."""
-        from errander.safety.approval import ApprovalManager
-
-        manager = ApprovalManager()
+        """wait_for_decision times out → request transitions to 'timeout'."""
         batch_id = "chaos-timeout-001"
-        manager.register(batch_id, "Test plan")
+        store = await self._make_store_with_request(batch_id)
 
-        approved, approver = await manager.wait_for_decision(
-            batch_id, timeout_seconds=0.05
-        )
+        request = await store.wait_for_decision(batch_id, timeout_seconds=0)
 
-        assert not approved
-        assert approver is None
+        assert request.approved is False
+        assert request.status == "timeout"
+        assert request.decided_by is None
 
     @pytest.mark.asyncio
     async def test_no_auto_approve_on_slack_silence(self) -> None:
         """Slack returning no reactions → decision stays pending until timeout."""
-        from errander.safety.approval import ApprovalManager
-
-        manager = ApprovalManager()
         batch_id = "chaos-silence-001"
-        manager.register(batch_id, "Test plan")
+        store = await self._make_store_with_request(batch_id)
 
         # Simulate Slack silence: no reactions, no decision call
-        approved, _ = await manager.wait_for_decision(
-            batch_id, timeout_seconds=0.02
-        )
+        request = await store.wait_for_decision(batch_id, timeout_seconds=0)
 
-        assert not approved  # silence = auto-reject, not auto-approve
+        assert request.approved is False  # silence = auto-reject, not auto-approve
 
 
 # ---------------------------------------------------------------------------

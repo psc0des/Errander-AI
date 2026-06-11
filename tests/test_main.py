@@ -1,4 +1,4 @@
-"""Tests for main.py — CLI parsing and helper functions."""
+﻿"""Tests for main.py — CLI parsing and helper functions."""
 
 from __future__ import annotations
 
@@ -238,7 +238,7 @@ class TestWindowOpener:
         from errander.execution.sandbox import SandboxExecutor
         from errander.execution.ssh import SSHConnectionManager
         from errander.main import _window_opener
-        from errander.safety.approval import ApprovalManager
+        from errander.safety.approval_store import ApprovalRequestStore
         from errander.safety.audit import AuditStore
         from errander.safety.deferred import DeferredExecutionStore
         from errander.safety.locking import FileLocker
@@ -268,7 +268,7 @@ class TestWindowOpener:
                         ssh_manager=SSHConnectionManager(),
                         audit_store=audit_store,
                         deferred_store=deferred_store,
-                        approval_manager=ApprovalManager(),
+                        approval_store=ApprovalRequestStore(make_test_db()),
                         slack_client=None,
                         overrides_store=overrides_store,
                     )
@@ -288,7 +288,7 @@ class TestWindowOpener:
         from errander.execution.sandbox import SandboxExecutor
         from errander.execution.ssh import SSHConnectionManager
         from errander.main import _window_opener
-        from errander.safety.approval import ApprovalManager
+        from errander.safety.approval_store import ApprovalRequestStore
         from errander.safety.audit import AuditStore
         from errander.safety.deferred import DeferredExecutionStore
         from errander.safety.locking import FileLocker
@@ -320,7 +320,7 @@ class TestWindowOpener:
                         ssh_manager=SSHConnectionManager(),
                         audit_store=audit_store,
                         deferred_store=deferred_store,
-                        approval_manager=ApprovalManager(),
+                        approval_store=ApprovalRequestStore(make_test_db()),
                         slack_client=None,
                         overrides_store=overrides_store,
                     )
@@ -344,7 +344,7 @@ class TestWindowOpener:
         from errander.execution.sandbox import SandboxExecutor
         from errander.execution.ssh import SSHConnectionManager
         from errander.main import _window_opener
-        from errander.safety.approval import ApprovalManager
+        from errander.safety.approval_store import ApprovalRequestStore
         from errander.safety.audit import AuditStore
         from errander.safety.deferred import DeferredExecutionStore
         from errander.safety.locking import FileLocker
@@ -376,7 +376,7 @@ class TestWindowOpener:
                         ssh_manager=SSHConnectionManager(),
                         audit_store=audit_store,
                         deferred_store=deferred_store,
-                        approval_manager=ApprovalManager(),
+                        approval_store=ApprovalRequestStore(make_test_db()),
                         slack_client=None,
                         overrides_store=overrides_store,
                     )

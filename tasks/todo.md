@@ -1,3 +1,20 @@
+## §8d Step 2 — R3 keystone: `approval_requests` DB-backed store (2026-06-11, COMPLETE)
+
+- [x] Migration #13 — `approval_requests` table (status CHECK, decided_by/_group, approved_items_json, execution_started_at)
+- [x] `errander/safety/approval_store.py` — `ApprovalRequestStore`: atomic `decide()` (UPDATE WHERE status='pending'), `mark_execution_started` claim, `expire_overdue` (RETURNING), `wait_for_decision` (2 s poll + in-process event)
+- [x] `approval_gate_node` rewrite — durable row first → Slack notify → `watch_slack_reactions` watcher → store wait; execution claim before window-defer; fail-closed when store missing
+- [x] Delete `ApprovalManager`/`PendingApproval`/`await_dual_approval`/`BatchApprovalResult` (keep `request_approval`/`poll_approval`)
+- [x] Deferred-replay hash bug fix — `preloaded_batch_id` (state + init_batch_node + run_env_batch + window opener + reconciler); lock-in test added
+- [x] Exact-object continuity — `preloaded_approved_items` recovered from the approval row on both replay paths
+- [x] Restart reconciler (`_approval_reconciler`, 60 s interval job): expire → resume Slack watchers → execute orphaned approved (claim-guarded, window-aware)
+- [x] `scheduler.add_interval_job` (max_instances=1)
+- [x] Web UI repointed — `_APPROVAL_STORE_KEY`, async pending counts, `_ui_approval_decide` atomic store decide (`ui:<username>`), providers/server refresh kwarg
+- [x] Tests — store CRUD + AC4 decide race; reconciler AC3 restart recovery + double-execution guard; gate rewrites across 8 test files; full suite green on Postgres; ruff + mypy clean
+- [x] GH Actions bump — checkout@v5, setup-uv@v7 (Node 20 deprecation)
+- [ ] NEXT: §8d Step 3 — R2: users/groups RBAC + web-only approval (§8a)
+
+---
+
 ## PostgreSQL-Only Migration (2026-06-10, COMPLETE — owner decision, supersedes §8c dual-backend)
 
 - [x] pyproject: asyncpg core, drop `postgres` extra, +langgraph-checkpoint-postgres/psycopg, −aiosqlite/−langgraph-checkpoint-sqlite
@@ -11,7 +28,7 @@
 - [x] CI: single Test (PostgreSQL) job, full suite, web-role INSERT-denied check
 - [x] configure.sh PostgreSQL URL prompt
 - [x] 2445 tests green on Postgres, ruff clean, mypy clean
-- [ ] NEXT: §8d Step 2 — `approval_requests` DB-backed store (plan ready, includes replay-hash bug fix)
+- [x] §8d Step 2 — `approval_requests` DB-backed store — DONE 2026-06-11 (see section above)
 
 ---
 

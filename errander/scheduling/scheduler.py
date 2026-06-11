@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING, Any
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.interval import IntervalTrigger
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
@@ -74,6 +75,33 @@ class MaintenanceScheduler:
             coalesce=True,  # collapse multiple misfires into one run
         )
         logger.info("Registered maintenance job id=%s cron=%r", job_id, cron_expr)
+
+    def add_interval_job(
+        self,
+        func: Callable[..., Awaitable[Any]],
+        seconds: int,
+        job_id: str,
+        kwargs: dict[str, Any] | None = None,
+    ) -> None:
+        """Register a job on a fixed interval (e.g. the approval reconciler).
+
+        Args:
+            func: Async callable to invoke at each trigger.
+            seconds: Interval between invocations.
+            job_id: Unique job identifier. Duplicate IDs replace existing jobs.
+            kwargs: Keyword arguments passed to `func` at each invocation.
+        """
+        self._scheduler.add_job(
+            func,
+            trigger=IntervalTrigger(seconds=seconds),
+            id=job_id,
+            kwargs=kwargs or {},
+            replace_existing=True,
+            misfire_grace_time=_MISFIRE_GRACE_SECONDS,
+            coalesce=True,
+            max_instances=1,  # a slow pass must never overlap the next tick
+        )
+        logger.info("Registered interval job id=%s every %ds", job_id, seconds)
 
     def list_jobs(self) -> list[dict[str, str]]:
         """Return a summary of registered jobs.

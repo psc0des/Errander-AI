@@ -311,6 +311,42 @@ _MIGRATIONS: list[tuple[int, str]] = [
             ON deferred_executions (window_start)
         """,
     ),
+    # 0013 — durable approval requests (R3 keystone)
+    #
+    # Replaces the in-memory ApprovalManager: approvals survive agent restarts
+    # and decisions are written by either the Slack reaction watcher or the
+    # web UI. decide() races are settled by an atomic
+    # UPDATE ... WHERE status = 'pending' (exactly one winner).
+    # execution_started_at = "an executor claimed this approval" — stamped for
+    # both immediate execution and deferred-store handoff, so the restart
+    # reconciler never double-executes a batch.
+    (
+        13,
+        """
+        CREATE TABLE IF NOT EXISTS approval_requests (
+            batch_id             TEXT PRIMARY KEY,
+            env_name             TEXT NOT NULL DEFAULT '',
+            plan_id              TEXT NOT NULL DEFAULT '',
+            plan_hash            TEXT NOT NULL DEFAULT '',
+            report               TEXT NOT NULL DEFAULT '',
+            vm_plans_json        TEXT,
+            posted_at            TEXT NOT NULL,
+            expires_at           TEXT NOT NULL,
+            status               TEXT NOT NULL DEFAULT 'pending'
+                CHECK (status IN ('pending', 'approved', 'rejected', 'timeout')),
+            slack_message_ts     TEXT,
+            decided_by           TEXT,
+            decided_by_group     TEXT,
+            decided_at           TEXT,
+            approved_items_json  TEXT,
+            execution_started_at TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_approval_requests_status
+            ON approval_requests (status, expires_at);
+        CREATE INDEX IF NOT EXISTS idx_approval_requests_posted
+            ON approval_requests (posted_at DESC)
+        """,
+    ),
 ]
 
 

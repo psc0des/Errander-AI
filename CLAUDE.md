@@ -100,7 +100,9 @@ errander/
 ├── safety/                 # Safety architecture
 │   ├── validators.py       # Pre-execution validation checks
 │   ├── rollback.py         # Rollback capabilities per action type
-│   ├── approval.py         # Slack polling approval gate
+│   ├── approval.py         # Slack approval channel (post + reaction watcher)
+│   ├── approval_store.py   # Durable approval requests (DB-backed, atomic decide,
+│   │                       #   survives restarts — reconciled by main.py interval job)
 │   ├── locking.py          # VM-level locking (file-based v1, Redis v2)
 │   └── audit.py            # Audit logging for all actions
 ├── execution/              # Actual command execution layer

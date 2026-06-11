@@ -5530,7 +5530,7 @@ async def _refresh_live_provider(app: web.Application) -> None:
     try:
         await prov.refresh(
             db=app.get("_live_provider_db"),
-            approval_manager=app.get("approval_manager"),
+            approval_store=app.get("approval_store"),
             deferred_store=app.get("deferred_store"),
             inventory_path=app.get("_live_provider_inv"),
         )

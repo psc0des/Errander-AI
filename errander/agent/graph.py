@@ -38,7 +38,7 @@ from errander.execution.os_detection import detect_os
 from errander.models.actions import ACTION_RISK_TIERS, ActionStatus, ActionType, RiskTier
 from errander.models.events import AuditEvent, EventType
 from errander.observability.metrics import BATCH_DURATION
-from errander.safety.approval import ApprovalManager, BatchApprovalResult, await_dual_approval
+from errander.safety.approval import request_approval, watch_slack_reactions
 from errander.scheduling.windows import (
     MaintenanceWindow,
     check_window_from_config,
@@ -49,6 +49,7 @@ if TYPE_CHECKING:
     from errander.execution.sandbox import SandboxExecutor
     from errander.execution.ssh import SSHConnectionManager
     from errander.integrations.slack import SlackClient
+    from errander.safety.approval_store import ApprovalRequestStore
     from errander.safety.audit import AuditStore
     from errander.safety.deferred import DeferredExecutionStore
     from errander.safety.hygiene_approval import HygieneApprovalManager
@@ -184,6 +185,9 @@ class BatchGraphState(TypedDict, total=False):
     preloaded_plan_hash: str | None
     preloaded_plan_id: str | None
     preloaded_approved_at: str | None   # ISO timestamp when operator approved; used for age check
+    # Replay must reuse the ORIGINAL batch_id: the approved plan_hash commits
+    # to it, so a fresh batch_id would always fail verify_plan_hash_node.
+    preloaded_batch_id: str | None
     is_deferred_replay: bool
 
     # Per-decision AI audit DB path (finding #3.4) — serializable for Send()
@@ -214,7 +218,12 @@ async def init_batch_node(
     from errander.config.settings import Settings as _Settings
     _s: _Settings = settings if settings is not None else _Settings()
 
-    batch_id = f"batch-{uuid.uuid4().hex[:12]}"
+    # Deferred replay reuses the original batch_id — the stored plan_hash was
+    # computed over it, so generating a fresh one would abort every replay at
+    # hash verification. BatchStore.insert is ON CONFLICT DO NOTHING, so the
+    # original batch row is reused, not duplicated.
+    preloaded = state.get("preloaded_batch_id")
+    batch_id = preloaded if preloaded else f"batch-{uuid.uuid4().hex[:12]}"
     dry_run: bool = bool(state.get("dry_run", True))
     logger.info("Starting batch %s (dry_run=%s)", batch_id, dry_run)
 
@@ -1400,10 +1409,31 @@ def _filter_patching_packages(
     return result
 
 
+def build_operator_approved_packages(
+    approved_items: list[dict[str, object]] | None,
+) -> dict[str, list[dict[str, str]]]:
+    """Build the per-VM approved-packages dict from per-item UI selections.
+
+    Used by the approval gate (in-process decision) and by the deferred /
+    reconciler replay paths (selections recovered from the approval row) —
+    exact-object approval must survive a defer or an agent restart.
+    None / empty = all planned items approved (Slack path or all-or-nothing UI).
+    """
+    op_pkgs: dict[str, list[dict[str, str]]] = {}
+    for _item in approved_items or []:
+        if _item.get("action_type") == "patching" and isinstance(_item.get("packages"), list):
+            pkgs_raw = _item["packages"]
+            if isinstance(pkgs_raw, list):
+                op_pkgs[str(_item["vm_id"])] = [
+                    p for p in pkgs_raw if isinstance(p, dict)
+                ]
+    return op_pkgs
+
+
 async def approval_gate_node(
     state: BatchGraphState,
     *,
-    approval_manager: ApprovalManager | None = None,
+    approval_store: ApprovalRequestStore | None = None,
     slack_client: SlackClient | None = None,
     audit_store: AuditStore | None = None,
     window: MaintenanceWindow | None = None,
@@ -1414,14 +1444,24 @@ async def approval_gate_node(
     autonomous_live_apply_enabled: bool = False,
     web_base_url: str | None = None,
 ) -> dict[str, Any]:
-    """Gate live execution behind Slack approval of the ImmutableBatchPlan.
+    """Gate live execution behind a durable approval of the ImmutableBatchPlan.
 
-    Approval now happens BEFORE execution (finding #3):
+    Approval happens BEFORE execution (finding #3):
     - Dry-run: auto-approve — sandbox execution is always safe.
     - Live: approval threshold depends on env_policy (finding #6):
         strict   → MEDIUM, HIGH, CRITICAL require approval
         moderate → HIGH, CRITICAL require approval (default)
         relaxed  → CRITICAL only (and CRITICAL is blocked by design)
+
+    R3 durable flow: the pending request is persisted to ApprovalRequestStore
+    FIRST, then posted to Slack (best-effort). A background watcher writes
+    Slack reaction decisions into the store; the web UI writes its decisions
+    into the same store. This coroutine waits on the store — if the agent
+    dies while waiting, the restart reconciler resumes the request.
+
+    Approved requests are atomically claimed (mark_execution_started) before
+    any execution path — immediate or deferred-store handoff — so a restart
+    reconciler never double-executes a batch.
 
     For live batches approved while outside the maintenance window,
     execution is deferred: a record is saved to DeferredExecutionStore
@@ -1435,7 +1475,8 @@ async def approval_gate_node(
     plan_id = state.get("plan_id", "unknown")
     plan_hash = state.get("plan_hash", "")
     dry_run = state.get("dry_run", True)
-    approved_items: list[dict[str, object]] | None = None  # set by UI per-item approval path
+    approved_items: list[dict[str, object]] | None = None  # set by per-item approval path
+    claim_required = False  # True once a durable approval row exists for this batch
 
     max_tier = _max_risk_tier_from_plans(vm_plans)
 
@@ -1493,18 +1534,18 @@ async def approval_gate_node(
             "Batch %s dry-run — proceeding to sandbox execution (max risk tier: %s)",
             batch_id, max_tier.value,
         )
-    elif max_tier in _approval_tiers and approval_manager is None:
+    elif max_tier in _approval_tiers and approval_store is None:
         # Approval required but no mechanism available — fail closed.
         # This guards against misconfigured deployments where require_live_approval=True
-        # but the approval manager was never wired up.
+        # but the approval store was never wired up.
         logger.error(
             "Batch %s BLOCKED: live approval required (require_live_approval=%s, "
-            "policy=%s, max tier=%s) but no approval_manager is configured — "
+            "policy=%s, max tier=%s) but no approval_store is configured — "
             "refusing live execution",
             batch_id, require_live_approval, env_policy, max_tier.value,
         )
-        return {"approved": False, "error": "live approval required but no approval manager configured"}
-    elif max_tier in _approval_tiers and approval_manager is not None:
+        return {"approved": False, "error": "live approval required but no approval store configured"}
+    elif max_tier in _approval_tiers and approval_store is not None:
         is_deferred = bool(state.get("is_deferred_reapproval", False))
 
         # P2-1: persist full plan JSON so operators can inspect the complete
@@ -1533,17 +1574,60 @@ async def approval_gate_node(
             batch_id, env_policy, max_tier.value,
             " [deferred re-approval]" if is_deferred else "",
         )
-        _approval_result: BatchApprovalResult = await await_dual_approval(
-            approval_manager, slack_client, batch_id, plan_summary,
-            timeout_seconds=approval_timeout_seconds,
-            poll_interval_seconds=approval_poll_interval_seconds,
+
+        # R3: durable row FIRST — a crash after this point leaves a pending
+        # row the restart reconciler can resume, never an orphaned approval.
+        await approval_store.create(
+            batch_id,
+            env_name=env_name,
+            plan_id=plan_id,
+            plan_hash=plan_hash,
+            report=plan_summary,
             vm_plans=vm_plans,
+            timeout_seconds=approval_timeout_seconds,
         )
-        approved, approver, approved_items = _approval_result
+
+        # Best-effort Slack notify + transitional reaction-decision watcher.
+        # Slack failure degrades to UI-only approval; it never blocks the gate.
+        from errander.integrations.slack import SlackError as _SlackError
+        _watcher_task: asyncio.Task[None] | None = None
+        if slack_client is not None:
+            try:
+                _slack_ts = await request_approval(slack_client, batch_id, plan_summary)
+                await approval_store.set_slack_ts(batch_id, _slack_ts)
+                _watcher_task = asyncio.create_task(watch_slack_reactions(
+                    slack_client, _slack_ts, approval_store, batch_id,
+                    timeout_seconds=approval_timeout_seconds,
+                    poll_interval_seconds=approval_poll_interval_seconds,
+                ))
+            except _SlackError as exc:
+                logger.warning(
+                    "Slack approval post failed for batch %s: %s — UI-only mode",
+                    batch_id, exc,
+                )
+
+        _wait_start = datetime.now(tz=UTC)
+        try:
+            _request = await approval_store.wait_for_decision(
+                batch_id, timeout_seconds=approval_timeout_seconds,
+            )
+        finally:
+            if _watcher_task is not None:
+                _watcher_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError, Exception):
+                    await _watcher_task
+
+        from errander.observability.metrics import APPROVAL_WAIT
+        APPROVAL_WAIT.observe((datetime.now(tz=UTC) - _wait_start).total_seconds())
+
+        approved = _request.status == "approved"
+        approver = _request.decided_by
+        approved_items = _request.approved_items
+        claim_required = True  # a store row exists — execution must claim it
         logger.info(
             "Batch %s %s by %s%s",
             batch_id,
-            "approved" if approved else "rejected",
+            _request.status,
             approver or "timeout",
             f" (per-item selection: {len(approved_items)} action(s))" if approved_items else "",
         )
@@ -1554,6 +1638,23 @@ async def approval_gate_node(
             "Batch %s live auto-approved (policy=%s, max risk tier: %s)",
             batch_id, env_policy, max_tier.value,
         )
+
+    # R3: atomically claim the approved request before ANY execution path —
+    # immediate or deferred-store handoff. The claim is what stops the restart
+    # reconciler from re-executing this batch; failing to claim means another
+    # executor owns it — fail closed.
+    if (
+        approved and not dry_run and claim_required and approval_store is not None
+        and not await approval_store.mark_execution_started(batch_id)
+    ):
+        logger.error(
+            "Batch %s: approval already claimed by another executor — aborting",
+            batch_id,
+        )
+        return {
+            "approved": False,
+            "error": "approval already claimed by another executor",
+        }
 
     # Live approved outside window → defer execution to next window start.
     # Dry-run always runs immediately (sandbox is window-agnostic).
@@ -1604,15 +1705,7 @@ async def approval_gate_node(
     # Build per-VM approved package dict from UI per-item selections.
     # Only populated when the UI collected per-item choices; None approved_items
     # (Slack path) means all planned packages are approved and patching runs as-is.
-    op_pkgs: dict[str, list[dict[str, str]]] = {}
-    if approved_items:
-        for _item in approved_items:
-            if _item.get("action_type") == "patching" and isinstance(_item.get("packages"), list):
-                pkgs_raw = _item["packages"]
-                if isinstance(pkgs_raw, list):
-                    op_pkgs[str(_item["vm_id"])] = [
-                        p for p in pkgs_raw if isinstance(p, dict)
-                    ]
+    op_pkgs = build_operator_approved_packages(approved_items)
 
     return {"approved": approved, "deferred": False, "operator_approved_packages": op_pkgs}
 
@@ -2087,7 +2180,7 @@ def build_batch_graph(
     audit_store: AuditStore,
     ssh_manager: SSHConnectionManager,
     window: MaintenanceWindow | None = None,
-    approval_manager: ApprovalManager | None = None,
+    approval_store: ApprovalRequestStore | None = None,
     slack_client: SlackClient | None = None,
     settings: Any = None,
     deferred_store: DeferredExecutionStore | None = None,
@@ -2117,7 +2210,7 @@ def build_batch_graph(
         audit_store: AuditStore for audit trail.
         ssh_manager: SSHConnectionManager for SSH connections.
         window: Optional maintenance window.
-        approval_manager: Optional ApprovalManager for Slack approval.
+        approval_store: Optional ApprovalRequestStore for durable approvals.
         slack_client: Optional SlackClient for approval notifications.
         settings: Optional Settings instance for rolling/canary/drift config.
         deferred_store: Optional store for deferred batch execution.
@@ -2171,7 +2264,7 @@ def build_batch_graph(
     async def _approval_gate(state: BatchGraphState) -> dict[str, Any]:
         return await approval_gate_node(
             state,
-            approval_manager=approval_manager,
+            approval_store=approval_store,
             slack_client=slack_client,
             audit_store=audit_store,
             window=window,

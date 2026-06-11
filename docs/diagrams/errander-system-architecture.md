@@ -27,9 +27,9 @@ flowchart TB
       LA["LAYER A — Brain (LLM)<br/>prioritize · analyze · report · --ask<br/>recommends, never executes"]:::layerA
       INV["Investigation Agent<br/>· planned ·<br/>agentic read-only · Prometheus · ELK · audit"]:::planned
       CHATIF["Operator Chat Interface<br/>· planned ·<br/>answers /ui/chat"]:::planned
-      AG{"HUMAN APPROVAL GATE<br/>Slack ✅/❌ · Web UI<br/>every live change"}:::appr
+      AG{"HUMAN APPROVAL GATE<br/>Slack ✅/❌ · Web UI · durable (DB row)<br/>every live change"}:::appr
       LB["LAYER B — Hands (deterministic, NO LLM)<br/>patching · disk_cleanup · log_rotation<br/>docker_hygiene · backup_verify · service_restart<br/>validate → execute → verify → rollback → audit"]:::layerB
-      DB[("Audit DB PostgreSQL<br/>audit_events · ai_decisions<br/>plan_snapshots")]:::store
+      DB[("Audit DB PostgreSQL<br/>audit_events · ai_decisions<br/>plan_snapshots · approval_requests")]:::store
       PROM["Controller Prometheus :9091<br/>scrapes agent /metrics<br/>monitors Errander itself"]:::infra
     end
 
@@ -59,7 +59,7 @@ flowchart TB
   %% --- audit ---
   LA -->|ai_decisions| DB
   LB -->|audit_events| DB
-  AG -->|plan_snapshots| DB
+  AG -->|plan_snapshots · approval_requests| DB
 
   %% --- operators ---
   OP -->|approve / monitor| WEB
@@ -81,7 +81,7 @@ flowchart TB
 ## Reading the diagram
 
 - **Layer A (blue)** thinks and recommends — never touches a VM.
-- **Human approval gate (amber)** sits between thinking and acting — mandatory for every live change.
+- **Human approval gate (amber)** sits between thinking and acting — mandatory for every live change. Since §8d Step 2 each request is a durable row in `approval_requests`: decisions are atomic (exactly one winner), and a pending approval survives an agent restart (a reconciler job recovers it).
 - **Layer B (green)** is deterministic Python; the thick **SSH edge is the only path that changes a target VM**.
 - **Two Prometheus instances:** the Controller Prometheus `:9091` *scrapes the agent* (monitors Errander itself); Fleet Prometheus separately *scrapes target node_exporters* `:9100` (opt-in, for Layer A to read when investigating fleet health).
 - **Dashed purple** = planned (Investigation Agent, Dashboard Chat, Operator Chat Interface, LangSmith tracing).

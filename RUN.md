@@ -135,17 +135,30 @@ uv run python scripts/dev_ui.py
 ## Approvals
 
 When a batch requires human approval (high-risk actions, or `strict` policy), the agent:
-1. Posts a dry-run report to the Slack `#errander-approvals` channel
-2. Waits for a ✅ (approve) or ❌ (reject) reaction on that message
-3. Also shows the pending approval in the web UI at `/ui/approvals`
+1. Persists the pending approval to the database (durable — survives restarts)
+2. Posts the plan summary + a web approval link to the Slack `#errander-approvals` channel (notification only)
+3. Waits for a decision recorded in the web UI at `/ui/approvals`
 
-### Approve or reject via Slack
+### Approve or reject (Web UI — the only decision surface)
 
-React with ✅ to approve, ❌ to reject. The agent polls every 30 seconds.
+Go to `http://localhost:9090/ui/approvals`, sign in with an `admin`-group
+account, and click **Approve Selected** or **Reject All**. The decision is
+recorded with your username and group (`decided_by` / `decided_by_group`).
+Slack cannot approve or reject — the message only notifies and links.
 
-### Approve or reject via Web UI
+### Web UI users (RBAC)
 
-Go to `http://localhost:9090/ui/approvals` and click **Approve** or **Reject**.
+```bash
+uv run python -m errander --user-add <name> --user-groups admin   # can decide
+uv run python -m errander --user-add <name> --user-groups reader  # view-only
+uv run python -m errander --user-list
+uv run python -m errander --user-set-groups <name> --user-groups reader
+uv run python -m errander --user-set-password <name>
+uv run python -m errander --user-remove <name>
+```
+
+Password comes from `ERRANDER_USER_PASSWORD` or an interactive prompt. Group
+changes apply on the user's next request; all changes are audit-logged.
 
 ### Approval timeout
 
@@ -487,7 +500,7 @@ Reload the agent (restart the process) for the change to take effect.
 # 1. Dry-run first — confirms the unit is in the allowlist and the VM is reachable
 uv run python -m errander --restart-service production --unit nginx.service --vm prod-web-01
 
-# 2. Run live — posts to #errander-approvals and waits for your ✅ reaction
+# 2. Run live — notifies #errander-approvals and waits for your web UI decision
 uv run python -m errander --restart-service production --unit nginx.service \
   --vm prod-web-01 --live
 ```

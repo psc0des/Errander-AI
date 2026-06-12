@@ -38,7 +38,7 @@ from errander.execution.os_detection import detect_os
 from errander.models.actions import ACTION_RISK_TIERS, ActionStatus, ActionType, RiskTier
 from errander.models.events import AuditEvent, EventType
 from errander.observability.metrics import BATCH_DURATION
-from errander.safety.approval import request_approval, watch_slack_reactions
+from errander.safety.approval import request_approval
 from errander.scheduling.windows import (
     MaintenanceWindow,
     check_window_from_config,
@@ -1439,7 +1439,6 @@ async def approval_gate_node(
     window: MaintenanceWindow | None = None,
     deferred_store: DeferredExecutionStore | None = None,
     approval_timeout_seconds: int = 1800,
-    approval_poll_interval_seconds: int = 30,
     require_live_approval: bool = True,
     autonomous_live_apply_enabled: bool = False,
     web_base_url: str | None = None,
@@ -1454,10 +1453,10 @@ async def approval_gate_node(
         relaxed  → CRITICAL only (and CRITICAL is blocked by design)
 
     R3 durable flow: the pending request is persisted to ApprovalRequestStore
-    FIRST, then posted to Slack (best-effort). A background watcher writes
-    Slack reaction decisions into the store; the web UI writes its decisions
-    into the same store. This coroutine waits on the store — if the agent
-    dies while waiting, the restart reconciler resumes the request.
+    FIRST, then announced on Slack (best-effort, notify-and-link — R2: Slack
+    carries no decision authority). Only the authenticated web UI writes
+    decisions into the store. This coroutine waits on the store — if the
+    agent dies while waiting, the restart reconciler resumes the request.
 
     Approved requests are atomically claimed (mark_execution_started) before
     any execution path — immediate or deferred-store handoff — so a restart
@@ -1587,35 +1586,28 @@ async def approval_gate_node(
             timeout_seconds=approval_timeout_seconds,
         )
 
-        # Best-effort Slack notify + transitional reaction-decision watcher.
-        # Slack failure degrades to UI-only approval; it never blocks the gate.
+        # Best-effort Slack notify-and-link (R2: Slack carries no decision
+        # authority). Slack failure never blocks the gate — the request is
+        # already durable and decidable from /ui/approvals.
         from errander.integrations.slack import SlackError as _SlackError
-        _watcher_task: asyncio.Task[None] | None = None
         if slack_client is not None:
             try:
-                _slack_ts = await request_approval(slack_client, batch_id, plan_summary)
-                await approval_store.set_slack_ts(batch_id, _slack_ts)
-                _watcher_task = asyncio.create_task(watch_slack_reactions(
-                    slack_client, _slack_ts, approval_store, batch_id,
+                _slack_ts = await request_approval(
+                    slack_client, batch_id, plan_summary,
+                    web_base_url=web_base_url or None,
                     timeout_seconds=approval_timeout_seconds,
-                    poll_interval_seconds=approval_poll_interval_seconds,
-                ))
+                )
+                await approval_store.set_slack_ts(batch_id, _slack_ts)
             except _SlackError as exc:
                 logger.warning(
-                    "Slack approval post failed for batch %s: %s — UI-only mode",
+                    "Slack approval notification failed for batch %s: %s — UI-only",
                     batch_id, exc,
                 )
 
         _wait_start = datetime.now(tz=UTC)
-        try:
-            _request = await approval_store.wait_for_decision(
-                batch_id, timeout_seconds=approval_timeout_seconds,
-            )
-        finally:
-            if _watcher_task is not None:
-                _watcher_task.cancel()
-                with contextlib.suppress(asyncio.CancelledError, Exception):
-                    await _watcher_task
+        _request = await approval_store.wait_for_decision(
+            batch_id, timeout_seconds=approval_timeout_seconds,
+        )
 
         from errander.observability.metrics import APPROVAL_WAIT
         APPROVAL_WAIT.observe((datetime.now(tz=UTC) - _wait_start).total_seconds())
@@ -1995,7 +1987,6 @@ def make_wave_dispatcher(
     slack_client: SlackClient | None = None,
     web_base_url: str = "",
     approval_timeout_seconds: int = 1800,
-    approval_poll_interval_seconds: int = 30,
 ) -> tuple[Any, Any]:
     """Build the wave dispatch routing function.
 
@@ -2016,7 +2007,6 @@ def make_wave_dispatcher(
         slack_client=slack_client,
         web_base_url=web_base_url,
         approval_timeout_seconds=approval_timeout_seconds,
-        approval_poll_interval_seconds=approval_poll_interval_seconds,
     ).compile()
 
     def dispatch_current_wave(state: BatchGraphState) -> str | list[Send]:
@@ -2270,7 +2260,6 @@ def build_batch_graph(
             window=window,
             deferred_store=deferred_store,
             approval_timeout_seconds=_settings.approval_timeout_seconds,
-            approval_poll_interval_seconds=_settings.approval_poll_interval_seconds,
             require_live_approval=_settings.require_live_approval,
             autonomous_live_apply_enabled=_settings.autonomous_live_apply_enabled,
             web_base_url=_settings.web_base_url or None,
@@ -2297,7 +2286,6 @@ def build_batch_graph(
         slack_client=slack_client,
         web_base_url=web_base_url,
         approval_timeout_seconds=_settings.approval_timeout_seconds,
-        approval_poll_interval_seconds=_settings.approval_poll_interval_seconds,
     )
 
     async def _run_vm(state: VMGraphState) -> dict[str, Any]:

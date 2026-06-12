@@ -7,7 +7,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from errander.integrations.slack import (
-    APPROVE_REACTION,
     SlackClient,
     SlackError,
 )
@@ -42,19 +41,6 @@ def _make_response(
     resp.json = AsyncMock(return_value=data)
     resp.headers = {}
     # async context manager support
-    resp.__aenter__ = AsyncMock(return_value=resp)
-    resp.__aexit__ = AsyncMock(return_value=False)
-    return resp
-
-
-def _make_reactions_response(reactions: list[dict[str, object]]) -> MagicMock:
-    resp = MagicMock()
-    resp.status = 200
-    resp.json = AsyncMock(return_value={
-        "ok": True,
-        "message": {"reactions": reactions},
-    })
-    resp.headers = {}
     resp.__aenter__ = AsyncMock(return_value=resp)
     resp.__aexit__ = AsyncMock(return_value=False)
     return resp
@@ -175,45 +161,6 @@ class TestPostMessage:
             await client.post_message("fallback", blocks=blocks)
 
         assert captured_payloads[0]["blocks"] == blocks
-
-
-# --- SlackClient.get_reactions ---
-
-class TestGetReactions:
-    @pytest.mark.asyncio
-    async def test_returns_reactions_list(self) -> None:
-        client = _make_client()
-        reactions = [
-            {"name": APPROVE_REACTION, "users": ["U111"], "count": 1},
-        ]
-        mock_resp = _make_reactions_response(reactions)
-
-        with patch("aiohttp.ClientSession") as mock_session_cls:
-            mock_session = MagicMock()
-            mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-            mock_session.__aexit__ = AsyncMock(return_value=False)
-            mock_session.get = MagicMock(return_value=_ctx(mock_resp))
-            mock_session_cls.return_value = mock_session
-
-            result = await client.get_reactions("1700000000.000001")
-
-        assert result == reactions
-
-    @pytest.mark.asyncio
-    async def test_returns_empty_when_no_reactions(self) -> None:
-        client = _make_client()
-        mock_resp = _make_reactions_response([])
-
-        with patch("aiohttp.ClientSession") as mock_session_cls:
-            mock_session = MagicMock()
-            mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-            mock_session.__aexit__ = AsyncMock(return_value=False)
-            mock_session.get = MagicMock(return_value=_ctx(mock_resp))
-            mock_session_cls.return_value = mock_session
-
-            result = await client.get_reactions("1700000000.000001")
-
-        assert result == []
 
 
 # --- Rate limiting ---

@@ -13,7 +13,7 @@ import pytest
 
 from errander.config.schema import EnvironmentSchema, TargetSchema
 from errander.config.settings import Settings
-from errander.main import _approval_reconciler, _resumed_slack_watchers
+from errander.main import _approval_reconciler
 from errander.safety.approval_store import ApprovalRequestStore
 from tests.conftest import make_test_db
 
@@ -43,29 +43,29 @@ async def _run_reconciler(
     audit_store: AsyncMock | None = None,
     deferred_store: AsyncMock | None = None,
     slack_client: object = None,
+    claim_grace_seconds: int = 0,
 ) -> AsyncMock:
+    """Run one reconciler tick.
+
+    claim_grace_seconds defaults to 0 so tests that decide-then-reconcile in
+    the same instant exercise the claim path; the grace-period tests set it
+    explicitly.
+    """
     audit = audit_store if audit_store is not None else AsyncMock()
-    await _approval_reconciler(
-        environments=environments if environments is not None else {"dev": _env_schema()},
-        settings=Settings(),
-        executor=MagicMock(),
-        locker=MagicMock(),
-        ssh_manager=MagicMock(),
-        audit_store=audit,
-        approval_store=store,
-        deferred_store=deferred_store if deferred_store is not None else AsyncMock(),
-        slack_client=slack_client,
-        overrides_store=MagicMock(),
-    )
+    with patch("errander.main._RECONCILER_CLAIM_GRACE_SECONDS", claim_grace_seconds):
+        await _approval_reconciler(
+            environments=environments if environments is not None else {"dev": _env_schema()},
+            settings=Settings(),
+            executor=MagicMock(),
+            locker=MagicMock(),
+            ssh_manager=MagicMock(),
+            audit_store=audit,
+            approval_store=store,
+            deferred_store=deferred_store if deferred_store is not None else AsyncMock(),
+            slack_client=slack_client,
+            overrides_store=MagicMock(),
+        )
     return audit
-
-
-@pytest.fixture(autouse=True)
-def _clear_resumed_watchers() -> None:
-    """The resumed-watcher registry is module-global — isolate tests."""
-    for task in _resumed_slack_watchers.values():
-        task.cancel()
-    _resumed_slack_watchers.clear()
 
 
 # ---------------------------------------------------------------------------
@@ -234,38 +234,73 @@ async def test_orphan_with_live_waiter_left_alone() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Pass 2 — resume Slack watchers for orphaned pending requests
+# R2 — no Slack watchers; orphaned pendings stay decidable from the web UI
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_resumes_slack_watcher_for_orphaned_pending() -> None:
+async def test_orphaned_pending_left_pending_for_web_ui() -> None:
+    """No watcher is spawned for orphaned pendings — the web UI decides them."""
+    import errander.main as main_mod
+
+    assert not hasattr(main_mod, "_resumed_slack_watchers")
+
     store = await _make_store()
     await store.create(
-        "batch-resume", env_name="dev", plan_id="p", plan_hash="8" * 64,
+        "batch-pending", env_name="dev", plan_id="p", plan_hash="8" * 64,
         report="r", slack_message_ts="1700.42",
     )
 
-    slack_client = MagicMock()
-    slack_client.get_reactions = AsyncMock(return_value=[])
+    with patch("errander.main.run_env_batch", new_callable=AsyncMock) as mock_run:
+        await _run_reconciler(store, slack_client=MagicMock())
 
-    with patch("errander.main.run_env_batch", new_callable=AsyncMock):
-        await _run_reconciler(store, slack_client=slack_client)
+    mock_run.assert_not_awaited()
+    req = await store.get("batch-pending")
+    assert req is not None and req.status == "pending"  # still decidable
 
-    assert "batch-resume" in _resumed_slack_watchers
-    _resumed_slack_watchers["batch-resume"].cancel()
+
+# ---------------------------------------------------------------------------
+# Claim grace period — freshly decided approvals belong to their executor
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_freshly_decided_orphan_skipped_within_grace() -> None:
+    """A cross-process executor (e.g. --restart-service CLI) sits between the
+    decision and its claim — the reconciler must not steal the batch."""
+    store = await _make_store()
+    await store.create(
+        "batch-fresh", env_name="dev", plan_id="p", plan_hash="1" * 64,
+        report="r", vm_plans=_VM_PLANS,
+    )
+    await store.decide("batch-fresh", approved=True, decided_by="ui:alice")
+
+    with patch("errander.main.run_env_batch", new_callable=AsyncMock) as mock_run:
+        await _run_reconciler(store, claim_grace_seconds=120)
+
+    mock_run.assert_not_awaited()
+    req = await store.get("batch-fresh")
+    assert req is not None and req.execution_started_at is None
 
 
 @pytest.mark.asyncio
-async def test_no_watcher_resumed_without_slack_ts() -> None:
+async def test_orphan_past_grace_is_claimed_and_executed() -> None:
+    from datetime import UTC, datetime, timedelta
+
+    from sqlalchemy import text
+
     store = await _make_store()
     await store.create(
-        "batch-no-ts", env_name="dev", plan_id="p", plan_hash="7" * 64, report="r",
+        "batch-old", env_name="dev", plan_id="p", plan_hash="2" * 64,
+        report="r", vm_plans=_VM_PLANS,
     )
+    await store.decide("batch-old", approved=True, decided_by="ui:alice")
+    backdated = (datetime.now(tz=UTC) - timedelta(minutes=10)).isoformat()
+    async with store._db.begin() as conn:
+        await conn.execute(
+            text("UPDATE approval_requests SET decided_at = :d WHERE batch_id = 'batch-old'"),
+            {"d": backdated},
+        )
 
-    slack_client = MagicMock()
-    slack_client.get_reactions = AsyncMock(return_value=[])
+    with patch("errander.main.run_env_batch", new_callable=AsyncMock) as mock_run:
+        await _run_reconciler(store, claim_grace_seconds=120)
 
-    with patch("errander.main.run_env_batch", new_callable=AsyncMock):
-        await _run_reconciler(store, slack_client=slack_client)
-
-    assert "batch-no-ts" not in _resumed_slack_watchers
+    mock_run.assert_awaited_once()

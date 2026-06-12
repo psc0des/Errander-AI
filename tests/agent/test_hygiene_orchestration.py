@@ -147,17 +147,15 @@ class TestRunDockerHygieneOrchestration:
             await asyncio.sleep(0.05)
             manager.resolve("batch-001", "test-vm", approval)
 
-        with patch("errander.safety.hygiene_approval.poll_hygiene_replies_once", new_callable=AsyncMock):
-            resolve_task = asyncio.create_task(_resolve_soon())
-            result = await _run_docker_hygiene(
-                state,  # type: ignore[arg-type]
-                compiled,
-                hygiene_manager=manager,
-                slack_client=slack,
-                approval_timeout_seconds=10,
-                approval_poll_interval_seconds=60,
-            )
-            await resolve_task
+        resolve_task = asyncio.create_task(_resolve_soon())
+        result = await _run_docker_hygiene(
+            state,  # type: ignore[arg-type]
+            compiled,
+            hygiene_manager=manager,
+            slack_client=slack,
+            approval_timeout_seconds=10,
+        )
+        await resolve_task
 
         # Slack message was posted
         slack.post_message.assert_called_once()
@@ -197,17 +195,15 @@ class TestRunDockerHygieneOrchestration:
             await asyncio.sleep(0.05)
             manager.resolve("batch-001", "test-vm", rejection)
 
-        with patch("errander.safety.hygiene_approval.poll_hygiene_replies_once", new_callable=AsyncMock):
-            reject_task = asyncio.create_task(_reject_soon())
-            result = await _run_docker_hygiene(
-                state,  # type: ignore[arg-type]
-                compiled,
-                hygiene_manager=manager,
-                slack_client=slack,
-                approval_timeout_seconds=10,
-                approval_poll_interval_seconds=60,
-            )
-            await reject_task
+        reject_task = asyncio.create_task(_reject_soon())
+        result = await _run_docker_hygiene(
+            state,  # type: ignore[arg-type]
+            compiled,
+            hygiene_manager=manager,
+            slack_client=slack,
+            approval_timeout_seconds=10,
+        )
+        await reject_task
 
         assert result["status"] == ActionStatus.SKIPPED.value
         assert "rejected" in str(result["detail"])
@@ -231,15 +227,13 @@ class TestRunDockerHygieneOrchestration:
         compiled = MagicMock()
         compiled.ainvoke = _fake_invoke
 
-        with patch("errander.safety.hygiene_approval.poll_hygiene_replies_once", new_callable=AsyncMock):
-            result = await _run_docker_hygiene(
-                state,  # type: ignore[arg-type]
-                compiled,
-                hygiene_manager=manager,
-                slack_client=slack,
-                approval_timeout_seconds=0,  # immediate timeout
-                approval_poll_interval_seconds=60,
-            )
+        result = await _run_docker_hygiene(
+            state,  # type: ignore[arg-type]
+            compiled,
+            hygiene_manager=manager,
+            slack_client=slack,
+            approval_timeout_seconds=0,  # immediate timeout
+        )
 
         assert result["status"] == ActionStatus.SKIPPED.value
         assert "timeout" in str(result["detail"])
@@ -397,10 +391,7 @@ class TestRunDockerHygieneOrchestration:
             await asyncio.sleep(0.02)
             manager.resolve("batch-001", "test-vm", _make_approval(assessment))
 
-        with (
-            patch("errander.safety.hygiene_approval.poll_hygiene_replies_once", new_callable=AsyncMock),
-            patch.dict("os.environ", {"ERRANDER_SIGNING_SECRET": "a" * 44}),
-        ):
+        with patch.dict("os.environ", {"ERRANDER_SIGNING_SECRET": "a" * 44}):
             resolve_task = asyncio.create_task(_resolve())
             await _run_docker_hygiene(
                 state,  # type: ignore[arg-type]
@@ -409,7 +400,6 @@ class TestRunDockerHygieneOrchestration:
                 slack_client=slack,
                 web_base_url="http://10.0.0.5:9090",
                 approval_timeout_seconds=10,
-                approval_poll_interval_seconds=60,
             )
             await resolve_task
 

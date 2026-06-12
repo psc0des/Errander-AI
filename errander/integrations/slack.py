@@ -1,12 +1,15 @@
-"""Slack API client — outbound HTTPS only, reaction polling.
+"""Slack API client — outbound HTTPS only, notify-and-link (R2).
 
 All Slack communication is outbound. No webhooks, no inbound traffic.
-The agent VM has no public IP — everything goes out via HTTPS to api.slack.com.
+The agent VM has no public IP — everything goes out via HTTPS to
+api.slack.com. Slack carries **no approval authority**: messages notify
+operators and link to the web UI, where decisions are made by named,
+authenticated users. The reactions/replies decision APIs were removed
+with R2 (web-only approval).
 
 Features:
-- Post messages to #errander-approvals
-- Poll for emoji reactions (approval/rejection)
-- Build formatted messages (reports, alerts, summaries)
+- Post messages to #errander-approvals (plan summaries + approval links)
+- Post alerts and daily digests
 - Handle rate limiting (HTTP 429) with Retry-After backoff
 """
 
@@ -22,10 +25,6 @@ logger = logging.getLogger(__name__)
 #: Slack API base URL
 _SLACK_API = "https://slack.com/api"
 
-#: Reaction names used for approval/rejection
-APPROVE_REACTION = "white_check_mark"   # ✅
-REJECT_REACTION = "x"                   # ❌
-
 
 class SlackError(Exception):
     """Raised when a Slack API call fails unrecoverably."""
@@ -40,7 +39,6 @@ class SlackClient:
     Usage:
         client = SlackClient(bot_token="xoxb-...", channel_id="C0123456789")
         ts = await client.post_message("Dry-run complete — review plan")
-        reactions = await client.get_reactions(ts)
     """
 
     def __init__(self, bot_token: str, channel_id: str) -> None:
@@ -72,7 +70,7 @@ class SlackClient:
             channel_id: Override default channel.
 
         Returns:
-            Slack message timestamp (ts) — used for reaction polling.
+            Slack message timestamp (ts) — stored on approval rows for audit.
 
         Raises:
             SlackError: If the API call fails.
@@ -91,52 +89,6 @@ class SlackClient:
             raise SlackError(msg)
         logger.info("Posted Slack message ts=%s", ts)
         return str(ts)
-
-    async def get_reactions(self, message_ts: str, channel_id: str | None = None) -> list[dict[str, object]]:
-        """Get reactions on a message.
-
-        Args:
-            message_ts: Slack message timestamp returned by post_message.
-            channel_id: Override default channel.
-
-        Returns:
-            List of reaction dicts: [{"name": "white_check_mark", "users": [...], "count": N}]
-        """
-        data = await self._call("reactions.get", {
-            "channel": channel_id or self._channel_id,
-            "timestamp": message_ts,
-            "full": True,
-        }, http_method="GET")
-
-        message: dict[str, object] = data.get("message") or {}  # type: ignore[assignment]
-        reactions: list[dict[str, object]] = message.get("reactions") or []  # type: ignore[assignment]
-        return reactions
-
-    async def conversations_replies(
-        self,
-        thread_ts: str,
-        channel_id: str | None = None,
-        limit: int = 100,
-    ) -> list[dict[str, object]]:
-        """Fetch replies in a thread. Used by docker_hygiene reply polling.
-
-        Returns the message list including the original thread parent at
-        index 0. Each message dict has at minimum ``ts``, ``user``, ``text``,
-        and optionally ``bot_id`` / ``subtype``. Callers should filter out
-        the bot's own messages by checking for ``bot_id``.
-
-        Args:
-            thread_ts: Slack timestamp of the thread parent.
-            channel_id: Override default channel.
-            limit: Maximum replies to return (Slack defaults to 1000).
-        """
-        data = await self._call("conversations.replies", {
-            "channel": channel_id or self._channel_id,
-            "ts": thread_ts,
-            "limit": limit,
-        }, http_method="GET")
-        messages: list[dict[str, object]] = data.get("messages") or []  # type: ignore[assignment]
-        return messages
 
     async def post_alert(self, text: str, channel_id: str | None = None) -> None:
         """Post a critical alert message.

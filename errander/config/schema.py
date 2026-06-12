@@ -365,7 +365,11 @@ class AgentSettingsSchema(BaseModel):
 
 
 class SlackSettingsSchema(BaseModel):
-    """Schema for Slack settings block."""
+    """Schema for Slack settings block.
+
+    poll_interval_seconds is accepted-but-ignored for backward compatibility:
+    the Slack reaction decision channel was removed in R2 (web-only approval).
+    """
 
     approvals_channel_env: str = "ERRANDER_SLACK_CHANNEL_ID"
     status_channel: str = "errander-status"

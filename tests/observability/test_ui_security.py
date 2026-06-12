@@ -8,23 +8,65 @@ import pytest
 
 
 class TestBindAddressSecurity:
-    """start_metrics_server rejects non-loopback bind without auth credentials."""
+    """start_metrics_server rejects non-loopback bind without any user account
+    (finding #14, extended by R2: auth = named users, not a shared credential)."""
 
     @pytest.mark.asyncio
-    async def test_nonloopback_without_auth_raises(self) -> None:
-        """Binding to 0.0.0.0 without credentials must raise RuntimeError."""
+    async def test_nonloopback_without_users_raises(self) -> None:
+        """Binding to 0.0.0.0 with zero user accounts must raise RuntimeError."""
+        from errander.observability.metrics import start_metrics_server
+        from errander.safety.user_store import UserStore
+        from tests.conftest import make_test_db
+
+        db = make_test_db()
+        try:
+            with pytest.raises(RuntimeError, match="non-loopback"):
+                await start_metrics_server(
+                    bind_address="0.0.0.0",
+                    user_store=UserStore(db),
+                )
+        finally:
+            await db.close()
+
+    @pytest.mark.asyncio
+    async def test_nonloopback_without_user_store_raises(self) -> None:
+        """No user store wired at all counts as zero users — refuse."""
         from errander.observability.metrics import start_metrics_server
 
         with pytest.raises(RuntimeError, match="non-loopback"):
-            await start_metrics_server(
-                bind_address="0.0.0.0",
-                ui_user="",
-                ui_password="",
-            )
+            await start_metrics_server(bind_address="0.0.0.0")
 
     @pytest.mark.asyncio
-    async def test_nonloopback_with_auth_allowed(self) -> None:
-        """Binding to 0.0.0.0 WITH credentials must NOT raise RuntimeError."""
+    async def test_nonloopback_with_users_allowed(self) -> None:
+        """Binding to 0.0.0.0 WITH at least one account must NOT raise."""
+        from unittest.mock import AsyncMock
+
+        from errander.observability.metrics import start_metrics_server
+        from errander.safety.user_store import UserStore
+        from tests.conftest import make_test_db
+
+        db = make_test_db()
+        user_store = UserStore(db)
+        await user_store.create_user("admin", "s3cret", groups=["admin"], actor="t")
+        try:
+            with patch("aiohttp.web.TCPSite") as mock_site_cls, \
+                 patch("aiohttp.web.AppRunner") as mock_runner_cls:
+                mock_site = mock_site_cls.return_value
+                mock_site.start = AsyncMock()
+                mock_runner = mock_runner_cls.return_value
+                mock_runner.setup = AsyncMock()
+
+                # Must not raise — a named account exists
+                await start_metrics_server(
+                    bind_address="0.0.0.0",
+                    user_store=user_store,
+                )
+        finally:
+            await db.close()
+
+    @pytest.mark.asyncio
+    async def test_loopback_without_users_allowed(self) -> None:
+        """127.0.0.1 with zero users must NOT raise (read-only bootstrap mode)."""
         from unittest.mock import AsyncMock
 
         from errander.observability.metrics import start_metrics_server
@@ -36,32 +78,7 @@ class TestBindAddressSecurity:
             mock_runner = mock_runner_cls.return_value
             mock_runner.setup = AsyncMock()
 
-            # Must not raise — auth is provided
-            await start_metrics_server(
-                bind_address="0.0.0.0",
-                ui_user="admin",
-                ui_password="s3cret",
-            )
-
-    @pytest.mark.asyncio
-    async def test_loopback_without_auth_allowed(self) -> None:
-        """127.0.0.1 without credentials must NOT raise RuntimeError."""
-        from unittest.mock import AsyncMock
-
-        from errander.observability.metrics import start_metrics_server
-
-        with patch("aiohttp.web.TCPSite") as mock_site_cls, \
-             patch("aiohttp.web.AppRunner") as mock_runner_cls:
-            mock_site = mock_site_cls.return_value
-            mock_site.start = AsyncMock()
-            mock_runner = mock_runner_cls.return_value
-            mock_runner.setup = AsyncMock()
-
-            await start_metrics_server(
-                bind_address="127.0.0.1",
-                ui_user="",
-                ui_password="",
-            )
+            await start_metrics_server(bind_address="127.0.0.1")
 
 
 class TestCSRFMiddleware:

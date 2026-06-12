@@ -80,8 +80,7 @@ class Settings:
         audit_db_url: PostgreSQL connection URL (postgresql://...).
         llm_timeout_seconds: LLM request timeout.
         llm_max_retries: LLM max retry attempts.
-        approval_timeout_seconds: Slack approval timeout.
-        approval_poll_interval_seconds: Reaction poll interval.
+        approval_timeout_seconds: Approval timeout (auto-reject when exceeded).
         ssh_command_timeout_seconds: SSH command timeout.
         ssh_reconnect_attempts: SSH reconnection attempts.
         ssh_reconnect_backoff: Backoff intervals for SSH reconnect.
@@ -89,8 +88,9 @@ class Settings:
         vm_lock_ttl_seconds: VM lock time-to-live.
         metrics_port: Prometheus metrics server port.
         dry_run_default: Whether to default to dry-run mode.
-        ui_user: HTTP Basic Auth username for /ui/* (env only).
-        ui_password: HTTP Basic Auth password for /ui/* (env only).
+        ui_user: DEPRECATED seed credential — used once at startup to create
+            the initial admin user when the users table is empty (R2).
+        ui_password: DEPRECATED seed credential (see ui_user).
         sources: Maps each field name to its origin (env/db/yaml/default).
     """
 
@@ -115,7 +115,6 @@ class Settings:
     llm_timeout_seconds: int = 30
     llm_max_retries: int = 2
     approval_timeout_seconds: int = 1800
-    approval_poll_interval_seconds: int = 30
     ssh_command_timeout_seconds: int = 300
     ssh_reconnect_attempts: int = 3
     ssh_reconnect_backoff: list[int] = field(default_factory=lambda: [5, 15, 45])
@@ -178,7 +177,10 @@ class Settings:
     # Empty = web approval URLs are omitted from Slack messages.
     web_base_url: str = ""
 
-    # UI auth (env-only — bootstrap credentials must not live in DB)
+    # DEPRECATED (R2): one-time seed for the initial admin account. When the
+    # users table is empty at startup and both are set, an admin user is
+    # created from them (audited). Day-to-day user management is the CLI:
+    # python -m errander --user-add <name> --user-groups admin
     ui_user: str = ""
     ui_password: str = ""
 
@@ -321,7 +323,6 @@ def load_settings(
         yaml_settings = validate_settings(settings_path)
 
     agent = yaml_settings.agent if yaml_settings else None
-    slack = yaml_settings.slack if yaml_settings else None
     llm = yaml_settings.llm if yaml_settings else None
     sre_yaml = yaml_settings.sre_signals if yaml_settings else None
 
@@ -420,10 +421,6 @@ def load_settings(
         ),
         graceful_shutdown_timeout_seconds=(
             agent.graceful_shutdown_timeout_seconds if agent else 120
-        ),
-        # Slack settings
-        approval_poll_interval_seconds=(
-            slack.poll_interval_seconds if slack else 30
         ),
         # Rolling updates
         rolling_update_percentage=_int_field(

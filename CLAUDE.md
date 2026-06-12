@@ -1,6 +1,6 @@
 # Errander-AI — Supervised Agentic AI SRE Platform
 
-A supervised agentic AI SRE platform that eliminates operational toil while keeping humans in control of live infrastructure changes. Performs secure patching (non-kernel), log rotation, Docker hygiene (object-level approval), disk cleanup, backup verification, and operator-triggered service restart — with safety gates, rollback, and full audit logging. Every live change requires human Slack/Web UI approval.
+A supervised agentic AI SRE platform that eliminates operational toil while keeping humans in control of live infrastructure changes. Performs secure patching (non-kernel), log rotation, Docker hygiene (object-level approval), disk cleanup, backup verification, and operator-triggered service restart — with safety gates, rollback, and full audit logging. Every live change requires approval by a named, authenticated operator in the Web UI (Slack notifies and links — it carries no decision authority).
 
 ## Stack (100% Open Source, Cloud-Agnostic)
 - Language: Python 3.12+
@@ -10,7 +10,7 @@ A supervised agentic AI SRE platform that eliminates operational toil while keep
 - LLM Responses: structured JSON via Pydantic models
 - Infrastructure: Targets heterogeneous VMs (Linux — Ubuntu/RHEL/Debian)
 - SSH: asyncssh (async-native, key-based auth only)
-- Notifications & Approval: Slack API (outbound HTTPS only, polling-based approval via reactions)
+- Notifications: Slack API (outbound HTTPS only, notify-and-link). Approval: authenticated Web UI with users/groups RBAC (`approval_requests` store)
 - Scheduling: APScheduler (built-in, agent owns its own schedule)
 - Observability: Prometheus + Grafana (metrics + dashboards) + structured JSON logging
 - Database: PostgreSQL only (`asyncpg` via SQLAlchemy Core async + `AsyncDatabase` wrapper, `errander/db/core.py`) — owner decision 2026-06-10: one standard. Local dev/test: `docker compose up -d` (postgres:16). SQLite support was removed.
@@ -49,7 +49,7 @@ A supervised agentic AI SRE platform that eliminates operational toil while keep
 │  │ Self-hosted   │     │ Agent VM              │  │
 │  │ LLM (vLLM)   │◄────│  - Errander-AI agent    │  │
 │  │ (private IP)  │     │  - APScheduler        │  │
-│  └──────────────┘     │  - Slack poller        │  │
+│  └──────────────┘     │  - Slack notifier      │  │
 │                        │  - Audit DB (Postgres)  │  │
 │                        │  - Prometheus /metrics  │  │
 │                        └──────┬───────┬────────┘  │
@@ -77,7 +77,7 @@ A supervised agentic AI SRE platform that eliminates operational toil while keep
 ```
 
 - Agent VM has NO public IP — fully private
-- All Slack communication is outbound HTTPS (polling, not webhooks)
+- All Slack communication is outbound HTTPS (notify-and-link, not webhooks)
 - LLM endpoint is a private IP / internal DNS inside VPN
 - SSH to target VMs is within the VPN
 - No nginx, no inbound webhooks, no TLS certificates to manage
@@ -100,9 +100,11 @@ errander/
 ├── safety/                 # Safety architecture
 │   ├── validators.py       # Pre-execution validation checks
 │   ├── rollback.py         # Rollback capabilities per action type
-│   ├── approval.py         # Slack approval channel (post + reaction watcher)
+│   ├── approval.py         # Slack approval notification (notify-and-link, no decisions)
 │   ├── approval_store.py   # Durable approval requests (DB-backed, atomic decide,
 │   │                       #   survives restarts — reconciled by main.py interval job)
+│   ├── user_store.py       # Users/groups/sessions for web UI RBAC (R2 — scrypt
+│   │                       #   hashes, DB sessions, group_permissions)
 │   ├── locking.py          # VM-level locking (file-based v1, Redis v2)
 │   └── audit.py            # Audit logging for all actions
 ├── execution/              # Actual command execution layer
@@ -111,7 +113,7 @@ errander/
 │   ├── os_detection.py     # Runtime OS detection + config verification
 │   └── sandbox.py          # Dry-run / sandbox execution mode
 ├── integrations/           # External service integrations
-│   ├── slack.py            # Slack API client (outbound only, reaction polling)
+│   ├── slack.py            # Slack API client (outbound only, post-only)
 │   ├── llm.py              # LLM client (OpenAI SDK → vLLM, with fallback)
 │   └── secrets.py          # Secrets interface (env vars v1, Vault v2)
 ├── observability/          # Metrics and monitoring
@@ -159,7 +161,7 @@ deploy/
 |---|---|---|
 | Low | Disk cleanup, log rotation, backup verification | Automatic |
 | Medium | Docker prune, non-kernel patching, config changes | Log + notify |
-| High | Service restart (`service_restart`) — operator-triggered only in v1 | Human approval required — Slack or Web UI (all policy tiers) |
+| High | Service restart (`service_restart`) — operator-triggered only in v1 | Human approval required — Web UI (Slack notifies and links; all policy tiers) |
 | Critical | Kernel operations, data deletion | Blocked — never automated |
 
 **Service restart is operator-triggered only in v1.** Auto-detection from probe output (detect-and-propose) is deferred to v1.1. Adding a unit to the `restartable_units` allowlist in inventory + on-target `/etc/errander/restart-allowlist` is required before Errander will restart it. `restartable_units` should be set **per-target** (not per-environment) because different VMs run different services — use `actions.service_restart` under each individual target in `inventory.yaml`.
@@ -266,7 +268,7 @@ requires a new sub-graph + manifest + risk-tier classification + rollback strate
 - Actions must be idempotent — running twice produces the same result
 - Agent must NEVER be blocked by LLM unavailability — hardcoded fallbacks for all LLM-powered functions
 - All Slack communication is outbound HTTPS only — NO inbound webhooks, NO public endpoints
-- Approval via Slack reaction polling, NOT webhooks
+- Approval decisions only via the authenticated Web UI (users/groups RBAC); Slack is notify-and-link, never a decision channel
 - Maintenance windows are agent-enforced — agent refuses to run outside defined windows (--force override with mandatory reason)
 
 ## Infrastructure Constraints (v1)
@@ -292,13 +294,13 @@ requires a new sub-graph + manifest + risk-tier classification + rollback strate
 
 ### Slack (outbound only)
 - Agent communicates with Slack entirely via outbound HTTPS to Slack API
-- Approval: post report to `#errander-approvals`, poll for ✅/❌ reactions every 30s
+- Approval flow: post plan summary + web approval link to `#errander-approvals`; decisions happen in the Web UI
 - Timeout: 30 minutes (configurable), auto-REJECT on timeout
 - Zero inbound traffic to agent VM
 
 ### Secrets (environment variables for v1)
 ```
-ERRANDER_SLACK_BOT_TOKEN      # posting messages + polling reactions
+ERRANDER_SLACK_BOT_TOKEN      # posting messages (notify-and-link)
 ERRANDER_SLACK_CHANNEL_ID     # dedicated approvals channel
 ERRANDER_LLM_BASE_URL         # private vLLM endpoint
 ERRANDER_LLM_API_KEY          # if vLLM requires auth
@@ -318,7 +320,7 @@ SSH keys: referenced by file path in inventory config, never inlined.
 - ~~PostgreSQL for audit trail~~ — DONE (2026-06-10): PostgreSQL is now the only backend
 - Valkey (BSD-licensed Redis fork) for VM locking and approval queues (replace file-based)
 - HashiCorp Vault for secrets (replace env vars)
-- Slack webhooks via nginx reverse proxy (replace polling if latency matters)
+- nginx reverse proxy for hardened public Web UI access (Mode 2, with TOTP)
 - Dashboard: React/Next.js, hosted anywhere, reads from PostgreSQL via thin API
 - Qwen3.5-9B-AWQ replaces Qwen3-8B-AWQ when available
 

@@ -314,8 +314,8 @@ _MIGRATIONS: list[tuple[int, str]] = [
     # 0013 — durable approval requests (R3 keystone)
     #
     # Replaces the in-memory ApprovalManager: approvals survive agent restarts
-    # and decisions are written by either the Slack reaction watcher or the
-    # web UI. decide() races are settled by an atomic
+    # and decisions are written by the authenticated web UI (R2: web-only —
+    # Slack notifies and links). decide() races are settled by an atomic
     # UPDATE ... WHERE status = 'pending' (exactly one winner).
     # execution_started_at = "an executor claimed this approval" — stamped for
     # both immediate execution and deferred-store handoff, so the restart
@@ -347,7 +347,72 @@ _MIGRATIONS: list[tuple[int, str]] = [
             ON approval_requests (posted_at DESC)
         """,
     ),
+    # 0014 — users / groups / sessions (R2: web-only approval with RBAC)
+    #
+    # Groups carry permissions (group_permissions join table) so a third
+    # group (e.g. 'approver': decide but not manage users) is plain INSERTs,
+    # never a schema migration. Reader has no permission rows — "view" is
+    # implicit for any authenticated user. Sessions are DB rows so they
+    # survive restarts and are shareable across processes (R3 process split).
+    (
+        14,
+        """
+        CREATE TABLE IF NOT EXISTS users (
+            username      TEXT PRIMARY KEY,
+            password_hash TEXT NOT NULL,
+            created_at    TEXT NOT NULL,
+            created_by    TEXT NOT NULL DEFAULT ''
+        );
+        CREATE TABLE IF NOT EXISTS groups (
+            name        TEXT PRIMARY KEY,
+            description TEXT NOT NULL DEFAULT ''
+        );
+        CREATE TABLE IF NOT EXISTS group_permissions (
+            group_name TEXT NOT NULL REFERENCES groups(name) ON DELETE CASCADE,
+            permission TEXT NOT NULL,
+            PRIMARY KEY (group_name, permission)
+        );
+        CREATE TABLE IF NOT EXISTS user_groups (
+            username   TEXT NOT NULL REFERENCES users(username) ON DELETE CASCADE,
+            group_name TEXT NOT NULL REFERENCES groups(name) ON DELETE CASCADE,
+            added_by   TEXT NOT NULL DEFAULT '',
+            added_at   TEXT NOT NULL DEFAULT '',
+            PRIMARY KEY (username, group_name)
+        );
+        CREATE TABLE IF NOT EXISTS sessions (
+            token_hash TEXT PRIMARY KEY,
+            username   TEXT NOT NULL REFERENCES users(username) ON DELETE CASCADE,
+            created_at TEXT NOT NULL,
+            expires_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions (expires_at)
+        """,
+    ),
 ]
+
+#: Default groups + their permissions (R2). Idempotent (ON CONFLICT DO
+#: NOTHING) — applied by run_migrations on every startup so the seed
+#: survives database resets, and re-applied by the test harness after its
+#: per-test TRUNCATE.
+SEED_GROUPS_SQL = """
+INSERT INTO groups (name, description) VALUES
+    ('admin',  'Approve/decline live changes and manage users'),
+    ('reader', 'View-only: dashboards, batches, audit, AI decisions')
+    ON CONFLICT (name) DO NOTHING;
+INSERT INTO group_permissions (group_name, permission) VALUES
+    ('admin', 'decide_approvals'),
+    ('admin', 'manage_users'),
+    ('admin', 'manage_settings')
+    ON CONFLICT (group_name, permission) DO NOTHING
+"""
+
+
+async def seed_default_groups(conn: AsyncConnection) -> None:
+    """Ensure the default admin/reader groups and permissions exist."""
+    for raw_stmt in SEED_GROUPS_SQL.split(";"):
+        stmt = raw_stmt.strip()
+        if stmt:
+            await conn.execute(text(stmt))
 
 
 async def run_migrations(conn: AsyncConnection) -> None:
@@ -390,3 +455,7 @@ async def run_migrations(conn: AsyncConnection) -> None:
             {"version": version, "applied_at": datetime.now(tz=UTC).isoformat()},
         )
         logger.info("Migration %04d applied", version)
+
+    # Seed data is applied on every run (idempotent), not as a one-shot
+    # migration — it must survive resets and test-harness truncation.
+    await seed_default_groups(conn)

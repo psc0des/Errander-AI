@@ -497,7 +497,7 @@ uv run python -m errander --restart-service production --unit nginx.service --vm
 uv run python -m errander --restart-service production --unit nginx.service --vm prod-web-01
 ```
 
-Approve the plan via Slack reaction ✅ in `#errander-approvals`, or via the web UI at `http://<controller>:9090/ui/approvals`. The wrapper captures pre/post status + journal; a verify step confirms the unit reached `active` state. If verification fails, a `SERVICE_RESTART_VERIFY_FAILED` event is logged — no automatic re-restart attempt.
+Approve the plan in the web UI at `http://<controller>:9090/ui/approvals` (sign in with an `admin`-group account — see "Create your web UI users" below; the Slack message in `#errander-approvals` notifies and links but cannot decide). The wrapper captures pre/post status + journal; a verify step confirms the unit reached `active` state. If verification fails, a `SERVICE_RESTART_VERIFY_FAILED` event is logged — no automatic re-restart attempt.
 
 ---
 
@@ -1234,7 +1234,7 @@ Set `ERRANDER_UI_DATA_MODE=live` when running against real VMs. Also set `ERRAND
 The UI covers:
 - `/ui/` — batch run history, event log, pending approvals
 - `/ui/monitoring` — **built-in monitoring dashboard**: action trends, approval funnel, safety signals, duration averages, live Prometheus counters
-- `/ui/approvals` — approve or reject pending maintenance plans (replaces Slack when no token is set)
+- `/ui/approvals` — approve or reject pending maintenance plans (the **only** decision surface — Slack notifies and links)
 - `/ui/settings` — change LLM/approval settings at runtime (no restart required)
 - `/ui/inventory` — disable YAML VMs or add ad-hoc VMs before the next run
 - `/ui/ai-decisions` — AI decision log (LLM calls, outcomes, latencies)
@@ -1244,17 +1244,43 @@ Settings changed via the UI are stored in PostgreSQL. Precedence chain:
 env var  >  DB (UI)  >  settings.yaml  >  built-in default
 ```
 
+### Create your web UI users *(required before approving anything)*
+
+Approvals are recorded against **named, authenticated accounts** with group-based
+RBAC — `admin` (approve/reject, manage settings) and `reader` (view-only).
+With zero accounts the UI is read-only on loopback and **no live batch can be
+approved** (fail closed). Create your first admin:
+
+```bash
+uv run python -m errander --user-add sarathy --user-groups admin
+# password prompted interactively, or set ERRANDER_USER_PASSWORD beforehand
+```
+
+Other commands: `--user-list`, `--user-remove <name>`,
+`--user-set-groups <name> --user-groups reader`, `--user-set-password <name>`.
+Group changes take effect on the user's next request — no restart. Every
+user-management action is audit-logged with the acting OS user.
+
+> **Migrating from the shared `ERRANDER_UI_USER`/`ERRANDER_UI_PASSWORD` login:**
+> if both are still set and no accounts exist, the agent seeds them as the
+> initial `admin` account at startup (audited). After that, manage accounts
+> with the CLI and drop the env vars.
+
+> **Approving from your phone (private/VPN mode):** the agent VM has no public
+> IP, so the Slack link only works once your phone is on the VPN. Install a
+> mobile VPN client (e.g. WireGuard) for every approver: Slack ping → connect
+> VPN → tap link → sign in → approve.
+
 ### Slack notifications *(optional)*
 
-> **Skip this entirely** if you are happy with web UI approval at `/ui/approvals`. All other functionality is unaffected.
+> **Skip this entirely** if you are happy with web UI approval at `/ui/approvals`. Slack only notifies and links — decisions always happen in the web UI.
 
 To enable Slack:
 
 1. Go to [api.slack.com/apps](https://api.slack.com/apps) → **Create New App** → **From scratch**
 2. Name it `Errander-AI`, select your workspace
 3. Under **OAuth & Permissions** → **Bot Token Scopes**, add:
-   - `chat:write` — post messages
-   - `reactions:read` — poll for ✅/❌ reactions
+   - `chat:write` — post messages (the only scope needed; `reactions:read` is no longer used)
 4. Click **Install to Workspace** → copy the **Bot User OAuth Token** (`xoxb-...`)
 5. Create a Slack channel `#errander-approvals` and invite the bot to it
 6. Copy the **Channel ID** — right-click the channel → View channel details → copy the ID at the bottom (starts with `C`)

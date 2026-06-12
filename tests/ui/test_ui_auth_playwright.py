@@ -1,8 +1,8 @@
 """Playwright tests for UI session-cookie auth (/ui/* protection).
 
-Architecture:
-- auth_base_url: server started with ui_user="admin", ui_password="testpass"
-- open_base_url: server started with no credentials (auth disabled)
+Architecture (R2 — DB-backed users):
+- auth_base_url: server started with an admin/testpass user account
+- open_base_url: server started with zero users (read-only bootstrap mode)
 - Unauthenticated /ui/* requests receive a 302 redirect to /ui/login (not 401).
 - /ui/login POST with correct credentials issues a session cookie and redirects to /ui.
 - /metrics and /health must remain open regardless of auth config.
@@ -19,6 +19,7 @@ import pytest
 from errander.observability.metrics import start_metrics_server
 from errander.safety.audit import AuditStore
 from errander.safety.overrides import OverridesStore
+from errander.safety.user_store import SessionStore, UserStore
 from tests.conftest import make_test_db
 
 if TYPE_CHECKING:
@@ -40,13 +41,20 @@ def _start_server(
         await audit.initialize()
         overrides = OverridesStore(make_test_db())
         await overrides.initialize()
+        user_db = make_test_db()
+        user_store = UserStore(user_db)
+        session_store = SessionStore(user_db, user_store)
+        if ui_user and ui_password:
+            await user_store.create_user(
+                ui_user, ui_password, groups=["admin"], actor="test",
+            )
 
         runner = await start_metrics_server(
             port=0,
             audit_store=audit,
             overrides_store=overrides,
-            ui_user=ui_user,
-            ui_password=ui_password,
+            user_store=user_store,
+            session_store=session_store,
         )
         site = list(runner.sites)[0]
         port = site._server.sockets[0].getsockname()[1]  # type: ignore[union-attr]
@@ -76,7 +84,7 @@ def _start_server(
 
 @pytest.fixture(scope="module")
 def auth_base_url() -> str:  # type: ignore[return]
-    """Server with session auth enabled (admin / testpass)."""
+    """Server with one admin account (admin / testpass) — login required."""
     base_url, loop, t, ctx = _start_server(ui_user="admin", ui_password="testpass")
     yield base_url
     loop.call_soon_threadsafe(ctx["stop"].set)  # type: ignore[union-attr]
@@ -85,7 +93,7 @@ def auth_base_url() -> str:  # type: ignore[return]
 
 @pytest.fixture(scope="module")
 def open_base_url() -> str:  # type: ignore[return]
-    """Server with auth disabled (empty credentials)."""
+    """Server with zero users — read-only bootstrap mode (GETs open on loopback)."""
     base_url, loop, t, ctx = _start_server(ui_user="", ui_password="")
     yield base_url
     loop.call_soon_threadsafe(ctx["stop"].set)  # type: ignore[union-attr]
@@ -147,7 +155,7 @@ class TestAuthEnabled:
         page.fill("input[name=username]", "admin")
         page.fill("input[name=password]", "wrongpassword")
         page.click("button[type=submit]")
-        page.wait_for_url(f"{auth_base_url}/ui/login?err=1")
+        page.wait_for_url(f"{auth_base_url}/ui/login?err=1*")
         assert page.locator(".lc-err").is_visible()
 
     def test_wrong_username_shows_error(
@@ -157,7 +165,7 @@ class TestAuthEnabled:
         page.fill("input[name=username]", "hacker")
         page.fill("input[name=password]", "testpass")
         page.click("button[type=submit]")
-        page.wait_for_url(f"{auth_base_url}/ui/login?err=1")
+        page.wait_for_url(f"{auth_base_url}/ui/login?err=1*")
         assert page.locator(".lc-err").is_visible()
 
     def test_metrics_remains_open_when_auth_enabled(

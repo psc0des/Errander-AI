@@ -194,12 +194,17 @@ dm-crypt) if the audit DB contains sensitive detail.
 **`ERRANDER_LLM_API_KEY`** — passed as a Bearer token to the OpenAI-compatible
 endpoint. Decrypted at startup by `settings.py`; handed to the OpenAI SDK.
 
-**`ERRANDER_UI_PASSWORD`** — decrypted at startup and held in memory as
-plaintext. On every `/ui/*` request the server compares the provided password
-against this value using `secrets.compare_digest()` (timing-safe). The password
-is never hashed at rest — encryption via `enc:v1:` is its protection at rest.
-If you set `ERRANDER_UI_USER` without `ERRANDER_UI_PASSWORD` (or vice versa),
-Basic Auth is disabled entirely and a warning is logged on startup.
+**`ERRANDER_UI_PASSWORD`** — **DEPRECATED seed credential (R2)**. Web UI auth
+now uses per-user accounts stored in PostgreSQL (scrypt-hashed passwords,
+group-based RBAC). This variable is read exactly once: at startup, if the
+users table is empty and both `ERRANDER_UI_USER` and `ERRANDER_UI_PASSWORD`
+are set, that account is created in the `admin` group (audited as
+`migration:env`). After that, the variables are ignored — manage accounts via
+`python -m errander --user-add/--user-list/--user-set-password/...`.
+
+**`ERRANDER_USER_PASSWORD`** — optional, read by the user-management CLI
+(`--user-add` / `--user-set-password`) as the new account password instead of
+an interactive prompt. Useful for scripted provisioning; unset it afterwards.
 
 **`ERRANDER_SIGNING_SECRET`** — HMAC-SHA256 key for signed web-approval URLs
 issued by `docker_hygiene` (v1.1). The agent embeds a signed token in the

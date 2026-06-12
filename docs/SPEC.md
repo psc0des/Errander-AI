@@ -792,14 +792,20 @@ On drift detection, the agent:
 
 ## 9. Approval Mechanism
 
-> **As-built note (2026-06-11):** the shipped implementation differs from this original
-> spec in two ways: (1) there is no `interrupt()`/`Command(resume=)` — the approval gate
-> is a plain async node; (2) approvals are durable rows in the PostgreSQL
-> `approval_requests` table (atomic decide, survives agent restarts, restart reconciler),
-> with Slack reactions and the Web UI both writing into that store. See
-> `docs/langgraph-primer.md` ("Human-in-the-Loop") and `docs/learning/56-approval-requests-store.md`.
+> **As-built note (2026-06-11, updated 2026-06-12):** the shipped implementation differs
+> from this original spec in three ways: (1) there is no `interrupt()`/`Command(resume=)`
+> — the approval gate is a plain async node; (2) approvals are durable rows in the
+> PostgreSQL `approval_requests` table (atomic decide, survives agent restarts, restart
+> reconciler); (3) **R2 (2026-06-12) removed Slack's decision authority entirely** — the
+> Slack message is notify-and-link (plan summary + web approval URL) and the *only*
+> decision surface is the authenticated Web UI with users/groups RBAC (`admin` decides,
+> `reader` views; every decision records the named user + group). The reaction-polling
+> flow below is **historical** — kept for design lineage only. See
+> `docs/langgraph-primer.md` ("Human-in-the-Loop"),
+> `docs/learning/56-approval-requests-store.md`, and
+> `docs/learning/57-web-only-approval-rbac.md`.
 
-### Flow (Slack Reaction Polling)
+### Flow (Slack Reaction Polling — historical, removed in R2)
 
 ```
 Agent                           Slack                          Operator
@@ -1296,7 +1302,7 @@ graph TD
 ### Secrets (Environment Variables — v1)
 
 ```
-ERRANDER_SLACK_BOT_TOKEN      # posting messages + polling reactions
+ERRANDER_SLACK_BOT_TOKEN      # posting messages (notify-and-link)
 ERRANDER_SLACK_CHANNEL_ID     # dedicated approvals channel
 ERRANDER_LLM_BASE_URL         # private vLLM endpoint (e.g., http://10.0.0.5:8000/v1)
 ERRANDER_LLM_API_KEY          # if vLLM requires auth (may be empty)
@@ -1488,7 +1494,7 @@ sequenceDiagram
 1. Load and validate config (parse YAML, schema check). **If config is malformed, refuse to start** — log error and exit with non-zero code.
 2. Validate secrets (all required env vars present, SSH key paths exist and are readable). **Fail-fast** if anything missing.
 3. Start APScheduler (register scheduled maintenance and discovery runs)
-4. Start Slack poller (begin polling for approval reactions and slash commands)
+4. Start the web UI server + approval reconciler (Slack is post-only since R2)
 5. Expose `/metrics` endpoint (Prometheus)
 6. Expose `/health` endpoint
 7. Log "Errander-AI agent ready" to operational log
@@ -1614,7 +1620,7 @@ These are explicitly deferred from v1 but the v1 architecture should make them e
 | Audit storage | PostgreSQL | PostgreSQL |
 | VM locking | File-based (single agent VM) | Valkey (BSD-licensed Redis fork, distributed) |
 | Secrets | Environment variables | HashiCorp Vault |
-| Approval | Slack reaction polling | Slack webhooks via nginx reverse proxy (lower latency) |
+| Approval | Authenticated Web UI (users/groups RBAC); Slack notifies and links | nginx-fronted public Web UI (Mode 2, TOTP) |
 | Approval granularity | All-or-nothing per batch | Per-VM approval via Slack thread replies |
 | Approval queues | In-process | Valkey-backed async queues |
 | Dashboard | None (Slack + audit log) | React/Next.js, hosted anywhere, reads from PostgreSQL via thin API |
@@ -1663,7 +1669,7 @@ errander/
 │   ├── os_detection.py     # Runtime OS detection + config verification
 │   └── sandbox.py          # Dry-run execution mode
 ├── integrations/
-│   ├── slack.py            # Slack API client (outbound only, reaction polling)
+│   ├── slack.py            # Slack API client (outbound only, post-only)
 │   ├── llm.py              # LLM client (OpenAI SDK → vLLM, with fallback)
 │   └── secrets.py          # Secrets interface (env vars v1, Vault v2)
 ├── observability/

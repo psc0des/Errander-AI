@@ -81,6 +81,7 @@ class TestLoadSettingsWithYAML:
             yaml.dump({
                 "agent": {"approval_timeout_seconds": 900, "vm_lock_ttl_seconds": 3600},
                 "llm": {"timeout_seconds": 60, "max_retries": 5},
+                # accepted-but-ignored since R2 (reaction channel removed)
                 "slack": {"poll_interval_seconds": 15},
             }),
         )
@@ -90,7 +91,6 @@ class TestLoadSettingsWithYAML:
         assert settings.vm_lock_ttl_seconds == 3600
         assert settings.llm_timeout_seconds == 60
         assert settings.llm_max_retries == 5
-        assert settings.approval_poll_interval_seconds == 15
 
     def test_env_var_overrides_yaml(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Env var takes precedence over YAML for approval_timeout."""

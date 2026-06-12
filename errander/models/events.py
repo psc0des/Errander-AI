@@ -70,6 +70,11 @@ class EventType(StrEnum):
     DOCKER_HYGIENE_OBJECT_REMOVED = "docker_hygiene_object_removed"
     DOCKER_HYGIENE_OBJECT_DRIFT_SKIPPED = "docker_hygiene_object_drift_skipped"
     DOCKER_HYGIENE_OBJECT_REMOVE_FAILED = "docker_hygiene_object_remove_failed"
+    # R2 — user/group management (web-only approval RBAC)
+    USER_CREATED = "user_created"
+    USER_DELETED = "user_deleted"
+    USER_GROUPS_CHANGED = "user_groups_changed"
+    USER_PASSWORD_CHANGED = "user_password_changed"
 
 
 @dataclass

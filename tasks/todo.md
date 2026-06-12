@@ -1,3 +1,23 @@
+## §8d Step 3 — R2: users/groups RBAC + web-only approval (2026-06-12, COMPLETE)
+
+- [x] Migration #14 — users / groups / group_permissions / user_groups / sessions (+ seed admin/reader groups + admin permissions; seed re-applied idempotently every run_migrations + after test TRUNCATE)
+- [x] `errander/safety/user_store.py` — UserStore (scrypt hashes, groups/permissions) + SessionStore (DB-backed, token hashed at rest)
+- [x] New EventTypes: USER_CREATED / USER_DELETED / USER_GROUPS_CHANGED / USER_PASSWORD_CHANGED
+- [x] Web UI auth rewrite (metrics.py) — DB users + DB sessions, `request["user"]`, `?next=`, zero-users guard (non-loopback → RuntimeError; loopback → GET-only); `build_ui_app()` factory for tests
+- [x] Server-side RBAC — `_require_permission`: decide_approvals (approvals + hygiene GET/POST), manage_settings (settings/inventory POSTs); decided_by=`ui:<user>` + decided_by_group recorded + shown in history
+- [x] /ui/approvals lists pending hygiene approvals with self-generated signed links
+- [x] Slack → notify-and-link: request_approval rewrite (+web link, no reactions); poll_approval/watch_slack_reactions deleted; gate drops watcher; reconciler drops pass 2, gains 120 s claim grace
+- [x] Service-restart CLI → durable store approval (web decision, claim before execute; Slack optional)
+- [x] docker_hygiene Slack reply channel removed (poller + parser deleted; formatter keeps web link, drops reply syntax; volumes report-only in v1 web approval — fail closed)
+- [x] CLI user management — --user-add/--user-remove/--user-list/--user-set-groups/--user-set-password (audited, cli:<os-user>) + startup seed from ERRANDER_UI_USER/PASSWORD
+- [x] settings: approval_poll_interval_seconds removed (YAML key accepted-but-ignored); ui_user/ui_password = seed-only
+- [x] Tests: test_user_store (23) + test_rbac (17); gate/reconciler/restart-CLI/message/slack/settings/migrations rewrites; test_hygiene_reply_polling.py deleted
+- [x] Doc re-sweep "Slack or Web UI" → "Web UI (Slack notifies and links)" (README/CLAUDE/AGENTS/SETUP/RUN/SPEC/primer/OBSERVABILITY/SECRETS + UI/demo copy) + fable.md checkboxes + learning doc 57
+- [x] Full suite green on Postgres, ruff + mypy clean, single commit, CI green
+- [ ] NEXT: §8d Step 4 — R3 process split (two services, two OS users, key + import isolation, nginx Mode 2 + TOTP)
+
+---
+
 ## §8d Step 2 — R3 keystone: `approval_requests` DB-backed store (2026-06-11, COMPLETE)
 
 - [x] Migration #13 — `approval_requests` table (status CHECK, decided_by/_group, approved_items_json, execution_started_at)

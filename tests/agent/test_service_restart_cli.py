@@ -1,7 +1,12 @@
 """P0-1 live-mode tests for run_restart_service() CLI path.
 
-These tests cover the Slack approval gate and subgraph invocation in live mode.
-The dry-run and validation paths are already covered in tests/test_main.py.
+These tests cover the durable web-approval gate (R2) and subgraph invocation
+in live mode. The dry-run and validation paths are already covered in
+tests/test_main.py.
+
+Approval flow under test: the CLI persists an approval_requests row, posts a
+Slack notification (notify-and-link, optional), waits for the web UI's
+decision, then atomically claims the approval before executing.
 """
 
 from __future__ import annotations
@@ -57,7 +62,7 @@ def _mock_settings(*, has_slack: bool = True) -> MagicMock:
     s = MagicMock()
     s.audit_db_url = TEST_DB_URL
     s.approval_timeout_seconds = 30
-    s.approval_poll_interval_seconds = 1
+    s.web_base_url = "http://10.0.0.5:9090"
     if has_slack:
         s.slack_bot_token = "xoxb-test-token"
         s.slack_channel_id = "C12345"
@@ -67,15 +72,98 @@ def _mock_settings(*, has_slack: bool = True) -> MagicMock:
     return s
 
 
+def _mock_approval_store(
+    *,
+    status: str = "approved",
+    decided_by: str | None = "ui:operator",
+    decided_by_group: str | None = "admin",
+    claim_won: bool = True,
+) -> AsyncMock:
+    """A stand-in ApprovalRequestStore whose wait resolves immediately."""
+    store = AsyncMock()
+    row = MagicMock()
+    row.status = status
+    row.decided_by = decided_by
+    row.decided_by_group = decided_by_group
+    store.create = AsyncMock(return_value=row)
+    store.wait_for_decision = AsyncMock(return_value=row)
+    store.mark_execution_started = AsyncMock(return_value=claim_won)
+    store.set_slack_ts = AsyncMock()
+    store.close = AsyncMock()
+    return store
+
+
+def _patch_store(store: AsyncMock):
+    return patch(
+        "errander.safety.approval_store.ApprovalRequestStore", return_value=store,
+    )
+
+
 class TestRestartServiceLiveMode:
     @pytest.mark.asyncio
-    async def test_live_no_slack_config_returns_1(self, tmp_path: Path) -> None:
-        """Live mode without Slack tokens must fail fast (approval gate required)."""
+    async def test_live_without_slack_still_waits_on_web_approval(self, tmp_path: Path) -> None:
+        """R2: Slack is notify-only — its absence must not block the web gate."""
         inv = _write_inv(tmp_path)
         audit = _mock_audit()
+        store = _mock_approval_store(status="timeout", decided_by=None)
         with (
             patch("errander.main.load_settings", return_value=_mock_settings(has_slack=False)),
             patch("errander.main.AuditStore", return_value=audit),
+            _patch_store(store),
+        ):
+            result = await run_restart_service(
+                env_name="production",
+                unit_name="nginx.service",
+                vm_ids=["web-01"],
+                dry_run=False,
+                inventory_path=inv,
+            )
+        assert result == 1  # timed out, but the durable gate ran
+        store.create.assert_awaited_once()
+        store.wait_for_decision.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_live_persists_request_and_notifies_slack(self, tmp_path: Path) -> None:
+        """Live mode persists the approval row first, then notifies Slack."""
+        inv = _write_inv(tmp_path)
+        audit = _mock_audit()
+        store = _mock_approval_store(status="rejected")
+        with (
+            patch("errander.main.load_settings", return_value=_mock_settings()),
+            patch("errander.main.AuditStore", return_value=audit),
+            patch("errander.main.SlackClient"),
+            _patch_store(store),
+            patch(
+                "errander.safety.approval.request_approval",
+                new_callable=AsyncMock, return_value="ts-123",
+            ) as mock_req,
+        ):
+            await run_restart_service(
+                env_name="production",
+                unit_name="nginx.service",
+                vm_ids=["web-01"],
+                dry_run=False,
+                inventory_path=inv,
+            )
+        store.create.assert_awaited_once()
+        mock_req.assert_called_once()
+        store.set_slack_ts.assert_awaited_once_with(
+            store.create.call_args[0][0], "ts-123",
+        )
+
+    @pytest.mark.asyncio
+    async def test_live_rejected_returns_1(self, tmp_path: Path) -> None:
+        """A web rejection must return exit code 1 and not invoke the subgraph."""
+        inv = _write_inv(tmp_path)
+        audit = _mock_audit()
+        store = _mock_approval_store(status="rejected", decided_by="ui:viewer")
+        with (
+            patch("errander.main.load_settings", return_value=_mock_settings()),
+            patch("errander.main.AuditStore", return_value=audit),
+            patch("errander.main.SlackClient"),
+            _patch_store(store),
+            patch("errander.safety.approval.request_approval", new_callable=AsyncMock, return_value="ts-123"),
+            patch("errander.agent.subgraphs.service_restart.build_service_restart_subgraph") as mock_build,
         ):
             result = await run_restart_service(
                 env_name="production",
@@ -85,42 +173,60 @@ class TestRestartServiceLiveMode:
                 inventory_path=inv,
             )
         assert result == 1
+        mock_build.assert_not_called()
+        store.mark_execution_started.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_live_creates_approval_request(self, tmp_path: Path) -> None:
-        """Live mode must call request_approval before doing anything."""
+    async def test_live_invokes_subgraph_on_approve(self, tmp_path: Path) -> None:
+        """On web approval, the service_restart subgraph must be invoked per VM."""
         inv = _write_inv(tmp_path)
         audit = _mock_audit()
+        store = _mock_approval_store()
+
+        mock_compiled = AsyncMock()
+        mock_compiled.ainvoke = AsyncMock(return_value={"status": "success"})
+        mock_subgraph = MagicMock()
+        mock_subgraph.compile.return_value = mock_compiled
+
         with (
             patch("errander.main.load_settings", return_value=_mock_settings()),
             patch("errander.main.AuditStore", return_value=audit),
             patch("errander.main.SlackClient"),
+            _patch_store(store),
+            patch("errander.safety.approval.request_approval", new_callable=AsyncMock, return_value="ts-123"),
+            patch("errander.main.SandboxExecutor"),
+            patch("errander.main.FileLocker", return_value=_mock_locker()),
             patch(
-                "errander.safety.approval.request_approval",
-                new_callable=AsyncMock, return_value="ts-123",
-            ) as mock_req,
-            patch("errander.safety.approval.poll_approval", new_callable=AsyncMock, return_value=(False, "timeout")),
+                "errander.agent.subgraphs.service_restart.build_service_restart_subgraph",
+                return_value=mock_subgraph,
+            ),
         ):
-            await run_restart_service(
+            result = await run_restart_service(
                 env_name="production",
                 unit_name="nginx.service",
                 vm_ids=["web-01"],
                 dry_run=False,
                 inventory_path=inv,
             )
-        mock_req.assert_called_once()
+        assert result == 0
+        store.mark_execution_started.assert_awaited_once()
+        mock_compiled.ainvoke.assert_called_once()
+        call_state = mock_compiled.ainvoke.call_args[0][0]
+        assert call_state["unit_name"] == "nginx.service"
+        assert call_state["vm_id"] == "web-01"
 
     @pytest.mark.asyncio
-    async def test_live_rejected_returns_1(self, tmp_path: Path) -> None:
-        """Slack rejection must return exit code 1 and not invoke the subgraph."""
+    async def test_lost_execution_claim_aborts(self, tmp_path: Path) -> None:
+        """If another executor claimed the approval, the CLI must not execute."""
         inv = _write_inv(tmp_path)
         audit = _mock_audit()
+        store = _mock_approval_store(claim_won=False)
         with (
             patch("errander.main.load_settings", return_value=_mock_settings()),
             patch("errander.main.AuditStore", return_value=audit),
             patch("errander.main.SlackClient"),
+            _patch_store(store),
             patch("errander.safety.approval.request_approval", new_callable=AsyncMock, return_value="ts-123"),
-            patch("errander.safety.approval.poll_approval", new_callable=AsyncMock, return_value=(False, "timeout")),
             patch("errander.agent.subgraphs.service_restart.build_service_restart_subgraph") as mock_build,
         ):
             result = await run_restart_service(
@@ -134,47 +240,11 @@ class TestRestartServiceLiveMode:
         mock_build.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_live_invokes_subgraph_on_approve(self, tmp_path: Path) -> None:
-        """On approval, the service_restart subgraph must be invoked per VM."""
-        inv = _write_inv(tmp_path)
-        audit = _mock_audit()
-
-        mock_compiled = AsyncMock()
-        mock_compiled.ainvoke = AsyncMock(return_value={"status": "success"})
-        mock_subgraph = MagicMock()
-        mock_subgraph.compile.return_value = mock_compiled
-
-        with (
-            patch("errander.main.load_settings", return_value=_mock_settings()),
-            patch("errander.main.AuditStore", return_value=audit),
-            patch("errander.main.SlackClient"),
-            patch("errander.safety.approval.request_approval", new_callable=AsyncMock, return_value="ts-123"),
-            patch("errander.safety.approval.poll_approval", new_callable=AsyncMock, return_value=(True, "operator")),
-            patch("errander.main.SandboxExecutor"),
-            patch("errander.main.FileLocker", return_value=_mock_locker()),
-            patch(
-                "errander.agent.subgraphs.service_restart.build_service_restart_subgraph",
-                return_value=mock_subgraph,
-            ),
-        ):
-            result = await run_restart_service(
-                env_name="production",
-                unit_name="nginx.service",
-                vm_ids=["web-01"],
-                dry_run=False,
-                inventory_path=inv,
-            )
-        assert result == 0
-        mock_compiled.ainvoke.assert_called_once()
-        call_state = mock_compiled.ainvoke.call_args[0][0]
-        assert call_state["unit_name"] == "nginx.service"
-        assert call_state["vm_id"] == "web-01"
-
-    @pytest.mark.asyncio
     async def test_live_subgraph_failure_returns_nonzero(self, tmp_path: Path) -> None:
         """A failed subgraph result must cause run_restart_service to return 1."""
         inv = _write_inv(tmp_path)
         audit = _mock_audit()
+        store = _mock_approval_store()
 
         mock_compiled = AsyncMock()
         mock_compiled.ainvoke = AsyncMock(return_value={"status": "failed", "error": "SSH timeout"})
@@ -185,8 +255,8 @@ class TestRestartServiceLiveMode:
             patch("errander.main.load_settings", return_value=_mock_settings()),
             patch("errander.main.AuditStore", return_value=audit),
             patch("errander.main.SlackClient"),
+            _patch_store(store),
             patch("errander.safety.approval.request_approval", new_callable=AsyncMock, return_value="ts-123"),
-            patch("errander.safety.approval.poll_approval", new_callable=AsyncMock, return_value=(True, "operator")),
             patch("errander.main.SandboxExecutor"),
             patch("errander.main.FileLocker", return_value=_mock_locker()),
             patch(
@@ -204,15 +274,16 @@ class TestRestartServiceLiveMode:
         assert result == 1
 
     @pytest.mark.asyncio
-    async def test_dry_run_does_not_call_approval(self, tmp_path: Path) -> None:
-        """Dry-run mode must not post to Slack or poll for approval."""
+    async def test_dry_run_does_not_create_approval(self, tmp_path: Path) -> None:
+        """Dry-run mode must not persist an approval request or notify Slack."""
         inv = _write_inv(tmp_path)
         audit = _mock_audit()
+        store = _mock_approval_store()
         with (
             patch("errander.main.load_settings", return_value=_mock_settings()),
             patch("errander.main.AuditStore", return_value=audit),
+            _patch_store(store),
             patch("errander.safety.approval.request_approval", new_callable=AsyncMock) as mock_req,
-            patch("errander.safety.approval.poll_approval", new_callable=AsyncMock) as mock_poll,
         ):
             result = await run_restart_service(
                 env_name="production",
@@ -222,8 +293,8 @@ class TestRestartServiceLiveMode:
                 inventory_path=inv,
             )
         assert result == 0
+        store.create.assert_not_awaited()
         mock_req.assert_not_called()
-        mock_poll.assert_not_called()
 
 
 class TestRestartServiceWindowAndLock:
@@ -231,7 +302,7 @@ class TestRestartServiceWindowAndLock:
 
     @pytest.mark.asyncio
     async def test_outside_window_returns_1(self, tmp_path: Path) -> None:
-        """Outside maintenance window with no --force must abort before Slack."""
+        """Outside maintenance window with no --force must abort before approval."""
         from errander.scheduling.windows import MaintenanceWindow
 
         window = MaintenanceWindow(
@@ -242,12 +313,13 @@ class TestRestartServiceWindowAndLock:
         )
         inv = _write_inv(tmp_path)
         audit = _mock_audit()
+        store = _mock_approval_store()
         with (
             patch("errander.main.load_settings", return_value=_mock_settings()),
             patch("errander.main.AuditStore", return_value=audit),
             patch("errander.main._build_maintenance_window", return_value=window),
             patch("errander.main.check_window_from_config", return_value=False),
-            patch("errander.safety.approval.request_approval", new_callable=AsyncMock) as mock_req,
+            _patch_store(store),
         ):
             result = await run_restart_service(
                 env_name="production",
@@ -258,7 +330,7 @@ class TestRestartServiceWindowAndLock:
                 force=False,
             )
         assert result == 1
-        mock_req.assert_not_called()
+        store.create.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_force_bypasses_window(self, tmp_path: Path) -> None:
@@ -273,14 +345,15 @@ class TestRestartServiceWindowAndLock:
         )
         inv = _write_inv(tmp_path)
         audit = _mock_audit()
+        store = _mock_approval_store(status="timeout", decided_by=None)
         with (
             patch("errander.main.load_settings", return_value=_mock_settings()),
             patch("errander.main.AuditStore", return_value=audit),
             patch("errander.main._build_maintenance_window", return_value=window),
             patch("errander.main.check_window_from_config", return_value=False),
             patch("errander.main.SlackClient"),
+            _patch_store(store),
             patch("errander.safety.approval.request_approval", new_callable=AsyncMock, return_value="ts-123"),
-            patch("errander.safety.approval.poll_approval", new_callable=AsyncMock, return_value=(False, "timeout")),
         ):
             result = await run_restart_service(
                 env_name="production",
@@ -291,8 +364,9 @@ class TestRestartServiceWindowAndLock:
                 force=True,
                 force_reason="emergency: nginx OOM loop",
             )
-        # Rejected at Slack (poll returns False), but window was NOT the blocker.
-        assert result == 1  # rejected, not blocked by window
+        # Timed out at the approval gate, but window was NOT the blocker.
+        assert result == 1
+        store.create.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_force_without_reason_returns_1(self, tmp_path: Path) -> None:
@@ -307,12 +381,13 @@ class TestRestartServiceWindowAndLock:
         )
         inv = _write_inv(tmp_path)
         audit = _mock_audit()
+        store = _mock_approval_store()
         with (
             patch("errander.main.load_settings", return_value=_mock_settings()),
             patch("errander.main.AuditStore", return_value=audit),
             patch("errander.main._build_maintenance_window", return_value=window),
             patch("errander.main.check_window_from_config", return_value=False),
-            patch("errander.safety.approval.request_approval", new_callable=AsyncMock) as mock_req,
+            _patch_store(store),
         ):
             result = await run_restart_service(
                 env_name="production",
@@ -324,13 +399,14 @@ class TestRestartServiceWindowAndLock:
                 force_reason=None,
             )
         assert result == 1
-        mock_req.assert_not_called()
+        store.create.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_locked_vm_skips_execution(self, tmp_path: Path) -> None:
         """If the VM lock cannot be acquired, execution is skipped and result is nonzero."""
         inv = _write_inv(tmp_path)
         audit = _mock_audit()
+        store = _mock_approval_store()
 
         mock_compiled = AsyncMock()
         mock_compiled.ainvoke = AsyncMock(return_value={"status": "success"})
@@ -341,8 +417,8 @@ class TestRestartServiceWindowAndLock:
             patch("errander.main.load_settings", return_value=_mock_settings()),
             patch("errander.main.AuditStore", return_value=audit),
             patch("errander.main.SlackClient"),
+            _patch_store(store),
             patch("errander.safety.approval.request_approval", new_callable=AsyncMock, return_value="ts-123"),
-            patch("errander.safety.approval.poll_approval", new_callable=AsyncMock, return_value=(True, "operator")),
             patch("errander.main.SandboxExecutor"),
             patch("errander.main.FileLocker", return_value=_mock_locker(acquired=False)),
             patch(

@@ -170,7 +170,8 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=None,
         help=(
             "Trigger an operator-initiated service restart for ENV. "
-            "Requires --unit and --vm or --vms. Always requires human approval (Slack or Web UI)."
+            "Requires --unit and --vm or --vms. Always requires human approval "
+            "in the Web UI (Slack notifies and links)."
         ),
     )
     parser.add_argument(
@@ -223,6 +224,49 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         metavar="VALUE",
         default=None,
         help="Encrypt VALUE with ERRANDER_SECRETS_KEY and print the enc:v1: blob, then exit",
+    )
+
+    # User management (R2: web-only approval with RBAC)
+    parser.add_argument(
+        "--user-add",
+        metavar="USERNAME",
+        default=None,
+        help=(
+            "Create a web UI user, then exit. Requires --user-groups. Password "
+            "is read from ERRANDER_USER_PASSWORD or prompted interactively."
+        ),
+    )
+    parser.add_argument(
+        "--user-remove",
+        metavar="USERNAME",
+        default=None,
+        help="Delete a web UI user (their sessions are revoked), then exit",
+    )
+    parser.add_argument(
+        "--user-list",
+        action="store_true",
+        help="List web UI users with their groups, then exit",
+    )
+    parser.add_argument(
+        "--user-set-groups",
+        metavar="USERNAME",
+        default=None,
+        help="Replace USERNAME's group memberships with --user-groups, then exit",
+    )
+    parser.add_argument(
+        "--user-set-password",
+        metavar="USERNAME",
+        default=None,
+        help=(
+            "Set a new password for USERNAME (from ERRANDER_USER_PASSWORD or "
+            "interactive prompt), then exit"
+        ),
+    )
+    parser.add_argument(
+        "--user-groups",
+        metavar="GROUPS",
+        default=None,
+        help="Comma-separated groups for --user-add / --user-set-groups (admin, reader)",
     )
 
     # Plan inspection (P2-1)
@@ -1116,7 +1160,8 @@ async def run_restart_service(
     (dry-run) or goes through the Slack approval gate and executes (live).
 
     Layer B: deterministic validation + audit log. No LLM in this path.
-    HIGH risk tier — always requires human approval (Slack or Web UI) before live execution.
+    HIGH risk tier — always requires human approval in the Web UI (Slack
+    notifies and links) before live execution.
     Enforces maintenance window (override with --restart-force + --restart-force-reason).
     Acquires a per-VM lock before execution to prevent concurrent maintenance.
     """
@@ -1205,7 +1250,7 @@ async def run_restart_service(
     print(f"  Unit      : {unit_name}")
     print(f"  VMs       : {vm_list}")
     print(f"  Allowlist : inventory ✓ ({', '.join(sorted(all_allowed_units))})")
-    print("  Risk      : HIGH — human approval required (Slack or Web UI) before execution")
+    print("  Risk      : HIGH — human approval required in the Web UI (Slack notifies and links) before execution")
     print(f"  Mode      : {'DRY RUN' if dry_run else 'LIVE'}")
 
     audit_store = AuditStore(AsyncDatabase(settings.audit_db_url), strict_mode=False)
@@ -1220,12 +1265,18 @@ async def run_restart_service(
         print("\nDRY RUN — plan generated, no execution.")
         return 0
 
-    # --- Live mode: Slack approval gate + per-VM subgraph execution ---
+    # --- Live mode: durable web approval gate + per-VM subgraph execution ---
+    # R2: the decision is recorded only in the authenticated web UI (the
+    # approval_requests row is visible on /ui/approvals of the running agent,
+    # which shares this PostgreSQL database). Slack is notify-and-link.
+    import hashlib as _hashlib
+
     from errander.agent.subgraphs.service_restart import build_service_restart_subgraph
     from errander.models.events import AuditEvent as _AuditEvent
     from errander.models.events import EventType as _EventType
     from errander.models.service_restart import ServiceRestartState  # noqa: TC001
-    from errander.safety.approval import poll_approval, request_approval
+    from errander.safety.approval import request_approval
+    from errander.safety.approval_store import ApprovalRequestStore
 
     slack_client: SlackClient | None = None
     if settings.slack_bot_token and settings.slack_channel_id:
@@ -1234,58 +1285,91 @@ async def run_restart_service(
             channel_id=settings.slack_channel_id,
         )
 
-    if slack_client is None:
-        print(
-            "Error: ERRANDER_SLACK_BOT_TOKEN and ERRANDER_SLACK_CHANNEL_ID must be "
-            "set for live service_restart execution (Slack approval required)."
-        )
-        return 1
-
     approval_report = (
-        f"*Service Restart — Live Execution Approval*\n"
+        f"Service Restart — Live Execution Approval\n"
         f"  Env     : {env_name}\n"
         f"  Unit    : {unit_name}\n"
         f"  VMs     : {vm_list}\n"
-        f"  Allowlist : inventory ✓  on-target /etc/errander/restart-allowlist enforced by wrapper\n"
+        f"  Allowlist : inventory OK; on-target /etc/errander/restart-allowlist enforced by wrapper\n"
         f"  Batch   : {batch_id}\n"
-        f"  Risk    : HIGH — this will restart the unit on the listed VMs\n\n"
-        "React :white_check_mark: to approve or :x: to reject (30 min timeout → auto-REJECT)."
+        f"  Risk    : HIGH — this will restart the unit on the listed VMs"
     )
+    plan_hash = _hashlib.sha256(
+        f"{env_name}|{unit_name}|{'|'.join(sorted(vm_ids))}".encode()
+    ).hexdigest()
 
-    print("\nPosting approval request to Slack…")
+    approval_store = ApprovalRequestStore(AsyncDatabase(settings.audit_db_url))
     try:
-        slack_ts = await request_approval(slack_client, batch_id, approval_report)
-    except Exception as exc:  # noqa: BLE001
-        print(f"Error posting to Slack: {exc}")
-        return 1
+        await approval_store.create(
+            batch_id,
+            env_name=env_name,
+            plan_id=f"service-restart-{batch_id[:8]}",
+            plan_hash=plan_hash,
+            report=approval_report,
+            vm_plans=None,
+            timeout_seconds=settings.approval_timeout_seconds,
+        )
 
-    print(f"Waiting for Slack approval (ts={slack_ts})…")
-    approved, approver = await poll_approval(
-        slack_client,
-        slack_ts,
-        timeout_seconds=settings.approval_timeout_seconds,
-        poll_interval_seconds=settings.approval_poll_interval_seconds,
-    )
-
-    async with audit_store:
-        if approved:
-            await audit_store.log_event(_AuditEvent(
-                event_type=_EventType.SERVICE_RESTART_APPROVED,
-                batch_id=batch_id,
-                detail=f"unit={unit_name} vms={vm_ids} approver={approver}",
-            ))
+        if slack_client is not None:
+            try:
+                slack_ts = await request_approval(
+                    slack_client, batch_id, approval_report,
+                    web_base_url=settings.web_base_url or None,
+                    timeout_seconds=settings.approval_timeout_seconds,
+                )
+                await approval_store.set_slack_ts(batch_id, slack_ts)
+            except Exception as exc:  # noqa: BLE001
+                print(f"Warning: Slack notification failed ({exc}) — approve via the web UI.")
         else:
-            await audit_store.log_event(_AuditEvent(
-                event_type=_EventType.SERVICE_RESTART_REJECTED,
-                batch_id=batch_id,
-                detail=f"unit={unit_name} vms={vm_ids} approver={approver}",
-            ))
+            print(
+                "Note: Slack is not configured — no notification sent. "
+                "Approve on the running agent's web UI under /ui/approvals."
+            )
 
-    if not approved:
-        print(f"Restart REJECTED (approver={approver}). No action taken.")
-        return 1
+        print(
+            f"\nWaiting for web UI approval (batch {batch_id}, "
+            f"timeout {settings.approval_timeout_seconds // 60} min)…"
+        )
+        request_row = await approval_store.wait_for_decision(
+            batch_id, timeout_seconds=settings.approval_timeout_seconds,
+        )
+        approved = request_row.status == "approved"
+        approver = request_row.decided_by
+        approver_group = request_row.decided_by_group
 
-    print(f"Restart APPROVED by {approver}. Executing on {len(vm_ids)} VM(s)…")
+        async with audit_store:
+            if approved:
+                await audit_store.log_event(_AuditEvent(
+                    event_type=_EventType.SERVICE_RESTART_APPROVED,
+                    batch_id=batch_id,
+                    detail=(
+                        f"unit={unit_name} vms={vm_ids} approver={approver}"
+                        f" group={approver_group or 'n/a'}"
+                    ),
+                ))
+            else:
+                await audit_store.log_event(_AuditEvent(
+                    event_type=_EventType.SERVICE_RESTART_REJECTED,
+                    batch_id=batch_id,
+                    detail=(
+                        f"unit={unit_name} vms={vm_ids} approver={approver}"
+                        f" status={request_row.status}"
+                    ),
+                ))
+
+        if not approved:
+            print(f"Restart {request_row.status.upper()} (approver={approver}). No action taken.")
+            return 1
+
+        # Claim the approval before executing — the agent's restart
+        # reconciler must never pick this batch up as an orphan.
+        if not await approval_store.mark_execution_started(batch_id):
+            print("Error: approval already claimed by another executor. No action taken.")
+            return 1
+    finally:
+        await approval_store.close()
+
+    print(f"Restart APPROVED by {approver} ({approver_group or 'n/a'}). Executing on {len(vm_ids)} VM(s)…")
 
     ssh_manager = SSHConnectionManager(
         known_hosts_path=settings.ssh_known_hosts_path,
@@ -1368,6 +1452,139 @@ def _print_audit_table(rows: list[tuple[str, str, str, str, str, str]]) -> None:
     for row in rows:
         line = "  ".join(_truncate(v, w).ljust(w) for v, w in zip(row, _COL_WIDTHS, strict=False))
         print(line)
+
+
+def _user_mgmt_actor() -> str:
+    """Acting identity recorded on CLI user-management audit events."""
+    import getpass as _getpass
+    try:
+        return f"cli:{_getpass.getuser()}"
+    except Exception:  # noqa: BLE001 — getuser can fail on stripped-down envs
+        return "cli:unknown"
+
+
+def _read_new_password(username: str) -> str | None:
+    """Password for CLI user commands: ERRANDER_USER_PASSWORD or prompt."""
+    import getpass as _getpass
+    import os as _os
+
+    env_pw = _os.environ.get("ERRANDER_USER_PASSWORD", "")
+    if env_pw:
+        return env_pw
+    try:
+        pw = _getpass.getpass(f"New password for {username!r}: ")
+        confirm = _getpass.getpass("Confirm password: ")
+    except (EOFError, KeyboardInterrupt):
+        return None
+    if not pw or pw != confirm:
+        return None
+    return pw
+
+
+async def run_user_management(args: argparse.Namespace, audit_db_url: str) -> int:
+    """Handle --user-add / --user-remove / --user-list / --user-set-groups /
+    --user-set-password. Every mutation is audit-logged with the acting
+    identity (R2 acceptance: membership changes are themselves on the record).
+    """
+    from errander.models.events import AuditEvent as _AuditEvent
+    from errander.models.events import EventType as _EventType
+    from errander.safety.user_store import UserStore
+
+    db = AsyncDatabase(audit_db_url)
+    user_store = UserStore(db)
+    await user_store.initialize()
+    audit_store = AuditStore(db, strict_mode=False)
+    actor = _user_mgmt_actor()
+    groups = [g.strip() for g in (args.user_groups or "").split(",") if g.strip()]
+
+    try:
+        if args.user_list:
+            users = await user_store.list_users()
+            if not users:
+                print("No users. Create one: python -m errander --user-add <name> --user-groups admin")
+                return 0
+            print(f"{'USERNAME':<24} {'GROUPS':<24} CREATED")
+            for u in users:
+                created = u.created_at.strftime("%Y-%m-%d %H:%M") if u.created_at else "—"
+                print(f"{u.username:<24} {','.join(u.groups):<24} {created} (by {u.created_by or '—'})")
+            return 0
+
+        if args.user_add is not None:
+            if not groups:
+                print("Error: --user-add requires --user-groups (e.g. --user-groups admin)")
+                return 1
+            password = _read_new_password(args.user_add)
+            if password is None:
+                print("Error: empty or mismatched password — user not created.")
+                return 1
+            try:
+                user = await user_store.create_user(
+                    args.user_add, password, groups=groups, actor=actor,
+                )
+            except ValueError as exc:
+                print(f"Error: {exc}")
+                return 1
+            await audit_store.log_event(_AuditEvent(
+                event_type=_EventType.USER_CREATED,
+                batch_id="user-management",
+                detail=f"user={user.username} groups={','.join(user.groups)} by={actor}",
+            ))
+            print(f"User {user.username!r} created (groups: {', '.join(user.groups)}).")
+            return 0
+
+        if args.user_remove is not None:
+            if not await user_store.delete_user(args.user_remove):
+                print(f"Error: user {args.user_remove!r} not found.")
+                return 1
+            await audit_store.log_event(_AuditEvent(
+                event_type=_EventType.USER_DELETED,
+                batch_id="user-management",
+                detail=f"user={args.user_remove} by={actor}",
+            ))
+            print(f"User {args.user_remove!r} deleted (sessions revoked).")
+            return 0
+
+        if args.user_set_groups is not None:
+            if not groups:
+                print("Error: --user-set-groups requires --user-groups")
+                return 1
+            try:
+                changed = await user_store.set_groups(args.user_set_groups, groups, actor=actor)
+            except ValueError as exc:
+                print(f"Error: {exc}")
+                return 1
+            if not changed:
+                print(f"Error: user {args.user_set_groups!r} not found.")
+                return 1
+            await audit_store.log_event(_AuditEvent(
+                event_type=_EventType.USER_GROUPS_CHANGED,
+                batch_id="user-management",
+                detail=f"user={args.user_set_groups} groups={','.join(groups)} by={actor}",
+            ))
+            print(f"User {args.user_set_groups!r} groups set to: {', '.join(groups)} "
+                  "(takes effect on their next request).")
+            return 0
+
+        if args.user_set_password is not None:
+            password = _read_new_password(args.user_set_password)
+            if password is None:
+                print("Error: empty or mismatched password — unchanged.")
+                return 1
+            if not await user_store.set_password(args.user_set_password, password):
+                print(f"Error: user {args.user_set_password!r} not found.")
+                return 1
+            await audit_store.log_event(_AuditEvent(
+                event_type=_EventType.USER_PASSWORD_CHANGED,
+                batch_id="user-management",
+                detail=f"user={args.user_set_password} by={actor}",
+            ))
+            print(f"Password updated for {args.user_set_password!r}.")
+            return 0
+
+        print("No user-management action given.")
+        return 1
+    finally:
+        await db.close()
 
 
 async def run_plan_show(plan_id: str, audit_db_url: str) -> int:
@@ -2019,9 +2236,11 @@ async def _window_opener(
 # Approval reconciler (restart recovery for durable approvals — R3)
 # ---------------------------------------------------------------------------
 
-#: Slack reaction watchers re-spawned by the reconciler for approvals
-#: orphaned by a previous agent process (batch_id → watcher task).
-_resumed_slack_watchers: dict[str, asyncio.Task[None]] = {}
+#: Grace period before the reconciler claims an approved-but-unclaimed
+#: request. A cross-process executor (e.g. the --restart-service CLI waiting
+#: on its own approval row) sits between the operator's decision and its
+#: mark_execution_started claim for a few seconds — don't steal the claim.
+_RECONCILER_CLAIM_GRACE_SECONDS = 120
 
 
 async def _approval_reconciler(
@@ -2045,20 +2264,20 @@ async def _approval_reconciler(
 
     The approval gate persists every live-approval request before waiting on
     it, so a crash mid-wait leaves recoverable rows instead of orphaned
-    approvals. This job runs on an interval and makes three passes:
+    approvals. This job runs on an interval and makes two passes:
 
     1. Expire — pending requests past expires_at become 'timeout' (auto-REJECT).
-    2. Resume — orphaned pending requests (no in-process waiter) with a Slack
-       message get their reaction watcher re-spawned, so a reaction posted
-       after the restart still lands in the store.
-    3. Execute — approved requests no executor ever claimed are atomically
+    2. Execute — approved requests no executor ever claimed are atomically
        claimed and executed through the exact-artifact replay path (or handed
        to the deferred store when outside the maintenance window).
+
+    (The pre-R2 pass that re-spawned Slack reaction watchers is gone: Slack
+    no longer carries decision authority. Orphaned pending requests stay
+    decidable from the web UI without any in-process watcher.)
     """
     import json as _json
 
     from errander.models.events import AuditEvent, EventType
-    from errander.safety.approval import watch_slack_reactions
 
     now = datetime.now(tz=UTC)
 
@@ -2071,36 +2290,15 @@ async def _approval_reconciler(
             metadata={"reconciler": True},
         ))
 
-    # --- Pass 2: resume Slack watchers for orphaned pending requests ---
-    for done_id in [b for b, t in _resumed_slack_watchers.items() if t.done()]:
-        del _resumed_slack_watchers[done_id]
-    if slack_client is not None:
-        for req in await approval_store.get_pending():
-            if req.slack_message_ts is None:
-                continue
-            if approval_store.has_waiter(req.batch_id):
-                continue  # a live approval gate owns this request
-            if req.batch_id in _resumed_slack_watchers:
-                continue
-            remaining = int((req.expires_at - now).total_seconds())
-            if remaining <= 0:
-                continue  # next tick's pass 1 expires it
-            logger.info(
-                "Reconciler: resuming Slack watcher for orphaned approval",
-                batch_id=req.batch_id,
-            )
-            _resumed_slack_watchers[req.batch_id] = asyncio.create_task(
-                watch_slack_reactions(
-                    slack_client, req.slack_message_ts, approval_store, req.batch_id,
-                    timeout_seconds=remaining,
-                    poll_interval_seconds=settings.approval_poll_interval_seconds,
-                )
-            )
-
-    # --- Pass 3: execute approved-but-unclaimed requests ---
+    # --- Pass 2: execute approved-but-unclaimed requests ---
     for req in await approval_store.get_orphaned_approved():
         if approval_store.has_waiter(req.batch_id):
             continue  # live gate is between decision and claim — let it claim
+        if (
+            req.decided_at is not None
+            and (now - req.decided_at).total_seconds() < _RECONCILER_CLAIM_GRACE_SECONDS
+        ):
+            continue  # freshly decided — its executor may be about to claim
         env_schema = environments.get(req.env_name)
         if env_schema is None:
             logger.error(
@@ -2318,6 +2516,13 @@ async def async_main(args: argparse.Namespace) -> int:
             return 1
         raise
 
+    # --- User management: mutate users/groups and exit (R2) ---
+    if (
+        args.user_add is not None or args.user_remove is not None or args.user_list
+        or args.user_set_groups is not None or args.user_set_password is not None
+    ):
+        return await run_user_management(args, settings.audit_db_url)
+
     # --- Audit mode: query and exit, no scheduler or metrics needed ---
     if args.audit:
         return await run_audit_query(args, settings)
@@ -2441,6 +2646,39 @@ async def async_main(args: argparse.Namespace) -> int:
     await approval_store.initialize()
     hygiene_manager = HygieneApprovalManager()
 
+    # --- User/session stores (R2: web-only approval with RBAC) ---
+    from errander.safety.user_store import SessionStore as _SessionStore
+    from errander.safety.user_store import UserStore as _UserStore
+    user_store = _UserStore(_db)
+    await user_store.initialize()
+    session_store = _SessionStore(_db, user_store)
+    await session_store.purge_expired()
+
+    # One-time migration path: seed the legacy shared credential as the
+    # initial admin account when no users exist yet (audited).
+    if (
+        settings.ui_user and settings.ui_password
+        and await user_store.count_users() == 0
+    ):
+        from errander.models.events import AuditEvent as _SeedAuditEvent
+        from errander.models.events import EventType as _SeedEventType
+        await user_store.create_user(
+            settings.ui_user, settings.ui_password,
+            groups=["admin"], actor="migration:env",
+        )
+        await audit_store.log_event(_SeedAuditEvent(
+            event_type=_SeedEventType.USER_CREATED,
+            batch_id="user-management",
+            detail=(
+                f"user={settings.ui_user} groups=admin by=migration:env "
+                "(seeded from ERRANDER_UI_USER/ERRANDER_UI_PASSWORD)"
+            ),
+        ))
+        logger.info(
+            "Seeded initial admin user from ERRANDER_UI_USER",
+            username=settings.ui_user,
+        )
+
     # --- AI decision store for Web UI (read-only, separate connection from batch store) ---
     from errander.safety.ai_audit import AIDecisionStore as _AIDecisionStore
     ai_decision_store_ui = _AIDecisionStore(_db)
@@ -2455,8 +2693,8 @@ async def async_main(args: argparse.Namespace) -> int:
             hygiene_manager=hygiene_manager,
             overrides_store=overrides_store,
             base_inventory=flat_inventory,
-            ui_user=settings.ui_user,
-            ui_password=settings.ui_password,
+            user_store=user_store,
+            session_store=session_store,
             bind_address=settings.ui_bind_address,
             ai_decision_store=ai_decision_store_ui,
         )

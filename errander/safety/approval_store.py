@@ -2,8 +2,9 @@
 
 Replaces the in-memory ApprovalManager: every live-approval request is a row
 in the approval_requests table (migration #13), so pending approvals survive
-agent restarts. Decisions are written by either the Slack reaction watcher or
-the web UI handler; the graph coroutine waits in :meth:`wait_for_decision`.
+agent restarts. Decisions are written only by the authenticated web UI
+handler (R2: web-only approval — Slack notifies and links, it never decides);
+the graph coroutine waits in :meth:`wait_for_decision`.
 
 Race safety: :meth:`decide` is an atomic ``UPDATE ... WHERE status='pending'``
 — exactly one caller wins (rowcount == 1); everyone else observes the recorded
@@ -195,15 +196,18 @@ class ApprovalRequestStore:
         *,
         approved: bool,
         decided_by: str | None,
+        decided_by_group: str | None = None,
         approved_items: list[dict[str, object]] | None = None,
     ) -> bool:
         """Record a decision. Returns True iff this caller won the race.
 
         Atomic ``UPDATE ... WHERE status = 'pending'`` — concurrent deciders
-        (Slack watcher vs UI button vs reconciler timeout) settle on rowcount:
-        exactly one observes rowcount == 1.
+        (UI buttons in two browser tabs, or UI vs reconciler timeout) settle
+        on rowcount: exactly one observes rowcount == 1.
 
-        decided_by is namespaced by channel: ``slack:U123`` / ``ui:admin``.
+        decided_by is the authenticated UI identity (``ui:<username>``);
+        decided_by_group records the RBAC group the decision was made under
+        (R2 acceptance: named user AND group on every decision).
         """
         status = STATUS_APPROVED if approved else STATUS_REJECTED
         now = datetime.now(tz=UTC).isoformat()
@@ -211,13 +215,15 @@ class ApprovalRequestStore:
             result = await conn.execute(
                 text("""
                 UPDATE approval_requests
-                SET status = :status, decided_by = :decided_by, decided_at = :decided_at,
+                SET status = :status, decided_by = :decided_by,
+                    decided_by_group = :decided_by_group, decided_at = :decided_at,
                     approved_items_json = :approved_items_json
                 WHERE batch_id = :batch_id AND status = 'pending'
                 """),
                 {
                     "status": status,
                     "decided_by": decided_by,
+                    "decided_by_group": decided_by_group,
                     "decided_at": now,
                     "approved_items_json": (
                         json.dumps(approved_items, default=str)

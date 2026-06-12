@@ -1,54 +1,46 @@
-"""docker_hygiene approval surface — Slack formatter, reply parser, manager.
+"""docker_hygiene approval surface — Slack notification formatter + manager.
 
 This module mirrors the design of :mod:`errander.safety.approval` but for
-the docker_hygiene action's object-level approval flow. The legacy module
-handles binary (✅/❌) reactions; this module handles structured commands
-("approve images 1,3 containers 1") and produces a rich
+the docker_hygiene action's object-level approval flow. Since R2 (web-only
+approval), Slack is notify-and-link: the message renders the exact findings
+plus the signed web-approval URL, and the **only** decision surface is the
+authenticated web page (``/ui/docker-hygiene/approve``), which produces the
 :class:`~errander.models.docker_hygiene.DockerHygieneApproval` artifact.
-
-The :class:`HygieneApprovalManager` is the rendezvous point. Both the
-Slack reply poller (Session 2b-i) and the web approval page (Session 2b-ii)
-resolve pending requests through it; whichever channel decides first wins.
+The pre-R2 Slack thread-reply decision channel ("approve images 1,3") was
+removed; ``ApprovalSurface.SLACK_REPLY`` survives in the enum for audit-log
+read-back only.
 
 Pieces in this file:
 
 * :func:`format_hygiene_approval_message` — renders an assessment into the
-  Slack message that operators see and reply to.
-* :func:`parse_hygiene_reply` — parses operator replies ("approve …" /
-  "reject all") and produces a DockerHygieneApproval.
+  Slack notification operators see (with the web approval link).
 * :class:`PendingHygieneApproval` — state object held in the manager.
-* :class:`HygieneApprovalManager` — registers requests, resolves them,
-  signals waiting coroutines.
+* :class:`HygieneApprovalManager` — registers requests, resolves them
+  (web handler calls :meth:`~HygieneApprovalManager.resolve`), signals
+  waiting coroutines.
 
-INVARIANT (per-object-parser / drop-unapproved) is enforced here too:
-when the operator references an index that doesn't map to a finding, the
-parser raises HygieneReplyError instead of silently approving the wrong
-object. See CLAUDE.md → Implementation Contracts (Contract B).
+INVARIANT (per-object-parser / drop-unapproved): the web approval handlers
+only accept checkbox selections that map back to findings in the registered
+assessment snapshot — an unknown selection is ignored, never resolved to a
+"nearest" object. See CLAUDE.md → Implementation Contracts (Contract B).
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
-import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
 from errander.models.docker_hygiene import (
-    ApprovalSurface,
     DockerHygieneApproval,
     DockerHygieneAssessment,
     DockerHygieneFinding,
     DockerResourceClass,
     FindingClassification,
-    compute_assessment_hash,
 )
 
 logger = logging.getLogger(__name__)
-
-
-class HygieneReplyError(ValueError):
-    """Raised when an operator's reply text cannot be parsed into an approval."""
 
 
 # ---------------------------------------------------------------------------
@@ -70,11 +62,12 @@ _EXECUTABLE_CLASSES: tuple[DockerResourceClass, ...] = (
     DockerResourceClass.BUILD_CACHE,
 )
 
-#: Classes requiring explicit index approval — excluded from 'approve all'.
-#: Volumes are irreversible and higher-blast-radius than images, so operators
-#: must name them by index (approve volumes 1,2) rather than batch-approve.
-#: Build cache is intentionally excluded: it is a singleton per VM and lower-stakes.
-_EXPLICIT_ONLY_CLASSES: frozenset[DockerResourceClass] = frozenset({
+#: Classes surfaced for visibility but not approvable in the v1 web form.
+#: Volumes are irreversible and higher-blast-radius than images; the web
+#: approval page intentionally renders them report-only (the pre-R2 Slack
+#: reply channel was the only way to approve them; R2 removed it — fail
+#: closed rather than make volume removal one checkbox away).
+_REPORT_ONLY_IN_WEB: frozenset[DockerResourceClass] = frozenset({
     DockerResourceClass.VOLUME_UNREFERENCED,
 })
 
@@ -96,11 +89,11 @@ def format_hygiene_approval_message(
     batch_id: str | None = None,
     backup_verify_passed: bool | None = None,
 ) -> str:
-    """Render an assessment into the Slack approval message body.
+    """Render an assessment into the Slack notification body (notify-and-link).
 
     Groups findings by resource class with index numbers, sizes, ages, and
-    classifications. Includes structured-reply syntax instructions and the
-    web approval URL (when provided). Output stays under Slack's effective
+    classifications, and points the operator at the web approval page (the
+    only decision surface — R2). Output stays under Slack's effective
     message limit; if findings overflow, individual lines are truncated
     before whole classes are dropped.
     """
@@ -125,15 +118,15 @@ def format_hygiene_approval_message(
         lines.append("")
 
     by_class = assessment.by_class()
-    class_index = 1  # global index for use in reply syntax: approve <class> <n>
+    class_index = 1  # per-class display index (mirrors the web form ordering)
     indexed_classes: dict[str, list[DockerHygieneFinding]] = {}
 
     for klass in _EXECUTABLE_CLASSES:
         items = by_class.get(klass, [])
         if not items:
             continue
-        # Use the class.value as the operator-facing key in the reply syntax.
-        # The reply parser uses the same key.
+        # Short class key shown next to each index — the web form renders
+        # the same key in its checkbox field names.
         short_key = _short_class_key(klass)
         indexed_classes[short_key] = items
         lines.append(f"*{klass.value}* ({len(items)}):")
@@ -142,7 +135,7 @@ def format_hygiene_approval_message(
             size = _human_bytes(f.size_bytes)
             age = _format_age(f)
             if f.classification == FindingClassification.CLEANUP_CANDIDATE and klass in _EXECUTABLE_CLASSES:
-                executable = " ✓ ⚠ explicit-only" if klass in _EXPLICIT_ONLY_CLASSES else " ✓"
+                executable = " ⚠ report-only in web UI (v1)" if klass in _REPORT_ONLY_IN_WEB else " ✓"
             elif f.classification == FindingClassification.INVESTIGATE:
                 executable = " ⚠ investigate"
             else:
@@ -158,14 +151,13 @@ def format_hygiene_approval_message(
         lines.append("_No findings to surface._")
         return "\n".join(lines)
 
-    lines.append("*Reply with:*")
-    lines.append("```")
-    lines.append("approve <class> <indices>  (e.g. approve images 1,3 containers 1)")
-    lines.append("approve all cleanup_candidate")
-    lines.append("reject all")
-    lines.append("```")
     if web_approval_url:
-        lines.append(f"Or use the web approval page: {web_approval_url}")
+        lines.append(f"*Approval required* → {web_approval_url}")
+    else:
+        lines.append(
+            "*Approval required* — open the pending item on the agent web UI "
+            "under /ui/approvals (set ERRANDER_WEB_BASE_URL for a direct link)."
+        )
 
     body = "\n".join(lines)
     if len(body) > _SLACK_BUDGET_CHARS:
@@ -184,7 +176,7 @@ def _format_age(f: DockerHygieneFinding) -> str:
 
 
 def _short_class_key(klass: DockerResourceClass) -> str:
-    """Map enum value to the short key used in operator reply syntax."""
+    """Map enum value to the short key used in message lines + web form field names."""
     return {
         DockerResourceClass.IMAGE_DANGLING: "dangling",
         DockerResourceClass.IMAGE_UNUSED: "images",
@@ -192,227 +184,6 @@ def _short_class_key(klass: DockerResourceClass) -> str:
         DockerResourceClass.VOLUME_UNREFERENCED: "volumes",
         DockerResourceClass.BUILD_CACHE: "build_cache",
     }[klass]
-
-
-def _class_from_key(key: str) -> DockerResourceClass | None:
-    """Reverse mapping. Returns None for unknown keys."""
-    return {
-        "dangling": DockerResourceClass.IMAGE_DANGLING,
-        "images": DockerResourceClass.IMAGE_UNUSED,
-        "containers": DockerResourceClass.CONTAINER_STOPPED,
-        "volumes": DockerResourceClass.VOLUME_UNREFERENCED,
-        "build_cache": DockerResourceClass.BUILD_CACHE,
-    }.get(key.lower())
-
-
-# ---------------------------------------------------------------------------
-# Slack reply parser
-# ---------------------------------------------------------------------------
-
-# Accepts forms like:
-#   approve dangling 1,2 containers 1
-#   approve images 1-3
-#   approve all cleanup_candidate
-#   approve all
-#   reject all
-#   reject
-_INDEX_TOKEN = re.compile(r"^(\d+)(?:-(\d+))?$")
-
-
-def parse_hygiene_reply(
-    text: str,
-    assessment: DockerHygieneAssessment,
-    *,
-    operator_id: str,
-    surface: ApprovalSurface = ApprovalSurface.SLACK_REPLY,
-) -> DockerHygieneApproval:
-    """Parse an operator reply into a DockerHygieneApproval.
-
-    Raises:
-        HygieneReplyError: malformed reply or references a non-existent index.
-
-    Empty approvals (rejections) are returned as DockerHygieneApproval with
-    ``approved_findings=()``. The execute path's nothing_approved() handles
-    them as a skip.
-
-    Operator-supplied indices that don't map to a finding are an error —
-    we never silently approve a different finding from "nearest match" or
-    similar heuristics. (Contract B / drop-unapproved analog at parse time.)
-    """
-    raw = text.strip().lower()
-    if not raw:
-        raise HygieneReplyError("empty reply")
-
-    snapshot_hash = compute_assessment_hash(assessment)
-
-    if raw.startswith("reject"):
-        return DockerHygieneApproval(
-            vm_id=assessment.vm_id,
-            approved_findings=(),
-            snapshot_hash=snapshot_hash,
-            surface=surface,
-            operator_id=operator_id,
-        )
-
-    if not raw.startswith("approve"):
-        raise HygieneReplyError(
-            "reply must start with 'approve' or 'reject' (got: "
-            f"{text.strip()[:40]!r})"
-        )
-
-    # Strip the leading "approve" verb and tokenize the rest.
-    body = raw[len("approve"):].strip()
-    if not body:
-        raise HygieneReplyError("'approve' must be followed by a target")
-
-    # "all" or "all <classification>" path
-    if body.startswith("all"):
-        rest = body[len("all"):].strip()
-        if not rest:
-            target_class_filter: FindingClassification | None = None
-        else:
-            try:
-                target_class_filter = FindingClassification(rest)
-            except ValueError as exc:
-                raise HygieneReplyError(
-                    f"unknown classification after 'approve all': {rest!r}"
-                ) from exc
-        findings = _select_all(assessment, target_class_filter)
-        return DockerHygieneApproval(
-            vm_id=assessment.vm_id,
-            approved_findings=findings,
-            snapshot_hash=snapshot_hash,
-            surface=surface,
-            operator_id=operator_id,
-        )
-
-    # Explicit-index path: "<class> <indices> [<class> <indices>] ..."
-    findings = _parse_explicit_indices(body, assessment)
-    return DockerHygieneApproval(
-        vm_id=assessment.vm_id,
-        approved_findings=findings,
-        snapshot_hash=snapshot_hash,
-        surface=surface,
-        operator_id=operator_id,
-    )
-
-
-def _select_all(
-    assessment: DockerHygieneAssessment,
-    classification_filter: FindingClassification | None,
-) -> tuple[DockerHygieneFinding, ...]:
-    """Return all cleanup_candidate findings in executable classes.
-
-    When classification_filter is None, only CLEANUP_CANDIDATE findings are
-    selected — ``approve all`` never implicitly approves report_only or
-    investigate findings.
-
-    Raises HygieneReplyError when the filter is a classification that cannot
-    be approved for removal (INVESTIGATE or REPORT_ONLY).
-    """
-    if classification_filter in (
-        FindingClassification.INVESTIGATE,
-        FindingClassification.REPORT_ONLY,
-    ):
-        raise HygieneReplyError(
-            f"classification {classification_filter.value!r} cannot be approved for removal"
-        )
-    effective = classification_filter if classification_filter is not None else FindingClassification.CLEANUP_CANDIDATE
-    selected: list[DockerHygieneFinding] = []
-    by_class = assessment.by_class()
-    for klass in _EXECUTABLE_CLASSES:
-        if klass in _EXPLICIT_ONLY_CLASSES:
-            continue  # volumes require explicit index — excluded from 'approve all'
-        for f in by_class.get(klass, []):
-            if f.classification == effective:
-                selected.append(f)
-    return tuple(selected)
-
-
-def _parse_explicit_indices(
-    body: str,
-    assessment: DockerHygieneAssessment,
-) -> tuple[DockerHygieneFinding, ...]:
-    """Parse 'dangling 1,2 containers 1' style → tuple of findings.
-
-    Tokens after each class key are comma-separated index expressions, which
-    may be either a single integer or a range "M-N" (inclusive). The index
-    space is 1-based (matching what the operator sees in the Slack message).
-    """
-    by_class = assessment.by_class()
-    tokens = body.split()
-    selected: list[DockerHygieneFinding] = []
-    seen_identities: set[tuple[str, str]] = set()
-
-    i = 0
-    while i < len(tokens):
-        class_key = tokens[i].rstrip(":")
-        klass = _class_from_key(class_key)
-        if klass is None:
-            raise HygieneReplyError(
-                f"unknown class key {class_key!r} "
-                f"(expected one of: dangling, images, containers, volumes, build_cache)"
-            )
-        if klass not in _EXECUTABLE_CLASSES:
-            raise HygieneReplyError(
-                f"class {class_key!r} is report-only and cannot be approved for removal"
-            )
-        if i + 1 >= len(tokens):
-            raise HygieneReplyError(
-                f"class {class_key!r} must be followed by index expressions (e.g. 1,3 or 1-3)"
-            )
-        index_expr = tokens[i + 1]
-        items = by_class.get(klass, [])
-        for idx in _expand_index_expr(index_expr, class_key, len(items)):
-            f = items[idx - 1]  # 1-based → 0-based
-            if f.classification != FindingClassification.CLEANUP_CANDIDATE:
-                raise HygieneReplyError(
-                    f"{class_key}.{idx} is classified {f.classification.value!r} "
-                    f"— only cleanup_candidate findings can be approved for removal"
-                )
-            key = (f.resource_class.value, f.identity)
-            if key in seen_identities:
-                continue
-            seen_identities.add(key)
-            selected.append(f)
-        i += 2
-
-    return tuple(selected)
-
-
-def _expand_index_expr(expr: str, class_key: str, total: int) -> list[int]:
-    """Expand '1,3-5,7' into [1, 3, 4, 5, 7]. Bounds-check against total.
-
-    Raises HygieneReplyError on out-of-range or malformed inputs.
-    """
-    if total == 0:
-        raise HygieneReplyError(
-            f"class {class_key!r} has no findings to select from"
-        )
-    out: list[int] = []
-    for part in expr.split(","):
-        part = part.strip()
-        if not part:
-            continue
-        m = _INDEX_TOKEN.match(part)
-        if not m:
-            raise HygieneReplyError(
-                f"malformed index expression for {class_key!r}: {part!r}"
-            )
-        start = int(m.group(1))
-        end = int(m.group(2)) if m.group(2) else start
-        if start < 1 or end < 1 or start > total or end > total:
-            raise HygieneReplyError(
-                f"index out of range for {class_key!r}: "
-                f"{start}{'-' + str(end) if m.group(2) else ''} "
-                f"(valid: 1..{total})"
-            )
-        if end < start:
-            raise HygieneReplyError(
-                f"reversed range for {class_key!r}: {start}-{end}"
-            )
-        out.extend(range(start, end + 1))
-    return out
 
 
 # ---------------------------------------------------------------------------
@@ -423,9 +194,9 @@ def _expand_index_expr(expr: str, class_key: str, total: int) -> list[int]:
 class PendingHygieneApproval:
     """An in-flight docker_hygiene approval awaiting a decision.
 
-    Both the Slack reply poller and the web approval handler write to the
-    same PendingHygieneApproval via :meth:`HygieneApprovalManager.resolve`;
-    whichever channel decides first wins.
+    The web approval handler resolves it via
+    :meth:`HygieneApprovalManager.resolve` (sole decision surface — R2);
+    resolve() is idempotent, first writer wins.
 
     Fields:
         batch_id, vm_id: identifier pair (one pending per VM per batch).
@@ -453,7 +224,7 @@ class PendingHygieneApproval:
 
 
 class HygieneApprovalManager:
-    """Tracks pending docker_hygiene approval requests across Slack + web surfaces.
+    """Tracks pending docker_hygiene approval requests for the web surface.
 
     Single-threaded asyncio use. Each pending request is keyed by
     ``(batch_id, vm_id)`` since a batch can have multiple VMs each needing
@@ -464,7 +235,7 @@ class HygieneApprovalManager:
         manager = HygieneApprovalManager()
         pending = manager.register(batch_id, vm_id, assessment, slack_ts=ts)
 
-        # Slack poller / web handler (concurrent):
+        # Web approval handler:
         manager.resolve(batch_id, vm_id, approval)
 
         # Batch coroutine waits:
@@ -560,65 +331,3 @@ class HygieneApprovalManager:
     def get_history(self) -> list[PendingHygieneApproval]:
         """Snapshot of resolved approvals (for audit / debug)."""
         return list(self._history)
-
-
-# ---------------------------------------------------------------------------
-# Slack reply polling
-# ---------------------------------------------------------------------------
-
-async def poll_hygiene_replies_once(
-    slack_client: object,
-    pending: PendingHygieneApproval,
-    manager: HygieneApprovalManager,
-) -> bool:
-    """Single poll iteration: fetch thread replies and try to resolve.
-
-    Walks through replies (skipping the bot's own message at index 0 and any
-    other bot messages) and attempts :func:`parse_hygiene_reply` on each
-    text. The FIRST reply that parses successfully resolves the pending
-    approval; subsequent replies in the same thread are ignored (resolve()
-    is idempotent).
-
-    Replies that fail to parse are logged at INFO with the
-    :class:`HygieneReplyError` reason — the operator can correct and reply
-    again. The poller never replies to Slack itself (Session 2b-iii could
-    add a "couldn't parse that, here's the syntax" reply if helpful).
-
-    Returns:
-        True if the pending was resolved this iteration; False otherwise.
-    """
-    if pending.slack_message_ts is None:
-        return False  # Nothing to poll — manager was registered without Slack
-    if pending.is_decided():
-        return True  # Already resolved by another channel
-
-    messages = await slack_client.conversations_replies(  # type: ignore[attr-defined]
-        thread_ts=pending.slack_message_ts,
-    )
-
-    for msg in messages:
-        # Skip the bot's own message (the thread parent posted by us).
-        if msg.get("bot_id") or msg.get("subtype") == "bot_message":
-            continue
-        text = str(msg.get("text", "")).strip()
-        if not text:
-            continue
-        user_id = str(msg.get("user", "unknown"))
-        try:
-            approval = parse_hygiene_reply(
-                text,
-                pending.assessment,
-                operator_id=user_id,
-                surface=ApprovalSurface.SLACK_REPLY,
-            )
-        except HygieneReplyError as exc:
-            logger.info(
-                "Slack reply on batch=%s vm=%s did not parse: %s "
-                "(reply text: %r)",
-                pending.batch_id, pending.vm_id, exc, text[:80],
-            )
-            continue
-        manager.resolve(pending.batch_id, pending.vm_id, approval)
-        return True
-
-    return False

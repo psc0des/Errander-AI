@@ -16,8 +16,6 @@ Dependencies (injected at build time):
 
 from __future__ import annotations
 
-import asyncio
-import contextlib
 import logging
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, TypedDict
@@ -461,7 +459,6 @@ async def dispatch_action_node(
     slack_client: SlackClient | None = None,
     web_base_url: str = "",
     approval_timeout_seconds: int = 1800,
-    approval_poll_interval_seconds: int = 30,
 ) -> dict[str, Any]:
     """Dispatch the current action to its sub-graph."""
     index = state.get("current_action_index", 0)
@@ -531,7 +528,6 @@ async def dispatch_action_node(
             slack_client=slack_client,
             web_base_url=web_base_url,
             approval_timeout_seconds=approval_timeout_seconds,
-            approval_poll_interval_seconds=approval_poll_interval_seconds,
         )
     elif action_type == ActionType.PATCHING.value:
         result_dict = await _run_patching(state, patching_compiled)
@@ -778,16 +774,16 @@ async def _run_docker_hygiene(
     slack_client: SlackClient | None = None,
     web_base_url: str = "",
     approval_timeout_seconds: int = 1800,
-    approval_poll_interval_seconds: int = 30,
 ) -> dict[str, object]:
     """Run the docker_hygiene sub-graph with full assess → approve → execute flow.
 
     Fast path: if ``approval`` is already present in the action params (test
     injection or replay), the sub-graph is invoked directly with it.
 
-    Live path: assess-only first, then post a Slack message + register with the
-    HygieneApprovalManager, background-poll for thread replies while waiting
-    for a decision, and re-invoke with the resolved approval.
+    Live path: assess-only first, then register with the
+    HygieneApprovalManager and notify Slack (message carries the signed web
+    approval URL — notify-and-link, no Slack decision channel per R2), then
+    wait for the web UI's decision and re-invoke with the resolved approval.
 
     Per-object audit:
     - One audit event per DockerHygieneRemovalResult is written here, in
@@ -910,11 +906,8 @@ async def _run_docker_hygiene(
             "removal_results": (),
         }
 
-    # Phase 2: post Slack approval message + register with manager.
-    from errander.safety.hygiene_approval import (
-        format_hygiene_approval_message,
-        poll_hygiene_replies_once,
-    )
+    # Phase 2: register with manager + notify Slack (notify-and-link only).
+    from errander.safety.hygiene_approval import format_hygiene_approval_message
 
     # Build signed web-approval URL if a base URL is configured.
     web_approval_url: str | None = None
@@ -950,33 +943,14 @@ async def _run_docker_hygiene(
         except Exception as exc:  # noqa: BLE001
             logger.error("Failed to post hygiene Slack message for %s: %s", vm_id, exc)
 
-    pending = hygiene_manager.register(batch_id, vm_id, assessment, slack_message_ts=slack_ts)
+    hygiene_manager.register(batch_id, vm_id, assessment, slack_message_ts=slack_ts)
 
-    # Background Slack reply poller (runs until decision or cancellation).
-    async def _poll_loop() -> None:
-        while not pending.is_decided():
-            await asyncio.sleep(approval_poll_interval_seconds)
-            try:
-                await poll_hygiene_replies_once(slack_client, pending, hygiene_manager)
-            except asyncio.CancelledError:
-                raise
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("Hygiene Slack poll error for %s: %s", vm_id, exc)
-
-    poll_task: asyncio.Task[None] | None = None
-    if slack_ts is not None and slack_client is not None:
-        poll_task = asyncio.create_task(_poll_loop())
-
-    # Phase 3: wait for operator decision.
-    try:
-        decision = await hygiene_manager.wait_for_decision(
-            batch_id, vm_id, timeout_seconds=approval_timeout_seconds
-        )
-    finally:
-        if poll_task is not None:
-            poll_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError, Exception):
-                await poll_task
+    # Phase 3: wait for the operator's web UI decision (R2: web-only — the
+    # Slack message above is notification; decisions arrive via
+    # /ui/docker-hygiene/approve or the /ui/approvals queue listing).
+    decision = await hygiene_manager.wait_for_decision(
+        batch_id, vm_id, timeout_seconds=approval_timeout_seconds
+    )
 
     if decision is None:
         logger.warning(
@@ -1818,7 +1792,6 @@ def build_vm_graph(
     slack_client: SlackClient | None = None,
     web_base_url: str = "",
     approval_timeout_seconds: int = 1800,
-    approval_poll_interval_seconds: int = 30,
 ) -> StateGraph[VMGraphState]:
     """Construct the per-VM maintenance graph.
 
@@ -1865,7 +1838,6 @@ def build_vm_graph(
             slack_client=slack_client,
             web_base_url=web_base_url,
             approval_timeout_seconds=approval_timeout_seconds,
-            approval_poll_interval_seconds=approval_poll_interval_seconds,
         )
 
     async def _drift_check(state: VMGraphState) -> dict[str, Any]:

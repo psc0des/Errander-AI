@@ -1,9 +1,32 @@
 # Errander-AI — Project Status
 
 ## Last Updated
-2026-06-11
+2026-06-12
 
 ## Current Phase
+**§8d Step 3 — R2: users/groups RBAC + web-only approval (2026-06-12, COMPLETE).**
+
+Slack lost its decision authority entirely (fable §8a): the only place a decision can be recorded is the authenticated Web UI, by a named user in a permission-carrying group. Migration #14 adds `users`/`groups`/`group_permissions`/`user_groups`/`sessions` (seeded `admin` + `reader`; a third group is plain INSERTs, never a migration). New `errander/safety/user_store.py`: scrypt password hashes (stdlib, params stored per hash), DB-backed sessions (cookie token hashed at rest, survives restarts, R3-process-split-ready), per-request group resolution so membership changes apply without restart. Server-side RBAC via `_require_permission` in the handlers — `decide_approvals` gates batch + hygiene decisions (signed URLs locate, sessions authorize), `manage_settings` gates settings/inventory POSTs. Every decision records `decided_by="ui:<username>"` + `decided_by_group`. All three Slack decision paths removed: gate reaction watcher, docker_hygiene thread-reply parser (volumes now report-only in v1 web approval — fail closed), and the service-restart CLI's reaction gate (now a durable store row + web decision + atomic execution claim; the reconciler gained a 120 s claim grace so cross-process executors keep their own approvals). Slack messages are notify-and-link (plan summary + `/ui/approvals` URL). CLI user management (`--user-add/--user-remove/--user-list/--user-set-groups/--user-set-password`, all audited with the acting OS user); one-time `ERRANDER_UI_USER/PASSWORD` → admin-account seed for existing deployments. Zero users = read-only UI on loopback, mutations 403, non-loopback bind refuses to start. TOTP + nginx Mode 2 deferred to Step 4 (R3). 2,460 tests green on PostgreSQL (40 new: user store 23 + RBAC end-to-end 17; reaction/reply-channel tests removed), ruff + mypy clean.
+
+### Files changed (2026-06-12 — §8d Step 3 R2 web-only approval + RBAC)
+- `errander/safety/migrations.py` — migration #14 (users/groups/group_permissions/user_groups/sessions); `SEED_GROUPS_SQL` + `seed_default_groups()` applied on every run
+- `errander/safety/user_store.py` — NEW: `User`/`UserStore`/`SessionStore`, scrypt hashing, permission constants
+- `errander/models/events.py` — `USER_CREATED`/`USER_DELETED`/`USER_GROUPS_CHANGED`/`USER_PASSWORD_CHANGED`
+- `errander/observability/metrics.py` — auth middleware rewritten on DB users/sessions (`?next=`, zero-users mode, loopback gate); `_require_permission`; login/logout against stores; decide + hygiene + settings/inventory handlers RBAC-gated; `decided_by_group` recorded + shown; `/ui/approvals` lists pending hygiene approvals with self-generated signed links; `build_ui_app()` factory extracted
+- `errander/safety/approval_store.py` — `decide(decided_by_group=...)`
+- `errander/safety/approval.py` — `poll_approval`/`watch_slack_reactions` deleted; `request_approval` = notify-and-link (web link + timeout note)
+- `errander/agent/graph.py` — gate posts notify+link, no watcher; `approval_poll_interval_seconds` threading removed
+- `errander/agent/vm_graph.py` — hygiene reply poller removed (web decision only)
+- `errander/safety/hygiene_approval.py` — reply parser/poller deleted; formatter is notify-and-link, volumes marked report-only in web UI
+- `errander/integrations/slack.py` — `get_reactions`/`conversations_replies`/reaction constants removed (post-only)
+- `errander/config/settings.py` + `errander/config/schema.py` — `approval_poll_interval_seconds` removed (YAML key accepted-but-ignored); `ui_user/ui_password` = seed-only
+- `errander/main.py` — reconciler pass 2 deleted + `_RECONCILER_CLAIM_GRACE_SECONDS`; restart CLI on the durable store (Slack optional); `run_user_management` + `--user-*` flags; startup user/session store wiring + legacy-credential seed
+- `errander/config/inventory_wizard.py`, `errander/web/server.py`, `errander/web/evidence.py` — stale approval wording in generated comments/demo copy
+- `tests/conftest.py` — re-seed default groups after per-test TRUNCATE
+- Tests: `tests/safety/test_user_store.py` (NEW), `tests/observability/test_rbac.py` (NEW); rewrites: `tests/safety/test_approval.py`, `tests/safety/test_hygiene_approval.py`, `tests/agent/test_service_restart_cli.py`, `tests/observability/test_ui_security.py`, `tests/test_approval_reconciler.py` (grace tests), `tests/agent/test_hygiene_orchestration.py`, `tests/integrations/test_slack.py`, `tests/config/test_settings.py`, `tests/safety/test_migrations.py`, `tests/agent/test_graph.py`, `tests/ui/test_ui_auth_playwright.py`; deleted: `tests/safety/test_hygiene_reply_polling.py`
+- Docs: fable.md (§8a checklist + §8d row 3 DONE), README.md, CLAUDE.md, AGENTS.md, SETUP.md (user bootstrap + mobile VPN + Slack scopes), RUN.md (user CLI + approval flow), docs/SPEC.md (reaction flow marked historical), docs/langgraph-primer.md, docs/OBSERVABILITY.md, docs/SECRETS.md, docs/learning/57-web-only-approval-rbac.md (NEW) + README index + 14 banner, STATUS.md, tasks/todo.md, tasks/lessons.md, docs/command-log.md
+
+## Previous Phase
 **§8d Step 2 — R3 keystone: durable `approval_requests` store (2026-06-11, COMPLETE).**
 
 Approvals moved from the in-memory `ApprovalManager` (lost on restart — fable finding F9) to a DB-backed `ApprovalRequestStore` (migration #13). The approval gate persists the pending row durable-first, then posts to Slack; a transitional background watcher writes ✅/❌ reactions into the store; the web UI writes its decisions into the same store via atomic `UPDATE ... WHERE status='pending'` (exactly one decider wins). A 60-second restart reconciler expires overdue requests, resumes Slack watchers for orphaned pending rows, and executes approved-but-unclaimed batches through the exact-artifact replay path — guarded by an atomic execution claim (`mark_execution_started`) so no batch can run twice. Rode along: the latent deferred-replay hash bug fix (`preloaded_batch_id` — every replay previously aborted because a fresh batch_id broke the plan hash) and exact-object continuity (per-item selections now survive defer/restart via `approved_items_json`). `ApprovalManager`/`PendingApproval`/`await_dual_approval` deleted. GitHub Actions bumped off Node-20-deprecated majors (checkout@v5, setup-uv@v7).
@@ -217,10 +240,10 @@ Adds a `Monitoring` nav item and `/ui/monitoring` page to the Errander web UI. T
 | # | Step | Status |
 |---|---|---|
 | 0 | CI (pytest + ruff + mypy + gitleaks) | ✅ COMPLETE |
-| 1 | R4: PostgreSQL dual-backend + DB layer | next |
-| 2 | R3 keystone: `approval_requests` DB-backed store | after 1 |
-| 3 | R2: users/groups RBAC + web-only approval | after 2 |
-| 4 | R3: process split (two OS processes, key isolation) | after 3 |
+| 1 | R4: PostgreSQL-only + DB layer | ✅ COMPLETE (2026-06-10) |
+| 2 | R3 keystone: `approval_requests` DB-backed store | ✅ COMPLETE (2026-06-11) |
+| 3 | R2: users/groups RBAC + web-only approval | ✅ COMPLETE (2026-06-12) |
+| 4 | R3: process split (two OS processes, key isolation, nginx Mode 2 + TOTP) | next |
 | 5 | R1: advisory-LLM batch planning (F2+F6 fix) | after 4 |
 | 6 | Plan A: investigation agent | after 5 |
 | 7 | Plan B: dashboard chat | after 6 |
@@ -229,4 +252,4 @@ Adds a `Monitoring` nav item and `/ui/monitoring` page to the Errander web UI. T
 None.
 
 ## Test count
-2626 passing (full suite); 2450 in CI (excluding tests/ui Playwright + tests/staging).
+2460 in CI scope (excluding tests/ui Playwright + tests/staging), verified 2026-06-12.

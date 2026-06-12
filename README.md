@@ -4,16 +4,16 @@
 
 **Supervised agentic AI for Linux fleet maintenance — the LLM decides and explains, humans approve, deterministic code acts.**
 
-Errander-AI is a **supervised agentic AI SRE platform** for small-to-medium Linux fleets. It assesses each host, prioritizes what needs doing, and performs non-kernel patching, log rotation, Docker hygiene, disk cleanup, and backup verification — with safety gates, rollback, idempotency, and full audit logging. It runs on a single controller VM and manages any number of target servers over SSH. **Every live change requires human approval (Slack or Web UI) and is executed by deterministic Python — never by the LLM.**
+Errander-AI is a **supervised agentic AI SRE platform** for small-to-medium Linux fleets. It assesses each host, prioritizes what needs doing, and performs non-kernel patching, log rotation, Docker hygiene, disk cleanup, and backup verification — with safety gates, rollback, idempotency, and full audit logging. It runs on a single controller VM and manages any number of target servers over SSH. **Every live change requires human approval in the Web UI (Slack notifies and links) and is executed by deterministic Python — never by the LLM.**
 
 | Action | Default | Opt-in required | Risk tier |
 |---|---|---|---|
 | `patching` | ✅ enabled | No | MEDIUM — HITL approval + maintenance window |
 | `disk_cleanup` | ✅ enabled | No | LOW — whitelist-bounded, non-destructive |
 | `log_rotation` | ✅ enabled | No | LOW — compresses, does not delete |
-| `docker_hygiene` | ❌ disabled | Yes — install v2 wrappers, set `enabled: true` | MEDIUM — object-level Slack/web approval |
+| `docker_hygiene` | ❌ disabled | Yes — install v2 wrappers, set `enabled: true` | MEDIUM — object-level web approval (Slack notifies) |
 | `backup_verify` | ❌ disabled | Yes — requires `backup:` config section | LOW |
-| `service_restart` | ❌ disabled | Yes — install wrapper + declare `restartable_units` | HIGH — human approval always required (Slack or Web UI), operator-triggered |
+| `service_restart` | ❌ disabled | Yes — install wrapper + declare `restartable_units` | HIGH — human approval always required in the Web UI, operator-triggered |
 
 Each action is independently enabled per environment or per target in `inventory.yaml` (`actions.<name>.enabled`). Per-target overrides let you disable `docker_hygiene` on VMs without Docker, or set different `restartable_units` per VM. Actions default as shown — no YAML required to run the enabled defaults.
 
@@ -69,7 +69,7 @@ Errander-AI **is**:
 
 - A supervised maintenance agent for small-to-medium Linux fleets (Ubuntu / Debian / RHEL family)
 - A deterministic executor of a fixed action set — non-kernel patching, disk cleanup, log rotation, Docker hygiene, backup verification, and operator-triggered service restart
-- Human-in-the-loop by design — every live change is approved via Slack or Web UI against an **exact-object** plan, never a vague action category
+- Human-in-the-loop by design — every live change is approved by a named, authenticated operator in the Web UI (Slack notifies and links) against an **exact-object** plan, never a vague action category
 - LLM-enhanced but never LLM-dependent — the AI prioritizes, explains, and summarizes; hardcoded fallbacks keep it running when the LLM is down
 - Fully private — no public IP, no inbound webhooks; outbound HTTPS to Slack only
 - Auditable — every action is logged before and after execution, one row per object
@@ -141,7 +141,7 @@ That flow is exactly the **two-layer model** ([`docs/AI-ARCHITECTURE.md`](docs/A
 | SSH in, gather state (`df -h`, `apt list --upgradable`, `docker system df`) | deterministic Python | **B** — the hands, *reading* |
 | Pull Prometheus / ELK context (if opted in) | deterministic Python | **B** gathers → feeds **A** |
 | **Look at the state and recommend a prioritized plan** | the **LLM** (hardcoded fallback if down) | **A** — the brain |
-| Approve / reject (Slack reaction or Web UI) | **you** | — the boundary |
+| Approve / reject (authenticated Web UI; Slack notifies and links) | **you** | — the boundary |
 | **Apply the approved fix** — execute, verify, roll back, audit | deterministic Python | **B** — the hands, *acting* |
 | Summarize what happened | the **LLM** | **A** — the brain |
 
@@ -216,7 +216,7 @@ Level 3: Action Sub-Graphs
 |  | LLM endpoint  |     | Agent VM             |  |
 |  | (cloud or     |<----| - Errander-AI agent  |  |
 |  |  self-hosted) |     | - APScheduler        |  |
-|  +---------------+     | - Slack poller        |  |
+|  +---------------+     | - Slack notifier      |  |
 |                         | - Audit DB (Postgres)|  |
 |                         | - Prometheus /metrics|  |
 |                         | - Web UI :9090/ui    |  |
@@ -245,7 +245,7 @@ Level 3: Action Sub-Graphs
 ```
 
 - Agent VM has **no public IP** — fully private
-- All Slack communication is **outbound HTTPS** (polling, not webhooks)
+- All Slack communication is **outbound HTTPS** (notify-and-link, not webhooks)
 - LLM endpoint is a **private IP** inside VPN
 - SSH to target VMs is **within the VPN**
 - No nginx, no inbound webhooks, no TLS certificates to manage
@@ -258,7 +258,7 @@ Level 3: Action Sub-Graphs
 |--------|-----------|-------------|-------------|----------|
 | **Disk Cleanup** | Low | Clean `/tmp`, package cache, journal logs, orphaned deps | Skips if nothing reclaimable | None needed (safe paths only) |
 | **Log Rotation** | Low | Find oversized logs, manual gzip+truncate (logrotate not used) | Skips if no large files found | None needed (data compressed, not deleted) |
-| **Docker Hygiene** | Medium | Rich assessment: dangling images, stopped containers, unused images, volumes, build cache — exact-object Slack/web approval before removal | Skips classes with nothing to do | Re-pull images if needed (prune is destructive by nature) |
+| **Docker Hygiene** | Medium | Rich assessment: dangling images, stopped containers, unused images, volumes, build cache — exact-object web approval before removal (Slack notifies) | Skips classes with nothing to do | Re-pull images if needed (prune is destructive by nature) |
 | **Patching** | Medium | Non-kernel `apt upgrade` / `dnf upgrade` with kernel exclusion | Skips if already up-to-date | Full — version snapshot before, batch rollback on failure |
 | **Backup Verify** | Low | Read-only check: backups exist, are recent, non-zero size | Inherently idempotent (read-only) | N/A |
 
@@ -267,8 +267,8 @@ Level 3: Action Sub-Graphs
 | Tier | Approval | Example |
 |------|----------|---------|
 | **Low** | Automatic (categorical) | Disk cleanup, log rotation, backup verify |
-| **Medium** | Exact-object Slack/web approval | Non-kernel patching, Docker hygiene |
-| **High** | Human approval — always required (Slack or Web UI) | Service restart (operator-triggered only) |
+| **Medium** | Exact-object web approval (Slack notifies) | Non-kernel patching, Docker hygiene |
+| **High** | Human approval — always required in the Web UI (Slack notifies and links) | Service restart (operator-triggered only) |
 | **Critical** | **Blocked — never automated** | Kernel operations, data deletion |
 
 Kernel packages (`linux-*`, `linux-image-*`, `kernel-*`) are **always excluded** from patching. This is a hardcoded check, never an LLM decision.
@@ -288,16 +288,14 @@ Anything not on this whitelist requires human approval.
 
 ## Approval Flow
 
-Durable, dual-channel approval — every request is a row in PostgreSQL (`approval_requests`), so pending approvals survive agent restarts:
+Durable, web-only approval — every request is a row in PostgreSQL (`approval_requests`), so pending approvals survive agent restarts. **Slack carries no decision authority**: it notifies and links; the only place a decision can be recorded is the authenticated Web UI.
 
-1. Agent completes dry-run, **persists the pending approval to the database first**, then posts the plan to `#errander-approvals` on Slack
-2. **Race**: first channel to decide wins — settled by an atomic database update (exactly one decision can ever be recorded)
-   - Slack: operator reacts with :white_check_mark: (approve) or :x: (reject) — approves all items
-   - Web UI: operator uses `/ui/approvals` — per-item granularity (approve individual packages, service restarts; categorical actions auto-included)
+1. Agent completes dry-run, **persists the pending approval to the database first**, then posts the plan summary + approval link to `#errander-approvals` on Slack (best-effort — Slack being down never blocks the gate)
+2. A named operator signs in to the Web UI (per-user accounts, group-based RBAC: `admin` decides, `reader` views) and decides on `/ui/approvals` — per-item granularity (approve individual packages, service restarts; categorical actions auto-included). Decisions settle by an atomic database update: exactly one decision can ever be recorded
 3. Timeout after 30 minutes (configurable) = auto-reject
 4. If the agent restarts mid-approval, a reconciler job adopts the pending request: the operator can still decide, and an approved batch executes through the exact-artifact replay path — exactly once, guarded by an atomic execution claim
 
-Web UI approval cards show: per-VM / per-action plan with checkboxes for each item, a **Decision Reasoning** section (LLM vs deterministic fallback, model, latency), and the operator's decision is recorded by username (not a generic "ui" label).
+Web UI approval cards show: per-VM / per-action plan with checkboxes for each item, a **Decision Reasoning** section (LLM vs deterministic fallback, model, latency), and the operator's decision is recorded with their username **and RBAC group** (`decided_by`, `decided_by_group`) — never a shared identity.
 
 All Slack communication is outbound HTTPS. No webhooks, no inbound traffic.
 
@@ -312,7 +310,7 @@ All Slack communication is outbound HTTPS. No webhooks, no inbound traffic.
 | LLM | Any OpenAI-compatible endpoint | User-choice at install: cloud API (OpenAI, Anthropic, Groq, Azure AI Foundry, etc.) **or** self-hosted vLLM running Qwen3-8B-AWQ on a 16 GB VRAM GPU (Tesla T4 reference). See `docs/LLM-PROVIDERS.md`. |
 | LLM Client | OpenAI Python SDK | Pointed at configurable base URL |
 | SSH | asyncssh | Async-native, key-based auth only, connection pooling |
-| Notifications | Slack API | Outbound HTTPS only, reaction polling |
+| Notifications | Slack API | Outbound HTTPS only, notify-and-link (no decision authority) |
 | Scheduling | APScheduler | Agent owns its own schedule |
 | Audit Trail | PostgreSQL | `asyncpg` via SQLAlchemy Core async; `docker compose up -d` for local dev |
 | Observability | Built-in dashboard | `/ui/monitoring` — approval funnel, safety signals, action trends, duration averages, live counters; `/metrics` Prometheus endpoint for external scraping |
@@ -344,9 +342,9 @@ errander/
   safety/                   # Safety architecture
     validators.py           # Pre-execution validation (kernel exclusion, whitelist)
     rollback.py             # Rollback strategies per action type
-    approval.py             # Slack approval channel (post + reaction watcher)
+    approval.py             # Slack approval notification (notify-and-link)
     approval_store.py       # Durable approval requests (DB-backed, atomic decide, survives restarts)
-    hygiene_approval.py     # docker_hygiene approval surface (Slack formatter + parser + manager)
+    hygiene_approval.py     # docker_hygiene approval surface (Slack formatter + manager)
     locking.py              # VM-level locking (file-based v1)
     audit.py                # Audit logging (async PostgreSQL)
   execution/                # Command execution layer
@@ -670,7 +668,7 @@ These deepen the **agentic** side of the platform, all staying within the Layer 
 - Valkey (BSD-licensed Redis fork) for distributed VM locking
 - React/Next.js dashboard
 - HashiCorp Vault for secrets (replace env vars)
-- Slack webhooks via nginx reverse proxy (replace polling)
+- nginx reverse proxy for hardened public Web UI access (Mode 2)
 
 ---
 

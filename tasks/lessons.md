@@ -1,5 +1,48 @@
 # Errander-AI — Lessons Learned
 
+## 2026-06-12 — Seed data must not live only inside a one-shot migration
+
+Migration #14 originally seeded the default `admin`/`reader` groups inside the migration SQL.
+The test harness TRUNCATEs every table before each test, so the seed vanished after the first
+test and every UserStore call failed with "unknown group". Fix: seed rows live in
+`SEED_GROUPS_SQL` + `seed_default_groups()` (idempotent `ON CONFLICT DO NOTHING`), applied on
+every `run_migrations` call and re-applied by conftest after each truncate.
+
+**Why:** migrations run once per database; seed data is an *invariant* of the running system,
+not a historical event. Anything that must be true after a reset can't be migration-only.
+
+**How to apply:** classify every INSERT in a migration: schema history (one-shot is fine) vs
+system invariant (factor into an idempotent ensure-function applied on startup).
+
+## 2026-06-12 — Atomic claims guarantee at-most-once, not the-right-owner
+
+The reconciler's `mark_execution_started` claim already prevented double execution, but when
+the service-restart CLI moved to the durable store, a new failure appeared: the reconciler
+could legally claim a freshly-approved batch in the ~2 s window before the CLI (a separate
+process, invisible to `has_waiter()`) claimed it — stealing the work from its rightful
+executor. Fix: a 120 s decided-recently grace period before the reconciler claims orphans.
+
+**Why:** cross-process ownership can't be expressed by in-process state (`_waiters`); the
+recovery job needs a time-based heuristic to distinguish "orphaned by a crash" from
+"its executor is about to claim it".
+
+**How to apply:** when adding a new executor process to a shared work queue, re-examine every
+recovery/reaper job: "how does it know this item is truly abandoned?" — at-most-once
+(atomicity) and right-owner (grace/heartbeat) are separate guarantees.
+
+## 2026-06-12 — aiohttp AppKey and string keys are silently different keys
+
+A test set `client.app["loopback_bind"] = False` expecting to flip the middleware's behavior;
+the middleware reads `web.AppKey("loopback_bind")`, which is a *distinct* key from the string,
+so the assignment did nothing (plus a deprecation warning). Build a fresh app with the right
+constructor argument instead of mutating a started app.
+
+**Why:** `web.AppKey` exists precisely to avoid string-key collisions — equality is by object
+identity, not by name.
+
+**How to apply:** never mutate aiohttp app state from tests with string keys; expose an app
+factory (`build_ui_app(...)`) and construct the configuration you need.
+
 ## 2026-06-11 — A hash that commits to an ID only works if every consumer can reproduce that ID
 
 The plan hash commits to `{batch_id, env_name, vm_plans}` — correct for drift detection within

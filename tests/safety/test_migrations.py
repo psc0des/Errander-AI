@@ -59,6 +59,11 @@ class TestRunMigrations:
             "inventory_overrides",
             "ai_decisions",
             "deferred_executions",
+            "users",
+            "groups",
+            "group_permissions",
+            "user_groups",
+            "sessions",
         }
         assert expected <= tables
         await db.close()
@@ -70,7 +75,7 @@ class TestRunMigrations:
                 text("SELECT version FROM schema_migrations ORDER BY version")
             )
             versions = [int(str(row[0])) for row in result.fetchall()]
-        assert versions == [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]
+        assert versions == [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
         await db.close()
 
     async def test_idempotent_on_second_run(self) -> None:
@@ -81,7 +86,7 @@ class TestRunMigrations:
         async with db.begin() as conn:
             result = await conn.execute(text("SELECT COUNT(*) FROM schema_migrations"))
             row = result.fetchone()
-        assert int(str(row[0])) == 14  # exactly 14 migrations (0-13)
+        assert int(str(row[0])) == 15  # exactly 15 migrations (0-14)
         await db.close()
 
     async def test_audit_events_schema_correct(self) -> None:

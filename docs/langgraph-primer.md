@@ -259,7 +259,7 @@ result = graph.invoke(initial_state, config)
 
 ---
 
-## Human-in-the-Loop: LangGraph `interrupt()` vs Errander's Slack polling
+## Human-in-the-Loop: LangGraph `interrupt()` vs Errander's durable approval store
 
 LangGraph provides `interrupt()` to pause a graph mid-run and wait for external input:
 
@@ -276,9 +276,9 @@ def safety_gate(state: State):
     return {"approved": True}
 ```
 
-**Errander does not use `interrupt()`.** The architecture constraint is that all Slack communication is outbound HTTPS polling — no inbound webhooks, no public endpoints. LangGraph's `interrupt()` requires a checkpointer and an external system to call `graph.invoke(Command(resume=...), config)` to resume the graph, which needs an inbound connection.
+**Errander does not use `interrupt()`.** The architecture constraint is that the agent VM accepts no inbound traffic (Slack is outbound-only). LangGraph's `interrupt()` requires a checkpointer and an external system to call `graph.invoke(Command(resume=...), config)` to resume the graph, which needs an inbound connection.
 
-Instead, Errander's approval gate is a plain `async def` node that blocks (from the graph's perspective) while waiting on the **durable `approval_requests` store** (R3, migration #13):
+Instead, Errander's approval gate is a plain `async def` node that blocks (from the graph's perspective) while waiting on the **durable `approval_requests` store** (R3, migration #13). Since R2 (web-only approval), Slack carries **no decision authority** — the gate posts a notify-and-link message and only the authenticated web UI writes decisions:
 
 ```python
 async def approval_gate_node(state: BatchGraphState, ...) -> dict[str, Any]:
@@ -288,10 +288,11 @@ async def approval_gate_node(state: BatchGraphState, ...) -> dict[str, Any]:
     #    pending approval, never an orphaned one.
     await approval_store.create(batch_id, ..., report=plan_summary, vm_plans=vm_plans)
 
-    # 2. Best-effort Slack notify + transitional reaction watcher (background
-    #    task) — a ✅/❌ reaction is written into the store via atomic decide().
-    slack_ts = await request_approval(slack_client, batch_id, plan_summary)
-    watcher = asyncio.create_task(watch_slack_reactions(slack_client, slack_ts, approval_store, batch_id))
+    # 2. Best-effort Slack notify-and-link (plan summary + /ui/approvals URL).
+    #    Slack failure never blocks the gate — the row is already decidable
+    #    from the web UI.
+    slack_ts = await request_approval(slack_client, batch_id, plan_summary,
+                                      web_base_url=web_base_url)
 
     # 3. Wait on the store: 2 s DB poll + instant in-process event wakeup.
     #    Timeout transitions the row to 'timeout' (auto-REJECT).
@@ -299,7 +300,7 @@ async def approval_gate_node(state: BatchGraphState, ...) -> dict[str, Any]:
     return {"approved": request.status == "approved"}
 ```
 
-The web UI writes its decisions into the same store (`UPDATE ... WHERE status='pending'` — exactly one decider wins). If the agent dies while waiting, the **restart reconciler** (60 s interval job in `main.py`) adopts the orphaned row: it expires overdue requests, re-spawns the Slack watcher for pending ones, and executes approved-but-unclaimed batches through the deferred-replay path. Before any execution — immediate or deferred handoff — the gate atomically claims the approval (`mark_execution_started`) so the reconciler can never double-execute it.
+The web UI handler enforces RBAC server-side (`decide_approvals` permission, admin group) and writes the decision into the store (`UPDATE ... WHERE status='pending'` — exactly one decider wins), recording the named user and their group (`decided_by="ui:<username>"`, `decided_by_group`). If the agent dies while waiting, the **restart reconciler** (60 s interval job in `main.py`) adopts the orphaned row: it expires overdue requests and executes approved-but-unclaimed batches through the deferred-replay path (orphaned *pending* rows simply stay decidable in the UI — no watcher needed). Before any execution — immediate or deferred handoff — the gate atomically claims the approval (`mark_execution_started`) so the reconciler can never double-execute it; the reconciler additionally skips rows decided in the last ~2 minutes so a cross-process executor (the `--restart-service` CLI) can claim its own approval.
 
 ```mermaid
 sequenceDiagram
@@ -307,18 +308,15 @@ sequenceDiagram
     participant Gate as approval_gate_node
     participant Store as approval_requests (DB)
     participant Slack as Slack API
-    participant Human as Operator
+    participant Human as Operator (web UI session)
 
     Graph->>Gate: execute node (async)
     Gate->>Store: INSERT pending row (durable-first)
-    Gate->>Slack: POST plan summary to #errander-approvals
-    par reaction watcher (background, every 30s)
-        Gate->>Slack: GET reactions on message
-        Slack-->>Store: reaction → atomic decide()
-    and store wait (2s poll + event)
+    Gate->>Slack: POST plan summary + approval link (notify only)
+    loop store wait (2s poll + event)
         Gate->>Store: status still pending?
     end
-    Human->>Store: Web UI approve/reject (or Slack reaction via watcher)
+    Human->>Store: authenticated UI decide() — RBAC-checked, named user + group
     Gate->>Store: claim execution (mark_execution_started)
     Gate-->>Graph: return {"approved": True/False}
     Graph->>Graph: route to next node
@@ -326,8 +324,10 @@ sequenceDiagram
 
 **Key rules for the approval gate:**
 - The pending row is persisted **before** the Slack post — crash-safe by construction
-- Decisions are atomic: `UPDATE ... WHERE status='pending'`, rowcount settles races (Slack watcher vs UI vs timeout)
-- Timeouts are owned by `wait_for_decision`/the reconciler — the Slack watcher writes only genuine reactions
+- No code path records a decision from Slack (R2 acceptance #1) — the message notifies and links, nothing more
+- Decisions are atomic: `UPDATE ... WHERE status='pending'`, rowcount settles races (two UI tabs, UI vs timeout)
+- Every decision carries an authenticated named user and their RBAC group — enforced server-side, not by hiding buttons
+- Timeouts are owned by `wait_for_decision`/the reconciler
 - Dry-run batches auto-approve — sandbox execution is always safe
 - `require_live_approval=True` (default) forces all live tiers through approval regardless of policy
 - Approval outside the maintenance window → execution is deferred, not run immediately (per-item selections survive via `approved_items_json`)

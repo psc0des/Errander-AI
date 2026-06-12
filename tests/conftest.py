@@ -75,6 +75,8 @@ async def _clean_test_db(_migrate_test_db: None) -> AsyncIterator[None]:
     """Truncate all tables before each test — same isolation a fresh DB gave."""
     from sqlalchemy import text
 
+    from errander.safety.migrations import seed_default_groups
+
     db = AsyncDatabase(TEST_DB_URL)
     try:
         async with db.begin() as conn:
@@ -85,6 +87,9 @@ async def _clean_test_db(_migrate_test_db: None) -> AsyncIterator[None]:
             if tables:
                 quoted = ", ".join(f'"{t}"' for t in tables)
                 await conn.execute(text(f"TRUNCATE TABLE {quoted} RESTART IDENTITY CASCADE"))
+            # Re-apply static seed rows (default groups/permissions) the
+            # truncate just removed — tests expect the migrated baseline.
+            await seed_default_groups(conn)
     finally:
         await db.close()
     yield

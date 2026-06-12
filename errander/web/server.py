@@ -1675,7 +1675,7 @@ def _operator_queue() -> str:
         pri = "CRITICAL" if soonest_min < 5 else "HIGH" if soonest_min < 15 else "MED"
         rows.append((
             pri, "🔔",
-            f"{len(pending)} approval(s) awaiting your decision in Slack",
+            f"{len(pending)} approval(s) awaiting your decision in the approval queue",
             f"soonest expiry in {soonest_min} min · "
             + " · ".join(f"{a['action'].lower()} on {a['hostname']} ({a['tier']})" for a in pending),
             "Review",
@@ -1834,7 +1834,7 @@ def page_fleet() -> str:
       <div class="card kpi-tile kpi-top-border" style="border-color:#7c3aed">
         <div class="kpi-label">Needs Approval</div>
         <div class="kpi-value" style="color:#7c3aed">{needs_approval}</div>
-        <div class="kpi-subtitle">{'Slack approval expires &lt; 30 min — act now' if _is_fixture else ('pending · awaiting decision' if needs_approval > 0 else 'no pending approvals')}</div>
+        <div class="kpi-subtitle">{'Approval expires &lt; 30 min — act now' if _is_fixture else ('pending · awaiting decision' if needs_approval > 0 else 'no pending approvals')}</div>
       </div>
     </div>"""
 
@@ -2135,7 +2135,7 @@ def _appr_layer_split(ev: dict[str, Any], reject_consequence: str) -> str:
       </div>
       <div class="layer-body"><p>{ai}</p></div>
       <div class="layer-a-disclaimer">
-        Layer A is advisory only. The approval authority is the operator's Slack reaction, not the LLM.
+        Layer A is advisory only. The approval authority is a named operator's Web UI decision, not the LLM.
       </div>
     </div>
     <div class="layer-section" style="background:#fef2f2;border-left:4px solid #dc2626">
@@ -2272,7 +2272,7 @@ def page_approvals() -> str:
           <span><span id="cf-kind">APPROVE</span> · <span id="cf-action">ACTION</span> on <span id="cf-host">vm</span></span>
         </div>
         <div class="confirm-body">
-          <p>This decision will be written to the immutable audit log and forwarded to the Slack approval gate.
+          <p>This decision will be written to the immutable audit log and recorded on the durable approval request.
              To proceed, retype the batch ID exactly and provide a reason of at least 20 characters.</p>
           <div class="confirm-evidence">
             Batch: <span id="cf-batch-expected">batch-id</span>
@@ -3578,7 +3578,7 @@ def page_settings() -> str:
         ("ERRANDER_SLACK_BOT_TOKEN",   "xoxb-… token for posting messages",               "set"),
         ("ERRANDER_SLACK_CHANNEL_ID",  "Channel for approval messages + reports",         "set"),
         ("ERRANDER_SLACK_TIMEOUT",     "Approval wait timeout in seconds (default 1800)", "default"),
-        ("ERRANDER_SLACK_POLL_INTERVAL","Reaction poll interval in seconds (default 30)", "default"),
+        ("ERRANDER_SLACK_POLL_INTERVAL","Legacy reaction poll interval — ignored since R2 (web-only approval)", "default"),
         ("ERRANDER_AUDIT_DB_URL",      "PostgreSQL connection URL",                       "set"),
         ("ERRANDER_UI_USERNAME",       "Web UI login username (default: admin)",           "default"),
         ("ERRANDER_UI_PASSWORD",       "Web UI login password (default: errander)",        "default"),
@@ -4034,7 +4034,7 @@ _GLOSS: list[tuple[str, str, str, str, str]] = [
      "Layer A CLI (--ask) that investigates fleet state using audit data, Prometheus, and ELK, then answers questions via LLM. Strictly read-only — never executes infrastructure changes."),
     # ── SAFETY ───────────────────────────────────────────────────────────────
     ("Approval Gate",      "SAFETY",  "#7c3aed", "gloss-chip-safety",
-     "High-risk actions pause here. The agent posts a Slack message showing exact packages and versions, then polls for a ✅ or ❌ reaction before proceeding."),
+     "High-risk actions pause here. The agent persists a durable approval request, notifies Slack with the exact packages and versions plus a web approval link, and waits for a named operator's decision in the Web UI."),
     ("Plan Hash",          "SAFETY",  "#7c3aed", "gloss-chip-safety",
      "SHA-256 fingerprint of the approved plan including exact package names and versions. Guarantees the operator approved precisely what was executed — prevents plan-substitution attacks."),
     ("Plan Enrichment",    "SAFETY",  "#7c3aed", "gloss-chip-safety",
@@ -4069,7 +4069,7 @@ _GLOSS: list[tuple[str, str, str, str, str]] = [
     ("Backup Verify",      "ACTIONS", "#0891b2", "gloss-chip-action",
      "Read-only integrity check: verifies backup files exist, are recent, and meet minimum size thresholds via SSH. Never modifies files. Low risk — runs automatically without approval."),
     ("Service Restart",    "ACTIONS", "#0891b2", "gloss-chip-action",
-     "Operator-triggered restart of a specific systemd unit. High risk — always requires human approval (Slack or Web UI). v1: operator-triggered only. Unit must appear in restartable_units allowlist (inventory) AND /etc/errander/restart-allowlist on the target VM."),
+     "Operator-triggered restart of a specific systemd unit. High risk — always requires human approval in the Web UI (Slack notifies and links). v1: operator-triggered only. Unit must appear in restartable_units allowlist (inventory) AND /etc/errander/restart-allowlist on the target VM."),
     # ── INFRA ─────────────────────────────────────────────────────────────────
     ("LLM Endpoint",       "INFRA",   "#d97706", "gloss-chip-infra",
      "Any OpenAI-compatible endpoint: cloud API (OpenAI, Anthropic, Groq) or self-hosted vLLM. Configured via ERRANDER_LLM_BASE_URL + ERRANDER_LLM_MODEL. Hardcoded fallback when unreachable — agent never blocks on LLM availability."),
@@ -4130,7 +4130,7 @@ const WF_NODES = {
   },
   'approval-gate': {
     title: 'Approval Gate', badge: 'HIGH RISK ONLY', badgeColor: '#d97706',
-    checks: 'Posts exact plan to Slack (package names + versions from Plan Enrichment) · Plan hash shown in message · Polls for ✅/❌ reaction every 30s · Timeout 30 min (auto-REJECT)',
+    checks: 'Persists durable approval request · Notifies Slack with exact plan (package names + versions) + web approval link · Named operator decides in the Web UI · Timeout 30 min (auto-REJECT)',
     onfail: 'Action skipped on REJECTED or timeout — audit event written, VM continues to next action',
     code: 'errander/safety/approval.py · errander/integrations/slack.py · errander/agent/graph.py (_format_plan_for_approval)',
     note: 'Only High-tier actions enter this node. Low and Medium actions bypass it entirely. Hash commitment means the operator can verify nothing changed between approval and execution.'
@@ -4140,7 +4140,7 @@ const WF_NODES = {
     checks: 'Dispatches to one of 6 action sub-graphs · dry_run flag respected · Idempotency enforced · Post-cleanup disk gate runs after disk_cleanup/log_rotation before patching · Service restart requires both operator trigger and allowlist match',
     onfail: 'Exception caught → Rollback node entered → Audit event written with error detail',
     code: 'errander/agent/vm_graph.py · errander/agent/subgraphs/ · errander/execution/commands.py',
-    note: 'post_cleanup_disk_gate_node re-checks disk after cleanup. Blocks patching at ≥95%, warns at 90–94%. All 6 v1 sub-graphs: patching, log_rotation, docker_hygiene, disk_cleanup, backup_verify, service_restart. Service restart is operator-triggered only and always requires human approval (Slack or Web UI).'
+    note: 'post_cleanup_disk_gate_node re-checks disk after cleanup. Blocks patching at ≥95%, warns at 90–94%. All 6 v1 sub-graphs: patching, log_rotation, docker_hygiene, disk_cleanup, backup_verify, service_restart. Service restart is operator-triggered only and always requires human approval in the Web UI (Slack notifies and links).'
   },
   'rollback': {
     title: 'Rollback', badge: 'FAILURE PATH ONLY', badgeColor: '#ef4444',

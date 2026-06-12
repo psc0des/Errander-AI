@@ -1,5 +1,38 @@
 # Errander-AI Command Log
 
+## §8d Step 3 — R2 web-only approval + users/groups RBAC (2026-06-12)
+
+```bash
+# Pre-flight (mandatory before destructive-action work): read contracts, grep markers
+grep -rn "INVARIANT" errander/ scripts/    # via Grep tool; 5 sites read before edits
+
+# Identity + local Postgres (container had exited after a host sleep — restarted)
+git config user.name; git config user.email
+docker compose up -d
+docker ps -a --filter name=errander-postgres   # diagnose: Exited (255) → restart
+
+# Targeted runs while building each piece (store → UI → gate → CLI → reconciler)
+uv run pytest tests/safety/test_user_store.py -q          # 23 new
+uv run pytest tests/observability/test_rbac.py -q         # 17 new (aiohttp TestClient end-to-end)
+uv run pytest tests/safety/test_approval.py -q            # rewritten: notify-and-link contract
+uv run pytest tests/safety/test_hygiene_approval.py -q    # reply parser tests removed
+uv run pytest tests/agent/test_hygiene_orchestration.py -q
+uv run pytest tests/agent/test_service_restart_cli.py -q  # store-based approval flow
+uv run pytest tests/test_approval_reconciler.py -q        # pass-2 gone + claim-grace tests
+uv run pytest tests/integrations/test_slack.py tests/safety/test_migrations.py -q
+
+# Full CI-scope suite (first run caught 2 stale migration-count assertions: 14 → 15)
+uv run pytest tests/ --ignore=tests/ui --ignore=tests/staging -q
+
+# Lint + typecheck
+uv run ruff check .
+uv run mypy errander/
+
+# Grep gates — no Slack decision path survives (R2 acceptance #1)
+grep -rn "poll_approval|watch_slack_reactions|poll_hygiene_replies" errander/   # empty
+grep -rn "Slack or Web UI" *.md docs/                                            # empty
+```
+
 ## §8d Step 2 — approval_requests durable store (2026-06-11)
 
 ```bash

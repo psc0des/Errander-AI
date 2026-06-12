@@ -67,6 +67,7 @@ These are the categories Layer B emits (`EventType` in `events.py`):
 - **service_restart:** `service_restart_requested`, `service_restart_unit_not_allowed`, `service_restart_approved`, `service_restart_rejected`, `service_restart_executed`, `service_restart_verify_ok`, `service_restart_verify_failed`
 - **docker_hygiene (per-object):** `docker_hygiene_object_removed`, `docker_hygiene_object_drift_skipped`, `docker_hygiene_object_remove_failed`
 - **Config:** `settings_changed`, `inventory_changed`
+- **User management (R2 RBAC):** `user_created`, `user_deleted`, `user_groups_changed`, `user_password_changed` — every account/membership change records the acting identity (`cli:<os-user>` or `migration:env`); approval rows additionally carry `decided_by` (`ui:<username>`) + `decided_by_group`
 
 ### How to read it
 

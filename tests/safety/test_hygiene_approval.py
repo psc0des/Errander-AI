@@ -1,9 +1,14 @@
-"""Tests for the docker_hygiene approval surface (Session 2b-i).
+"""Tests for the docker_hygiene approval surface.
 
 Covers:
-- Slack message formatter (format_hygiene_approval_message)
-- Slack reply parser (parse_hygiene_reply)
-- HygieneApprovalManager (register/resolve/wait)
+- Slack notification formatter (format_hygiene_approval_message) — since R2
+  this is notify-and-link: it must point at the web approval page and must
+  NOT carry reply-command instructions.
+- HygieneApprovalManager (register/resolve/wait) — resolved only by the web
+  approval handler.
+
+The pre-R2 Slack reply parser (parse_hygiene_reply) was removed with the
+Slack decision channel; its tests went with it.
 """
 
 from __future__ import annotations
@@ -14,6 +19,7 @@ import pytest
 
 from errander.models.docker_hygiene import (
     ApprovalSurface,
+    DockerHygieneApproval,
     DockerHygieneAssessment,
     DockerHygieneFinding,
     DockerResourceClass,
@@ -22,9 +28,7 @@ from errander.models.docker_hygiene import (
 )
 from errander.safety.hygiene_approval import (
     HygieneApprovalManager,
-    HygieneReplyError,
     format_hygiene_approval_message,
-    parse_hygiene_reply,
 )
 
 # --- Builders ---
@@ -88,15 +92,6 @@ def _volume_candidate(name: str, last_mount_days: int = 120) -> DockerHygieneFin
     )
 
 
-def _build_cache_report_only() -> DockerHygieneFinding:
-    return DockerHygieneFinding(
-        resource_class=DockerResourceClass.BUILD_CACHE,
-        classification=FindingClassification.REPORT_ONLY,
-        name="build_cache",
-        reclaimable_bytes=5_000_000,
-    )
-
-
 def _build_cache_candidate(reclaimable: int = 5_000_000) -> DockerHygieneFinding:
     return DockerHygieneFinding(
         resource_class=DockerResourceClass.BUILD_CACHE,
@@ -113,8 +108,23 @@ def _assessment(findings: tuple[DockerHygieneFinding, ...]) -> DockerHygieneAsse
     )
 
 
+def _web_approval(
+    a: DockerHygieneAssessment,
+    findings: tuple[DockerHygieneFinding, ...],
+    operator_id: str = "ui:tester",
+) -> DockerHygieneApproval:
+    """Build the approval artifact the web handler produces."""
+    return DockerHygieneApproval(
+        vm_id=a.vm_id,
+        approved_findings=findings,
+        snapshot_hash=compute_assessment_hash(a),
+        surface=ApprovalSurface.WEB_PAGE,
+        operator_id=operator_id,
+    )
+
+
 # ---------------------------------------------------------------------------
-# Slack message formatter
+# Slack notification formatter (notify-and-link)
 # ---------------------------------------------------------------------------
 
 class TestFormatMessage:
@@ -140,17 +150,23 @@ class TestFormatMessage:
         assert "image_dangling" in msg
         assert "image_unused" in msg
         assert "container_stopped" in msg
-        # And the operator-facing short keys for reply syntax
+        # And the operator-facing short keys mirrored by the web form
         assert "dangling.1" in msg
         assert "images.1" in msg
         assert "containers.1" in msg
 
-    def test_includes_reply_syntax_block(self) -> None:
+    def test_no_reply_command_instructions(self) -> None:
+        """R2: Slack is notify-and-link — no reply syntax that implies authority."""
         a = _assessment((_dangling("sha256:a"),))
         msg = format_hygiene_approval_message(a)
-        assert "approve" in msg
-        assert "reject all" in msg
-        assert "approve all cleanup_candidate" in msg
+        assert "Reply with" not in msg
+        assert "approve <class>" not in msg
+        assert "reject all" not in msg
+
+    def test_points_at_web_approval(self) -> None:
+        a = _assessment((_dangling("sha256:a"),))
+        msg = format_hygiene_approval_message(a)
+        assert "Approval required" in msg
 
     def test_includes_web_url_when_provided(self) -> None:
         a = _assessment((_dangling("sha256:a"),))
@@ -164,8 +180,6 @@ class TestFormatMessage:
         a = _assessment((_volume("pgdata_old"),))
         msg = format_hygiene_approval_message(a)
         assert "report-only" in msg.lower()
-        # No reply syntax encourages operator to act on volumes
-        assert "approve volumes" not in msg
 
     def test_size_human_formatted(self) -> None:
         a = _assessment((_dangling("sha256:a", size=1_200_000_000),))  # ~1.1GB
@@ -187,169 +201,58 @@ class TestFormatMessage:
         assert "(report-only)" in msg
         assert "✓" not in msg
 
+    def test_volume_cleanup_candidate_marked_web_report_only(self) -> None:
+        """Volumes lost their (reply-channel-only) approval path in R2 — the
+        message must say so instead of advertising a checkmark."""
+        a = _assessment((_volume_candidate("vol1"),))
+        msg = format_hygiene_approval_message(a)
+        assert "report-only in web UI" in msg
+
+    def test_build_cache_cleanup_candidate_shows_checkmark(self) -> None:
+        a = _assessment((_build_cache_candidate(),))
+        msg = format_hygiene_approval_message(a)
+        assert " ✓" in msg
+        assert "report-only in web UI" not in msg
+
+    # --- Backup verify context ---
+
+    def test_backup_context_shown_when_volumes_present_and_passed(self) -> None:
+        a = _assessment((_volume_candidate("vol1"),))
+        msg = format_hygiene_approval_message(a, backup_verify_passed=True)
+        assert "Backup status: Verified" in msg
+
+    def test_backup_context_shown_when_volumes_present_and_failed(self) -> None:
+        a = _assessment((_volume_candidate("vol1"),))
+        msg = format_hygiene_approval_message(a, backup_verify_passed=False)
+        assert "Backup verify: not run or failed" in msg
+
+    def test_backup_context_not_shown_when_no_volume_candidates(self) -> None:
+        a = _assessment((_dangling("sha256:a"),))
+        msg = format_hygiene_approval_message(a, backup_verify_passed=True)
+        assert "Backup" not in msg
+
+    def test_backup_context_not_shown_when_backup_verify_passed_is_none(self) -> None:
+        a = _assessment((_volume_candidate("vol1"),))
+        msg = format_hygiene_approval_message(a)  # default: backup_verify_passed=None
+        assert "Backup" not in msg
+
 
 # ---------------------------------------------------------------------------
-# Slack reply parser
+# Reply parser removed (R2)
 # ---------------------------------------------------------------------------
 
-class TestParseReply:
-    def test_reject_all_returns_empty_approval(self) -> None:
-        a = _assessment((_dangling("sha256:a"),))
-        approval = parse_hygiene_reply("reject all", a, operator_id="U123")
-        assert approval.approved_findings == ()
-        assert approval.snapshot_hash == compute_assessment_hash(a)
-        assert approval.operator_id == "U123"
-        assert approval.surface == ApprovalSurface.SLACK_REPLY
+class TestReplyChannelRemoved:
+    def test_parser_and_poller_gone(self) -> None:
+        import errander.safety.hygiene_approval as mod
 
-    def test_reject_alone_is_also_rejection(self) -> None:
-        a = _assessment((_dangling("sha256:a"),))
-        approval = parse_hygiene_reply("reject", a, operator_id="U123")
-        assert approval.approved_findings == ()
+        assert not hasattr(mod, "parse_hygiene_reply")
+        assert not hasattr(mod, "poll_hygiene_replies_once")
+        assert not hasattr(mod, "HygieneReplyError")
 
-    def test_empty_text_rejected(self) -> None:
-        a = _assessment(())
-        with pytest.raises(HygieneReplyError, match="empty"):
-            parse_hygiene_reply("   ", a, operator_id="U123")
-
-    def test_non_approve_non_reject_rejected(self) -> None:
-        a = _assessment(())
-        with pytest.raises(HygieneReplyError):
-            parse_hygiene_reply("delete everything", a, operator_id="U123")
-
-    def test_approve_all_selects_all_executable_classes(self) -> None:
-        a = _assessment((
-            _dangling("sha256:a"),
-            _container("c1", "worker"),
-            _volume("vol1"),  # report-only — must NOT be included
-        ))
-        approval = parse_hygiene_reply("approve all", a, operator_id="U123")
-        ids = {f.identity for f in approval.approved_findings}
-        assert "sha256:a" in ids
-        assert "c1" in ids
-        assert "vol1" not in ids
-
-    def test_approve_all_filtered_by_classification(self) -> None:
-        a = _assessment((
-            _dangling("sha256:cleanup"),  # cleanup_candidate
-            _unused("sha256:recent", age=5),  # report_only (recent)
-        ))
-        approval = parse_hygiene_reply("approve all cleanup_candidate", a, operator_id="U123")
-        ids = {f.identity for f in approval.approved_findings}
-        assert ids == {"sha256:cleanup"}
-
-    def test_approve_all_unknown_classification(self) -> None:
-        a = _assessment((_dangling("sha256:a"),))
-        with pytest.raises(HygieneReplyError, match="unknown classification"):
-            parse_hygiene_reply("approve all mystery_class", a, operator_id="U123")
-
-    def test_explicit_indices_single_class(self) -> None:
-        a = _assessment((_dangling("sha256:a"), _dangling("sha256:b"), _dangling("sha256:c")))
-        approval = parse_hygiene_reply("approve dangling 1,3", a, operator_id="U123")
-        ids = [f.identity for f in approval.approved_findings]
-        assert ids == ["sha256:a", "sha256:c"]
-
-    def test_explicit_indices_multiple_classes(self) -> None:
-        a = _assessment((
-            _dangling("sha256:a"), _dangling("sha256:b"),
-            _container("c1", "worker"), _container("c2", "api"),
-        ))
-        approval = parse_hygiene_reply(
-            "approve dangling 1 containers 2",
-            a, operator_id="U123",
-        )
-        ids = [f.identity for f in approval.approved_findings]
-        assert ids == ["sha256:a", "c2"]
-
-    def test_explicit_range_expression(self) -> None:
-        a = _assessment(tuple(_dangling(f"sha256:{i}") for i in range(1, 6)))
-        approval = parse_hygiene_reply("approve dangling 2-4", a, operator_id="U123")
-        ids = [f.identity for f in approval.approved_findings]
-        assert ids == ["sha256:2", "sha256:3", "sha256:4"]
-
-    def test_index_out_of_range_rejected(self) -> None:
-        a = _assessment((_dangling("sha256:a"),))  # only 1 item
-        with pytest.raises(HygieneReplyError, match="out of range"):
-            parse_hygiene_reply("approve dangling 5", a, operator_id="U123")
-
-    def test_index_zero_rejected(self) -> None:
-        """Indices are 1-based; 0 must be rejected, not silently re-mapped."""
-        a = _assessment((_dangling("sha256:a"),))
-        with pytest.raises(HygieneReplyError, match="out of range"):
-            parse_hygiene_reply("approve dangling 0", a, operator_id="U123")
-
-    def test_reversed_range_rejected(self) -> None:
-        a = _assessment((_dangling("sha256:a"), _dangling("sha256:b"),))
-        with pytest.raises(HygieneReplyError, match="reversed"):
-            parse_hygiene_reply("approve dangling 2-1", a, operator_id="U123")
-
-    def test_malformed_index_expr(self) -> None:
-        a = _assessment((_dangling("sha256:a"),))
-        with pytest.raises(HygieneReplyError, match="malformed"):
-            parse_hygiene_reply("approve dangling abc", a, operator_id="U123")
-
-    def test_unknown_class_key(self) -> None:
-        a = _assessment((_dangling("sha256:a"),))
-        with pytest.raises(HygieneReplyError, match="unknown class"):
-            parse_hygiene_reply("approve gizmos 1", a, operator_id="U123")
-
-    def test_report_only_volume_cannot_be_approved_by_index(self) -> None:
-        """A volume classified report_only cannot be explicitly approved by index."""
-        a = _assessment((_volume("vol1"),))
-        with pytest.raises(HygieneReplyError, match="report_only"):
-            parse_hygiene_reply("approve volumes 1", a, operator_id="U123")
-
-    def test_report_only_finding_in_executable_class_rejected(self) -> None:
-        """image_unused with age ≤ 30 is report_only — approval by index must fail."""
-        a = _assessment((_unused("sha256:young", age=5),))
-        with pytest.raises(HygieneReplyError, match="report_only"):
-            parse_hygiene_reply("approve images 1", a, operator_id="U123")
-
-    def test_approve_all_excludes_report_only_unused_images(self) -> None:
-        """approve all must not select report_only image_unused findings."""
-        old = _unused("sha256:old", age=60)   # cleanup_candidate
-        young = _unused("sha256:young", age=5) # report_only
-        a = _assessment((old, young))
-        approval = parse_hygiene_reply("approve all", a, operator_id="U123")
-        ids = {f.identity for f in approval.approved_findings}
-        assert ids == {"sha256:old"}
-
-    def test_approve_all_report_only_raises(self) -> None:
-        """approve all report_only is never a valid command."""
-        a = _assessment((_unused("sha256:young", age=5),))
-        with pytest.raises(HygieneReplyError, match="report_only"):
-            parse_hygiene_reply("approve all report_only", a, operator_id="U123")
-
-    def test_empty_class_yields_clear_error(self) -> None:
-        """Selecting from a class with no findings should fail loud, not silently approve nothing."""
-        a = _assessment((_dangling("sha256:a"),))  # no containers
-        with pytest.raises(HygieneReplyError, match="no findings"):
-            parse_hygiene_reply("approve containers 1", a, operator_id="U123")
-
-    def test_class_without_indices_rejected(self) -> None:
-        a = _assessment((_dangling("sha256:a"),))
-        with pytest.raises(HygieneReplyError, match="must be followed"):
-            parse_hygiene_reply("approve dangling", a, operator_id="U123")
-
-    def test_duplicate_indices_deduplicated(self) -> None:
-        """Same index listed twice approves only once."""
-        a = _assessment((_dangling("sha256:a"), _dangling("sha256:b")))
-        approval = parse_hygiene_reply("approve dangling 1,1,2", a, operator_id="U123")
-        ids = [f.identity for f in approval.approved_findings]
-        assert ids == ["sha256:a", "sha256:b"]
-
-    def test_case_insensitive(self) -> None:
-        a = _assessment((_dangling("sha256:a"),))
-        approval = parse_hygiene_reply("APPROVE Dangling 1", a, operator_id="U123")
-        assert len(approval.approved_findings) == 1
-
-    def test_surface_field_set(self) -> None:
-        a = _assessment((_dangling("sha256:a"),))
-        approval = parse_hygiene_reply(
-            "approve dangling 1", a,
-            operator_id="U123",
-            surface=ApprovalSurface.WEB_PAGE,
-        )
-        assert approval.surface == ApprovalSurface.WEB_PAGE
+    def test_slack_reply_surface_retained_for_audit_readback(self) -> None:
+        # Mirrors the LEGACY_ACTION_TYPES precedent: old audit rows must
+        # still deserialize.
+        assert ApprovalSurface.SLACK_REPLY.value == "slack_reply"
 
 
 # ---------------------------------------------------------------------------
@@ -376,7 +279,7 @@ class TestHygieneApprovalManager:
         m = HygieneApprovalManager()
         a = _assessment((_dangling("sha256:a"),))
         m.register("b1", "v1", a)
-        approval = parse_hygiene_reply("approve dangling 1", a, operator_id="U123")
+        approval = _web_approval(a, a.findings)
         m.resolve("b1", "v1", approval)
         assert len(m.get_pending()) == 0
         history = m.get_history()
@@ -388,8 +291,8 @@ class TestHygieneApprovalManager:
         m = HygieneApprovalManager()
         a = _assessment((_dangling("sha256:a"),))
         m.register("b1", "v1", a)
-        approval1 = parse_hygiene_reply("approve dangling 1", a, operator_id="U123")
-        approval2 = parse_hygiene_reply("reject all", a, operator_id="U456")
+        approval1 = _web_approval(a, a.findings, operator_id="ui:first")
+        approval2 = _web_approval(a, (), operator_id="ui:second")
         m.resolve("b1", "v1", approval1)
         m.resolve("b1", "v1", approval2)  # should be no-op
         # History has exactly one entry, with the FIRST approval.
@@ -402,7 +305,7 @@ class TestHygieneApprovalManager:
         m = HygieneApprovalManager()
         a = _assessment((_dangling("sha256:a"),))
         m.register("b1", "v1", a)
-        approval = parse_hygiene_reply("approve dangling 1", a, operator_id="U123")
+        approval = _web_approval(a, a.findings)
 
         async def resolve_soon() -> None:
             await asyncio.sleep(0.01)
@@ -417,7 +320,6 @@ class TestHygieneApprovalManager:
         m = HygieneApprovalManager()
         a = _assessment(())
         m.register("b1", "v1", a)
-        # Timeout 0 means wait_for fails immediately; use 0.05 for a tiny real wait.
         result = await m.wait_for_decision("b1", "v1", timeout_seconds=0)
         # wait_for with timeout_seconds=0 raises TimeoutError caught by manager → None
         assert result is None
@@ -439,102 +341,9 @@ class TestHygieneApprovalManager:
         m.register("b1", "vm2", a2)
         assert len(m.get_pending()) == 2
 
-        approval1 = parse_hygiene_reply("approve dangling 1", a1, operator_id="U")
+        approval1 = _web_approval(a1, a1.findings)
         m.resolve("b1", "vm1", approval1)
         # vm2 still pending
         pending = m.get_pending()
         assert len(pending) == 1
         assert pending[0].vm_id == "vm2"
-
-
-# ---------------------------------------------------------------------------
-# v1.5 — Volume and build cache approval surface
-# ---------------------------------------------------------------------------
-
-class TestVolumeAndBuildCacheApproval:
-    """Covers formatter markers, approve-all scope, explicit index, backup context."""
-
-    # --- Formatter markers ---
-
-    def test_volume_report_only_shows_as_report_only(self) -> None:
-        a = _assessment((_volume("vol1"),))
-        msg = format_hygiene_approval_message(a)
-        assert "(report-only)" in msg
-        assert "✓" not in msg
-
-    def test_volume_cleanup_candidate_shows_explicit_only_marker(self) -> None:
-        a = _assessment((_volume_candidate("vol1"),))
-        msg = format_hygiene_approval_message(a)
-        assert "✓ ⚠ explicit-only" in msg
-
-    def test_build_cache_cleanup_candidate_shows_checkmark_not_explicit(self) -> None:
-        a = _assessment((_build_cache_candidate(),))
-        msg = format_hygiene_approval_message(a)
-        assert " ✓" in msg
-        assert "explicit-only" not in msg
-
-    # --- approve all scope ---
-
-    def test_approve_all_excludes_volume_cleanup_candidate(self) -> None:
-        """'approve all' must NOT select volumes even when they are cleanup_candidate."""
-        a = _assessment((_dangling("sha256:a"), _volume_candidate("vol1")))
-        approval = parse_hygiene_reply("approve all", a, operator_id="U123")
-        ids = {f.object_id for f in approval.approved_findings}
-        assert "sha256:a" in ids
-        assert not any(f.name == "vol1" for f in approval.approved_findings)
-
-    def test_approve_all_includes_build_cache_cleanup_candidate(self) -> None:
-        """'approve all cleanup_candidate' selects build_cache (not explicit-only)."""
-        a = _assessment((_dangling("sha256:a"), _build_cache_candidate()))
-        approval = parse_hygiene_reply("approve all cleanup_candidate", a, operator_id="U123")
-        classes = {f.resource_class for f in approval.approved_findings}
-        assert DockerResourceClass.IMAGE_DANGLING in classes
-        assert DockerResourceClass.BUILD_CACHE in classes
-
-    # --- Explicit index approval ---
-
-    def test_explicit_approve_volume_cleanup_candidate_succeeds(self) -> None:
-        a = _assessment((_volume_candidate("pgdata_old"),))
-        approval = parse_hygiene_reply("approve volumes 1", a, operator_id="U123")
-        assert len(approval.approved_findings) == 1
-        assert approval.approved_findings[0].name == "pgdata_old"
-
-    def test_explicit_approve_volume_report_only_rejected(self) -> None:
-        a = _assessment((_volume("young_vol"),))
-        with pytest.raises(HygieneReplyError, match="report_only"):
-            parse_hygiene_reply("approve volumes 1", a, operator_id="U123")
-
-    def test_explicit_approve_build_cache_cleanup_candidate_succeeds(self) -> None:
-        a = _assessment((_build_cache_candidate(),))
-        approval = parse_hygiene_reply("approve build_cache 1", a, operator_id="U123")
-        assert len(approval.approved_findings) == 1
-        assert approval.approved_findings[0].resource_class == DockerResourceClass.BUILD_CACHE
-
-    def test_explicit_approve_build_cache_report_only_rejected(self) -> None:
-        a = _assessment((_build_cache_report_only(),))
-        with pytest.raises(HygieneReplyError, match="report_only"):
-            parse_hygiene_reply("approve build_cache 1", a, operator_id="U123")
-
-    # --- Backup verify context ---
-
-    def test_backup_context_shown_when_volumes_present_and_passed(self) -> None:
-        a = _assessment((_volume_candidate("vol1"),))
-        msg = format_hygiene_approval_message(a, backup_verify_passed=True)
-        assert "Backup status: Verified" in msg
-
-    def test_backup_context_shown_when_volumes_present_and_failed(self) -> None:
-        a = _assessment((_volume_candidate("vol1"),))
-        msg = format_hygiene_approval_message(a, backup_verify_passed=False)
-        assert "Backup verify: not run or failed" in msg
-
-    def test_backup_context_not_shown_when_no_volume_candidates(self) -> None:
-        """Backup context only appears when there are volume cleanup_candidates."""
-        a = _assessment((_dangling("sha256:a"),))
-        msg = format_hygiene_approval_message(a, backup_verify_passed=True)
-        assert "Backup" not in msg
-
-    def test_backup_context_not_shown_when_backup_verify_passed_is_none(self) -> None:
-        """When backup_verify_passed is None (no backup ran), omit context entirely."""
-        a = _assessment((_volume_candidate("vol1"),))
-        msg = format_hygiene_approval_message(a)  # default: backup_verify_passed=None
-        assert "Backup" not in msg

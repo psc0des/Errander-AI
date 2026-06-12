@@ -739,7 +739,6 @@ class TestApprovalGateDeferred:
         slack_client = MagicMock()
         slack_client.post_alert = AsyncMock()
         slack_client.post_message = AsyncMock(return_value="ts-defer")
-        slack_client.get_reactions = AsyncMock(return_value=[])
 
         deferred_store = DeferredExecutionStore(make_test_db())
         await deferred_store.initialize()

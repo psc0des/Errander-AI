@@ -41,6 +41,7 @@ if TYPE_CHECKING:
     from errander.safety.audit import AuditStore
     from errander.safety.hygiene_approval import HygieneApprovalManager
     from errander.safety.overrides import OverridesStore
+    from errander.safety.user_store import SessionStore, User, UserStore
 
 _esc = _html_mod.escape  # escape untrusted data before HTML interpolation
 
@@ -55,8 +56,11 @@ _HYGIENE_MANAGER_KEY: web.AppKey[HygieneApprovalManager | None] = web.AppKey("hy
 _OVERRIDES_STORE_KEY: web.AppKey[OverridesStore | None] = web.AppKey("overrides_store")
 _BASE_INVENTORY_KEY: web.AppKey[list[VMTarget]] = web.AppKey("base_inventory")
 _AI_DECISION_STORE_KEY: web.AppKey[AIDecisionStore | None] = web.AppKey("ai_decision_store")
-_UI_USER_KEY: web.AppKey[str] = web.AppKey("ui_user")
-_UI_PASSWORD_KEY: web.AppKey[str] = web.AppKey("ui_password")
+_USER_STORE_KEY: web.AppKey[UserStore | None] = web.AppKey("user_store")
+_SESSION_STORE_KEY: web.AppKey[SessionStore | None] = web.AppKey("session_store")
+#: True when the bind address is loopback — gates the zero-users open-GET
+#: bootstrap mode (never expose unauthenticated pages on a network bind).
+_LOOPBACK_BIND_KEY: web.AppKey[bool] = web.AppKey("loopback_bind")
 
 #: CSRF secret key (generated fresh per server start — stateless double-submit pattern)
 _CSRF_SECRET_KEY: web.AppKey[str] = web.AppKey("csrf_secret")
@@ -65,13 +69,6 @@ _CSRF_COOKIE = "errander_csrf"
 _CSRF_HEADER = "X-CSRF-Token"
 _CSRF_FIELD = "_csrf_token"
 _SESSION_COOKIE = "errander_session"
-
-#: In-memory session store: token → expiry timestamp (UTC epoch seconds).
-#: Sessions expire after 8 hours. Process restart invalidates all sessions.
-_SESSIONS: dict[str, float] = {}
-_SESSION_TTL = 8 * 3600  # seconds
-
-_SESSION_STORE_KEY: web.AppKey[dict[str, float]] = web.AppKey("session_store")
 
 logger = logging.getLogger(__name__)
 
@@ -120,7 +117,7 @@ LLM_REQUESTS_TOTAL = Counter(
 
 APPROVAL_WAIT = Histogram(
     "errander_approval_wait_seconds",
-    "Seconds waiting for human approval reaction",
+    "Seconds waiting for the operator's web UI approval decision",
     buckets=(30, 60, 120, 300, 600, 900, 1800),
     registry=REGISTRY,
 )
@@ -787,31 +784,39 @@ def _page(
 # Session auth middleware + login / logout handlers
 # ---------------------------------------------------------------------------
 
-def _session_valid(app: web.Application, token: str) -> bool:
-    """Return True if the session token exists and has not expired."""
-    import time
-    store: dict[str, float] = app.get(_SESSION_STORE_KEY, {})
-    expiry = store.get(token)
-    if expiry is None:
-        return False
-    if time.time() > expiry:
-        store.pop(token, None)
-        return False
-    return True
+def _request_user(request: web.Request) -> User | None:
+    """The authenticated user attached by the auth middleware (None = anonymous)."""
+    user: User | None = request.get("user")
+    return user
 
 
-def _create_session(app: web.Application) -> str:
-    """Generate a new session token, store it, and return it."""
-    import time
-    token = secrets.token_urlsafe(32)
-    store: dict[str, float] = app.get(_SESSION_STORE_KEY, {})
-    store[token] = time.time() + _SESSION_TTL
-    return token
+def _require_permission(request: web.Request, permission: str) -> User:
+    """Server-side RBAC gate — raise 403 unless the session user holds the permission.
+
+    Enforced in the handlers (not by hiding buttons): a reader-group user or
+    an unauthenticated visitor cannot decide anything, even with a valid
+    signed URL (R2 acceptance criterion #3).
+    """
+    user = _request_user(request)
+    if user is None:
+        raise web.HTTPForbidden(
+            reason=f"authentication required — this action needs the {permission!r} permission"
+        )
+    if not user.has_permission(permission):
+        raise web.HTTPForbidden(
+            reason=(
+                f"user {user.username!r} (groups: {', '.join(user.groups) or 'none'}) "
+                f"lacks the {permission!r} permission"
+            )
+        )
+    return user
 
 
-def _destroy_session(app: web.Application, token: str) -> None:
-    store: dict[str, float] = app.get(_SESSION_STORE_KEY, {})
-    store.pop(token, None)
+def _safe_next_path(raw: str) -> str:
+    """Sanitize a post-login redirect target — internal /ui paths only."""
+    if raw.startswith("/ui") and not raw.startswith("//") and "\\" not in raw:
+        return raw
+    return "/ui"
 
 
 @web.middleware
@@ -819,24 +824,49 @@ async def _session_auth_middleware(
     request: web.Request,
     handler: web.RequestHandler,
 ) -> web.StreamResponse:
-    """Require session-cookie auth on /ui/* (except /ui/login) when credentials are set."""
-    ui_user: str = request.app.get(_UI_USER_KEY, "")
-    ui_password: str = request.app.get(_UI_PASSWORD_KEY, "")
+    """Authenticate /ui/* requests against the DB-backed user/session stores.
 
-    if not ui_user or not ui_password:
+    Access model (R2):
+    - A valid session cookie attaches the resolved ``User`` (with fresh
+      groups/permissions) to the request; handlers enforce RBAC via
+      :func:`_require_permission`.
+    - Users exist but no/invalid session → redirect to /ui/login (with
+      ``next`` so a Slack link lands back on the approval page after login).
+    - Zero users (bootstrap / dev) on a loopback bind → GET pages stay open,
+      but every mutation is 403: no user accounts means no authorized
+      deciders — fail closed.
+    """
+    if not request.path.startswith("/ui") or request.path == "/ui/login":
         return await handler(request)  # type: ignore[operator, no-any-return]
 
-    if not request.path.startswith("/ui"):
+    session_store = request.app.get(_SESSION_STORE_KEY)
+    user_store = request.app.get(_USER_STORE_KEY)
+
+    user: User | None = None
+    if session_store is not None:
+        token = request.cookies.get(_SESSION_COOKIE, "")
+        if token:
+            user = await session_store.resolve(token)
+    if user is not None:
+        request["user"] = user
         return await handler(request)  # type: ignore[operator, no-any-return]
 
-    if request.path in ("/ui/login",):
-        return await handler(request)  # type: ignore[operator, no-any-return]
+    users_exist = user_store is not None and await user_store.count_users() > 0
+    if users_exist:
+        if request.method == "GET":
+            raise web.HTTPFound(f"/ui/login?next={_uq(request.path_qs)}")
+        raise web.HTTPFound("/ui/login")
 
-    token = request.cookies.get(_SESSION_COOKIE, "")
-    if token and _session_valid(request.app, token):
+    # Bootstrap / unwired mode: read-only pages open on loopback, mutations 403.
+    if request.method in ("GET", "HEAD") and request.app.get(_LOOPBACK_BIND_KEY, True):
+        request["user"] = None
         return await handler(request)  # type: ignore[operator, no-any-return]
-
-    raise web.HTTPFound("/ui/login")
+    raise web.HTTPForbidden(
+        reason=(
+            "no user accounts exist — create one with "
+            "'python -m errander --user-add <name> --user-groups admin' first"
+        )
+    )
 
 
 _LOGIN_CSS = """
@@ -984,6 +1014,8 @@ body{display:flex;min-height:100vh;background:var(--surface-lo)}
 async def _ui_login_get(request: web.Request) -> web.Response:
     """Render the login page."""
     err = request.rel_url.query.get("err", "")
+    next_path = _safe_next_path(request.rel_url.query.get("next", "/ui"))
+    action = f"/ui/login?next={_uq(next_path)}"
     err_html = (
         '<div class="lc-err"><span class="lc-err-ico">&#9888;</span>'
         'Invalid username or password. Please try again.</div>'
@@ -1022,7 +1054,8 @@ async def _ui_login_get(request: web.Request) -> web.Response:
       <div class="l-feat-icon">&#10003;</div>
       <div class="l-feat-body">
         <div class="l-feat-title">Human-in-the-loop approvals</div>
-        <div class="l-feat-desc">Every live change requires a Slack ✅ before anything touches your VMs.</div>
+        <div class="l-feat-desc">Every live change requires a named operator's approval here
+        before anything touches your VMs.</div>
       </div>
     </div>
     <div class="l-feat">
@@ -1050,7 +1083,7 @@ async def _ui_login_get(request: web.Request) -> web.Response:
     <div class="lc-title">Welcome back</div>
     <div class="lc-sub">Sign in to your Errander-AI instance to manage your fleet.</div>
     {err_html}
-    <form method="post" action="/ui/login">
+    <form method="post" action="{action}">
       <input type="hidden" name="{_CSRF_FIELD}" value="">
       <div class="lc-field">
         <label class="lc-label" for="username">Username</label>
@@ -1076,41 +1109,44 @@ async def _ui_login_get(request: web.Request) -> web.Response:
 
 
 async def _ui_login_post(request: web.Request) -> web.Response:
-    """Validate credentials and issue a session cookie."""
-    ui_user: str = request.app.get(_UI_USER_KEY, "")
-    ui_password: str = request.app.get(_UI_PASSWORD_KEY, "")
+    """Validate credentials against the users table and issue a DB session."""
+    user_store = request.app.get(_USER_STORE_KEY)
+    session_store = request.app.get(_SESSION_STORE_KEY)
+    next_path = _safe_next_path(request.rel_url.query.get("next", "/ui"))
+
+    if user_store is None or session_store is None:
+        raise web.HTTPFound(f"/ui/login?err=1&next={_uq(next_path)}")
 
     try:
         data = await request.post()
     except Exception:
-        raise web.HTTPFound("/ui/login?err=1") from None
+        raise web.HTTPFound(f"/ui/login?err=1&next={_uq(next_path)}") from None
 
-    provided_user = str(data.get("username", ""))
-    provided_pass = str(data.get("password", ""))
+    user = await user_store.verify_credentials(
+        str(data.get("username", "")), str(data.get("password", "")),
+    )
+    if user is None:
+        raise web.HTTPFound(f"/ui/login?err=1&next={_uq(next_path)}")
 
-    user_ok = bool(ui_user) and secrets.compare_digest(provided_user, ui_user)
-    pass_ok = bool(ui_password) and secrets.compare_digest(provided_pass, ui_password)
-
-    if not (user_ok and pass_ok):
-        raise web.HTTPFound("/ui/login?err=1")
-
-    token = _create_session(request.app)
-    resp = web.HTTPFound("/ui")
+    token = await session_store.create(user.username)
+    logger.info("UI login: %s (groups: %s)", user.username, ", ".join(user.groups))
+    resp = web.HTTPFound(next_path)
     resp.set_cookie(
         _SESSION_COOKIE,
         token,
         httponly=True,
         samesite="Lax",
-        max_age=_SESSION_TTL,
+        max_age=session_store.DEFAULT_TTL_SECONDS,
     )
     raise resp
 
 
 async def _ui_logout(request: web.Request) -> web.Response:
     """Destroy the session and redirect to login."""
+    session_store = request.app.get(_SESSION_STORE_KEY)
     token = request.cookies.get(_SESSION_COOKIE, "")
-    if token:
-        _destroy_session(request.app, token)
+    if token and session_store is not None:
+        await session_store.destroy(token)
     resp = web.HTTPFound("/ui/login")
     resp.del_cookie(_SESSION_COOKIE)
     raise resp
@@ -1377,6 +1413,10 @@ async function testLLM() {
 
 async def _ui_settings_post(request: web.Request) -> web.Response:
     """POST /ui/settings — save LLM settings overrides."""
+    from errander.safety.user_store import PERM_MANAGE_SETTINGS
+
+    _require_permission(request, PERM_MANAGE_SETTINGS)
+
     store: OverridesStore | None = request.app.get(_OVERRIDES_STORE_KEY)
     audit: AuditStore | None = request.app.get(_AUDIT_STORE_KEY)
 
@@ -1426,6 +1466,10 @@ async def _ui_settings_post(request: web.Request) -> web.Response:
 
 async def _ui_settings_reset(request: web.Request) -> web.Response:
     """POST /ui/settings/reset — delete a single DB override."""
+    from errander.safety.user_store import PERM_MANAGE_SETTINGS
+
+    _require_permission(request, PERM_MANAGE_SETTINGS)
+
     store: OverridesStore | None = request.app.get(_OVERRIDES_STORE_KEY)
     if store is None:
         raise web.HTTPFound("/ui/settings?err=Overrides+store+not+connected")
@@ -1445,6 +1489,9 @@ async def _ui_settings_test_llm(request: web.Request) -> web.Response:
     import os as _os
 
     from errander.integrations.llm import LLMClient
+    from errander.safety.user_store import PERM_MANAGE_SETTINGS
+
+    _require_permission(request, PERM_MANAGE_SETTINGS)
 
     data = await request.post()
     base_url = str(data.get("base_url", "") or _os.environ.get("ERRANDER_LLM_BASE_URL", ""))
@@ -1624,6 +1671,10 @@ async def _ui_inventory_get(request: web.Request) -> web.Response:
 
 async def _ui_inventory_toggle(request: web.Request) -> web.Response:
     """POST /ui/inventory/toggle — enable/disable a VM."""
+    from errander.safety.user_store import PERM_MANAGE_SETTINGS
+
+    _require_permission(request, PERM_MANAGE_SETTINGS)
+
     store: OverridesStore | None = request.app.get(_OVERRIDES_STORE_KEY)
     audit: AuditStore | None = request.app.get(_AUDIT_STORE_KEY)
     if store is None:
@@ -1660,6 +1711,10 @@ async def _ui_inventory_toggle(request: web.Request) -> web.Response:
 
 async def _ui_inventory_add(request: web.Request) -> web.Response:
     """POST /ui/inventory/add — add an ad-hoc VM."""
+    from errander.safety.user_store import PERM_MANAGE_SETTINGS
+
+    _require_permission(request, PERM_MANAGE_SETTINGS)
+
     store: OverridesStore | None = request.app.get(_OVERRIDES_STORE_KEY)
     audit: AuditStore | None = request.app.get(_AUDIT_STORE_KEY)
     if store is None:
@@ -1712,6 +1767,10 @@ async def _ui_inventory_add(request: web.Request) -> web.Response:
 
 async def _ui_inventory_delete(request: web.Request) -> web.Response:
     """POST /ui/inventory/delete/{env_name}/{vm_name} — delete ad-hoc VM."""
+    from errander.safety.user_store import PERM_MANAGE_SETTINGS
+
+    _require_permission(request, PERM_MANAGE_SETTINGS)
+
     store: OverridesStore | None = request.app.get(_OVERRIDES_STORE_KEY)
     audit: AuditStore | None = request.app.get(_AUDIT_STORE_KEY)
     if store is None:
@@ -2141,6 +2200,41 @@ async def _ui_approvals(request: web.Request) -> web.Response:
             "</div></div>"
         )
 
+    # ── Pending docker_hygiene object-level approvals ────────────────────────
+    # Listed here with self-generated signed links so they stay decidable from
+    # the queue even when the Slack notification was missed (R2: the web UI is
+    # the only decision surface).
+    hygiene_manager: HygieneApprovalManager | None = request.app.get(_HYGIENE_MANAGER_KEY)
+    hygiene_section = ""
+    hygiene_pending = hygiene_manager.get_pending() if hygiene_manager is not None else []
+    if hygiene_pending:
+        hyg_rows: list[list[str]] = []
+        for hp in hygiene_pending:
+            try:
+                from errander.integrations.signed_url import make_signed_token
+                _hyg_token = make_signed_token(
+                    {"batch_id": hp.batch_id, "vm_id": hp.vm_id}, ttl_seconds=3600,
+                )
+                link = (
+                    f'<a class="id-a" href="/ui/docker-hygiene/approve?token={_hyg_token}">'
+                    "Review &amp; decide</a>"
+                )
+            except Exception:  # SigningSecretMissingError — surface, don't crash the page
+                link = (
+                    '<span style="color:var(--text-d)">set ERRANDER_SIGNING_SECRET '
+                    "to enable web approval</span>"
+                )
+            hyg_rows.append([
+                f'<span class="mono">{_esc(hp.batch_id)}</span>',
+                f'<span class="mono">{_esc(hp.vm_id)}</span>',
+                f"{len(hp.assessment.cleanup_candidates())} candidate object(s)",
+                link,
+            ])
+        hygiene_section = (
+            _section("Pending Docker Hygiene (object-level)", len(hygiene_pending))
+            + _table(["Batch", "VM", "Findings", ""], hyg_rows)
+        )
+
     # ── History ───────────────────────────────────────────────────────────────
     if history:
         rows_h = [
@@ -2152,7 +2246,14 @@ async def _ui_approvals(request: web.Request) -> web.Response:
                     if h.approved
                     else '<span class="dec-no">&#10007; Rejected</span>'
                 ),
-                f'<span class="mono">{_esc(h.decided_by or "timeout")}</span>',
+                (
+                    f'<span class="mono">{_esc(h.decided_by or "timeout")}'
+                    + (
+                        f' <span style="color:var(--text-d)">({_esc(h.decided_by_group)})</span>'
+                        if h.decided_by_group else ""
+                    )
+                    + '</span>'
+                ),
                 (
                     f'<span class="mono" style="font-size:.62rem;color:var(--text-d)">'
                     f'{len(h.approved_items)} item(s) selected</span>'
@@ -2177,7 +2278,7 @@ async def _ui_approvals(request: web.Request) -> web.Response:
 
     return _page(
         "Approvals",
-        pending_section + history_section,
+        pending_section + hygiene_section + history_section,
         refresh=15,
         pending_count=pending_count,
         request=request,
@@ -2185,7 +2286,16 @@ async def _ui_approvals(request: web.Request) -> web.Response:
 
 
 async def _ui_approval_decide(request: web.Request) -> web.Response:
-    """POST /ui/approvals/{batch_id}/{action} — approve or reject via web form."""
+    """POST /ui/approvals/{batch_id}/{action} — approve or reject via web form.
+
+    Server-side RBAC: only an authenticated user whose group grants
+    ``decide_approvals`` can record a decision (R2). The decision carries the
+    named user and their group into the durable approval row.
+    """
+    from errander.safety.user_store import PERM_DECIDE_APPROVALS
+
+    user = _require_permission(request, PERM_DECIDE_APPROVALS)
+
     approval_store: ApprovalRequestStore | None = request.app.get(_APPROVAL_STORE_KEY)
     if approval_store is None:
         return web.Response(status=503, text="Approval store not connected")
@@ -2193,7 +2303,8 @@ async def _ui_approval_decide(request: web.Request) -> web.Response:
     batch_id = request.match_info["batch_id"]
     action = request.match_info["action"]  # "approve" | "reject"
     approved = action == "approve"
-    ui_username: str = request.app.get(_UI_USER_KEY, "") or "ui"
+    ui_username = user.username
+    decided_by_group = user.group_granting(PERM_DECIDE_APPROVALS)
 
     approved_items: list[dict[str, object]] | None = None
 
@@ -2243,11 +2354,12 @@ async def _ui_approval_decide(request: web.Request) -> web.Response:
                         # Categorical — auto-included on approve
                         approved_items.append({"vm_id": vm_id, "action_type": at})
 
-    # Atomic decide — if the Slack watcher won the race, this is a logged no-op.
+    # Atomic decide — if another decider won the race, this is a logged no-op.
     won = await approval_store.decide(
         batch_id,
         approved=approved,
         decided_by=f"ui:{ui_username}",
+        decided_by_group=decided_by_group,
         approved_items=approved_items,
     )
     logger.info(
@@ -2389,8 +2501,15 @@ def _render_hygiene_form(
 
 
 async def _ui_hygiene_approve_get(request: web.Request) -> web.Response:
-    """GET /ui/docker-hygiene/approve?token=<signed_token> — render approval form."""
+    """GET /ui/docker-hygiene/approve?token=<signed_token> — render approval form.
+
+    Requires the ``decide_approvals`` permission: the form exists only to
+    record a decision, so readers don't get a surface that looks decidable.
+    """
     from errander.integrations.signed_url import InvalidSignedTokenError, verify_signed_token
+    from errander.safety.user_store import PERM_DECIDE_APPROVALS
+
+    _require_permission(request, PERM_DECIDE_APPROVALS)
 
     token = request.query.get("token", "")
     if not token:
@@ -2432,7 +2551,12 @@ async def _ui_hygiene_approve_get(request: web.Request) -> web.Response:
 
 
 async def _ui_hygiene_approve_post(request: web.Request) -> web.Response:
-    """POST /ui/docker-hygiene/approve — process approval form submission."""
+    """POST /ui/docker-hygiene/approve — process approval form submission.
+
+    The signed token only *locates* the pending approval; authority comes
+    from the authenticated session (R2: a valid signed URL grants nothing
+    without a ``decide_approvals`` session — enforced server-side).
+    """
     from errander.integrations.signed_url import InvalidSignedTokenError, verify_signed_token
     from errander.models.docker_hygiene import (
         ApprovalSurface,
@@ -2441,6 +2565,9 @@ async def _ui_hygiene_approve_post(request: web.Request) -> web.Response:
         compute_assessment_hash,
     )
     from errander.safety.hygiene_approval import _short_class_key
+    from errander.safety.user_store import PERM_DECIDE_APPROVALS
+
+    user = _require_permission(request, PERM_DECIDE_APPROVALS)
 
     data = await request.post()
     token = str(data.get("token", ""))
@@ -2479,7 +2606,7 @@ async def _ui_hygiene_approve_post(request: web.Request) -> web.Response:
         )
 
     assessment = pending.assessment
-    operator_id = str(request.app.get(_UI_USER_KEY) or "web")  # type: ignore[arg-type]
+    operator_id = f"ui:{user.username}"
 
     if decision == "reject":
         approval = DockerHygieneApproval(
@@ -3214,8 +3341,8 @@ async def start_metrics_server(
     hygiene_manager: HygieneApprovalManager | None = None,
     overrides_store: OverridesStore | None = None,
     base_inventory: list[VMTarget] | None = None,
-    ui_user: str = "",
-    ui_password: str = "",
+    user_store: UserStore | None = None,
+    session_store: SessionStore | None = None,
     bind_address: str = "127.0.0.1",
     ai_decision_store: AIDecisionStore | None = None,
 ) -> web.AppRunner:
@@ -3252,30 +3379,78 @@ async def start_metrics_server(
         hygiene_manager: HygieneApprovalManager for docker_hygiene object-level approvals.
         overrides_store: OverridesStore for settings/inventory overrides.
         base_inventory: Flat list of VMTarget from inventory.yaml — shown as the base fleet on /ui/inventory.
-        ui_user: HTTP Basic Auth username for /ui/* (empty = auth disabled).
-        ui_password: HTTP Basic Auth password for /ui/*.
+        user_store: UserStore for login + RBAC (None = bootstrap mode: read-only pages, no decisions).
+        session_store: SessionStore backing the session cookie (DB rows, survives restarts).
         ai_decision_store: AIDecisionStore for the AI decisions UI pages.
 
     Returns:
         Running AppRunner — call runner.cleanup() on shutdown.
     """
-    # Finding #14: auth is mandatory when binding to a non-loopback address.
+    # Finding #14 (extended by R2): named-user auth is mandatory when binding
+    # to a non-loopback address — at least one account must exist.
     _is_loopback = bind_address in ("127.0.0.1", "::1", "localhost")
-    if not _is_loopback and (not ui_user or not ui_password):
+    _user_count = await user_store.count_users() if user_store is not None else 0
+    if not _is_loopback and _user_count == 0:
         msg = (
             f"UI is configured to bind on {bind_address} (non-loopback) "
-            f"but ERRANDER_UI_USER / ERRANDER_UI_PASSWORD are not set. "
-            f"Set credentials or restrict bind to 127.0.0.1."
+            f"but no user accounts exist. Create one first: "
+            f"python -m errander --user-add <name> --user-groups admin "
+            f"— or restrict bind to 127.0.0.1."
         )
         raise RuntimeError(msg)
 
-    if ui_user and ui_password:
-        logger.info("UI auth enabled for /ui/* routes (bind=%s)", bind_address)
+    if _user_count > 0:
+        logger.info(
+            "UI auth enabled for /ui/* routes (%d user(s), bind=%s)",
+            _user_count, bind_address,
+        )
     else:
         logger.warning(
-            "UI auth disabled — set ERRANDER_UI_USER and ERRANDER_UI_PASSWORD to enable"
+            "No user accounts — UI is read-only (no approvals/settings). "
+            "Create one with: python -m errander --user-add <name> --user-groups admin"
         )
 
+    app = build_ui_app(
+        audit_store=audit_store,
+        approval_store=approval_store,
+        hygiene_manager=hygiene_manager,
+        overrides_store=overrides_store,
+        base_inventory=base_inventory,
+        user_store=user_store,
+        session_store=session_store,
+        ai_decision_store=ai_decision_store,
+        loopback_bind=_is_loopback,
+    )
+
+    runner = web.AppRunner(app, access_log=None)
+    await runner.setup()
+    site = web.TCPSite(runner, host=bind_address, port=port)
+    await site.start()
+    logger.info(
+        "Server listening on %s:%d (/metrics, /health, /ui)",
+        bind_address, port,
+    )
+    return runner
+
+
+def build_ui_app(
+    *,
+    audit_store: AuditStore | None = None,
+    approval_store: ApprovalRequestStore | None = None,
+    hygiene_manager: HygieneApprovalManager | None = None,
+    overrides_store: OverridesStore | None = None,
+    base_inventory: list[VMTarget] | None = None,
+    user_store: UserStore | None = None,
+    session_store: SessionStore | None = None,
+    ai_decision_store: AIDecisionStore | None = None,
+    loopback_bind: bool = True,
+) -> web.Application:
+    """Build the agent web application (middlewares + routes + app state).
+
+    Extracted from :func:`start_metrics_server` so tests can drive the full
+    auth/CSRF middleware stack through aiohttp's TestClient without binding
+    a real port.
+    """
     import os as _os
     csrf_secret = _os.urandom(32).hex()  # fresh per server start
 
@@ -3286,10 +3461,10 @@ async def start_metrics_server(
     app[_OVERRIDES_STORE_KEY] = overrides_store
     app[_BASE_INVENTORY_KEY] = base_inventory or []
     app[_AI_DECISION_STORE_KEY] = ai_decision_store
-    app[_UI_USER_KEY] = ui_user
-    app[_UI_PASSWORD_KEY] = ui_password
+    app[_USER_STORE_KEY] = user_store
+    app[_SESSION_STORE_KEY] = session_store
+    app[_LOOPBACK_BIND_KEY] = loopback_bind
     app[_CSRF_SECRET_KEY] = csrf_secret
-    app[_SESSION_STORE_KEY] = _SESSIONS
 
     app.router.add_get("/metrics", _metrics_handler)
     app.router.add_get("/health", _health_handler)
@@ -3319,13 +3494,4 @@ async def start_metrics_server(
     app.router.add_get("/ui/ai-decisions", _ui_ai_decisions)
     app.router.add_get(r"/ui/ai-decisions/{decision_id:\d+}", _ui_ai_decision_detail)
     app.router.add_get("/ui/monitoring", _ui_monitoring)
-
-    runner = web.AppRunner(app, access_log=None)
-    await runner.setup()
-    site = web.TCPSite(runner, host=bind_address, port=port)
-    await site.start()
-    logger.info(
-        "Server listening on %s:%d (/metrics, /health, /ui)",
-        bind_address, port,
-    )
-    return runner
+    return app

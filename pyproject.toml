@@ -21,6 +21,7 @@ dependencies = [
     "psycopg[binary]>=3.2",
     "python-dotenv>=1.2.2",
     "ruamel.yaml>=0.18",
+    "pyotp>=2.9",
 ]
 
 [project.optional-dependencies]

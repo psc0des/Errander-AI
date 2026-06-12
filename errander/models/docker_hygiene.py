@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
 
@@ -114,6 +114,32 @@ class DockerHygieneAssessment:
     def nothing_to_surface(self) -> bool:
         """True when assessment found no objects worth showing the operator."""
         return not self.findings
+
+    def to_json(self) -> str:
+        """Serialize for durable storage (hygiene_approval_requests.assessment_json)."""
+        return json.dumps(asdict(self))
+
+    @classmethod
+    def from_json(cls, data: str) -> DockerHygieneAssessment:
+        """Deserialize an assessment produced by :meth:`to_json`."""
+        raw = json.loads(data)
+        findings = tuple(
+            DockerHygieneFinding(
+                **{
+                    **fd,
+                    "resource_class": DockerResourceClass(fd["resource_class"]),
+                    "classification": FindingClassification(fd["classification"]),
+                }
+            )
+            for fd in raw.get("findings", [])
+        )
+        return cls(
+            vm_id=raw["vm_id"],
+            findings=findings,
+            raw_output=raw.get("raw_output", ""),
+            reachable=raw.get("reachable", True),
+            error=raw.get("error"),
+        )
 
 
 class ApprovalSurface(StrEnum):

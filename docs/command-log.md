@@ -1,5 +1,32 @@
 # Errander-AI Command Log
 
+## §8d Step 4 prep — DB-backed hygiene approval store + TOTP groundwork (2026-06-12)
+
+```bash
+git config user.name; git config user.email   # verify psc0des / sarathy.vass6@gmail.com
+docker compose up -d   # Postgres container had stopped — restarted for test DB
+
+# New HygieneApprovalStore (mirrors ApprovalRequestStore)
+uv run pytest tests/safety/test_hygiene_store.py -q   # 13/16 failed: model_dump_json AttributeError (dataclass, not Pydantic)
+# fix: DockerHygieneAssessment.to_json()/from_json() via dataclasses.asdict()
+uv run pytest tests/safety/test_hygiene_store.py -q   # 1 failed: wait_for_decision timeout didn't flip row to 'timeout'
+# fix: add mark_timeout() (mirrors ApprovalRequestStore.mark_timeout), call from wait_for_decision deadline branch
+uv run pytest tests/safety/test_hygiene_store.py -q   # 16 passed
+
+# TOTP groundwork (pyotp) for §8d Step 4 public-mode admin MFA
+uv run sync --extra dev   # added pyotp>=2.9; uv pruned stale aiosqlite/langgraph-checkpoint-sqlite/sqlite-vec
+uv run pytest tests/web/test_totp.py -q   # 7 passed
+
+# Full suite + lint/type check before commit
+uv run pytest -x -q   # 1597 passed, 1 failed (test_signed_url tampered-signature) — re-ran 5x isolated, always passed; pre-existing flaky test, unrelated
+uv run ruff check errander/web/server.py errander/safety/hygiene_approval.py errander/safety/hygiene_store.py errander/safety/migrations.py errander/models/docker_hygiene.py errander/main.py errander/agent/vm_graph.py errander/observability/metrics.py errander/web/totp.py tests/web/test_totp.py tests/safety/test_hygiene_store.py
+# F401: ApprovalSurface/DockerHygieneApproval now unused in metrics.py hygiene_approve_post (replaced by store.decide) — removed
+uv run mypy errander/safety/hygiene_store.py errander/safety/hygiene_approval.py errander/web/totp.py errander/observability/metrics.py errander/main.py errander/models/docker_hygiene.py   # Success: no issues found in 6 source files
+
+# tests/safety/test_migrations.py — migration #15 (hygiene_approval_requests + users.totp_secret)
+uv run pytest tests/safety/test_migrations.py -q   # 14 passed (versions 0..15, count 16, new table + column asserted)
+```
+
 ## §8d Step 3 — R2 web-only approval + users/groups RBAC (2026-06-12)
 
 ```bash

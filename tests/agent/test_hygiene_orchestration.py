@@ -108,6 +108,40 @@ def _make_rejection(assessment: DockerHygieneAssessment) -> DockerHygieneApprova
     )
 
 
+async def _make_store():
+    """Create and initialise a HygieneApprovalStore backed by the test DB."""
+    from errander.safety.hygiene_store import HygieneApprovalStore
+    from tests.conftest import make_test_db
+    store = HygieneApprovalStore(make_test_db())
+    await store.initialize()
+    return store
+
+
+async def _approve(store, assessment: DockerHygieneAssessment, batch_id: str, vm_id: str) -> None:
+    """Simulate an operator approving all cleanup candidates via the web UI."""
+    await store.decide(
+        batch_id, vm_id,
+        approved=True,
+        decided_by="tester",
+        snapshot_hash=compute_assessment_hash(assessment),
+        approved_items=[
+            {"resource_class": f.resource_class.value, "identity": f.identity}
+            for f in assessment.cleanup_candidates()
+        ],
+    )
+
+
+async def _reject(store, assessment: DockerHygieneAssessment, batch_id: str, vm_id: str) -> None:
+    """Simulate an operator rejecting via the web UI."""
+    await store.decide(
+        batch_id, vm_id,
+        approved=False,
+        decided_by="tester",
+        snapshot_hash=compute_assessment_hash(assessment),
+        approved_items=None,
+    )
+
+
 # ---------------------------------------------------------------------------
 # TestRunDockerHygieneOrchestration
 # ---------------------------------------------------------------------------
@@ -121,9 +155,10 @@ class TestRunDockerHygieneOrchestration:
         manager registers, operator approves, sub-graph re-invoked with approval."""
         from errander.agent.vm_graph import _run_docker_hygiene
 
+        store = await _make_store()
         assessment = _make_assessment(n_cleanup=2)
         state = _vm_state(dry_run=False)
-        manager = HygieneApprovalManager()
+        manager = HygieneApprovalManager(store)
 
         slack = AsyncMock()
         slack.post_message = AsyncMock(return_value="1716300000.000001")
@@ -139,13 +174,9 @@ class TestRunDockerHygieneOrchestration:
         compiled = MagicMock()
         compiled.ainvoke = _fake_invoke
 
-        # Schedule resolution after a tiny delay so wait_for_decision doesn't
-        # block forever.
-        approval = _make_approval(assessment)
-
         async def _resolve_soon() -> None:
             await asyncio.sleep(0.05)
-            manager.resolve("batch-001", "test-vm", approval)
+            await _approve(store, assessment, "batch-001", "test-vm")
 
         resolve_task = asyncio.create_task(_resolve_soon())
         result = await _run_docker_hygiene(
@@ -157,14 +188,10 @@ class TestRunDockerHygieneOrchestration:
         )
         await resolve_task
 
-        # Slack message was posted
         slack.post_message.assert_called_once()
-
-        # Sub-graph invoked twice (assess + execute)
         assert len(invoke_calls) == 2
         assert invoke_calls[0]["has_approval"] is False
         assert invoke_calls[1]["has_approval"] is True
-
         assert result["action_type"] == ActionType.DOCKER_HYGIENE.value
         assert result["status"] == "completed"
 
@@ -173,9 +200,10 @@ class TestRunDockerHygieneOrchestration:
         """Operator rejects → status=SKIPPED, sub-graph not re-invoked for execute."""
         from errander.agent.vm_graph import _run_docker_hygiene
 
+        store = await _make_store()
         assessment = _make_assessment(n_cleanup=2)
         state = _vm_state(dry_run=False)
-        manager = HygieneApprovalManager()
+        manager = HygieneApprovalManager(store)
 
         slack = AsyncMock()
         slack.post_message = AsyncMock(return_value="1716300000.000002")
@@ -189,11 +217,9 @@ class TestRunDockerHygieneOrchestration:
         compiled = MagicMock()
         compiled.ainvoke = _fake_invoke
 
-        rejection = _make_rejection(assessment)
-
         async def _reject_soon() -> None:
             await asyncio.sleep(0.05)
-            manager.resolve("batch-001", "test-vm", rejection)
+            await _reject(store, assessment, "batch-001", "test-vm")
 
         reject_task = asyncio.create_task(_reject_soon())
         result = await _run_docker_hygiene(
@@ -214,9 +240,10 @@ class TestRunDockerHygieneOrchestration:
         """No decision within timeout → status=SKIPPED with 'approval timeout'."""
         from errander.agent.vm_graph import _run_docker_hygiene
 
+        store = await _make_store()
         assessment = _make_assessment(n_cleanup=1)
         state = _vm_state(dry_run=False)
-        manager = HygieneApprovalManager()
+        manager = HygieneApprovalManager(store)
 
         slack = AsyncMock()
         slack.post_message = AsyncMock(return_value="1716300000.000003")
@@ -243,7 +270,6 @@ class TestRunDockerHygieneOrchestration:
         """Assessment with no cleanup candidates → returns assess result, no Slack."""
         from errander.agent.vm_graph import _run_docker_hygiene
 
-        # All findings are INVESTIGATE — no cleanup_candidates
         investigation_finding = DockerHygieneFinding(
             resource_class=DockerResourceClass.IMAGE_UNUSED,
             classification=FindingClassification.INVESTIGATE,
@@ -253,7 +279,7 @@ class TestRunDockerHygieneOrchestration:
         )
         assessment = DockerHygieneAssessment(vm_id="test-vm", findings=[investigation_finding])
         state = _vm_state(dry_run=False)
-        manager = HygieneApprovalManager()
+        manager = HygieneApprovalManager(MagicMock())
 
         slack = AsyncMock()
 
@@ -281,7 +307,7 @@ class TestRunDockerHygieneOrchestration:
 
         assessment = _make_assessment(n_cleanup=3)
         state = _vm_state(dry_run=True)
-        manager = HygieneApprovalManager()
+        manager = HygieneApprovalManager(MagicMock())
 
         slack = AsyncMock()
 
@@ -338,7 +364,7 @@ class TestRunDockerHygieneOrchestration:
             dry_run=False,
             action_params={"approval": pre_approval},
         )
-        manager = HygieneApprovalManager()
+        manager = HygieneApprovalManager(MagicMock())
         slack = AsyncMock()
 
         invoke_calls: list[dict[str, object]] = []
@@ -357,13 +383,9 @@ class TestRunDockerHygieneOrchestration:
             approval_timeout_seconds=10,
         )
 
-        # Slack NOT posted (fast path bypasses approval gate)
         slack.post_message.assert_not_called()
-
-        # Only one invoke call, which includes the pre-injected approval
         assert len(invoke_calls) == 1
         assert invoke_calls[0]["has_approval"] is True
-
         assert result["status"] == "completed"
 
     @pytest.mark.asyncio
@@ -372,9 +394,10 @@ class TestRunDockerHygieneOrchestration:
         contains the web approval URL."""
         from errander.agent.vm_graph import _run_docker_hygiene
 
+        store = await _make_store()
         assessment = _make_assessment(n_cleanup=1)
         state = _vm_state(dry_run=False)
-        manager = HygieneApprovalManager()
+        manager = HygieneApprovalManager(store)
 
         captured_text: list[str] = []
         slack = AsyncMock()
@@ -386,10 +409,9 @@ class TestRunDockerHygieneOrchestration:
         compiled = MagicMock()
         compiled.ainvoke = _fake_invoke
 
-        # Resolve approval immediately
         async def _resolve() -> None:
             await asyncio.sleep(0.02)
-            manager.resolve("batch-001", "test-vm", _make_approval(assessment))
+            await _approve(store, assessment, "batch-001", "test-vm")
 
         with patch.dict("os.environ", {"ERRANDER_SIGNING_SECRET": "a" * 44}):
             resolve_task = asyncio.create_task(_resolve())

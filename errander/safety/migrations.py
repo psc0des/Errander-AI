@@ -388,6 +388,36 @@ _MIGRATIONS: list[tuple[int, str]] = [
         CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions (expires_at)
         """,
     ),
+    # 0015 — hygiene_approval_requests + totp_secret on users (R3: process split)
+    #
+    # hygiene_approval_requests: DB-backed docker_hygiene approvals so the web
+    # process can list/decide them without sharing in-process state with the
+    # agent (replaces HygieneApprovalManager in-memory dict).
+    # totp_secret: nullable TOTP key for admin users when public mode is enabled.
+    (
+        15,
+        """
+        CREATE TABLE IF NOT EXISTS hygiene_approval_requests (
+            id               BIGSERIAL PRIMARY KEY,
+            batch_id         TEXT NOT NULL,
+            vm_id            TEXT NOT NULL,
+            assessment_json  TEXT NOT NULL,
+            signed_token     TEXT NOT NULL DEFAULT '',
+            posted_at        TEXT NOT NULL,
+            expires_at       TEXT NOT NULL,
+            status           TEXT NOT NULL DEFAULT 'pending'
+                             CHECK (status IN ('pending','approved','rejected','timeout')),
+            decided_by       TEXT,
+            snapshot_hash    TEXT,
+            approved_items_json TEXT,
+            decided_at       TEXT,
+            UNIQUE (batch_id, vm_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_hygiene_approvals_status
+            ON hygiene_approval_requests (status, expires_at);
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_secret TEXT
+        """,
+    ),
 ]
 
 #: Default groups + their permissions (R2). Idempotent (ON CONFLICT DO

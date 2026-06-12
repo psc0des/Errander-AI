@@ -16,7 +16,9 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable
+from datetime import UTC, datetime, timedelta
 from typing import Any, TypeVar
+from unittest.mock import AsyncMock
 
 import pytest
 from aiohttp import web
@@ -31,7 +33,7 @@ from errander.models.docker_hygiene import (
     FindingClassification,
     compute_assessment_hash,
 )
-from errander.safety.hygiene_approval import HygieneApprovalManager
+from errander.safety.hygiene_store import HygieneApprovalRow, HygieneApprovalStore
 from errander.web.server import (
     handle_hygiene_approve_get,
     handle_hygiene_approve_post,
@@ -67,10 +69,29 @@ def _assessment(findings: tuple[DockerHygieneFinding, ...]) -> DockerHygieneAsse
     return DockerHygieneAssessment(vm_id="prod/web-01", findings=findings)
 
 
-def _app_with_manager(manager: HygieneApprovalManager) -> web.Application:
-    """Build a minimal app with hygiene_manager in app state — skip startup hooks."""
+def _pending_row(
+    batch_id: str,
+    vm_id: str,
+    assessment: DockerHygieneAssessment,
+) -> HygieneApprovalRow:
+    """Build a pending HygieneApprovalRow for use in mock store."""
+    now = datetime.now(UTC)
+    return HygieneApprovalRow(
+        id=1,
+        batch_id=batch_id,
+        vm_id=vm_id,
+        assessment_json=assessment.to_json(),
+        signed_token="",
+        posted_at=now,
+        expires_at=now + timedelta(hours=1),
+        status="pending",
+    )
+
+
+def _app_with_store(store: HygieneApprovalStore) -> web.Application:
+    """Build a minimal app with hygiene_store in app state — skip startup hooks."""
     app = web.Application()
-    app["hygiene_manager"] = manager
+    app["hygiene_store"] = store
     return app
 
 
@@ -94,6 +115,14 @@ def _mock_post_request(
     return req
 
 
+def _mock_store(*, row: HygieneApprovalRow | None = None) -> AsyncMock:
+    """Build an AsyncMock store with get() returning row."""
+    store = AsyncMock(spec=HygieneApprovalStore)
+    store.get = AsyncMock(return_value=row)
+    store.decide = AsyncMock(return_value=True)
+    return store
+
+
 # ---------------------------------------------------------------------------
 # GET handler
 # ---------------------------------------------------------------------------
@@ -103,8 +132,7 @@ class TestHygieneApproveGet:
         self, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setenv("ERRANDER_SIGNING_SECRET", _SECRET.decode())
-        mgr = HygieneApprovalManager()
-        app = _app_with_manager(mgr)
+        app = _app_with_store(_mock_store())
         req = make_mocked_request("GET", "/ui/docker-hygiene/approve", app=app)
         resp = _run(handle_hygiene_approve_get(req))
         assert resp.status == 400
@@ -114,8 +142,7 @@ class TestHygieneApproveGet:
         self, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setenv("ERRANDER_SIGNING_SECRET", _SECRET.decode())
-        mgr = HygieneApprovalManager()
-        app = _app_with_manager(mgr)
+        app = _app_with_store(_mock_store())
         bad_token = make_signed_token(
             {"batch_id": "b1", "vm_id": "v1"},
             ttl_seconds=60,
@@ -130,8 +157,8 @@ class TestHygieneApproveGet:
         self, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setenv("ERRANDER_SIGNING_SECRET", _SECRET.decode())
-        mgr = HygieneApprovalManager()
-        app = _app_with_manager(mgr)
+        # store.get returns None → no pending row
+        app = _app_with_store(_mock_store(row=None))
         tok = make_signed_token(
             {"batch_id": "b1", "vm_id": "v1"},
             ttl_seconds=60,
@@ -146,10 +173,9 @@ class TestHygieneApproveGet:
         self, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setenv("ERRANDER_SIGNING_SECRET", _SECRET.decode())
-        mgr = HygieneApprovalManager()
         a = _assessment((_dangling("sha256:abc123def456"),))
-        mgr.register("b1", "prod/web-01", a)
-        app = _app_with_manager(mgr)
+        row = _pending_row("b1", "prod/web-01", a)
+        app = _app_with_store(_mock_store(row=row))
         tok = make_signed_token(
             {"batch_id": "b1", "vm_id": "prod/web-01"},
             ttl_seconds=60, secret=_SECRET,
@@ -164,11 +190,11 @@ class TestHygieneApproveGet:
         assert "Approve selected" in body
         assert "Reject all" in body
 
-    def test_missing_manager_returns_503(
+    def test_missing_store_returns_503(
         self, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setenv("ERRANDER_SIGNING_SECRET", _SECRET.decode())
-        app = web.Application()
+        app = web.Application()  # no hygiene_store key
         tok = make_signed_token(
             {"batch_id": "b1", "vm_id": "v1"},
             ttl_seconds=60, secret=_SECRET,
@@ -183,14 +209,14 @@ class TestHygieneApproveGet:
 # ---------------------------------------------------------------------------
 
 class TestHygieneApprovePost:
-    def test_reject_resolves_with_empty_approval(
+    def test_reject_calls_decide_with_approved_false(
         self, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setenv("ERRANDER_SIGNING_SECRET", _SECRET.decode())
-        mgr = HygieneApprovalManager()
         a = _assessment((_dangling("sha256:a"),))
-        mgr.register("b1", "v1", a)
-        app = _app_with_manager(mgr)
+        row = _pending_row("b1", "v1", a)
+        store = _mock_store(row=row)
+        app = _app_with_store(store)
         tok = make_signed_token(
             {"batch_id": "b1", "vm_id": "v1"},
             ttl_seconds=60, secret=_SECRET,
@@ -202,23 +228,23 @@ class TestHygieneApprovePost:
         assert resp.status == 200
         assert "Rejected" in resp.text
 
-        history = mgr.get_history()
-        assert len(history) == 1
-        assert history[0].approval is not None
-        assert history[0].approval.approved_findings == ()
+        store.decide.assert_called_once()
+        call_kwargs = store.decide.call_args.kwargs
+        assert call_kwargs["approved"] is False
+        assert call_kwargs.get("approved_items") is None
 
-    def test_approve_selected_resolves_with_checked_findings(
+    def test_approve_selected_calls_decide_with_correct_items(
         self, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setenv("ERRANDER_SIGNING_SECRET", _SECRET.decode())
-        mgr = HygieneApprovalManager()
         a = _assessment((
             _dangling("sha256:a"),
             _dangling("sha256:b"),
             _dangling("sha256:c"),
         ))
-        mgr.register("b1", "v1", a)
-        app = _app_with_manager(mgr)
+        row = _pending_row("b1", "v1", a)
+        store = _mock_store(row=row)
+        app = _app_with_store(store)
         tok = make_signed_token(
             {"batch_id": "b1", "vm_id": "v1"},
             ttl_seconds=60, secret=_SECRET,
@@ -232,23 +258,25 @@ class TestHygieneApprovePost:
         assert resp.status == 200
         assert "Approved" in resp.text
 
-        history = mgr.get_history()
-        assert len(history) == 1
-        approval = history[0].approval
-        assert approval is not None
-        assert len(approval.approved_findings) == 2
-        ids = {f.object_id for f in approval.approved_findings}
-        assert ids == {"sha256:a", "sha256:c"}
-        assert approval.snapshot_hash == compute_assessment_hash(a)
+        store.decide.assert_called_once()
+        call_kwargs = store.decide.call_args.kwargs
+        assert call_kwargs["approved"] is True
+        approved_items = call_kwargs["approved_items"]
+        assert approved_items is not None
+        assert len(approved_items) == 2
+        identities = {item["identity"] for item in approved_items}
+        assert identities == {"sha256:a", "sha256:c"}
+        # Snapshot hash must match assessment
+        assert call_kwargs["snapshot_hash"] == compute_assessment_hash(a)
 
-    def test_approve_with_no_checkboxes_yields_empty_approval(
+    def test_approve_with_no_checkboxes_calls_decide_approved_true_no_items(
         self, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setenv("ERRANDER_SIGNING_SECRET", _SECRET.decode())
-        mgr = HygieneApprovalManager()
         a = _assessment((_dangling("sha256:a"),))
-        mgr.register("b1", "v1", a)
-        app = _app_with_manager(mgr)
+        row = _pending_row("b1", "v1", a)
+        store = _mock_store(row=row)
+        app = _app_with_store(store)
         tok = make_signed_token(
             {"batch_id": "b1", "vm_id": "v1"},
             ttl_seconds=60, secret=_SECRET,
@@ -259,15 +287,15 @@ class TestHygieneApprovePost:
         resp = _run(handle_hygiene_approve_post(req))
         assert resp.status == 200
 
-        history = mgr.get_history()
-        assert history[0].approval.approved_findings == ()  # type: ignore[union-attr]
+        call_kwargs = store.decide.call_args.kwargs
+        assert call_kwargs["approved"] is True
+        assert call_kwargs.get("approved_items") is None
 
     def test_invalid_decision_rejected(
         self, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setenv("ERRANDER_SIGNING_SECRET", _SECRET.decode())
-        mgr = HygieneApprovalManager()
-        app = _app_with_manager(mgr)
+        app = _app_with_store(_mock_store())
         tok = make_signed_token(
             {"batch_id": "b1", "vm_id": "v1"},
             ttl_seconds=60, secret=_SECRET,
@@ -283,8 +311,7 @@ class TestHygieneApprovePost:
     ) -> None:
         """Defence in depth: POST re-verifies the token, doesn't trust GET."""
         monkeypatch.setenv("ERRANDER_SIGNING_SECRET", _SECRET.decode())
-        mgr = HygieneApprovalManager()
-        app = _app_with_manager(mgr)
+        app = _app_with_store(_mock_store())
         bad_token = make_signed_token(
             {"batch_id": "b1", "vm_id": "v1"},
             ttl_seconds=60, secret=b"different",
@@ -299,8 +326,8 @@ class TestHygieneApprovePost:
         self, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setenv("ERRANDER_SIGNING_SECRET", _SECRET.decode())
-        mgr = HygieneApprovalManager()
-        app = _app_with_manager(mgr)
+        # store.get returns None → no pending row
+        app = _app_with_store(_mock_store(row=None))
         tok = make_signed_token(
             {"batch_id": "b1", "vm_id": "v1"},
             ttl_seconds=60, secret=_SECRET,

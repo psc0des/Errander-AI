@@ -1,9 +1,58 @@
 # Errander-AI — Project Status
 
 ## Last Updated
-2026-06-12
+2026-06-13
 
 ## Current Phase
+**§8d Step 4 — R3: process separation (IN PROGRESS).**
+
+Step 4 splits the web UI out of `errander/observability/metrics.py` into a
+separately-runnable `errander/web/` process (own OS user, no SSH keys, no
+executor imports). This update covers the first slice: the DB-backed
+`docker_hygiene` approval store (a Step-3 deferral that blocks the process
+split) plus TOTP groundwork (mandatory admin MFA for nginx Mode 2, also
+deferred from Step 3).
+
+Migration #15 adds `hygiene_approval_requests` (mirrors `approval_requests`:
+atomic `decide()` via `UPDATE ... WHERE status='pending'`, `expire_overdue()`
+for the restart reconciler, `mark_timeout()` for `wait_for_decision`'s own
+deadline) and a nullable `users.totp_secret` column. New
+`errander/safety/hygiene_store.py` (`HygieneApprovalStore`/`HygieneApprovalRow`)
+replaces the in-memory dict inside `HygieneApprovalManager`, which is now a
+thin facade — `register`/`wait_for_decision` delegate to the store, with a 2 s
+DB poll for cross-process wakeup (same pattern as `ApprovalRequestStore`). Both
+`metrics.py` and `web/server.py` hygiene-approval handlers now call
+`store.decide(...)` directly instead of `manager.resolve(...)`. The
+`_approval_reconciler` now also calls `hygiene_store.expire_overdue()`.
+`DockerHygieneAssessment` (a frozen dataclass, not Pydantic) gained
+`to_json()`/`from_json()` for `assessment_json` round-tripping.
+
+New `errander/web/totp.py` wraps `pyotp`: `generate_secret()`, `make_qr_uri()`,
+`verify_code()` (±30s clock-drift window). Not yet wired into the login flow —
+that lands with the `ui.py` extraction later in Step 4.
+
+24 new tests (2460 → 2484 in CI scope): `tests/safety/test_hygiene_store.py`
+(16, NEW), `tests/web/test_totp.py` (7, NEW), `tests/safety/test_migrations.py`
+(+1, totp_secret column + hygiene_approval_requests table + version 15).
+Remaining Step 4 work (ui.py extraction, slim metrics.py, `__main__.py`
+production entry, TOTP login wiring, nginx Mode 2 + deploy artifacts, import
+isolation test) continues in this session.
+
+### Files changed (2026-06-13 — §8d Step 4 prep: hygiene store + TOTP)
+- `errander/safety/migrations.py` — migration #15: `hygiene_approval_requests` table + `users.totp_secret` column
+- `errander/safety/hygiene_store.py` — NEW: `HygieneApprovalStore`/`HygieneApprovalRow` (create/decide/mark_timeout/expire_overdue/wait_for_decision/list_pending)
+- `errander/safety/hygiene_approval.py` — `HygieneApprovalManager` is now a thin facade over `HygieneApprovalStore`; `PendingHygieneApproval` removed; `_row_to_approval()` reconstructs `DockerHygieneApproval` from a decided row
+- `errander/models/docker_hygiene.py` — `DockerHygieneAssessment.to_json()`/`from_json()` (dataclass JSON round-trip with enum reconstruction)
+- `errander/observability/metrics.py` — `_HYGIENE_STORE_KEY` replaces `_HYGIENE_MANAGER_KEY`; hygiene approve handlers call `store.decide(...)`; `start_metrics_server`/`build_ui_app` take `hygiene_store=`
+- `errander/web/server.py` — same hygiene handler rewrite (demo server)
+- `errander/main.py` — construct + initialize `HygieneApprovalStore`, pass to `HygieneApprovalManager`, `start_metrics_server`, and `_approval_reconciler` (expire_overdue)
+- `errander/agent/vm_graph.py` — `await hygiene_manager.register(...)` (now async)
+- `errander/web/totp.py` — NEW: `generate_secret`/`make_qr_uri`/`verify_code`
+- `pyproject.toml` — `pyotp>=2.9`
+- Tests: `tests/safety/test_hygiene_store.py` (NEW, 16), `tests/web/test_totp.py` (NEW, 7), `tests/safety/test_migrations.py` (+1), rewrites in `tests/safety/test_hygiene_approval.py`, `tests/safety/test_hygiene_web_approve.py`, `tests/agent/test_hygiene_orchestration.py`, `tests/agent/test_deferred_replay.py`
+- Docs: STATUS.md, tasks/lessons.md, docs/command-log.md
+
+## Previous Phase
 **§8d Step 3 — R2: users/groups RBAC + web-only approval (2026-06-12, COMPLETE).**
 
 Slack lost its decision authority entirely (fable §8a): the only place a decision can be recorded is the authenticated Web UI, by a named user in a permission-carrying group. Migration #14 adds `users`/`groups`/`group_permissions`/`user_groups`/`sessions` (seeded `admin` + `reader`; a third group is plain INSERTs, never a migration). New `errander/safety/user_store.py`: scrypt password hashes (stdlib, params stored per hash), DB-backed sessions (cookie token hashed at rest, survives restarts, R3-process-split-ready), per-request group resolution so membership changes apply without restart. Server-side RBAC via `_require_permission` in the handlers — `decide_approvals` gates batch + hygiene decisions (signed URLs locate, sessions authorize), `manage_settings` gates settings/inventory POSTs. Every decision records `decided_by="ui:<username>"` + `decided_by_group`. All three Slack decision paths removed: gate reaction watcher, docker_hygiene thread-reply parser (volumes now report-only in v1 web approval — fail closed), and the service-restart CLI's reaction gate (now a durable store row + web decision + atomic execution claim; the reconciler gained a 120 s claim grace so cross-process executors keep their own approvals). Slack messages are notify-and-link (plan summary + `/ui/approvals` URL). CLI user management (`--user-add/--user-remove/--user-list/--user-set-groups/--user-set-password`, all audited with the acting OS user); one-time `ERRANDER_UI_USER/PASSWORD` → admin-account seed for existing deployments. Zero users = read-only UI on loopback, mutations 403, non-loopback bind refuses to start. TOTP + nginx Mode 2 deferred to Step 4 (R3). 2,460 tests green on PostgreSQL (40 new: user store 23 + RBAC end-to-end 17; reaction/reply-channel tests removed), ruff + mypy clean.
@@ -243,7 +292,7 @@ Adds a `Monitoring` nav item and `/ui/monitoring` page to the Errander web UI. T
 | 1 | R4: PostgreSQL-only + DB layer | ✅ COMPLETE (2026-06-10) |
 | 2 | R3 keystone: `approval_requests` DB-backed store | ✅ COMPLETE (2026-06-11) |
 | 3 | R2: users/groups RBAC + web-only approval | ✅ COMPLETE (2026-06-12) |
-| 4 | R3: process split (two OS processes, key isolation, nginx Mode 2 + TOTP) | next |
+| 4 | R3: process split (two OS processes, key isolation, nginx Mode 2 + TOTP) | in progress |
 | 5 | R1: advisory-LLM batch planning (F2+F6 fix) | after 4 |
 | 6 | Plan A: investigation agent | after 5 |
 | 7 | Plan B: dashboard chat | after 6 |
@@ -252,4 +301,4 @@ Adds a `Monitoring` nav item and `/ui/monitoring` page to the Errander web UI. T
 None.
 
 ## Test count
-2460 in CI scope (excluding tests/ui Playwright + tests/staging), verified 2026-06-12.
+2484 in CI scope (excluding tests/ui Playwright + tests/staging), verified 2026-06-13.

@@ -469,7 +469,8 @@ async def test_window_opener_passes_hygiene_manager() -> None:
     audit_store = AsyncMock(spec=AuditStore)
     audit_store.log_event = AsyncMock()
 
-    hygiene_manager = HygieneApprovalManager()
+    from unittest.mock import MagicMock
+    hygiene_manager = HygieneApprovalManager(MagicMock())
     run_batch_calls: list[dict] = []
 
     async def _mock_run_batch(**kwargs: object) -> None:

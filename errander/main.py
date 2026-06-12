@@ -40,6 +40,7 @@ from errander.safety.approval_store import ApprovalRequestStore
 from errander.safety.audit import AuditStore
 from errander.safety.deferred import DeferredExecutionStore
 from errander.safety.hygiene_approval import HygieneApprovalManager
+from errander.safety.hygiene_store import HygieneApprovalStore
 from errander.safety.locking import FileLocker
 from errander.safety.overrides import OverridesStore
 from errander.scheduling.scheduler import MaintenanceScheduler
@@ -2255,6 +2256,7 @@ async def _approval_reconciler(
     slack_client: SlackClient | None,
     overrides_store: OverridesStore,
     hygiene_manager: HygieneApprovalManager | None = None,
+    hygiene_store: HygieneApprovalStore | None = None,
     llm_client: LLMClient | None = None,
     disk_history_store: object = None,
     baseline_store: object = None,
@@ -2289,6 +2291,8 @@ async def _approval_reconciler(
             detail="Reconciler: pending approval expired — auto-rejected",
             metadata={"reconciler": True},
         ))
+    if hygiene_store is not None:
+        await hygiene_store.expire_overdue()
 
     # --- Pass 2: execute approved-but-unclaimed requests ---
     for req in await approval_store.get_orphaned_approved():
@@ -2644,7 +2648,9 @@ async def async_main(args: argparse.Namespace) -> int:
     # --- Approval stores (shared between graph, web UI, and reconciler) ---
     approval_store = ApprovalRequestStore(_db)
     await approval_store.initialize()
-    hygiene_manager = HygieneApprovalManager()
+    hygiene_store = HygieneApprovalStore(_db)
+    await hygiene_store.initialize()
+    hygiene_manager = HygieneApprovalManager(hygiene_store)
 
     # --- User/session stores (R2: web-only approval with RBAC) ---
     from errander.safety.user_store import SessionStore as _SessionStore
@@ -2690,7 +2696,7 @@ async def async_main(args: argparse.Namespace) -> int:
             port=settings.metrics_port,
             audit_store=audit_store,
             approval_store=approval_store,
-            hygiene_manager=hygiene_manager,
+            hygiene_store=hygiene_store,
             overrides_store=overrides_store,
             base_inventory=flat_inventory,
             user_store=user_store,
@@ -2878,6 +2884,7 @@ async def async_main(args: argparse.Namespace) -> int:
                 slack_client=slack,
                 overrides_store=overrides_store,
                 hygiene_manager=hygiene_manager,
+                hygiene_store=hygiene_store,
                 llm_client=llm,
                 disk_history_store=disk_history_store,
                 baseline_store=baseline_store,

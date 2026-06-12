@@ -256,94 +256,131 @@ class TestReplyChannelRemoved:
 
 
 # ---------------------------------------------------------------------------
-# HygieneApprovalManager
+# HygieneApprovalManager (DB-backed facade — R3)
 # ---------------------------------------------------------------------------
 
+async def _make_manager():
+    """Create a DB-backed HygieneApprovalManager for tests."""
+    from errander.safety.hygiene_store import HygieneApprovalStore
+    from tests.conftest import make_test_db
+    store = HygieneApprovalStore(make_test_db())
+    await store.initialize()
+    return HygieneApprovalManager(store), store
+
+
 class TestHygieneApprovalManager:
-    def test_register_and_get_pending(self) -> None:
-        m = HygieneApprovalManager()
+    @pytest.mark.asyncio
+    async def test_register_and_get_pending(self) -> None:
+        manager, _ = await _make_manager()
         a = _assessment((_dangling("sha256:a"),))
-        pending = m.register("b1", "v1", a)
-        assert pending.batch_id == "b1"
-        assert pending.vm_id == "v1"
-        assert pending.assessment is a
-        assert len(m.get_pending()) == 1
-
-    def test_register_with_slack_ts(self) -> None:
-        m = HygieneApprovalManager()
-        a = _assessment(())
-        pending = m.register("b1", "v1", a, slack_message_ts="1234.5678")
-        assert pending.slack_message_ts == "1234.5678"
-
-    def test_resolve_moves_to_history(self) -> None:
-        m = HygieneApprovalManager()
-        a = _assessment((_dangling("sha256:a"),))
-        m.register("b1", "v1", a)
-        approval = _web_approval(a, a.findings)
-        m.resolve("b1", "v1", approval)
-        assert len(m.get_pending()) == 0
-        history = m.get_history()
-        assert len(history) == 1
-        assert history[0].approval is approval
-
-    def test_resolve_idempotent(self) -> None:
-        """Second resolve of the same key is a no-op (first wins)."""
-        m = HygieneApprovalManager()
-        a = _assessment((_dangling("sha256:a"),))
-        m.register("b1", "v1", a)
-        approval1 = _web_approval(a, a.findings, operator_id="ui:first")
-        approval2 = _web_approval(a, (), operator_id="ui:second")
-        m.resolve("b1", "v1", approval1)
-        m.resolve("b1", "v1", approval2)  # should be no-op
-        # History has exactly one entry, with the FIRST approval.
-        history = m.get_history()
-        assert len(history) == 1
-        assert history[0].approval is approval1
+        await manager.register("b1", "v1", a)
+        pending = await manager.get_pending()
+        assert len(pending) == 1
+        assert pending[0].batch_id == "b1"
+        assert pending[0].vm_id == "v1"
 
     @pytest.mark.asyncio
-    async def test_wait_for_decision_resolves_immediately(self) -> None:
-        m = HygieneApprovalManager()
+    async def test_register_with_slack_ts_accepted(self) -> None:
+        """slack_message_ts is accepted (not stored, but no error)."""
+        manager, _ = await _make_manager()
+        a = _assessment(())
+        await manager.register("b1", "v1", a, slack_message_ts="1234.5678")
+        pending = await manager.get_pending()
+        assert len(pending) == 1
+
+    @pytest.mark.asyncio
+    async def test_decide_moves_from_pending(self) -> None:
+        manager, store = await _make_manager()
         a = _assessment((_dangling("sha256:a"),))
-        m.register("b1", "v1", a)
-        approval = _web_approval(a, a.findings)
+        await manager.register("b1", "v1", a)
+        await store.decide(
+            "b1", "v1",
+            approved=True,
+            decided_by="ui:tester",
+            snapshot_hash=compute_assessment_hash(a),
+            approved_items=[{"resource_class": "image_dangling", "identity": "sha256:a"}],
+        )
+        pending = await manager.get_pending()
+        assert len(pending) == 0
 
-        async def resolve_soon() -> None:
-            await asyncio.sleep(0.01)
-            m.resolve("b1", "v1", approval)
+    @pytest.mark.asyncio
+    async def test_decide_idempotent_first_wins(self) -> None:
+        """Second decide on the same row is a no-op (WHERE status='pending' guard)."""
+        manager, store = await _make_manager()
+        a = _assessment((_dangling("sha256:a"),))
+        await manager.register("b1", "v1", a)
+        won1 = await store.decide(
+            "b1", "v1", approved=True, decided_by="ui:first",
+            snapshot_hash=compute_assessment_hash(a),
+            approved_items=[{"resource_class": "image_dangling", "identity": "sha256:a"}],
+        )
+        won2 = await store.decide(
+            "b1", "v1", approved=False, decided_by="ui:second",
+            snapshot_hash=compute_assessment_hash(a),
+        )
+        assert won1 is True
+        assert won2 is False
+        row = await store.get("b1", "v1")
+        assert row is not None
+        assert row.decided_by == "ui:first"
 
-        asyncio.create_task(resolve_soon())
-        result = await m.wait_for_decision("b1", "v1", timeout_seconds=5)
-        assert result is approval
+    @pytest.mark.asyncio
+    async def test_wait_for_decision_resolves_when_decided(self) -> None:
+        manager, store = await _make_manager()
+        a = _assessment((_dangling("sha256:a"),))
+        await manager.register("b1", "v1", a)
+
+        async def decide_soon() -> None:
+            await asyncio.sleep(0.05)
+            await store.decide(
+                "b1", "v1",
+                approved=True,
+                decided_by="ui:tester",
+                snapshot_hash=compute_assessment_hash(a),
+                approved_items=[{"resource_class": "image_dangling", "identity": "sha256:a"}],
+            )
+
+        asyncio.create_task(decide_soon())
+        result = await manager.wait_for_decision("b1", "v1", timeout_seconds=5)
+        assert result is not None
+        assert len(result.approved_findings) == 1
+        assert result.approved_findings[0].identity == "sha256:a"
 
     @pytest.mark.asyncio
     async def test_wait_for_decision_timeout_returns_none(self) -> None:
-        m = HygieneApprovalManager()
+        manager, _ = await _make_manager()
         a = _assessment(())
-        m.register("b1", "v1", a)
-        result = await m.wait_for_decision("b1", "v1", timeout_seconds=0)
-        # wait_for with timeout_seconds=0 raises TimeoutError caught by manager → None
+        await manager.register("b1", "v1", a)
+        result = await manager.wait_for_decision("b1", "v1", timeout_seconds=0)
         assert result is None
-        # After timeout, pending is cleared so a late resolve doesn't fire stale.
-        assert len(m.get_pending()) == 0
+        pending = await manager.get_pending()
+        assert len(pending) == 0
 
     @pytest.mark.asyncio
-    async def test_wait_for_unknown_key_raises(self) -> None:
-        m = HygieneApprovalManager()
-        with pytest.raises(KeyError):
-            await m.wait_for_decision("nonexistent", "v1", timeout_seconds=1)
+    async def test_wait_for_nonexistent_row_returns_none(self) -> None:
+        """No row in DB → wait_for_decision returns None immediately."""
+        manager, _ = await _make_manager()
+        result = await manager.wait_for_decision("nonexistent", "v1", timeout_seconds=1)
+        assert result is None
 
-    def test_multiple_vms_in_same_batch(self) -> None:
+    @pytest.mark.asyncio
+    async def test_multiple_vms_in_same_batch(self) -> None:
         """A batch with N VMs gets N independent pending hygiene approvals."""
-        m = HygieneApprovalManager()
+        manager, store = await _make_manager()
         a1 = _assessment((_dangling("sha256:a"),))
         a2 = _assessment((_dangling("sha256:b"),))
-        m.register("b1", "vm1", a1)
-        m.register("b1", "vm2", a2)
-        assert len(m.get_pending()) == 2
+        await manager.register("b1", "vm1", a1)
+        await manager.register("b1", "vm2", a2)
+        pending = await manager.get_pending()
+        assert len(pending) == 2
 
-        approval1 = _web_approval(a1, a1.findings)
-        m.resolve("b1", "vm1", approval1)
-        # vm2 still pending
-        pending = m.get_pending()
+        await store.decide(
+            "b1", "vm1",
+            approved=True,
+            decided_by="ui:tester",
+            snapshot_hash=compute_assessment_hash(a1),
+            approved_items=[{"resource_class": "image_dangling", "identity": "sha256:a"}],
+        )
+        pending = await manager.get_pending()
         assert len(pending) == 1
         assert pending[0].vm_id == "vm2"

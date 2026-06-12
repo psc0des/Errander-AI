@@ -39,7 +39,7 @@ if TYPE_CHECKING:
     from errander.safety.ai_audit import AIDecisionStore
     from errander.safety.approval_store import ApprovalRequestStore
     from errander.safety.audit import AuditStore
-    from errander.safety.hygiene_approval import HygieneApprovalManager
+    from errander.safety.hygiene_store import HygieneApprovalStore
     from errander.safety.overrides import OverridesStore
     from errander.safety.user_store import SessionStore, User, UserStore
 
@@ -52,7 +52,7 @@ def _uq(s: str) -> str:
 #: Typed app keys for storing shared objects on the aiohttp Application.
 _AUDIT_STORE_KEY: web.AppKey[AuditStore | None] = web.AppKey("audit_store")
 _APPROVAL_STORE_KEY: web.AppKey[ApprovalRequestStore | None] = web.AppKey("approval_store")
-_HYGIENE_MANAGER_KEY: web.AppKey[HygieneApprovalManager | None] = web.AppKey("hygiene_manager")
+_HYGIENE_STORE_KEY: web.AppKey[HygieneApprovalStore | None] = web.AppKey("hygiene_store")
 _OVERRIDES_STORE_KEY: web.AppKey[OverridesStore | None] = web.AppKey("overrides_store")
 _BASE_INVENTORY_KEY: web.AppKey[list[VMTarget]] = web.AppKey("base_inventory")
 _AI_DECISION_STORE_KEY: web.AppKey[AIDecisionStore | None] = web.AppKey("ai_decision_store")
@@ -2204,9 +2204,9 @@ async def _ui_approvals(request: web.Request) -> web.Response:
     # Listed here with self-generated signed links so they stay decidable from
     # the queue even when the Slack notification was missed (R2: the web UI is
     # the only decision surface).
-    hygiene_manager: HygieneApprovalManager | None = request.app.get(_HYGIENE_MANAGER_KEY)
+    hygiene_store_val: HygieneApprovalStore | None = request.app.get(_HYGIENE_STORE_KEY)
     hygiene_section = ""
-    hygiene_pending = hygiene_manager.get_pending() if hygiene_manager is not None else []
+    hygiene_pending = await hygiene_store_val.list_pending() if hygiene_store_val is not None else []
     if hygiene_pending:
         hyg_rows: list[list[str]] = []
         for hp in hygiene_pending:
@@ -2227,7 +2227,7 @@ async def _ui_approvals(request: web.Request) -> web.Response:
             hyg_rows.append([
                 f'<span class="mono">{_esc(hp.batch_id)}</span>',
                 f'<span class="mono">{_esc(hp.vm_id)}</span>',
-                f"{len(hp.assessment.cleanup_candidates())} candidate object(s)",
+                f"{len(hp.assessment().cleanup_candidates())} candidate object(s)",
                 link,
             ])
         hygiene_section = (
@@ -2528,15 +2528,15 @@ async def _ui_hygiene_approve_get(request: web.Request) -> web.Response:
     batch_id = str(payload.get("batch_id", ""))
     vm_id = str(payload.get("vm_id", ""))
 
-    manager: HygieneApprovalManager | None = request.app.get(_HYGIENE_MANAGER_KEY)
-    if manager is None:
+    hygiene_store_get: HygieneApprovalStore | None = request.app.get(_HYGIENE_STORE_KEY)
+    if hygiene_store_get is None:
         return web.Response(
-            text=_hygiene_error_html("Approval manager not available."),
+            text=_hygiene_error_html("Hygiene approval store not available."),
             content_type="text/html", status=503,
         )
 
-    pending = next((p for p in manager.get_pending() if p.key == (batch_id, vm_id)), None)
-    if pending is None:
+    row = await hygiene_store_get.get(batch_id, vm_id)
+    if row is None or row.is_decided():
         return web.Response(
             text=_hygiene_error_html(
                 "This approval has already been resolved or has expired. "
@@ -2546,7 +2546,7 @@ async def _ui_hygiene_approve_get(request: web.Request) -> web.Response:
             status=404,
         )
 
-    body = _render_hygiene_form(pending.assessment, token=token, batch_id=batch_id, vm_id=vm_id)
+    body = _render_hygiene_form(row.assessment(), token=token, batch_id=batch_id, vm_id=vm_id)
     return _page("Docker hygiene approval", body, request=request)
 
 
@@ -2559,8 +2559,6 @@ async def _ui_hygiene_approve_post(request: web.Request) -> web.Response:
     """
     from errander.integrations.signed_url import InvalidSignedTokenError, verify_signed_token
     from errander.models.docker_hygiene import (
-        ApprovalSurface,
-        DockerHygieneApproval,
         DockerResourceClass,
         compute_assessment_hash,
     )
@@ -2590,33 +2588,33 @@ async def _ui_hygiene_approve_post(request: web.Request) -> web.Response:
     batch_id = str(payload.get("batch_id", ""))
     vm_id = str(payload.get("vm_id", ""))
 
-    manager: HygieneApprovalManager | None = request.app.get(_HYGIENE_MANAGER_KEY)
-    if manager is None:
+    hygiene_store_post: HygieneApprovalStore | None = request.app.get(_HYGIENE_STORE_KEY)
+    if hygiene_store_post is None:
         return web.Response(
-            text=_hygiene_error_html("Approval manager not available."),
+            text=_hygiene_error_html("Hygiene approval store not available."),
             content_type="text/html", status=503,
         )
 
-    pending = next((p for p in manager.get_pending() if p.key == (batch_id, vm_id)), None)
-    if pending is None:
+    row = await hygiene_store_post.get(batch_id, vm_id)
+    if row is None or row.is_decided():
         return web.Response(
             text=_hygiene_error_html("This approval is no longer pending — another channel may have resolved it."),
             content_type="text/html",
             status=404,
         )
 
-    assessment = pending.assessment
+    assessment = row.assessment()
     operator_id = f"ui:{user.username}"
+    snapshot_hash = compute_assessment_hash(assessment)
 
     if decision == "reject":
-        approval = DockerHygieneApproval(
-            vm_id=vm_id,
-            approved_findings=(),
-            snapshot_hash=compute_assessment_hash(assessment),
-            surface=ApprovalSurface.WEB_PAGE,
-            operator_id=operator_id,
+        await hygiene_store_post.decide(
+            batch_id, vm_id,
+            approved=False,
+            decided_by=operator_id,
+            snapshot_hash=snapshot_hash,
+            approved_items=None,
         )
-        manager.resolve(batch_id, vm_id, approval)
         return _page(
             "Docker hygiene — rejected",
             _hygiene_confirm_html("Rejected", "All findings rejected — no objects will be removed."),
@@ -2630,7 +2628,7 @@ async def _ui_hygiene_approve_post(request: web.Request) -> web.Response:
         DockerResourceClass.CONTAINER_STOPPED,
     )
     by_class = assessment.by_class()
-    approved = []
+    approved_items_list: list[dict[str, str]] = []
     seen: set[tuple[str, str]] = set()
     for klass in _executable:
         items = by_class.get(klass, [])
@@ -2641,22 +2639,23 @@ async def _ui_hygiene_approve_post(request: web.Request) -> web.Response:
                 key = (f.resource_class.value, f.identity)
                 if key not in seen:
                     seen.add(key)
-                    approved.append(f)
+                    approved_items_list.append(
+                        {"resource_class": f.resource_class.value, "identity": f.identity}
+                    )
 
-    approval = DockerHygieneApproval(
-        vm_id=vm_id,
-        approved_findings=tuple(approved),
-        snapshot_hash=compute_assessment_hash(assessment),
-        surface=ApprovalSurface.WEB_PAGE,
-        operator_id=operator_id,
+    await hygiene_store_post.decide(
+        batch_id, vm_id,
+        approved=True,
+        decided_by=operator_id,
+        snapshot_hash=snapshot_hash,
+        approved_items=approved_items_list or None,
     )
-    manager.resolve(batch_id, vm_id, approval)
 
     return _page(
         "Docker hygiene — approved",
         _hygiene_confirm_html(
             "Approved",
-            f"{len(approved)} object(s) approved for removal. "
+            f"{len(approved_items_list)} object(s) approved for removal. "
             "The agent will re-validate each object against current state before removing.",
         ),
         request=request,
@@ -3338,7 +3337,7 @@ async def start_metrics_server(
     port: int = 9090,
     audit_store: AuditStore | None = None,
     approval_store: ApprovalRequestStore | None = None,
-    hygiene_manager: HygieneApprovalManager | None = None,
+    hygiene_store: HygieneApprovalStore | None = None,
     overrides_store: OverridesStore | None = None,
     base_inventory: list[VMTarget] | None = None,
     user_store: UserStore | None = None,
@@ -3376,7 +3375,7 @@ async def start_metrics_server(
         port: Port to listen on (default 9090).
         audit_store: Connected AuditStore for UI queries.
         approval_store: ApprovalRequestStore for the durable approval UI.
-        hygiene_manager: HygieneApprovalManager for docker_hygiene object-level approvals.
+        hygiene_store: HygieneApprovalStore for docker_hygiene object-level approvals.
         overrides_store: OverridesStore for settings/inventory overrides.
         base_inventory: Flat list of VMTarget from inventory.yaml — shown as the base fleet on /ui/inventory.
         user_store: UserStore for login + RBAC (None = bootstrap mode: read-only pages, no decisions).
@@ -3413,7 +3412,7 @@ async def start_metrics_server(
     app = build_ui_app(
         audit_store=audit_store,
         approval_store=approval_store,
-        hygiene_manager=hygiene_manager,
+        hygiene_store=hygiene_store,
         overrides_store=overrides_store,
         base_inventory=base_inventory,
         user_store=user_store,
@@ -3437,7 +3436,7 @@ def build_ui_app(
     *,
     audit_store: AuditStore | None = None,
     approval_store: ApprovalRequestStore | None = None,
-    hygiene_manager: HygieneApprovalManager | None = None,
+    hygiene_store: HygieneApprovalStore | None = None,
     overrides_store: OverridesStore | None = None,
     base_inventory: list[VMTarget] | None = None,
     user_store: UserStore | None = None,
@@ -3457,7 +3456,7 @@ def build_ui_app(
     app = web.Application(middlewares=[_session_auth_middleware, _csrf_middleware])  # type: ignore[list-item]
     app[_AUDIT_STORE_KEY] = audit_store
     app[_APPROVAL_STORE_KEY] = approval_store
-    app[_HYGIENE_MANAGER_KEY] = hygiene_manager
+    app[_HYGIENE_STORE_KEY] = hygiene_store
     app[_OVERRIDES_STORE_KEY] = overrides_store
     app[_BASE_INVENTORY_KEY] = base_inventory or []
     app[_AI_DECISION_STORE_KEY] = ai_decision_store

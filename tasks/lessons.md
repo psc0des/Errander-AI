@@ -1977,3 +1977,15 @@ When changing a model field type from bare scalar (list[str]) to a richer type (
 ## 2026-05-24 — Anthropic prefix caching requires content-block list format
 
 For Anthropic endpoints (api.anthropic.com), the cache_control field must be attached to the content block as a dict inside a list, not to the top-level message. The message content becomes: [{"type": "text", "text": "...", "cache_control": {"type": "ephemeral"}}]. For OpenAI/vLLM, string content works and prefix caching is automatic from matching byte-stable prefixes — no extra fields needed.
+
+## 2026-06-12 — Don't assume a model has Pydantic methods without checking
+
+While building `HygieneApprovalStore` (§8d Step 4 prep), `assessment_json = assessment.model_dump_json()` / `DockerHygieneAssessment.model_validate_json(...)` were written assuming the model was a Pydantic `BaseModel` — it's actually `@dataclass(frozen=True)`. 13/16 new tests failed with `AttributeError: 'DockerHygieneAssessment' object has no attribute 'model_dump_json'`.
+
+**Rule**: before calling `model_dump_json`/`model_validate_json`/`model_dump` on any model, grep its class definition for `class X(BaseModel)` vs `@dataclass`. For dataclasses that need JSON round-tripping, add explicit `to_json()`/`from_json()` methods using `dataclasses.asdict()` + manual enum reconstruction (StrEnum members serialize fine via `json.dumps` since they're `str` subclasses, but `asdict()` produces plain dicts on the way back in — enums need `EnumType(value)` reconstruction).
+
+## 2026-06-12 — `wait_for_decision`'s own timeout deadline is not the same as the row's `expires_at`
+
+`HygieneApprovalStore.wait_for_decision(timeout_seconds=N)` has its own deadline computed from `datetime.now() + N`. The row's `expires_at` column (set at `create()` time, default 1800s) is a *separate* concept consumed only by `expire_overdue()` (the restart reconciler's sweep). Calling `expire_overdue()` when `wait_for_decision`'s local deadline passes does nothing if `expires_at` is still in the future — the row stays `pending` and the test that asserts the row transitions to `timeout` fails.
+
+**Rule**: mirror `ApprovalRequestStore` exactly — `wait_for_decision`'s timeout branch calls its own `mark_timeout(batch_id, vm_id)` (unconditional atomic `UPDATE ... WHERE status='pending'`), not `expire_overdue()`. Handle the race where `mark_timeout` loses to a concurrent `decide()` by re-fetching and returning the actual decided row instead of `None`.

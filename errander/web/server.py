@@ -5283,21 +5283,16 @@ async def handle_hygiene_approve_get(request: web.Request) -> web.Response:
 
     batch_id = str(payload.get("batch_id", ""))
     vm_id = str(payload.get("vm_id", ""))
-    manager = request.app.get("hygiene_manager")
-    if manager is None:
+    store = request.app.get("hygiene_store")
+    if store is None:
         return web.Response(
-            text=_hygiene_error_page("Approval manager not available."),
+            text=_hygiene_error_page("Hygiene approval store not available."),
             content_type="text/html",
             status=503,
         )
 
-    # Look up pending. Use a public accessor (added below) rather than poking
-    # at the private dict.
-    pending = next(
-        (p for p in manager.get_pending() if p.key == (batch_id, vm_id)),
-        None,
-    )
-    if pending is None:
+    row = await store.get(batch_id, vm_id)
+    if row is None or row.is_decided():
         return web.Response(
             text=_hygiene_error_page(
                 "This approval has already been resolved or has expired. "
@@ -5308,7 +5303,7 @@ async def handle_hygiene_approve_get(request: web.Request) -> web.Response:
         )
 
     content = page_hygiene_approve(
-        pending.assessment,
+        row.assessment(),
         token=token,
         batch_id=batch_id,
         vm_id=vm_id,
@@ -5334,11 +5329,7 @@ async def handle_hygiene_approve_post(request: web.Request) -> web.Response:
         InvalidSignedTokenError,
         verify_signed_token,
     )
-    from errander.models.docker_hygiene import (
-        ApprovalSurface,
-        DockerHygieneApproval,
-        compute_assessment_hash,
-    )
+    from errander.models.docker_hygiene import compute_assessment_hash
     from errander.safety.hygiene_approval import _short_class_key
 
     data = await request.post()
@@ -5362,18 +5353,15 @@ async def handle_hygiene_approve_post(request: web.Request) -> web.Response:
     batch_id = str(payload.get("batch_id", ""))
     vm_id = str(payload.get("vm_id", ""))
 
-    manager = request.app.get("hygiene_manager")
-    if manager is None:
+    store = request.app.get("hygiene_store")
+    if store is None:
         return web.Response(
-            text=_hygiene_error_page("Approval manager not available."),
+            text=_hygiene_error_page("Hygiene approval store not available."),
             content_type="text/html",
             status=503,
         )
-    pending = next(
-        (p for p in manager.get_pending() if p.key == (batch_id, vm_id)),
-        None,
-    )
-    if pending is None:
+    row = await store.get(batch_id, vm_id)
+    if row is None or row.is_decided():
         return web.Response(
             text=_hygiene_error_page(
                 "This approval is no longer pending — another channel may have resolved it."
@@ -5382,17 +5370,17 @@ async def handle_hygiene_approve_post(request: web.Request) -> web.Response:
             status=404,
         )
 
-    assessment = pending.assessment
+    assessment = row.assessment()
+    snapshot_hash = compute_assessment_hash(assessment)
 
     if decision == "reject":
-        approval = DockerHygieneApproval(
-            vm_id=vm_id,
-            approved_findings=(),
-            snapshot_hash=compute_assessment_hash(assessment),
-            surface=ApprovalSurface.WEB_PAGE,
-            operator_id=_AUTH_USERNAME,
+        await store.decide(
+            batch_id, vm_id,
+            approved=False,
+            decided_by=_AUTH_USERNAME,
+            snapshot_hash=snapshot_hash,
+            approved_items=None,
         )
-        manager.resolve(batch_id, vm_id, approval)
         return web.Response(
             text=_hygiene_confirmation_page(
                 "Rejected", "All findings rejected — no objects will be removed.",
@@ -5401,7 +5389,7 @@ async def handle_hygiene_approve_post(request: web.Request) -> web.Response:
         )
 
     # decision == "approve" — collect checked items from form.
-    approved: list[Any] = []
+    approved_items_list: list[dict[str, str]] = []
     seen: set[tuple[str, str]] = set()
     by_class = assessment.by_class()
     from errander.models.docker_hygiene import DockerResourceClass  # noqa: PLC0415
@@ -5420,21 +5408,22 @@ async def handle_hygiene_approve_post(request: web.Request) -> web.Response:
                 if key in seen:
                     continue
                 seen.add(key)
-                approved.append(f)
+                approved_items_list.append(
+                    {"resource_class": f.resource_class.value, "identity": f.identity}
+                )
 
-    approval = DockerHygieneApproval(
-        vm_id=vm_id,
-        approved_findings=tuple(approved),
-        snapshot_hash=compute_assessment_hash(assessment),
-        surface=ApprovalSurface.WEB_PAGE,
-        operator_id=_AUTH_USERNAME,
+    await store.decide(
+        batch_id, vm_id,
+        approved=True,
+        decided_by=_AUTH_USERNAME,
+        snapshot_hash=snapshot_hash,
+        approved_items=approved_items_list or None,
     )
-    manager.resolve(batch_id, vm_id, approval)
 
     return web.Response(
         text=_hygiene_confirmation_page(
             "Approved",
-            f"{len(approved)} object(s) approved for removal. The agent will "
+            f"{len(approved_items_list)} object(s) approved for removal. The agent will "
             f"re-validate each object against current state before removing.",
         ),
         content_type="text/html",

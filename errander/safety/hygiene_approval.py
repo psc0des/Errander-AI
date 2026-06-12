@@ -1,4 +1,4 @@
-"""docker_hygiene approval surface — Slack notification formatter + manager.
+"""docker_hygiene approval surface — Slack notification formatter + manager facade.
 
 This module mirrors the design of :mod:`errander.safety.approval` but for
 the docker_hygiene action's object-level approval flow. Since R2 (web-only
@@ -10,14 +10,18 @@ The pre-R2 Slack thread-reply decision channel ("approve images 1,3") was
 removed; ``ApprovalSurface.SLACK_REPLY`` survives in the enum for audit-log
 read-back only.
 
+Since R3 (process separation), :class:`HygieneApprovalManager` is a thin
+facade over :class:`~errander.safety.hygiene_store.HygieneApprovalStore`,
+which persists requests in the ``hygiene_approval_requests`` DB table so the
+web process can list and decide them without sharing in-process state with the
+agent.
+
 Pieces in this file:
 
 * :func:`format_hygiene_approval_message` — renders an assessment into the
   Slack notification operators see (with the web approval link).
-* :class:`PendingHygieneApproval` — state object held in the manager.
-* :class:`HygieneApprovalManager` — registers requests, resolves them
-  (web handler calls :meth:`~HygieneApprovalManager.resolve`), signals
-  waiting coroutines.
+* :class:`HygieneApprovalManager` — registers requests and waits for decisions
+  on the agent side (delegates to the durable store).
 
 INVARIANT (per-object-parser / drop-unapproved): the web approval handlers
 only accept checkbox selections that map back to findings in the registered
@@ -27,18 +31,21 @@ assessment snapshot — an unknown selection is ignored, never resolved to a
 
 from __future__ import annotations
 
-import asyncio
 import logging
-from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 from errander.models.docker_hygiene import (
+    ApprovalSurface,
     DockerHygieneApproval,
     DockerHygieneAssessment,
     DockerHygieneFinding,
     DockerResourceClass,
     FindingClassification,
 )
+
+if TYPE_CHECKING:
+    from errander.safety.hygiene_store import HygieneApprovalRow, HygieneApprovalStore
 
 logger = logging.getLogger(__name__)
 
@@ -187,107 +194,45 @@ def _short_class_key(klass: DockerResourceClass) -> str:
 
 
 # ---------------------------------------------------------------------------
-# HygieneApprovalManager — in-memory rendezvous
+# HygieneApprovalManager — DB-backed facade (R3: process separation)
 # ---------------------------------------------------------------------------
 
-@dataclass
-class PendingHygieneApproval:
-    """An in-flight docker_hygiene approval awaiting a decision.
-
-    The web approval handler resolves it via
-    :meth:`HygieneApprovalManager.resolve` (sole decision surface — R2);
-    resolve() is idempotent, first writer wins.
-
-    Fields:
-        batch_id, vm_id: identifier pair (one pending per VM per batch).
-        assessment: the assessment snapshot operators see.
-        posted_at: when the request was registered.
-        slack_message_ts: Slack ts if the message was posted; None otherwise.
-        approval: set by resolve() — None while pending.
-    """
-
-    batch_id: str
-    vm_id: str
-    assessment: DockerHygieneAssessment
-    posted_at: datetime
-    slack_message_ts: str | None = None
-    approval: DockerHygieneApproval | None = field(default=None, init=False)
-    _event: asyncio.Event = field(default_factory=asyncio.Event, init=False, repr=False)
-
-    @property
-    def key(self) -> tuple[str, str]:
-        """Composite key used by the manager."""
-        return (self.batch_id, self.vm_id)
-
-    def is_decided(self) -> bool:
-        return self.approval is not None
-
-
 class HygieneApprovalManager:
-    """Tracks pending docker_hygiene approval requests for the web surface.
+    """Agent-side facade over HygieneApprovalStore for docker_hygiene approvals.
 
-    Single-threaded asyncio use. Each pending request is keyed by
-    ``(batch_id, vm_id)`` since a batch can have multiple VMs each needing
-    their own docker_hygiene approval.
+    Since R3, requests are persisted in the ``hygiene_approval_requests`` DB
+    table so the web process can list and decide them independently.
+    Decisions written by the web process are picked up by the 2 s poll in
+    :meth:`wait_for_decision`.
 
     Usage::
 
-        manager = HygieneApprovalManager()
-        pending = manager.register(batch_id, vm_id, assessment, slack_ts=ts)
+        manager = HygieneApprovalManager(store)
 
-        # Web approval handler:
-        manager.resolve(batch_id, vm_id, approval)
+        # Agent side:
+        await manager.register(batch_id, vm_id, assessment)
+        approval = await manager.wait_for_decision(batch_id, vm_id, timeout_seconds=1800)
 
-        # Batch coroutine waits:
-        approval = await manager.wait_for_decision(batch_id, vm_id, timeout=1800)
+        # Web handler (uses store directly in ui.py — no manager reference needed):
+        await store.decide(batch_id, vm_id, approved=True, decided_by="ui:alice", ...)
     """
 
-    def __init__(self) -> None:
-        self._pending: dict[tuple[str, str], PendingHygieneApproval] = {}
-        self._history: list[PendingHygieneApproval] = []
+    def __init__(self, store: HygieneApprovalStore) -> None:
+        self._store = store
 
-    def register(
+    async def register(
         self,
         batch_id: str,
         vm_id: str,
         assessment: DockerHygieneAssessment,
         *,
         slack_message_ts: str | None = None,
-    ) -> PendingHygieneApproval:
-        """Register a new pending hygiene approval."""
-        pending = PendingHygieneApproval(
-            batch_id=batch_id,
-            vm_id=vm_id,
-            assessment=assessment,
-            posted_at=datetime.now(tz=UTC),
-            slack_message_ts=slack_message_ts,
-        )
-        self._pending[pending.key] = pending
-        logger.info(
-            "Hygiene approval registered for batch=%s vm=%s (%d findings)",
-            batch_id, vm_id, len(assessment.findings),
-        )
-        return pending
-
-    def resolve(
-        self,
-        batch_id: str,
-        vm_id: str,
-        approval: DockerHygieneApproval,
+        timeout_seconds: int = 1800,
     ) -> None:
-        """Record the operator's decision. Idempotent — first wins."""
-        key = (batch_id, vm_id)
-        pending = self._pending.pop(key, None)
-        if pending is None:
-            return  # Already resolved or never registered
-        pending.approval = approval
-        pending._event.set()
-        self._history.append(pending)
-        logger.info(
-            "Hygiene approval resolved for batch=%s vm=%s (%d objects, surface=%s)",
-            batch_id, vm_id,
-            len(approval.approved_findings),
-            approval.surface.value,
+        """Persist a new pending hygiene approval request in the DB."""
+        await self._store.create(
+            batch_id, vm_id, assessment, signed_token="",
+            timeout_seconds=timeout_seconds,
         )
 
     async def wait_for_decision(
@@ -297,37 +242,53 @@ class HygieneApprovalManager:
         *,
         timeout_seconds: int = 1800,
     ) -> DockerHygieneApproval | None:
-        """Wait for a decision. Returns None on timeout (no auto-rejection).
+        """Wait for operator decision. Returns None on timeout.
 
-        The caller treats None as a timeout — it's *not* the same as an
-        empty-approval rejection. A rejection produces a
-        DockerHygieneApproval with approved_findings=().
-
-        Raises:
-            KeyError: When (batch_id, vm_id) is not currently pending.
+        Wakes within 2 s of a cross-process decision via DB poll.
+        Returns None on timeout — the caller treats None as auto-reject,
+        distinct from an explicit rejection (approved_findings=()).
         """
-        key = (batch_id, vm_id)
-        pending = self._pending.get(key)
-        if pending is None:
-            msg = f"No pending hygiene approval for batch={batch_id!r} vm={vm_id!r}"
-            raise KeyError(msg)
-        try:
-            await asyncio.wait_for(pending._event.wait(), timeout=timeout_seconds)
-        except TimeoutError:
-            # Drop from pending so a late resolve() doesn't fire stale.
-            self._pending.pop(key, None)
-            self._history.append(pending)
-            logger.warning(
-                "Hygiene approval timed out for batch=%s vm=%s after %ds",
-                batch_id, vm_id, timeout_seconds,
-            )
+        row = await self._store.wait_for_decision(
+            batch_id, vm_id, timeout_seconds=timeout_seconds
+        )
+        if row is None:
             return None
-        return pending.approval
+        return _row_to_approval(row)
 
-    def get_pending(self) -> list[PendingHygieneApproval]:
-        """Snapshot of currently-pending approvals (for /ui/approvals page)."""
-        return list(self._pending.values())
+    async def get_pending(self) -> list[HygieneApprovalRow]:
+        """Currently-pending approval rows (for approvals queue listing)."""
+        return await self._store.list_pending()
 
-    def get_history(self) -> list[PendingHygieneApproval]:
-        """Snapshot of resolved approvals (for audit / debug)."""
-        return list(self._history)
+
+# ---------------------------------------------------------------------------
+# Reconstruction helper
+# ---------------------------------------------------------------------------
+
+def _row_to_approval(row: HygieneApprovalRow) -> DockerHygieneApproval:
+    """Reconstruct a DockerHygieneApproval from a decided DB row.
+
+    Re-joins approved_items_json against the stored assessment to recover
+    full DockerHygieneFinding objects. Un-matched approved items (object
+    removed from assessment between approval and here) are silently dropped
+    — the execute_node's snapshot-hash gate will catch meaningful drift.
+    """
+    assessment = row.assessment()
+    approved_items = row.approved_items()
+    approved_set = {
+        (item["resource_class"], item["identity"])
+        for item in approved_items
+    }
+    approved_findings: tuple[DockerHygieneFinding, ...] = ()
+    if approved_set:
+        approved_findings = tuple(
+            f for f in assessment.findings
+            if (f.resource_class.value, f.identity) in approved_set
+        )
+    return DockerHygieneApproval(
+        vm_id=row.vm_id,
+        approved_findings=approved_findings,
+        snapshot_hash=row.snapshot_hash or "",
+        surface=ApprovalSurface.WEB_PAGE,
+        operator_id=row.decided_by or "",
+        approved_at=row.decided_at or datetime.now(tz=UTC),
+    )

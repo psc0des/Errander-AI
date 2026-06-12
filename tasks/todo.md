@@ -1,3 +1,26 @@
+## §8d Step 4 — R3: process separation (IN PROGRESS)
+
+- [x] Migration #15 — `hygiene_approval_requests` table + `users.totp_secret` column
+- [x] `errander/safety/hygiene_store.py` — `HygieneApprovalStore`/`HygieneApprovalRow` (mirrors `ApprovalRequestStore`: create/decide/mark_timeout/expire_overdue/wait_for_decision/list_pending)
+- [x] `HygieneApprovalManager` → thin facade over `HygieneApprovalStore`; `PendingHygieneApproval` removed
+- [x] `DockerHygieneAssessment.to_json()`/`from_json()` (dataclass JSON round-trip)
+- [x] `metrics.py` + `web/server.py` hygiene approve handlers call `store.decide(...)` directly; `_HYGIENE_STORE_KEY`
+- [x] `_approval_reconciler` also calls `hygiene_store.expire_overdue()`
+- [x] `errander/web/totp.py` — pyotp wrapper (generate_secret/make_qr_uri/verify_code)
+- [x] Tests: `tests/safety/test_hygiene_store.py` (16, NEW), `tests/web/test_totp.py` (7, NEW), `tests/safety/test_migrations.py` (+1)
+- [ ] Extract `errander/web/ui.py` from `errander/observability/metrics.py` (AppKeys, `_ui_*` handlers, CSS, auth/CSRF middleware, `build_ui_app()`, new `start_web_server()`)
+- [ ] Slim `errander/observability/metrics.py` to Prometheus defs + `/metrics` + `/health` only
+- [ ] `errander/web/__main__.py` — production entry (`python -m errander.web`)
+- [ ] `errander/main.py` — drop user/session/ai_decision stores from agent startup; slim `start_metrics_server` call
+- [ ] TOTP login flow wired into `ui.py` (challenge/setup routes, admin-group + public-mode gating)
+- [ ] `tests/web/test_import_isolation.py`, `tests/web/test_web_entry.py`
+- [ ] Update `tests/observability/test_rbac.py`, `test_metrics.py`, `test_ui_security.py`, `tests/agent/test_hygiene_orchestration.py` for new import paths
+- [ ] Update `tests/ui/*` (9 files) + `scripts/*` (3 files) that import `start_metrics_server`/`build_ui_app` with full UI kwargs
+- [ ] Deploy artifacts: `deploy/errander-agent.service`, `deploy/errander-web.service`, `deploy/nginx-mode2.conf.example`, `.env.agent.example`, `.env.web.example`, `scripts/bootstrap.sh` OS-user step
+- [ ] Doc sync: fable.md §8b, SETUP.md, RUN.md, CLAUDE.md, docs/SECURITY.md (new), docs/langgraph-primer.md, docs/learning/58-process-separation.md
+
+---
+
 ## §8d Step 3 — R2: users/groups RBAC + web-only approval (2026-06-12, COMPLETE)
 
 - [x] Migration #14 — users / groups / group_permissions / user_groups / sessions (+ seed admin/reader groups + admin permissions; seed re-applied idempotently every run_migrations + after test TRUNCATE)

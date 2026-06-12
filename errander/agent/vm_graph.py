@@ -943,7 +943,7 @@ async def _run_docker_hygiene(
         except Exception as exc:  # noqa: BLE001
             logger.error("Failed to post hygiene Slack message for %s: %s", vm_id, exc)
 
-    hygiene_manager.register(batch_id, vm_id, assessment, slack_message_ts=slack_ts)
+    await hygiene_manager.register(batch_id, vm_id, assessment, slack_message_ts=slack_ts)
 
     # Phase 3: wait for the operator's web UI decision (R2: web-only — the
     # Slack message above is notification; decisions arrive via

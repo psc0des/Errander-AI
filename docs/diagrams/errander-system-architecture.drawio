@@ -92,7 +92,7 @@
         <mxCell id="chatif" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EAF2FD;strokeColor=#7FA0C8;dashed=1;dashPattern=5 4;fontFamily=Segoe UI;fontSize=10;align=center;verticalAlign=middle;" value="Operator Chat&#xa;Interface&#xa;· planned ·&#xa;answers /ui/chat" vertex="1">
           <mxGeometry height="80" width="156" x="735" y="200" as="geometry" />
         </mxCell>
-        <mxCell id="appr" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEF3C7;strokeColor=#B7791F;fontFamily=Segoe UI;fontSize=12;fontStyle=1;fontColor=#5A4410;align=center;verticalAlign=middle;arcSize=6;" value="HUMAN APPROVAL GATE&#xa;Slack ✅ / ❌  ·  Web UI  ·  durable DB row  ·  every live change" vertex="1">
+        <mxCell id="appr" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEF3C7;strokeColor=#B7791F;fontFamily=Segoe UI;fontSize=12;fontStyle=1;fontColor=#5A4410;align=center;verticalAlign=middle;arcSize=6;" value="HUMAN APPROVAL GATE&#xa;authenticated Web UI (RBAC)  &#183;  durable DB row  &#183;  Slack notifies + links  &#183;  every live change" vertex="1">
           <mxGeometry height="50" width="330" x="402" y="361" as="geometry" />
         </mxCell>
         <mxCell id="snapshot" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEF8E7;strokeColor=#C2932F;fontFamily=Segoe UI;fontSize=10;align=center;verticalAlign=middle;" value="Plan snapshot&#xa;immutable · hashed" vertex="1">

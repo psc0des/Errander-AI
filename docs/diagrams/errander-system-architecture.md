@@ -15,7 +15,7 @@ flowchart TB
 
   subgraph PUB["PUBLIC INTERNET — outbound HTTPS only, no inbound to agent"]
     OP["Operator<br/>laptop / mobile"]:::ext
-    SLACK["Slack API<br/>#errander-approvals ✅/❌"]:::ext
+    SLACK["Slack API<br/>#errander-approvals<br/>notify + link only"]:::ext
   end
 
   subgraph VPN["VPN — PRIVATE NETWORK (no public IPs)"]
@@ -27,7 +27,7 @@ flowchart TB
       LA["LAYER A — Brain (LLM)<br/>prioritize · analyze · report · --ask<br/>recommends, never executes"]:::layerA
       INV["Investigation Agent<br/>· planned ·<br/>agentic read-only · Prometheus · ELK · audit"]:::planned
       CHATIF["Operator Chat Interface<br/>· planned ·<br/>answers /ui/chat"]:::planned
-      AG{"HUMAN APPROVAL GATE<br/>Slack ✅/❌ · Web UI · durable (DB row)<br/>every live change"}:::appr
+      AG{"HUMAN APPROVAL GATE<br/>authenticated Web UI (RBAC) · durable (DB row)<br/>Slack notifies + links · every live change"}:::appr
       LB["LAYER B — Hands (deterministic, NO LLM)<br/>patching · disk_cleanup · log_rotation<br/>docker_hygiene · backup_verify · service_restart<br/>validate → execute → verify → rollback → audit"]:::layerB
       DB[("Audit DB PostgreSQL<br/>audit_events · ai_decisions<br/>plan_snapshots · approval_requests")]:::store
       PROM["Controller Prometheus :9091<br/>scrapes agent /metrics<br/>monitors Errander itself"]:::infra
@@ -63,7 +63,7 @@ flowchart TB
 
   %% --- operators ---
   OP -->|approve / monitor| WEB
-  OP -->|react ✅/❌| SLACK
+  OP -->|notified, follows link| SLACK
   WEB <-->|outbound HTTPS| SLACK
   WEB -.->|decision| AG
 
@@ -81,7 +81,7 @@ flowchart TB
 ## Reading the diagram
 
 - **Layer A (blue)** thinks and recommends — never touches a VM.
-- **Human approval gate (amber)** sits between thinking and acting — mandatory for every live change. Since §8d Step 2 each request is a durable row in `approval_requests`: decisions are atomic (exactly one winner), and a pending approval survives an agent restart (a reconciler job recovers it).
+- **Human approval gate (amber)** sits between thinking and acting — mandatory for every live change. Since §8d Step 2 each request is a durable row in `approval_requests`: decisions are atomic (exactly one winner), and a pending approval survives an agent restart (a reconciler job recovers it). Since §8d Step 3 (R2) the **only** decision surface is the authenticated Web UI with users/groups RBAC — every decision records a named user + group; Slack notifies and links but cannot decide.
 - **Layer B (green)** is deterministic Python; the thick **SSH edge is the only path that changes a target VM**.
 - **Two Prometheus instances:** the Controller Prometheus `:9091` *scrapes the agent* (monitors Errander itself); Fleet Prometheus separately *scrapes target node_exporters* `:9100` (opt-in, for Layer A to read when investigating fleet health).
 - **Dashed purple** = planned (Investigation Agent, Dashboard Chat, Operator Chat Interface, LangSmith tracing).

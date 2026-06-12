@@ -17,7 +17,8 @@
 
 agent:
   # --- Approval ---
-  # How long to wait for a Slack ✅/❌ reaction before auto-rejecting.
+  # How long to wait for the operator's web UI decision before auto-rejecting.
+  # (Slack only notifies and links — decisions happen at /ui/approvals.)
   # Default: 1800s (30 minutes). Increase for large batches / slow reviewers.
   approval_timeout_seconds: 1800
 
@@ -77,12 +78,14 @@ agent:
   drift_abort_on_detection: false
 
 slack:
-  # Slack channel for approval requests and batch reports.
+  # Slack channel for approval notifications and batch reports.
+  # (Notify-and-link only — decisions are recorded in the web UI.)
   # Channel ID set via ERRANDER_SLACK_CHANNEL_ID env var.
   approvals_channel_env: ERRANDER_SLACK_CHANNEL_ID
 
-  # How often to poll for ✅/❌ reactions on the approval message.
-  poll_interval_seconds: 30
+  # Legacy reaction-poll interval — accepted but ignored since R2
+  # (the Slack reaction decision channel was removed). Safe to delete.
+  # poll_interval_seconds: 30
 
 # Optional Prometheus adapter. When set, CPU/memory/load metrics from node_exporter
 # are included in --probe-now digests and --ask analysis context.

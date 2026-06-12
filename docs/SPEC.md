@@ -2,6 +2,13 @@
 
 > Deterministic maintenance automation with an AI-assisted operator layer for Linux fleets. Performs secure patching (non-kernel), log rotation, Docker pruning, disk cleanup, and backup verification — with safety gates, rollback, and full audit logging. Every live change requires human approval. The LLM is never in the path that changes infrastructure.
 
+> **Reading note:** this is the *original* design specification, kept for lineage with
+> "as-built" notes where the implementation diverged. The largest divergence: approval
+> is **web-only with users/groups RBAC** since R2 (2026-06-12) — any diagram or flow in
+> this document showing Slack ✅/❌ reactions as a decision step is historical (see the
+> §9 as-built note). For current behavior, README.md and docs/langgraph-primer.md are
+> authoritative.
+
 ---
 
 ## AI Safety Model — Two Layers

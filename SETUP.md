@@ -437,7 +437,7 @@ docker_hygiene_end
 > **Skip this entire section if you are not enabling service_restart.**
 > When you create `inventory.yaml` in Step 5, leave `actions.service_restart.enabled: false` (the default). Continue to Step 4.
 
-Service restart is operator-triggered only — Errander does not auto-restart services. The operator runs `--restart-service` after seeing a failed unit in the probe digest, and must approve the restart before it executes. Risk tier: **HIGH** — human approval is always required (via Slack reaction or web UI at `/ui/approvals`).
+Service restart is operator-triggered only — Errander does not auto-restart services. The operator runs `--restart-service` after seeing a failed unit in the probe digest, and must approve the restart before it executes. Risk tier: **HIGH** — human approval is always required, in the web UI at `/ui/approvals` (Slack notifies and links).
 
 ### Part 1 — Install wrapper on each target VM
 

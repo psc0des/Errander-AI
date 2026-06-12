@@ -199,6 +199,12 @@ When there are two entry points for the same operation (full wizard + add-target
 
 ## 2026-06-09 — Approval channel accuracy: both surfaces must be named everywhere
 
+> **Superseded (2026-06-12, R2):** there is now exactly one decision surface — the
+> authenticated Web UI; Slack is notify-and-link. The current canonical wording is
+> "human approval in the Web UI (Slack notifies and links)". The underlying lesson
+> (grep every operator-facing string when the approval surface changes) still applies
+> and was reused for the R2 re-sweep.
+
 When the system has multiple approval surfaces (Slack reactions + Web UI), every user-facing description must name both. Saying "Slack approval" when the operator could also use the Web UI is inaccurate and confusing — especially for operators who only have the Web UI configured.
 
 **How to apply:** after adding any new approval surface, grep for the old surface name (`Slack approval`, `human Slack`, `requires Slack`) across all docs, CLI help text, web UI strings, and code comments that operators will read. Update all of them before calling the work done. Technical implementation comments (polling code, Slack API calls) are exempt — they're describing the mechanism, not the user's choice.

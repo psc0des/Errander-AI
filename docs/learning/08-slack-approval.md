@@ -1,5 +1,12 @@
 # 08 — Slack Client + Approval Gate
 
+> **Superseded (2026-06-12, §8d Step 3 / R2):** the reaction-polling decision channel
+> described here was removed — `poll_approval`, `get_reactions`, and the reaction
+> constants no longer exist. Slack is notify-and-link; the only decision surface is
+> the authenticated Web UI with users/groups RBAC. See
+> `57-web-only-approval-rbac.md`. Kept for the outbound-only Slack client patterns
+> (rate-limit retry, message formatting), which are still current.
+
 ## What Was Built and Why
 
 `errander/integrations/slack.py` wraps the Slack Web API for outbound-only communication. `errander/safety/approval.py` implements the human-in-the-loop approval gate: post a dry-run report to Slack, poll for emoji reactions, and block live execution until a human approves (or the timeout auto-rejects).

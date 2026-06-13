@@ -2553,8 +2553,6 @@ async def async_main(args: argparse.Namespace) -> int:
         return 1
 
     inventory = validate_inventory(inventory_path)
-    from errander.config.inventory import load_inventory as _load_inventory
-    flat_inventory = _load_inventory(inventory_path)
 
     # --- Shared AsyncDatabase instance for all stores ---
     _db = AsyncDatabase(settings.audit_db_url)

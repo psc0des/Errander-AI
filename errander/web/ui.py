@@ -1109,6 +1109,25 @@ async def _ui_login_post(request: web.Request) -> web.Response:
     if user is None:
         raise web.HTTPFound(f"/ui/login?err=1&next={_uq(next_path)}")
 
+    # Branch: if public mode + admin group → require TOTP
+    public_mode = request.app.get(PUBLIC_MODE_KEY, False)
+    if public_mode and "admin" in user.groups:
+        from errander.web.totp import generate_secret
+        totp_secret = await user_store.get_totp_secret(user.username)
+        setup_secret = totp_secret if totp_secret else generate_secret()
+        signing_secret = request.app.get(SIGNING_SECRET_KEY) or ""
+        mfa_token = _make_mfa_pending_token(signing_secret, user.username, setup_secret if not totp_secret else "")
+        resp = web.HTTPFound(f"/ui/login/totp?next={_uq(next_path)}")
+        resp.set_cookie(
+            _MFA_PENDING_COOKIE,
+            mfa_token,
+            httponly=True,
+            samesite="Lax",
+            max_age=_MFA_PENDING_TTL_SECONDS,
+        )
+        logger.info("UI login (TOTP pending): %s", user.username)
+        raise resp
+
     token = await session_store.create(user.username)
     logger.info("UI login: %s (groups: %s)", user.username, ", ".join(user.groups))
     resp = web.HTTPFound(next_path)
@@ -1130,6 +1149,156 @@ async def _ui_logout(request: web.Request) -> web.Response:
         await session_store.destroy(token)
     resp = web.HTTPFound("/ui/login")
     resp.del_cookie(_SESSION_COOKIE)
+    raise resp
+
+
+async def _ui_login_totp_get(request: web.Request) -> web.Response:
+    """Render the TOTP challenge or setup form."""
+    signing_secret = request.app.get(SIGNING_SECRET_KEY) or ""
+    mfa_token = request.cookies.get(_MFA_PENDING_COOKIE, "")
+    mfa_data = _verify_mfa_pending_token(signing_secret, mfa_token)
+    if not mfa_data:
+        raise web.HTTPFound("/ui/login?err=1")
+
+    username, setup_secret = mfa_data
+    next_path = _safe_next_path(request.rel_url.query.get("next", "/ui"))
+    err = request.rel_url.query.get("err", "")
+    err_html = (
+        '<div class="lc-err"><span class="lc-err-ico">&#9888;</span>'
+        'Invalid code. Please try again.</div>'
+    ) if err else ""
+
+    from errander.web.totp import make_qr_uri
+    title = "Set up two-factor authentication" if setup_secret else "Verify your code"
+    qr_section = ""
+    if setup_secret:
+        qr_uri = make_qr_uri(username, setup_secret)
+        qr_section = f"""
+    <div class="lc-field">
+      <label class="lc-label">Authenticator App Setup</label>
+      <div style="margin-bottom:.8rem;font-size:.75rem;color:var(--text-d)">
+        Scan this QR code with your authenticator app (Google Authenticator, Authy, etc.):
+      </div>
+      <div style="background:var(--surface-lo);padding:.6rem;border-radius:8px;text-align:center">
+        <img src="{_esc('https://api.qrserver.com/v1/create-qr-code/?size=200&data=' + _url_quote(qr_uri))}"
+             alt="QR code" style="width:150px;height:150px">
+      </div>
+      <div style="margin-top:.8rem;font-size:.73rem;color:var(--text-d);padding:.6rem;background:var(--surface-lowest);border-radius:6px;border:1px solid var(--outline)">
+        <strong>Manual entry:</strong><br><code style="word-break:break-all;font-family:var(--mono);font-size:.7rem">{_esc(setup_secret)}</code>
+      </div>
+    </div>
+"""
+
+    action = f"/ui/login/totp?next={_uq(next_path)}"
+    html = f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Errander-AI &mdash; Verify Code</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="{_FONTS}" rel="stylesheet">
+  <style>{_LOGIN_CSS}</style>
+</head>
+<body>
+
+<!-- Left: Indigo brand shell -->
+<aside class="l-shell">
+  <div class="l-brand">
+    <span class="l-led"></span>
+    <span class="l-title">Errander-AI</span>
+  </div>
+  <div class="l-tag">autonomous ops hub</div>
+  <div class="l-divider"></div>
+  <div class="l-features">
+    <div class="l-feat">
+      <div class="l-feat-icon">&#128274;</div>
+      <div class="l-feat-body">
+        <div class="l-feat-title">Enhanced security</div>
+        <div class="l-feat-desc">Two-factor authentication protects your infrastructure
+        from unauthorized access.</div>
+      </div>
+    </div>
+  </div>
+  <div class="l-foot">v1 &nbsp;&middot;&nbsp; errander-ai &nbsp;&middot;&nbsp; postgres</div>
+</aside>
+
+<!-- Right: TOTP form -->
+<div class="r-panel">
+  <div class="login-card">
+    <div class="lc-eyebrow">Security</div>
+    <div class="lc-title">{_esc(title)}</div>
+    <div class="lc-sub">Enter the 6-digit code from your authenticator app.</div>
+    {err_html}
+    <form method="post" action="{action}">
+      <input type="hidden" name="{_CSRF_FIELD}" value="">
+      {qr_section}
+      <div class="lc-field">
+        <label class="lc-label" for="code">Verification Code</label>
+        <input class="lc-input" type="text" id="code" name="code"
+               inputmode="numeric" pattern="[0-9]{'{6}'}" maxlength="6"
+               autocomplete="one-time-code" autofocus required placeholder="000000">
+      </div>
+      <button type="submit" class="lc-btn">Verify &rarr;</button>
+    </form>
+  </div>
+</div>
+
+</body>
+</html>"""
+    html, nonce = _inject_csrf(request, html)
+    response = web.Response(text=html, content_type="text/html")
+    _set_csrf_cookie(response, nonce)
+    return response
+
+
+async def _ui_login_totp_post(request: web.Request) -> web.Response:
+    """Verify TOTP code and issue session."""
+    from errander.web.totp import verify_code
+    user_store = request.app.get(USER_STORE_KEY)
+    session_store = request.app.get(SESSION_STORE_KEY)
+    signing_secret = request.app.get(SIGNING_SECRET_KEY) or ""
+    next_path = _safe_next_path(request.rel_url.query.get("next", "/ui"))
+
+    if user_store is None or session_store is None:
+        raise web.HTTPFound(f"/ui/login/totp?err=1&next={_uq(next_path)}")
+
+    mfa_token = request.cookies.get(_MFA_PENDING_COOKIE, "")
+    mfa_data = _verify_mfa_pending_token(signing_secret, mfa_token)
+    if not mfa_data:
+        raise web.HTTPFound(f"/ui/login/totp?err=1&next={_uq(next_path)}")
+
+    username, setup_secret = mfa_data
+    try:
+        data = await request.post()
+        code = str(data.get("code", "")).strip()
+    except Exception:
+        raise web.HTTPFound(f"/ui/login/totp?err=1&next={_uq(next_path)}") from None
+
+    if not code or len(code) != 6 or not code.isdigit():
+        raise web.HTTPFound(f"/ui/login/totp?err=1&next={_uq(next_path)}")
+
+    # If first-time setup: use setup_secret; else: query current secret from DB
+    secret_to_verify = setup_secret if setup_secret else await user_store.get_totp_secret(username)
+    if not secret_to_verify or not verify_code(secret_to_verify, code):
+        raise web.HTTPFound(f"/ui/login/totp?err=1&next={_uq(next_path)}")
+
+    # Persist secret if first-time setup
+    if setup_secret:
+        await user_store.set_totp_secret(username, setup_secret)
+
+    token = await session_store.create(username)
+    logger.info("UI login (TOTP verified): %s", username)
+    resp = web.HTTPFound(next_path)
+    resp.set_cookie(
+        _SESSION_COOKIE,
+        token,
+        httponly=True,
+        samesite="Lax",
+        max_age=session_store.DEFAULT_TTL_SECONDS,
+    )
+    resp.del_cookie(_MFA_PENDING_COOKIE)
     raise resp
 
 
@@ -1389,6 +1558,18 @@ async function testLLM() {
         + '<p class="note" style="color:#b45309">&#9888; LLM settings changes take effect after agent restart. '
         + 'The running agent was built from the settings active at startup.</p>'
     )
+
+    # Add Security section if public mode is enabled
+    public_mode = request.app.get(PUBLIC_MODE_KEY, False)
+    if public_mode:
+        body += (
+            _section("Security")
+            + '<div class="form-card">'
+            + '<p style="margin-bottom:1.2rem">Manage authentication and account security settings.</p>'
+            + '<a href="/ui/settings/totp" style="display:inline-block;padding:.6rem 1rem;background:var(--primary);color:#fff;border-radius:8px;text-decoration:none;font-weight:500;margin-bottom:1rem">Configure Two-Factor Authentication</a>'
+            + '</div>'
+        )
+
     return _page("Settings", body, pending_count=pending_count, request=request)
 
 
@@ -1490,6 +1671,116 @@ async def _ui_settings_test_llm(request: web.Request) -> web.Response:
     client = LLMClient(base_url=base_url, model=model, api_key=api_key, temperature=temperature)
     result = await client.check_endpoint()
     return web.json_response({"ok": result["reachable"], **result})
+
+
+# ---------------------------------------------------------------------------
+# UI — TOTP (MFA) settings handlers
+# ---------------------------------------------------------------------------
+
+async def _ui_settings_totp_get(request: web.Request) -> web.Response:
+    """GET /ui/settings/totp — admin TOTP management (public mode only)."""
+    public_mode = request.app.get(PUBLIC_MODE_KEY, False)
+    user = _request_user(request)
+
+    # Only available in public mode and for admins
+    if not public_mode or user is None or "admin" not in user.groups:
+        raise web.HTTPNotFound()
+
+    user_store = request.app.get(USER_STORE_KEY)
+    approval_store = request.app.get(APPROVAL_STORE_KEY)
+    pending_count = await approval_store.count_pending() if approval_store is not None else 0
+
+    if user_store is None:
+        raise web.HTTPFound("/ui/settings?err=User+store+not+connected")
+
+    from errander.web.totp import generate_secret, make_qr_uri
+    current_secret = await user_store.get_totp_secret(user.username)
+    setup_secret = generate_secret()
+    setup_uri = make_qr_uri(user.username, setup_secret)
+
+    flash = request.rel_url.query.get("flash", "")
+    flash_html = f'<div class="flash flash-ok">{_esc(flash)}</div>' if flash else ""
+
+    body = (
+        flash_html
+        + _section("Two-Factor Authentication")
+        + '<div class="form-card">'
+    )
+
+    if current_secret:
+        body += (
+            '<p style="margin-bottom:1.2rem">You have two-factor authentication enabled.</p>'
+            '<form method="POST" action="/ui/settings/totp" style="margin-bottom:1.5rem">'
+            '<button type="submit" name="action" value="reset" class="btn-del"'
+            ' style="padding:.6rem 1rem">Disable & Reset</button>'
+            '</form>'
+        )
+    else:
+        body += (
+            '<p style="margin-bottom:1.2rem">Set up two-factor authentication to protect your account.</p>'
+        )
+
+    body += (
+        '<div style="margin-top:1.5rem;padding:1rem;background:var(--surface-lo);border-radius:8px">'
+        '<div style="margin-bottom:.8rem"><strong>Step 1: Scan QR code</strong></div>'
+        '<div style="background:var(--surface-lowest);padding:.6rem;border-radius:6px;text-align:center;margin-bottom:1rem">'
+        f'<img src="{_esc("https://api.qrserver.com/v1/create-qr-code/?size=180&data=" + _url_quote(setup_uri))}"'
+        ' alt="QR code" style="width:140px;height:140px">'
+        '</div>'
+        f'<div style="font-size:.73rem;color:var(--text-d);margin-bottom:1rem">Or enter manually: <code style="font-family:var(--mono);word-break:break-all">{_esc(setup_secret)}</code></div>'
+        '<div style="margin-top:1rem"><strong>Step 2: Verify code</strong></div>'
+        '<form method="POST" action="/ui/settings/totp" style="margin-top:.8rem">'
+        '<input type="hidden" name="action" value="verify">'
+        '<input type="hidden" name="setup_secret" value="' + _esc(setup_secret) + '">'
+        '<div class="form-row">'
+        '<label class="form-lbl">Verification Code</label>'
+        '<input type="text" name="code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6"'
+        ' placeholder="000000" required style="width:150px">'
+        '</div>'
+        '<button type="submit" class="btn-save">Verify &amp; Enable</button>'
+        '</form>'
+        '</div>'
+        '</div>'
+    )
+
+    return _page("Settings", body, pending_count=pending_count, request=request)
+
+
+async def _ui_settings_totp_post(request: web.Request) -> web.Response:
+    """POST /ui/settings/totp — save or reset TOTP secret."""
+    public_mode = request.app.get(PUBLIC_MODE_KEY, False)
+    user = _require_permission(request, "admin")  # Require admin + auth
+
+    # Only available in public mode
+    if not public_mode:
+        raise web.HTTPNotFound()
+
+    user_store = request.app.get(USER_STORE_KEY)
+    if user_store is None:
+        raise web.HTTPFound("/ui/settings/totp?err=User+store+not+connected")
+
+    data = await request.post()
+    action = str(data.get("action", "")).strip()
+
+    if action == "reset":
+        await user_store.set_totp_secret(user.username, None)
+        raise web.HTTPFound("/ui/settings/totp?flash=MFA+disabled")
+
+    elif action == "verify":
+        from errander.web.totp import verify_code
+        setup_secret = str(data.get("setup_secret", "")).strip()
+        code = str(data.get("code", "")).strip()
+
+        if not setup_secret or not code or len(code) != 6 or not code.isdigit():
+            raise web.HTTPFound("/ui/settings/totp?err=Invalid+code+format")
+
+        if not verify_code(setup_secret, code):
+            raise web.HTTPFound("/ui/settings/totp?err=Code+verification+failed")
+
+        await user_store.set_totp_secret(user.username, setup_secret)
+        raise web.HTTPFound("/ui/settings/totp?flash=MFA+enabled+successfully")
+
+    raise web.HTTPFound("/ui/settings/totp?err=Invalid+action")
 
 
 # ---------------------------------------------------------------------------
@@ -3343,6 +3634,10 @@ def build_ui_app(
     app.router.add_post("/ui/settings", _ui_settings_post)
     app.router.add_post("/ui/settings/reset", _ui_settings_reset)
     app.router.add_post("/ui/settings/test-llm", _ui_settings_test_llm)
+    app.router.add_get("/ui/login/totp", _ui_login_totp_get)
+    app.router.add_post("/ui/login/totp", _ui_login_totp_post)
+    app.router.add_get("/ui/settings/totp", _ui_settings_totp_get)
+    app.router.add_post("/ui/settings/totp", _ui_settings_totp_post)
     app.router.add_get("/ui/inventory", _ui_inventory_get)
     app.router.add_post("/ui/inventory/toggle", _ui_inventory_toggle)
     app.router.add_post("/ui/inventory/add", _ui_inventory_add)

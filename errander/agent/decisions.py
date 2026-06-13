@@ -1,12 +1,10 @@
 """LLM-powered decision logic with hardcoded fallbacks.
 
-All decision functions follow the pattern:
-1. Try LLM call with structured JSON output (Pydantic model)
-2. On LLM failure/timeout: fall back to hardcoded default logic
-
 Decision points:
-- Action prioritization: Given system state, order actions by urgency
-- Failure analysis: Given an error, determine if retry/rollback/escalate
+- Action prioritization: deterministic, hardcoded — plan membership and
+  ordering never depend on an LLM (R1)
+- Planning note: LLM-generated advisory commentary on the deterministic
+  plan, shown to the operator as informational-only context
 - Report generation: Summarize batch results in human-readable format
 """
 
@@ -57,7 +55,7 @@ class StoredSignalContext:
     """Historical signal context loaded from stores before planning.
 
     Assembled by plan_vm_node from existing stores and passed to
-    prioritize_actions() so the LLM sees trend data, not just current state.
+    generate_planning_note() so the LLM sees trend data, not just current state.
     """
 
     disk_trend_summary: str = ""
@@ -80,20 +78,27 @@ DEFAULT_PRIORITY: list[ActionType] = [
 
 # --- Pydantic models for structured LLM responses ---
 
-class _PrioritizedActions(BaseModel):
-    """LLM response schema for action prioritization."""
-    action_types: list[str]  # ordered list of ActionType values
-
-
-class _FailureAnalysis(BaseModel):
-    """LLM response schema for failure analysis."""
-    recommendation: str  # "retry", "rollback", or "escalate"
-    reason: str
+class _PlanningNote(BaseModel):
+    """LLM response schema for the advisory planning note."""
+    note: str
 
 
 class _Report(BaseModel):
     """LLM response schema for report generation."""
     report: str
+
+
+#: Hard cap on the rendered planning note — keeps the operator-facing
+#: AI-analysis section short and bounds the approval artifact size.
+_PLANNING_NOTE_MAX_CHARS = 700
+
+
+def _sanitize_note(note: str, max_chars: int = _PLANNING_NOTE_MAX_CHARS) -> str:
+    """Strip backticks and cap length — defense-in-depth for AI-generated text."""
+    cleaned = note.replace("`", "").strip()
+    if len(cleaned) > max_chars:
+        cleaned = cleaned[: max_chars - 1].rstrip() + "…"
+    return cleaned
 
 
 # --- Helpers ---
@@ -137,202 +142,111 @@ def _hardcoded_priority(
 async def prioritize_actions(
     vm_info: VMInfo,
     available_actions: list[ActionType] | None = None,
-    llm_client: LLMClient | None = None,
-    policy: str = "moderate",
-    batch_id: str = "unknown",
-    vm_id: str | None = None,
-    ai_store: AIDecisionStore | None = None,
-    stored_signals: StoredSignalContext | None = None,
 ) -> list[Action]:
-    """Order maintenance actions by priority using LLM, with hardcoded fallback.
+    """Order maintenance actions by priority — deterministic, hardcoded (R1).
+
+    Plan membership and ordering never depend on an LLM. See
+    generate_planning_note() for the advisory LLM commentary on this plan.
 
     Args:
         vm_info: Discovered system state from the VM.
-        available_actions: Action types to consider. Defaults to all types.
-        llm_client: Optional LLM client. If None, uses hardcoded fallback.
-        policy: Maintenance policy name — used to filter LLM output (finding #3.2).
-        batch_id: For per-decision audit logging (finding #3.4).
-        vm_id: For per-decision audit logging.
-        ai_store: Optional AIDecisionStore for per-call audit (finding #3.4).
+        available_actions: Action types to consider. Defaults to DEFAULT_PRIORITY.
 
     Returns:
         Actions ordered by priority with risk tiers assigned.
     """
-    from errander.config.policies import BUILTIN_POLICIES
-    from errander.safety.ai_audit import AIDecision
-
     if available_actions is None:
         available_actions = list(DEFAULT_PRIORITY)
+    return _hardcoded_priority(available_actions, vm_info)
 
-    policy_obj = BUILTIN_POLICIES.get(policy) or BUILTIN_POLICIES["moderate"]
 
-    if llm_client is not None:
-        prompt = _build_prioritize_prompt(vm_info, available_actions, stored_signals)
-        prompt, _rc = _REDACTOR.redact(prompt)
-        if _rc:
-            logger.warning("Redacted %d secret(s) from prioritize_actions prompt", _rc)
-        prompt_hash = AIDecision.hash_prompt(prompt)
-        t0 = time.monotonic()
-        outcome = "fallback"
-        response_raw: str | None = None
-        result = await llm_client.complete(prompt, _PrioritizedActions)
-        latency_ms = round((time.monotonic() - t0) * 1000, 1)
+async def generate_planning_note(
+    vm_info: VMInfo,
+    plan: list[Action],
+    llm_client: LLMClient | None = None,
+    batch_id: str = "unknown",
+    vm_id: str | None = None,
+    ai_store: AIDecisionStore | None = None,
+    stored_signals: StoredSignalContext | None = None,
+) -> str | None:
+    """Generate an advisory note about the already-finalized plan.
 
-        if result is not None:
-            # 3.2a — injection guard: reject any action type string with shell metacharacters
-            safe_types = [
-                a for a in result.action_types
-                if not _INJECTION_RE.search(a)
-            ]
-            if len(safe_types) < len(result.action_types):
-                logger.warning(
-                    "LLM returned %d action type(s) with suspicious characters — rejected",
-                    len(result.action_types) - len(safe_types),
-                )
+    Layer A, informational only — the note can never change plan membership
+    or ordering. Returns None when the LLM is unavailable or returns an
+    empty/unparseable response; never raises, never blocks planning.
+    """
+    from errander.safety.ai_audit import AIDecision
 
-            # 3.2b — policy enforcement: strip actions that violate policy
-            try:
-                ordered = _parse_action_types(safe_types, available_actions)
-                # Remove any action type that requires approval under the current policy
-                # and is not in auto_approve_tiers (defense-in-depth on top of the batch gate)
-                policy_filtered = [
-                    a for a in ordered
-                    if ACTION_RISK_TIERS.get(a, RiskTier.MEDIUM) in policy_obj.auto_approve_tiers
-                    or ACTION_RISK_TIERS.get(a, RiskTier.MEDIUM) == RiskTier.LOW
-                ]
-                if len(policy_filtered) < len(ordered):
-                    logger.info(
-                        "Policy=%s filtered %d action(s) from LLM plan (requires approval)",
-                        policy, len(ordered) - len(policy_filtered),
-                    )
-                    # Fall back to full ordered list — approval is handled at the batch gate
-                    # We log but do not strip (the batch gate is authoritative)
-                    policy_filtered = ordered
+    common_ctx = json.dumps({
+        "vm_info": asdict(vm_info),
+        "plan": [a.action_type.value for a in plan],
+    })
 
-                if policy_filtered:
-                    response_raw = str(result.action_types)
-                    outcome = "success"
-                    logger.info(
-                        "LLM prioritization (policy=%s): %s",
-                        policy, [a.value for a in policy_filtered],
-                    )
-                    if ai_store is not None:
-                        await ai_store.log(AIDecision(
-                            batch_id=batch_id,
-                            vm_id=vm_id,
-                            decision_type="prioritize_actions",
-                            model=getattr(llm_client, "_model", "unknown"),
-                            base_url=getattr(llm_client, "_base_url", ""),
-                            prompt_template_id="prioritize_v1",
-                            prompt_hash=prompt_hash,
-                            response_raw=response_raw,
-                            outcome=outcome,
-                            latency_ms=latency_ms,
-                            prompt_full=prompt,
-                            context_snapshot=json.dumps({
-                                "vm_info": asdict(vm_info),
-                                "available_actions": [str(a) for a in (available_actions or [])],
-                            }),
-                            model_params=json.dumps({
-                                "temperature": _as_float(getattr(llm_client, "_temperature", None)),
-                            }),
-                        ))
-                    return [
-                        Action(
-                            action_type=a,
-                            risk_tier=ACTION_RISK_TIERS.get(a, RiskTier.MEDIUM),
-                        )
-                        for a in policy_filtered
-                    ]
-            except ValueError as exc:
-                logger.warning("LLM returned invalid action types: %s — using fallback", exc)
-
+    if llm_client is None:
         if ai_store is not None:
             await ai_store.log(AIDecision(
                 batch_id=batch_id,
                 vm_id=vm_id,
-                decision_type="prioritize_actions",
+                decision_type="planning_note",
+                model="none",
+                base_url="",
+                prompt_template_id="planning_note_v1",
+                prompt_hash="",
+                outcome="no_llm",
+                context_snapshot=common_ctx,
+            ))
+        return None
+
+    prompt = _build_planning_note_prompt(vm_info, plan, stored_signals)
+    prompt, _rc = _REDACTOR.redact(prompt)
+    if _rc:
+        logger.warning("Redacted %d secret(s) from planning_note prompt", _rc)
+    prompt_hash = AIDecision.hash_prompt(prompt)
+    t0 = time.monotonic()
+    result = await llm_client.complete(prompt, _PlanningNote)
+    latency_ms = round((time.monotonic() - t0) * 1000, 1)
+
+    model_params = json.dumps({
+        "temperature": _as_float(getattr(llm_client, "_temperature", None)),
+    })
+
+    if result is None or not result.note.strip():
+        if ai_store is not None:
+            await ai_store.log(AIDecision(
+                batch_id=batch_id,
+                vm_id=vm_id,
+                decision_type="planning_note",
                 model=getattr(llm_client, "_model", "unknown"),
                 base_url=getattr(llm_client, "_base_url", ""),
-                prompt_template_id="prioritize_v1",
+                prompt_template_id="planning_note_v1",
                 prompt_hash=prompt_hash,
-                response_raw=response_raw,
+                response_raw=result.model_dump_json() if result is not None else None,
                 outcome="fallback",
                 latency_ms=latency_ms,
                 prompt_full=prompt,
-                context_snapshot=json.dumps({
-                    "vm_info": asdict(vm_info),
-                    "available_actions": [str(a) for a in (available_actions or [])],
-                }),
-                model_params=json.dumps({
-                    "temperature": _as_float(getattr(llm_client, "_temperature", None)),
-                }),
+                context_snapshot=common_ctx,
+                model_params=model_params,
             ))
-        logger.info(
-            "LLM unavailable or returned invalid response (policy=%s) — using hardcoded priority",
-            policy,
-        )
+        return None
 
-    elif ai_store is not None:
-        # No LLM — log that hardcoded fallback was used
-        from errander.safety.ai_audit import AIDecision
+    note = _sanitize_note(result.note)
+    if ai_store is not None:
         await ai_store.log(AIDecision(
             batch_id=batch_id,
             vm_id=vm_id,
-            decision_type="prioritize_actions",
-            model="none",
-            base_url="",
-            prompt_template_id="prioritize_v1",
-            prompt_hash="",
-            outcome="no_llm",
-            context_snapshot=json.dumps({
-                "vm_info": asdict(vm_info),
-                "available_actions": [str(a) for a in (available_actions or [])],
-            }),
+            decision_type="planning_note",
+            model=getattr(llm_client, "_model", "unknown"),
+            base_url=getattr(llm_client, "_base_url", ""),
+            prompt_template_id="planning_note_v1",
+            prompt_hash=prompt_hash,
+            response_raw=result.model_dump_json(),
+            outcome="success",
+            latency_ms=latency_ms,
+            prompt_full=prompt,
+            context_snapshot=common_ctx,
+            model_params=model_params,
         ))
-
-    return _hardcoded_priority(available_actions, vm_info)
-
-
-async def analyze_failure(
-    action_type: str,
-    error: str,
-    context: dict[str, object],
-    llm_client: LLMClient | None = None,
-) -> str:
-    """Analyze an action failure and recommend next steps.
-
-    Args:
-        action_type: What action failed.
-        error: The error message/output.
-        context: Additional context (VM info, action params).
-        llm_client: Optional LLM client.
-
-    Returns:
-        Recommendation: 'retry', 'rollback', or 'escalate'.
-    """
-    if llm_client is not None:
-        prompt = _build_failure_prompt(action_type, error, context)
-        prompt, _rc = _REDACTOR.redact(prompt)
-        if _rc:
-            logger.warning("Redacted %d secret(s) from analyze_failure prompt", _rc)
-        result = await llm_client.complete(prompt, _FailureAnalysis)
-        if result is not None:
-            rec = result.recommendation.lower().strip()
-            if rec in ("retry", "rollback", "escalate"):
-                logger.info("LLM failure analysis: %s (reason: %s)", rec, result.reason)
-                return rec
-            logger.warning("LLM returned unknown recommendation '%s' — using fallback", rec)
-
-    # Hardcoded fallback heuristics
-    error_lower = error.lower()
-    if any(term in error_lower for term in ("timeout", "connection", "temporary")):
-        return "retry"
-    if action_type == ActionType.PATCHING and any(
-        term in error_lower for term in ("dpkg", "broken", "conflict", "held")
-    ):
-        return "rollback"
-    return "escalate"
+    return note
 
 
 async def generate_report(
@@ -368,14 +282,14 @@ async def generate_report(
 
 # --- Prompt builders ---
 
-def _build_prioritize_prompt(
+def _build_planning_note_prompt(
     vm_info: VMInfo,
-    available_actions: list[ActionType],
+    plan: list[Action],
     stored_signals: StoredSignalContext | None = None,
 ) -> str:
-    applicable = filter_applicable_actions(available_actions, vm_info)
     lines = [
-        "Prioritize these maintenance actions for a VM with the following state:",
+        "A maintenance plan has already been determined for this VM "
+        "(deterministic, not your decision).",
         f"- OS: {vm_info.os_family.value} {vm_info.os_version}",
         f"- Disk usage: {vm_info.disk_usage}",
         f"- Docker available: {vm_info.docker_available}",
@@ -395,28 +309,14 @@ def _build_prioritize_prompt(
         if stored_signals.failed_login_count_24h > 0:
             lines.append(f"Failed SSH logins (24h): {stored_signals.failed_login_count_24h}")
     lines += [
-        f"\nAvailable actions: {[a.value for a in applicable]}",
-        "\nOrder them from highest to lowest urgency.",
-        'Respond with JSON: {"action_types": ["<action1>", "<action2>", ...]}',
+        f"\nPlanned actions (in execution order): {[a.action_type.value for a in plan]}",
+        "\nWrite a 1-4 sentence note for the human operator highlighting anything"
+        " noteworthy about this plan given the state above (e.g. risk context,"
+        " trends, why an action matters now). Do not propose changes to the"
+        " plan — it is fixed.",
+        'Respond with JSON: {"note": "<1-4 sentences>"}',
     ]
     return "\n".join(lines)
-
-
-def _build_failure_prompt(
-    action_type: str,
-    error: str,
-    context: dict[str, object],
-) -> str:
-    return (
-        f"A maintenance action failed. Analyze and recommend next steps.\n\n"
-        f"Action: {action_type}\n"
-        f"Error: {error}\n"
-        f"Context: {context}\n\n"
-        f"Choose one: retry (transient error), rollback (state corrupted), "
-        f"escalate (needs human).\n"
-        f"Respond with JSON: {{\"recommendation\": \"<retry|rollback|escalate>\", "
-        f"\"reason\": \"<brief reason>\"}}"
-    )
 
 
 def _build_report_prompt(results: list[ActionResult], batch_id: str) -> str:

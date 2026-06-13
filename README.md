@@ -545,7 +545,7 @@ Errander-AI has two layers (see [`docs/AI-ARCHITECTURE.md`](docs/AI-ARCHITECTURE
 
 | Layer | What it is | The question it answers | What you watch it with |
 |-------|-----------|-------------------------|------------------------|
-| **Layer A — the brain** | LLM reasoning in `agent/decisions.py` — prioritizes, analyzes failures, writes reports. Never touches a VM. | *Why* did the agent choose this plan? | AI Decisions UI (`/ui/ai-decisions`); optionally LangSmith for richer LangGraph traces |
+| **Layer A — the brain** | LLM reasoning in `agent/decisions.py` — writes an informational planning note on each (deterministic) plan and writes post-batch reports. Never touches a VM, never changes the plan. | *Why is this plan worth a second look?* | AI Decisions UI (`/ui/ai-decisions`); optionally LangSmith for richer LangGraph traces |
 | **Layer B — the hands** | Deterministic Python in `execution/` — SSH, commands, rollback. No LLM in this path. | *What* did the agent actually do? | **Prometheus metrics + the audit trail** |
 
 The key split: **the LLM's reasoning is not a record of what happened to your infrastructure** — a plan can be rejected at approval, and the LLM is deliberately kept out of execution. So the **audit trail is the source of truth for actions**, Prometheus is the source of truth for execution health, and LangSmith (if used) only ever observes Layer A.

@@ -1,3 +1,20 @@
+## §8d Step 5 — R1: advisory-LLM batch planning (2026-06-14, COMPLETE)
+
+- [x] `errander/agent/decisions.py` — `prioritize_actions()` now always `_hardcoded_priority` (deterministic, F2 fix); new `_PlanningNote`/`_PLANNING_NOTE_MAX_CHARS`/`_sanitize_note`/`_build_planning_note_prompt`/`generate_planning_note()`; deleted `_PrioritizedActions`, `_FailureAnalysis`, `analyze_failure()`, `_build_failure_prompt()`, dead 3.2b policy-filter block, `BUILTIN_POLICIES` import (F4 sweep)
+- [x] `errander/agent/graph.py` — `plan_vm_node` calls `generate_planning_note()`, stores `ai_note` in vm plan dict (covered by existing plan hash); `_format_plan_for_approval` appends labeled AI-analysis section after approval instructions
+- [x] `errander/agent/vm_graph.py` — `plan_actions_node` simplified to `prioritize_actions(vm_info)`
+- [x] `errander/web/ui.py` — `_render_approval_plan` renders `.apv-ai-note` (HTML-escaped) when present + new CSS
+- [x] `errander/evals/replay.py` — new `_check_planning_note`; removed `_check_failure_analysis`/`_VALID_RECOMMENDATIONS`
+- [x] `errander/safety/ai_audit.py` — docstring `analyze_failure` → `planning_note`
+- [x] Tests: `tests/agent/test_decisions.py`, `tests/agent/test_plan_vm_stored_signals.py`, `tests/ai_evals/test_golden_plans.py` (new F2 regression `test_planning_note_llm_output_never_changes_plan`), `tests/ai_evals/test_adversarial.py`, `tests/ai_evals/test_replay.py`, `tests/agent/test_approval_message_p01.py` (+2), `tests/web/test_approval_ai_note.py` (NEW, 3), fallout fixes in `tests/integrations/test_llm.py` + `tests/chaos/test_fault_injection.py` (6 tests)
+- [x] Doc sync: fable.md (§8 checklist + acceptance criteria + roadmap row 5), STATUS.md, README.md, docs/OBSERVABILITY.md, docs/AI-ARCHITECTURE.md, docs/learning/58-advisory-planning-note.md (NEW), tasks/todo.md, tasks/lessons.md, docs/command-log.md
+
+**Verification:** `uv run ruff check errander/ tests/` clean; `uv run mypy errander/` clean (112 files); full suite 8 failed / 2476 passed / 171 errors (485.93s) — the 8 failures (`tests/ui/test_approval_ui.py`, needs seeded user account) + 171 errors (`tests/ui/*`+`tests/web/*` pytest-asyncio runner pollution) are pre-existing and unrelated to R1, confirmed via `git stash` reproducing identically on pre-R1 `main`.
+
+**NEXT:** §8d Step 6 — Plan A: investigation agent (`tasks/investigation-agent-implementation-plan.md`).
+
+---
+
 ## §8d Step 4 — R3: process separation (IN PROGRESS)
 
 - [x] Migration #15 — `hygiene_approval_requests` table + `users.totp_secret` column

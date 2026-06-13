@@ -164,6 +164,9 @@ Recorded after review discussion with the project owner:
 
 ## 8. Implementation Spec — R1: "Advisory-LLM Batch Planning" (for the dev team)
 
+**Status: ✅ COMPLETE (2026-06-14)** — see `tasks/todo.md` §8d Step 5 for the
+file list, test counts, and verification commands.
+
 **One-line goal:** the scheduled batch path becomes fully deterministic for plan *content*; the LLM's role moves to a clearly-labeled, informational analysis note attached to the approval artifact. This resolves findings F2 (silent plan shrinkage) and F6 (AI risk without AI value), and should sweep up the F4 dead code in the same function.
 
 > **Sequencing note (§8d):** R1 is roadmap step 5 — it lands **after** R2/R3. By then the primary approval surface is the **Web UI approval page**, and the Slack message is a deterministic plan summary + link (per §8a). The `ai_note` therefore renders on the web approval page (primary) and may also be included in the Slack summary. References below to "the approval message" mean both surfaces; references to Slack truncation apply only if the note is included in the Slack summary.
@@ -192,17 +195,17 @@ Recorded after review discussion with the project owner:
 
 ### Files to change (checklist)
 
-- [ ] `errander/agent/decisions.py` — deterministic plan; new `_PlanningNote` + `generate_planning_note()`; delete dead policy filter; update module docstring (remove "failure analysis" from advertised decision points or mark dormant)
-- [ ] `errander/agent/graph.py` — `plan_vm_node`: call `generate_planning_note()` after building the deterministic plan, store `ai_note` in the vm plan dict; approval rendering: labeled note section (web page primary; `_format_plan_for_approval` if included in Slack summary)
-- [ ] `errander/agent/vm_graph.py` — confirm `prioritize_actions` call site still type-checks with the simplified signature
-- [ ] `errander/evals/replay.py` — `_check_planning_note` assertion branch
-- [ ] Tests:
+- [x] `errander/agent/decisions.py` — deterministic plan; new `_PlanningNote` + `generate_planning_note()`; delete dead policy filter; update module docstring (remove "failure analysis" from advertised decision points or mark dormant)
+- [x] `errander/agent/graph.py` — `plan_vm_node`: call `generate_planning_note()` after building the deterministic plan, store `ai_note` in the vm plan dict; approval rendering: labeled note section (web page primary; `_format_plan_for_approval` if included in Slack summary)
+- [x] `errander/agent/vm_graph.py` — confirm `prioritize_actions` call site still type-checks with the simplified signature
+- [x] `errander/evals/replay.py` — `_check_planning_note` assertion branch
+- [x] Tests:
   - plan content is identical with LLM present, LLM absent, and LLM returning garbage (the core F2 regression test)
   - note appears on the approval surface(s) when LLM succeeds; absent (no header, no crash) when it fails
   - note is length-capped, backtick-sanitized, and HTML-escaped
   - note is included in the plan hash / snapshot / deferred replay artifact
   - `planning_note` rows land in `ai_decisions` with correct outcome values
-- [ ] Doc sync (per CLAUDE.md rule, same commit): `STATUS.md`, `README.md` (decision-points description), `docs/AI-ARCHITECTURE.md` (batch path is now "deterministic plan + Layer A note"), `docs/OBSERVABILITY.md` (new `decision_type`), `docs/langgraph-primer.md` (if node behavior description changes), new `docs/learning/XX-advisory-planning-note.md`, `tasks/todo.md`, `docs/command-log.md`
+- [x] Doc sync (per CLAUDE.md rule, same commit): `STATUS.md`, `README.md` (decision-points description), `docs/AI-ARCHITECTURE.md` (batch path is now "deterministic plan + Layer A note"), `docs/OBSERVABILITY.md` (new `decision_type`), `docs/langgraph-primer.md` (if node behavior description changes), new `docs/learning/XX-advisory-planning-note.md`, `tasks/todo.md`, `docs/command-log.md`
 
 ### Acceptance criteria (definition of done)
 
@@ -219,6 +222,17 @@ Recorded after review discussion with the project owner:
 - **Slack message budget (if note included in the Slack summary):** the summary is truncated at ~2800 chars. The note cap must leave room for the plan itself — render the note *after* the plan content so truncation can only ever cost the note, never the package list.
 - **Do not** let the note generation delay approval posting on slow self-hosted LLMs beyond reason: reuse the existing per-request timeout; on timeout, post without the note.
 - **Prompt injection surface:** `StoredSignalContext` strings originate from target VMs (journal, drift kinds). The note is human-read text only, so blast radius is "misleading sentence in a labeled AI section" — acceptable, but this is exactly why the label and the deterministic plan facts must come from Python, not the model.
+
+### Verification (2026-06-14)
+
+All six acceptance criteria verified:
+
+1. **Byte-identical plan**: `TestGoldenPlanSafety::test_planning_note_llm_output_never_changes_plan` (`tests/ai_evals/test_golden_plans.py`) calls `prioritize_actions()` twice — once feeding the resulting plan through `generate_planning_note()` with an arbitrary mock LLM note, once without an LLM at all — and asserts the two plans are identical.
+2. **No LLM influence on plan content**: `prioritize_actions()` is `async def` returning `_hardcoded_priority(available_actions, vm_info)` only; `_parse_action_types`/`_INJECTION_RE` are no longer referenced from it (still used directly by `tests/ai_evals/test_adversarial.py` as general-purpose utilities).
+3. **Approval-surface rendering**: `_render_approval_plan` (web, `.apv-ai-note`, HTML-escaped) and `_format_plan_for_approval` (Slack, appended after approval instructions so truncation only ever costs the note) both covered by tests.
+4. **Audit trail**: `TestPlanningNoteAudit` (`tests/ai_evals/test_golden_plans.py`) — one `ai_decisions` row per planned VM, `decision_type="planning_note"`, outcomes `success`/`fallback`/`no_llm`, redacted `prompt_full`.
+5. **Dead code removed**: `analyze_failure`, `_FailureAnalysis`, `_build_failure_prompt`, `_check_failure_analysis`, `_VALID_RECOMMENDATIONS`, `_PrioritizedActions`, and the 3.2b policy-filter block are all gone — `grep -rn "analyze_failure\|_check_failure_analysis\|_PrioritizedActions\|_FailureAnalysis" errander/ tests/` returns nothing.
+6. **Green build**: `uv run ruff check errander/ tests/` clean; `uv run mypy errander/` clean (112 files); full suite 2476 passed / 8 failed / 171 errors — the 8 failures + 171 errors are pre-existing, unrelated to R1 (confirmed via `git stash` reproducing identically on pre-R1 `main`; see `tasks/lessons.md`).
 
 ---
 
@@ -424,8 +438,8 @@ Fix the foundations now, then build the AI features on top. Order is load-bearin
 | 1 | ✅ **R4: Postgres + DB layer** — DONE 2026-06-10 in two commits: SQLAlchemy Core async dual-backend (`e2815c2`), then **PostgreSQL-only** per owner decision (`40323f7`; SQLite removed, docker-compose for zero-config local) | §8c | Foundation — every later step adds tables. |
 | 2 | ✅ **R3 keystone: `approval_requests` DB-backed store** — DONE 2026-06-11: migration #13, `safety/approval_store.py` (atomic `decide()`, atomic execution claim), gate rewritten durable-first with transitional Slack reaction watcher, restart reconciler (60 s interval job: expire / resume watchers / execute orphans), in-memory `ApprovalManager` deleted, web UI repointed at the store. Rode along: the deferred-replay hash bug fix (`preloaded_batch_id` — every replay previously aborted at hash verify) and per-item selections now survive defer/restart (recovered from `approved_items_json`). | §8b | Fixes approval durability; enables everything after. |
 | 3 | ✅ **R2: users/groups RBAC + web-only approval** — DONE 2026-06-12: migration #14 (users/groups/group_permissions/user_groups/sessions), `safety/user_store.py` (scrypt + DB sessions), server-side RBAC on every decision/mutation handler, decisions record named user + group, Slack notify-and-link only (reaction watcher, hygiene reply parser, and restart-CLI reaction gate all removed), CLI user management, doc re-sweep. TOTP + nginx Mode 2 deferred to step 4. | §8a | Built directly against the new store; never wired to the in-memory manager (deleted in step 2). |
-| 4 | **R3: process split** (two services, two OS users, key + import isolation) | §8b | The physical Layer A/B boundary. |
-| 5 | **R1: advisory-LLM batch planning** | §8 | Touches the approval *message* — lands once, on the final surface. |
+| 4 | ✅ **R3: process split** — DONE 2026-06-13: `errander/web/ui.py` extracted (RBAC routes, TOTP login/setup, CSS, auth/CSRF middleware), `errander/observability/metrics.py` slimmed to `/metrics`+`/health`, `errander/web/__main__.py` production entry, two systemd units + nginx Mode 2 config + bootstrap `errander-web` OS user | §8b | The physical Layer A/B boundary. |
+| 5 | ✅ **R1: advisory-LLM batch planning** — DONE 2026-06-14: `prioritize_actions()` is now 100% deterministic (`_hardcoded_priority` only, fixes F2); new `generate_planning_note()` produces an informational `ai_note` stored inside the hashed `vm_plans` and rendered on the web approval page + Slack summary; F4 dead code (`analyze_failure`, 3.2b policy-filter block) removed | §8 | Touches the approval *message* — lands once, on the final surface. |
 | 6 | **Plan A: investigation agent** | `tasks/investigation-agent-implementation-plan.md` | The real AI value. Runs inside the unprivileged web process (per §8b), making its Layer-A guarantee OS-enforced. |
 | 7 | **Plan B: dashboard chat** | `tasks/dashboard-chat-implementation-plan.md` | After Plan A, **starting with its reconcile step** (Plan B was written against a predicted contract; reconcile against the as-built engine first). |
 

@@ -96,14 +96,15 @@ Web UI: `/ui/batches`, `/ui/batches/{id}` (per-event), `/ui/vms/{vm_id}` (histor
 Every LLM call that influences a decision is logged for explainability. This is **Layer A**: it captures what the model was asked and what it returned — *not* whether anything was executed.
 
 - **Store:** `errander/safety/ai_audit.py` → `AIDecisionStore`. Query via `get_decisions(batch_id, vm_id, decision_type, limit)` and `get_decision_by_id(id)`.
-- **Record (`AIDecision`):** `decision_type` (e.g. `prioritize_actions`, `operator_assistant`), `model`, `base_url` (redacted), `prompt_template_id`, `prompt_hash`, `prompt_full` (redacted), `response_raw`, `outcome` (`success` / `fallback` / `no_llm`), `latency_ms`, `context_snapshot` (incl. redaction + budget stats), `model_params`, `timestamp`.
+- **Record (`AIDecision`):** `decision_type` (e.g. `planning_note`, `operator_assistant`, `generate_report`), `model`, `base_url` (redacted), `prompt_template_id`, `prompt_hash`, `prompt_full` (redacted), `response_raw`, `outcome` (`success` / `fallback` / `no_llm`), `latency_ms`, `context_snapshot` (incl. redaction + budget stats), `model_params`, `timestamp`.
+- **`planning_note` (R1):** the only LLM call in the batch-planning path. The plan itself (`prioritize_actions()`) is 100% deterministic — `generate_planning_note()` produces a short (≤700 char) informational note about the already-finalized plan, stored as `ai_note` inside `vm_plans` and rendered on the approval surfaces under "AI analysis — informational only". The note can never change which actions run, in what order, or with what parameters. Historical `prioritize_actions` rows from before R1 remain replayable (`evals/replay.py`).
 - **Redaction:** prompts pass through `ContextRedactor` before storage (secrets stripped). Source IDs in LLM output are validated against known sources; hallucinated citations are dropped.
 
 ### How to read it
 
 ```bash
 # Recent AI decisions (optionally filter by type / batch)
-uv run python -m errander --ai-decisions --decision-type prioritize_actions --last 20
+uv run python -m errander --ai-decisions --decision-type planning_note --last 20
 
 # Full detail for one decision (prompt, response, latency, context)
 uv run python -m errander --ai-decision-show <decision-id>

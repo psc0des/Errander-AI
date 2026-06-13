@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import text
 
+from errander.agent.decisions import _PLANNING_NOTE_MAX_CHARS
 from errander.safety.migrations import run_migrations
 
 if TYPE_CHECKING:
@@ -49,7 +50,6 @@ _KNOWN_ACTIONS: frozenset[str] = frozenset([
 # Legacy action types that must not appear in new recommendations
 _LEGACY_ACTIONS: frozenset[str] = frozenset(["docker_prune"])
 
-_VALID_RECOMMENDATIONS: frozenset[str] = frozenset(["retry", "rollback", "escalate"])
 _VALID_RISK_LEVELS: frozenset[str] = frozenset(["low", "medium", "high", "unknown"])
 
 
@@ -72,8 +72,8 @@ def check_assertions(decision_type: str, response_raw: str | None) -> list[str]:
 
     if decision_type == "prioritize_actions":
         return _check_prioritize(data)
-    if decision_type in ("failure_analysis", "analyze_failure"):
-        return _check_failure_analysis(data)
+    if decision_type == "planning_note":
+        return _check_planning_note(data)
     if decision_type in ("report", "generate_report"):
         return _check_report(data)
     # operator_assistant and any future decision type
@@ -100,15 +100,15 @@ def _check_prioritize(data: dict[str, object]) -> list[str]:
     return violations
 
 
-def _check_failure_analysis(data: dict[str, object]) -> list[str]:
+def _check_planning_note(data: dict[str, object]) -> list[str]:
     violations: list[str] = []
-    rec = data.get("recommendation")
-    if rec is None:
-        violations.append("schema:missing_recommendation")
-    elif rec not in _VALID_RECOMMENDATIONS:
-        violations.append(f"invalid_recommendation:{rec!r}")
-    if "reason" not in data:
-        violations.append("schema:missing_reason")
+    note = data.get("note")
+    if note is None:
+        violations.append("schema:missing_note")
+    elif not str(note).strip():
+        violations.append("schema:empty_note")
+    elif len(str(note)) > _PLANNING_NOTE_MAX_CHARS:
+        violations.append(f"schema:note_exceeds_cap:{len(str(note))}")
     return violations
 
 

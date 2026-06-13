@@ -3172,3 +3172,25 @@ uv run ruff check errander/config/_prompts.py errander/config/inventory_wizard.p
 uv run mypy errander/config/_prompts.py errander/config/inventory_wizard.py errander/config/add_target.py   # Success: no issues found in 3 source files
 git add errander/config/_prompts.py errander/config/inventory_wizard.py errander/config/add_target.py tests/config/test_prompts.py && git commit -m "feat: shared _prompts.py — all wizard inputs validated inline, single source of truth"
 git push origin main
+
+# §8d Step 5 — R1: Advisory-LLM Batch Planning (2026-06-14)
+# prioritize_actions() made 100% deterministic; new generate_planning_note() is
+# the sole advisory LLM call (informational ai_note, never changes the plan).
+# F4 sweep: removed analyze_failure(), _FailureAnalysis, _build_failure_prompt(),
+# _check_failure_analysis, _VALID_RECOMMENDATIONS, _PrioritizedActions, dead
+# "3.2b policy enforcement" block.
+uv run pytest tests/agent/test_decisions.py tests/agent/test_enabled_actions_planning.py tests/agent/test_plan_vm_stored_signals.py -v --tb=short   # rewritten unit tests pass
+uv run pytest tests/ai_evals/test_golden_plans.py tests/ai_evals/test_adversarial.py tests/ai_evals/test_replay.py -v --tb=short   # F2 regression test + audit/replay migrations pass
+uv run pytest tests/agent/test_approval_message_p01.py tests/web/test_approval_ai_note.py -v --tb=short   # Slack + web ai_note rendering (new file: tests/web/test_approval_ai_note.py)
+uv run pytest tests/chaos/test_fault_injection.py tests/integrations/test_llm.py -v --tb=short   # call-site signature changes don't break chaos/LLM-client tests
+uv run ruff check errander/ tests/   # All checks passed!
+uv run mypy errander/   # Success: no issues found in 112 source files
+git config user.name   # psc0des
+git config user.email  # sarathy.vass6@gmail.com
+# Diagnose whether tests/ui + tests/web failures are pre-existing or R1 regressions
+git stash
+uv run pytest tests/ui/ tests/web/ -q   # 8 failed, 171 errors — identical on clean main
+git stash pop
+uv run pytest tests/ui/ tests/web/ -q   # 8 failed, 171 errors — same as clean main, confirms pre-existing
+uv run pytest -q   # full suite: 8 failed, 2476 passed, 181 warnings, 171 errors in 485.93s (pre-R1: 14 failed, 2470 passed — same total, R1 fixed 6)
+git diff --stat   # final file list for the R1 commit

@@ -183,3 +183,22 @@ def test_approval_message_hash_truncated_to_16_chars() -> None:
     assert "abcdef1234567890" in msg
     # Should not show the full 64-char hash
     assert full_hash not in msg
+
+
+# ---------------------------------------------------------------------------
+# AI advisory planning note (R1)
+# ---------------------------------------------------------------------------
+
+
+def test_approval_message_shows_ai_note_section() -> None:
+    plan = _make_vm_plan(preview=_patching_preview())
+    plan["ai_note"] = "Pending packages include a security fix for openssl."
+    msg = _format_plan_for_approval([plan], "b1", "plan-abc", "a" * 64)
+    assert "AI analysis" in msg
+    assert "Pending packages include a security fix" in msg
+
+
+def test_approval_message_no_ai_note_section_when_absent() -> None:
+    plan = _make_vm_plan(preview=_patching_preview())
+    msg = _format_plan_for_approval([plan], "b1", "plan-abc", "a" * 64)
+    assert "AI analysis" not in msg

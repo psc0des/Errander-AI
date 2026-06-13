@@ -52,7 +52,7 @@ class AIDecision:
 
     Attributes:
         batch_id: Batch run this decision belongs to.
-        decision_type: What kind of decision (prioritize_actions, generate_report, analyze_failure).
+        decision_type: What kind of decision (prioritize_actions, planning_note, generate_report).
         model: Model ID used.
         base_url: Endpoint base URL.
         prompt_template_id: Identifies the prompt template used (e.g. 'prioritize_v1').

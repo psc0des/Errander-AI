@@ -241,9 +241,9 @@ async def plan_actions_node(
 ) -> dict[str, Any]:
     """Plan and prioritize actions based on discovered state.
 
-    Calls prioritize_actions() with optional LLMClient (finding #3.1).
-    Falls back to hardcoded priority when LLM is unavailable.
-    Per-decision audit logged to ai_decisions table (finding #3.4).
+    Calls prioritize_actions() — deterministic, hardcoded (R1). The advisory
+    LLM planning note is generated once at batch-planning time
+    (graph.py::plan_vm_node), not re-derived here.
     """
     from errander.models.vm import OSFamily, VMInfo
 
@@ -257,14 +257,7 @@ async def plan_actions_node(
         uptime_seconds=float(str(vm_info_dict.get("uptime_seconds", 0.0))),
     )
 
-    actions = await prioritize_actions(
-        vm_info,
-        llm_client=llm_client,
-        policy=state.get("env_policy", "moderate"),
-        batch_id=state.get("batch_id", "unknown"),
-        vm_id=state.get("vm_id"),
-        ai_store=ai_decision_store,
-    )
+    actions = await prioritize_actions(vm_info)
 
     return {
         "planned_actions": [

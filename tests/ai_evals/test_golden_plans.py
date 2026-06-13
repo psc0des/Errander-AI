@@ -24,8 +24,8 @@ from pydantic import BaseModel
 
 from errander.agent.decisions import (
     _INJECTION_RE,
-    _hardcoded_priority,
     _parse_action_types,
+    generate_planning_note,
     prioritize_actions,
 )
 from errander.models.actions import ACTION_RISK_TIERS, ActionType, RiskTier
@@ -52,16 +52,17 @@ def _vm(
     )
 
 
-def _mock_llm(action_types: list[str]) -> MagicMock:
-    """Return a mock LLMClient that responds with the given action_types."""
+def _mock_note_llm(note: str) -> MagicMock:
+    """Return a mock LLMClient that responds with the given planning note."""
 
-    class _FakeResponse(BaseModel):
-        action_types: list[str]
+    class _FakeNote(BaseModel):
+        note: str
 
     client = MagicMock()
     client._model = "mock-model"
     client._base_url = "http://mock"
-    client.complete = AsyncMock(return_value=_FakeResponse(action_types=action_types))
+    client._temperature = 0.1
+    client.complete = AsyncMock(return_value=_FakeNote(note=note))
     return client
 
 
@@ -117,30 +118,19 @@ class TestGoldenPlanSafety:
         assert ActionType.PATCHING not in action_types
 
     @pytest.mark.asyncio
-    async def test_llm_output_filtered_to_available_actions(self) -> None:
-        """LLM cannot add actions not in the available_actions set."""
+    async def test_planning_note_llm_output_never_changes_plan(self) -> None:
+        """F2 regression: the advisory planning note can never alter plan content."""
         vm = _vm()
-        available = [ActionType.DISK_CLEANUP, ActionType.LOG_ROTATION]
-        llm = _mock_llm([
-            "disk_cleanup",
-            "log_rotation",
-            "patching",       # not in available
-            "backup_verify",  # not in available
-        ])
-        actions = await prioritize_actions(vm, available_actions=available, llm_client=llm)
-        action_types = [a.action_type for a in actions]
-        assert ActionType.PATCHING not in action_types
-        assert ActionType.BACKUP_VERIFY not in action_types
+        available = [ActionType.DISK_CLEANUP, ActionType.LOG_ROTATION, ActionType.PATCHING]
 
-    @pytest.mark.asyncio
-    async def test_llm_valid_output_respected(self) -> None:
-        """LLM reorders actions — valid output is used."""
-        vm = _vm(docker_available=True, pending_packages=3)
-        llm = _mock_llm(["log_rotation", "disk_cleanup"])
-        actions = await prioritize_actions(vm, llm_client=llm)
-        action_types = [a.action_type for a in actions]
-        assert action_types[0] == ActionType.LOG_ROTATION
-        assert action_types[1] == ActionType.DISK_CLEANUP
+        plan_a = await prioritize_actions(vm, available_actions=available)
+
+        llm = _mock_note_llm("Disk usage is trending up; consider patching soon.")
+        await generate_planning_note(vm, plan_a, llm_client=llm)
+
+        plan_b = await prioritize_actions(vm, available_actions=available)
+
+        assert [a.action_type for a in plan_a] == [a.action_type for a in plan_b]
 
 
 # ---------------------------------------------------------------------------
@@ -165,17 +155,6 @@ class TestInjectionRejection:
         assert _INJECTION_RE.search(payload), (
             f"Expected injection pattern to be detected in: {payload!r}"
         )
-
-    @pytest.mark.asyncio
-    async def test_injection_in_action_type_falls_back(self) -> None:
-        """LLM returning injection in action type string → falls back to hardcoded."""
-        vm = _vm()
-        llm = _mock_llm(["disk_cleanup; rm -rf /", "log_rotation"])
-        actions = await prioritize_actions(vm, llm_client=llm)
-        # Falls back to hardcoded (injection rejected) or uses only clean types
-        # key invariant: no action_type value in returned actions contains shell metacharacters
-        for act in actions:
-            assert not _INJECTION_RE.search(act.action_type.value)
 
     @pytest.mark.parametrize("safe", [
         "disk_cleanup",
@@ -226,53 +205,26 @@ class TestSchemaViolations:
         names = [a.value for a in result]
         assert names.count("disk_cleanup") == 2
 
-    @pytest.mark.asyncio
-    async def test_llm_returns_none_falls_back(self) -> None:
-        """LLM.complete() returns None → hardcoded fallback used."""
-        vm = _vm()
-        client = MagicMock()
-        client._model = "mock-model"
-        client._base_url = "http://mock"
-        client.complete = AsyncMock(return_value=None)
-        actions = await prioritize_actions(vm, llm_client=client)
-        assert len(actions) > 0  # hardcoded fallback produced something
-
-    @pytest.mark.asyncio
-    async def test_llm_raises_falls_back(self) -> None:
-        """LLM.complete() raises an exception → hardcoded fallback used."""
-        vm = _vm()
-        client = MagicMock()
-        client._model = "mock-model"
-        client._base_url = "http://mock"
-        client.complete = AsyncMock(side_effect=RuntimeError("connection refused"))
-        # prioritize_actions catches LLM errors and uses fallback
-        # (LLMClient itself wraps exceptions, but test defence-in-depth here)
-        try:
-            actions = await prioritize_actions(vm, llm_client=client)
-        except RuntimeError:
-            # If the error propagates, that's also fine — the fallback path
-            # inside LLMClient.complete handles it; here we test decisions.py level
-            actions = _hardcoded_priority(list(ActionType), vm)
-        assert len(actions) > 0
-
 
 # ---------------------------------------------------------------------------
 # Per-decision audit capture (finding #3.4)
 # ---------------------------------------------------------------------------
 
-class TestAIDecisionAudit:
-    """AI decisions are logged to AIDecisionStore on every LLM call."""
+class TestPlanningNoteAudit:
+    """Advisory planning-note LLM calls are logged to AIDecisionStore."""
 
     @pytest.mark.asyncio
     async def test_successful_llm_call_logged_as_success(self) -> None:
         from errander.safety.ai_audit import AIDecisionStore
 
         vm = _vm()
-        llm = _mock_llm(["disk_cleanup", "log_rotation"])
+        plan = await prioritize_actions(vm)
+        llm = _mock_note_llm("Disk usage is trending up; consider patching soon.")
 
         async with AIDecisionStore(make_test_db()) as store:
-            await prioritize_actions(
+            await generate_planning_note(
                 vm,
+                plan,
                 llm_client=llm,
                 batch_id="batch-eval-001",
                 vm_id="dev/web-01",
@@ -282,7 +234,7 @@ class TestAIDecisionAudit:
 
         assert len(decisions) == 1
         assert decisions[0].outcome == "success"
-        assert decisions[0].decision_type == "prioritize_actions"
+        assert decisions[0].decision_type == "planning_note"
         assert decisions[0].vm_id == "dev/web-01"
 
     @pytest.mark.asyncio
@@ -290,14 +242,17 @@ class TestAIDecisionAudit:
         from errander.safety.ai_audit import AIDecisionStore
 
         vm = _vm()
+        plan = await prioritize_actions(vm)
         client = MagicMock()
         client._model = "mock-model"
         client._base_url = "http://mock"
+        client._temperature = 0.1
         client.complete = AsyncMock(return_value=None)
 
         async with AIDecisionStore(make_test_db()) as store:
-            await prioritize_actions(
+            await generate_planning_note(
                 vm,
+                plan,
                 llm_client=client,
                 batch_id="batch-eval-002",
                 ai_store=store,
@@ -312,10 +267,12 @@ class TestAIDecisionAudit:
         from errander.safety.ai_audit import AIDecisionStore
 
         vm = _vm()
+        plan = await prioritize_actions(vm)
 
         async with AIDecisionStore(make_test_db()) as store:
-            await prioritize_actions(
+            await generate_planning_note(
                 vm,
+                plan,
                 llm_client=None,
                 batch_id="batch-eval-003",
                 ai_store=store,

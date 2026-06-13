@@ -1,9 +1,37 @@
 # Errander-AI — Project Status
 
 ## Last Updated
-2026-06-13
+2026-06-14
 
 ## Current Phase
+**§8d Step 5 — R1: advisory-LLM batch planning (COMPLETE 2026-06-14).**
+
+`prioritize_actions()` is now 100% deterministic — always `_hardcoded_priority(available_actions, vm_info)`. The LLM can no longer add, remove, or reorder plan actions (fixes F2 — silent plan shrinkage). A new, separate Layer A call, `generate_planning_note()`, produces a short (≤700 char) informational note about the already-finalized plan — stored as `ai_note` inside each per-VM `vm_plans` dict, so it's covered by the existing plan hash and is part of the immutable approval artifact / deferred-replay record. The note never feeds back into plan content: `TestGoldenPlanSafety::test_planning_note_llm_output_never_changes_plan` proves the plan is byte-identical regardless of LLM presence or output. F4 sweep in the same change: deleted `analyze_failure()`, `_FailureAnalysis`, `_build_failure_prompt()`, `_check_failure_analysis`, `_VALID_RECOMMENDATIONS`, and the dead "3.2b policy enforcement" block (computed a filtered plan and then discarded it).
+
+`ai_note` renders on the web approval page (`_render_approval_plan`, new `.apv-ai-note` block, HTML-escaped) and in the Slack plan summary (`_format_plan_for_approval`, appended after the approval instructions so Slack's ~2800-char truncation only ever costs the note). `ai_decisions` gains `decision_type="planning_note"` / `prompt_template_id="planning_note_v1"` (outcomes `success`/`fallback`/`no_llm`), mirroring the old `prioritize_actions` audit rows 1:1.
+
+### Files changed (2026-06-14 — §8d Step 5 R1 advisory planning note)
+**Code:**
+- `errander/agent/decisions.py` — `prioritize_actions()` always `_hardcoded_priority` (dropped `llm_client`/`policy`/`ai_decision_store` params); new `_PlanningNote`, `_PLANNING_NOTE_MAX_CHARS=700`, `_sanitize_note()`, `_build_planning_note_prompt()` (renamed from `_build_prioritize_prompt`), `generate_planning_note()`; deleted `_PrioritizedActions`, `_FailureAnalysis`, `analyze_failure()`, `_build_failure_prompt()`, the dead policy-filter block, `BUILTIN_POLICIES` import
+- `errander/agent/graph.py` — `plan_vm_node` calls `generate_planning_note()` after the deterministic plan, stores `ai_note` when non-empty; `_format_plan_for_approval` appends an "AI analysis — informational only" section per VM; dropped unused `env_policy` local
+- `errander/agent/vm_graph.py` — `plan_actions_node` simplified to `prioritize_actions(vm_info)`
+- `errander/web/ui.py` — `_render_approval_plan` renders `.apv-ai-note` (HTML-escaped) when present + matching CSS
+- `errander/evals/replay.py` — new `_check_planning_note` (missing/empty/over-cap); removed `_check_failure_analysis`/`_VALID_RECOMMENDATIONS`
+- `errander/safety/ai_audit.py` — docstring: `analyze_failure` → `planning_note`
+
+**Tests (net +9: 6 fallout fixes + 3 new):**
+- `tests/agent/test_decisions.py` — `TestAnalyzeFailure` deleted; redaction tests migrated to `generate_planning_note`
+- `tests/agent/test_plan_vm_stored_signals.py` — `_build_prioritize_prompt` → `_build_planning_note_prompt(vm_info, plan, signals)`
+- `tests/ai_evals/test_golden_plans.py` — new F2 regression `test_planning_note_llm_output_never_changes_plan`; removed LLM-filtering/exception tests now structurally impossible; `TestAIDecisionAudit` → `TestPlanningNoteAudit`
+- `tests/ai_evals/test_adversarial.py` — removed `TestLLMExceptionFallback`/`TestAuditOutcomesOnErrors` (moot — `prioritize_actions` no longer takes `llm_client`); kept `_INJECTION_RE`/`_parse_action_types` payload tests
+- `tests/ai_evals/test_replay.py` — `planning_note` assertion tests replace `failure_analysis` tests
+- `tests/agent/test_approval_message_p01.py` — +2 tests: `ai_note` section shown/absent in Slack message
+- `tests/web/test_approval_ai_note.py` — NEW (3 tests): `ai_note` rendered/absent/HTML-escaped on web approval page
+- `tests/integrations/test_llm.py`, `tests/chaos/test_fault_injection.py` — fallout: migrated to `generate_planning_note` (6 tests, were failing pre-fix)
+
+**Verification:** `uv run ruff check errander/ tests/` clean; `uv run mypy errander/` clean (112 files); full suite 8 failed / 2476 passed / 171 errors (485.93s) — the 8 failures + 171 errors are pre-existing and unrelated (confirmed via `git stash` reproducing identically on pre-R1 HEAD; see `tasks/lessons.md`).
+
+## Previous Phase
 **§8d Step 4 — R3: process separation (COMPLETE 2026-06-13).**
 
 ✓ **Migration #15** (hygiene_approval_requests table + users.totp_secret column)
@@ -291,13 +319,18 @@ Adds a `Monitoring` nav item and `/ui/monitoring` page to the Errander web UI. T
 | 1 | R4: PostgreSQL-only + DB layer | ✅ COMPLETE (2026-06-10) |
 | 2 | R3 keystone: `approval_requests` DB-backed store | ✅ COMPLETE (2026-06-11) |
 | 3 | R2: users/groups RBAC + web-only approval | ✅ COMPLETE (2026-06-12) |
-| 4 | R3: process split (two OS processes, key isolation, nginx Mode 2 + TOTP) | in progress |
-| 5 | R1: advisory-LLM batch planning (F2+F6 fix) | after 4 |
-| 6 | Plan A: investigation agent | after 5 |
+| 4 | R3: process split (two OS processes, key isolation, nginx Mode 2 + TOTP) | ✅ COMPLETE (2026-06-13) |
+| 5 | R1: advisory-LLM batch planning (F2+F6 fix) | ✅ COMPLETE (2026-06-14) |
+| 6 | Plan A: investigation agent | next |
 | 7 | Plan B: dashboard chat | after 6 |
 
 ## Blockers
 None.
 
 ## Test count
-2484 in CI scope (excluding tests/ui Playwright + tests/staging), verified 2026-06-13.
+Full suite: 2476 passed, 8 failed, 171 errors (485.93s), verified 2026-06-14. The 8 failures
+(`tests/ui/test_approval_ui.py`, needs a seeded user account) and 171 errors (`tests/ui/*` +
+`tests/web/*` pytest-asyncio runner-state pollution when run together) are pre-existing and
+unrelated to R1 — confirmed via `git stash` to reproduce identically on pre-R1 `main`; see
+`tasks/lessons.md`. R1 net effect: +6 tests fixed (test_llm.py, test_fault_injection.py
+fallout) + 3 new (tests/web/test_approval_ai_note.py); total passed+failed unchanged at 2484.

@@ -394,6 +394,18 @@ a:hover{color:var(--secondary)}
 .apv-pkg-ver{font-family:var(--mono);font-size:.65rem;color:var(--text-d);margin-left:.4rem}
 .apv-cat-note{font-size:.67rem;color:var(--text-d);padding:.45rem .75rem}
 
+/* AI analysis note — informational only, plan content is deterministic */
+.apv-ai-note{
+  border:1px solid var(--outline);border-radius:7px;
+  margin-bottom:.55rem;overflow:hidden;
+}
+.apv-ai-note-hdr{
+  display:flex;align-items:center;gap:.5rem;
+  padding:.4rem .75rem;background:var(--surface-lo);
+  border-bottom:1px solid var(--outline);
+}
+.apv-ai-note-body{font-size:.7rem;color:var(--text-d);padding:.45rem .75rem}
+
 /* Reasoning section */
 .apv-reasoning{
   border:1px solid var(--outline);border-radius:7px;
@@ -2351,7 +2363,20 @@ def _render_approval_plan(
                     f'</div>'
                 )
 
-        parts.append(f'<div class="apv-vm">{vm_hdr}{"".join(actions_html)}</div>')
+        ai_note = plan.get("ai_note")
+        ai_note_html = ""
+        if isinstance(ai_note, str) and ai_note.strip():
+            ai_note_html = (
+                '<div class="apv-ai-note">'
+                '<div class="apv-ai-note-hdr">'
+                '<span class="badge bk-neu">AI analysis — informational only; '
+                'plan content is deterministic</span>'
+                '</div>'
+                f'<div class="apv-ai-note-body">{_esc(ai_note)}</div>'
+                '</div>'
+            )
+
+        parts.append(f'<div class="apv-vm">{vm_hdr}{"".join(actions_html)}{ai_note_html}</div>')
     return "".join(parts)
 
 

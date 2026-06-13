@@ -51,21 +51,26 @@ class TestCheckAssertions:
         assert any("unknown_action" in vi and "kubectl_delete_all" in vi for vi in v)
         assert not any("disk_cleanup" in vi for vi in v)
 
-    # --- failure_analysis ---
+    # --- planning_note ---
 
-    def test_failure_analysis_valid(self) -> None:
-        resp = json.dumps({"recommendation": "retry", "reason": "transient error"})
-        assert check_assertions("failure_analysis", resp) == []
+    def test_planning_note_valid(self) -> None:
+        resp = json.dumps({"note": "Disk usage trending up; patching recommended now."})
+        assert check_assertions("planning_note", resp) == []
 
-    def test_failure_analysis_invalid_recommendation(self) -> None:
-        resp = json.dumps({"recommendation": "ignore", "reason": "whatever"})
-        v = check_assertions("failure_analysis", resp)
-        assert any("invalid_recommendation" in vi for vi in v)
+    def test_planning_note_missing_field(self) -> None:
+        resp = json.dumps({"wrong_field": "x"})
+        v = check_assertions("planning_note", resp)
+        assert any("missing_note" in vi for vi in v)
 
-    def test_failure_analysis_missing_reason(self) -> None:
-        resp = json.dumps({"recommendation": "rollback"})
-        v = check_assertions("failure_analysis", resp)
-        assert any("missing_reason" in vi for vi in v)
+    def test_planning_note_empty(self) -> None:
+        resp = json.dumps({"note": "  "})
+        v = check_assertions("planning_note", resp)
+        assert any("empty_note" in vi for vi in v)
+
+    def test_planning_note_exceeds_cap(self) -> None:
+        resp = json.dumps({"note": "x" * 701})
+        v = check_assertions("planning_note", resp)
+        assert any("note_exceeds_cap" in vi for vi in v)
 
     # --- report / generate_report ---
 

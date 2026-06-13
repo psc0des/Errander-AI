@@ -63,3 +63,4 @@ Index of all learning docs created during development. Each doc explains what wa
 | 55 | [PostgreSQL-Only Migration](55-postgresql-only.md) | §8d-1 | `55-postgresql-only.md` |
 | 56 | [Durable Approval Requests Store](56-approval-requests-store.md) | §8d-2 | `56-approval-requests-store.md` |
 | 57 | [Web-Only Approval with Users/Groups RBAC](57-web-only-approval-rbac.md) | §8d-3 | `57-web-only-approval-rbac.md` |
+| 58 | [Advisory-LLM Batch Planning](58-advisory-planning-note.md) | §8d-5 | `58-advisory-planning-note.md` |

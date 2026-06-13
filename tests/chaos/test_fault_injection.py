@@ -321,11 +321,12 @@ class TestAuditFaultInjection:
 # ---------------------------------------------------------------------------
 
 class TestLLMFaultInjection:
-    """LLM failures always fall back to hardcoded ordering without crashing."""
+    """Advisory planning-note LLM failures never crash or block plan generation."""
 
     @pytest.mark.asyncio
     async def test_llm_timeout_falls_back_to_hardcoded(self) -> None:
-        from errander.agent.decisions import prioritize_actions
+        """LLM timeout (complete() → None) → no note, plan unaffected."""
+        from errander.agent.decisions import generate_planning_note, prioritize_actions
         from errander.models.vm import OSFamily, VMInfo
 
         vm = VMInfo(
@@ -336,23 +337,27 @@ class TestLLMFaultInjection:
         client = MagicMock()
         client._model = "mock"
         client._base_url = "http://mock"
+        client._temperature = 0.1
         client.complete = AsyncMock(return_value=None)  # LLM timeout → None
 
-        actions = await prioritize_actions(vm, llm_client=client)
-        assert len(actions) > 0
-        action_types = [a.action_type for a in actions]
+        plan = await prioritize_actions(vm)
+        note = await generate_planning_note(vm, plan, llm_client=client)
+
+        assert note is None
+        assert len(plan) > 0
+        action_types = [a.action_type for a in plan]
         assert ActionType.DISK_CLEANUP in action_types
 
     @pytest.mark.asyncio
     async def test_llm_malformed_json_falls_back(self) -> None:
-        """LLM returning unrecognised action types → parse fails → hardcoded fallback."""
+        """LLM returning an empty note → treated as fallback, plan unaffected."""
         from pydantic import BaseModel
 
-        from errander.agent.decisions import prioritize_actions
+        from errander.agent.decisions import generate_planning_note, prioritize_actions
         from errander.models.vm import OSFamily, VMInfo
 
-        class _FakeResponse(BaseModel):
-            action_types: list[str]
+        class _FakeNote(BaseModel):
+            note: str
 
         vm = VMInfo(
             os_family=OSFamily.UBUNTU, os_version="22.04",
@@ -362,21 +367,22 @@ class TestLLMFaultInjection:
         client = MagicMock()
         client._model = "mock"
         client._base_url = "http://mock"
-        # LLM returns unknown action types
-        client.complete = AsyncMock(return_value=_FakeResponse(
-            action_types=["kernel_patch", "rm_rf_root", "UNKNOWN"]
-        ))
+        client._temperature = 0.1
+        # LLM returns a valid but empty note
+        client.complete = AsyncMock(return_value=_FakeNote(note="   "))
 
-        actions = await prioritize_actions(vm, llm_client=client)
-        # All invalid → _parse_action_types returns [] → hardcoded fallback
-        action_types = [a.action_type for a in actions]
+        plan = await prioritize_actions(vm)
+        note = await generate_planning_note(vm, plan, llm_client=client)
+
+        assert note is None
+        action_types = [a.action_type for a in plan]
         for at in action_types:
             assert at in list(ActionType)  # only known types
 
     @pytest.mark.asyncio
     async def test_llm_unavailable_audit_records_no_llm(self) -> None:
         """No LLM configured → ai_decisions records outcome=no_llm."""
-        from errander.agent.decisions import prioritize_actions
+        from errander.agent.decisions import generate_planning_note, prioritize_actions
         from errander.models.vm import OSFamily, VMInfo
         from errander.safety.ai_audit import AIDecisionStore
 
@@ -385,9 +391,11 @@ class TestLLMFaultInjection:
             disk_usage={"/": 55.0}, docker_available=True,
             pending_packages=2, uptime_seconds=3600.0,
         )
+        plan = await prioritize_actions(vm)
         async with AIDecisionStore(make_test_db()) as store:
-            await prioritize_actions(
+            await generate_planning_note(
                 vm,
+                plan,
                 llm_client=None,
                 batch_id="chaos-llm-001",
                 ai_store=store,

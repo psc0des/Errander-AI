@@ -271,9 +271,10 @@ class TestDecisionsWithLLM:
     """Verify decisions.py uses LLM when available and falls back when not."""
 
     @pytest.mark.asyncio
-    async def test_prioritize_uses_llm_when_available(self, llm_client: LLMClient) -> None:
-        from errander.agent.decisions import prioritize_actions
-        from errander.models.actions import ActionType
+    async def test_generate_planning_note_uses_llm_when_available(
+        self, llm_client: LLMClient
+    ) -> None:
+        from errander.agent.decisions import generate_planning_note, prioritize_actions
         from errander.models.vm import OSFamily, VMInfo
 
         vm_info = VMInfo(
@@ -284,26 +285,24 @@ class TestDecisionsWithLLM:
             pending_packages=5,
             uptime_seconds=86400.0,
         )
-        llm_payload = json.dumps({
-            "action_types": [
-                "patching", "disk_cleanup", "log_rotation",
-                "docker_prune", "backup_verify",
-            ]
-        })
+        plan = await prioritize_actions(vm_info)
+        llm_payload = json.dumps({"note": "Pending patches include a security fix."})
         mock_response = _make_chat_response(llm_payload)
         with patch.object(
             llm_client._client.chat.completions, "create",
             AsyncMock(return_value=mock_response),
         ):
-            actions = await prioritize_actions(vm_info, llm_client=llm_client)
+            note = await generate_planning_note(vm_info, plan, llm_client=llm_client)
 
-        assert actions[0].action_type == ActionType.PATCHING
+        assert note == "Pending patches include a security fix."
 
     @pytest.mark.asyncio
-    async def test_prioritize_falls_back_when_llm_unavailable(self, llm_client: LLMClient) -> None:
+    async def test_generate_planning_note_returns_none_when_llm_unavailable(
+        self, llm_client: LLMClient
+    ) -> None:
         from openai import APIConnectionError
 
-        from errander.agent.decisions import DEFAULT_PRIORITY, prioritize_actions
+        from errander.agent.decisions import generate_planning_note, prioritize_actions
         from errander.models.vm import OSFamily, VMInfo
 
         vm_info = VMInfo(
@@ -314,17 +313,20 @@ class TestDecisionsWithLLM:
             pending_packages=5,
             uptime_seconds=86400.0,
         )
+        plan = await prioritize_actions(vm_info)
         with patch.object(
             llm_client._client.chat.completions, "create",
             AsyncMock(side_effect=APIConnectionError(request=MagicMock())),
         ):
-            actions = await prioritize_actions(vm_info, llm_client=llm_client)
+            note = await generate_planning_note(vm_info, plan, llm_client=llm_client)
 
-        assert [a.action_type for a in actions] == DEFAULT_PRIORITY
+        assert note is None
 
     @pytest.mark.asyncio
-    async def test_prioritize_falls_back_on_bad_llm_response(self, llm_client: LLMClient) -> None:
-        from errander.agent.decisions import DEFAULT_PRIORITY, prioritize_actions
+    async def test_generate_planning_note_returns_none_on_bad_llm_response(
+        self, llm_client: LLMClient
+    ) -> None:
+        from errander.agent.decisions import generate_planning_note, prioritize_actions
         from errander.models.vm import OSFamily, VMInfo
 
         vm_info = VMInfo(
@@ -335,14 +337,15 @@ class TestDecisionsWithLLM:
             pending_packages=5,
             uptime_seconds=86400.0,
         )
+        plan = await prioritize_actions(vm_info)
         mock_response = _make_chat_response("not valid json")
         with patch.object(
             llm_client._client.chat.completions, "create",
             AsyncMock(return_value=mock_response),
         ):
-            actions = await prioritize_actions(vm_info, llm_client=llm_client)
+            note = await generate_planning_note(vm_info, plan, llm_client=llm_client)
 
-        assert [a.action_type for a in actions] == DEFAULT_PRIORITY
+        assert note is None
 
     @pytest.mark.asyncio
     async def test_generate_report_uses_llm(self, llm_client: LLMClient) -> None:

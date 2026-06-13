@@ -6,7 +6,11 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from errander.agent.decisions import StoredSignalContext, _build_prioritize_prompt
+from errander.agent.decisions import (
+    StoredSignalContext,
+    _build_planning_note_prompt,
+    _hardcoded_priority,
+)
 from errander.agent.graph import _load_stored_signals
 from errander.models.actions import ActionType
 from errander.models.events import EventType
@@ -178,7 +182,7 @@ async def test_load_stored_signals_store_exception() -> None:
 
 
 # ---------------------------------------------------------------------------
-# _build_prioritize_prompt with stored_signals
+# _build_planning_note_prompt with stored_signals
 # ---------------------------------------------------------------------------
 
 
@@ -192,8 +196,9 @@ def test_prioritize_actions_with_signals() -> None:
         last_patch_days_ago=30,
         failed_login_count_24h=5,
     )
+    plan = _hardcoded_priority(actions, vm_info)
 
-    prompt = _build_prioritize_prompt(vm_info, actions, signals)
+    prompt = _build_planning_note_prompt(vm_info, plan, signals)
 
     assert "Historical signals" in prompt
     assert "/: 78% (+13% over 7d)" in prompt
@@ -206,8 +211,9 @@ def test_prioritize_actions_with_signals() -> None:
 def test_prioritize_actions_signals_none() -> None:
     vm_info = _make_vm_info()
     actions = [ActionType.PATCHING]
+    plan = _hardcoded_priority(actions, vm_info)
 
-    prompt = _build_prioritize_prompt(vm_info, actions, None)
+    prompt = _build_planning_note_prompt(vm_info, plan, None)
 
     assert "Historical signals" not in prompt
     assert "disk_trend" not in prompt

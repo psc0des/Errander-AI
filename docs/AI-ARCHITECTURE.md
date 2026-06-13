@@ -78,6 +78,7 @@ Layer A produces **text and recommendations for humans**. It never produces a co
 - **Post-action explanations**: "The patch batch succeeded; nginx restarted clean; service SLI returned to baseline at 14:32."
 - **Operator chat answers**: "Why is prod-web-02 trending slow? Here's what I found across Prometheus, audit DB, and recent commits."
 - **Pre-maintenance readiness reports**: "Of the 12 VMs scheduled for tonight's window, 9 are ready, 2 have sudo preflight failures, 1 has a stale backup."
+- **Plan annotations**: a short (≤700 char), labeled "AI analysis — informational only" note attached to each VM's scheduled maintenance plan (`generate_planning_note()`) — commentary on the plan Layer B already built deterministically. It can never add, remove, or reorder actions; if the LLM is unavailable or returns nothing useful, the plan renders without a note.
 
 ### What Layer A must never do
 

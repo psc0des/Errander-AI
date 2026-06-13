@@ -1,52 +1,25 @@
-"""Adversarial AI safety tests (Phase 1 trust layer).
+"""Adversarial AI safety tests — SRE-context injection corpus.
 
-These tests prove two safety properties:
-1. SRE-context adversarial prompts injected through LLM output cannot bypass
-   Layer B's deterministic action set or the approval gate.
-2. Every API exception path (timeout, connection error, status error) falls back
-   gracefully and the audit outcome is recorded correctly.
+prioritize_actions() is fully deterministic (R1) and no longer accepts LLM
+output, so the injection/exception-path tests that previously exercised it
+were removed — see TestPlanningNoteAudit in test_golden_plans.py for the
+advisory generate_planning_note() audit-outcome tests.
 
-test_golden_plans.py covers general injection regex and unknown-action-type
-filtering.  This file extends with SRE-context payloads and exception paths.
+This file proves that SRE-context adversarial strings — the kind an LLM
+might echo back in a planning note or any other free-text field — are
+caught by the shared _INJECTION_RE / _parse_action_types utilities used
+across decision points.
+
+test_golden_plans.py covers the general injection regex and unknown-action-type
+corpus. This file extends with SRE-specific payloads.
 """
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock
-
 import pytest
-from openai import APIConnectionError, APITimeoutError
 
-from errander.agent.decisions import _INJECTION_RE, _parse_action_types, prioritize_actions
+from errander.agent.decisions import _INJECTION_RE, _parse_action_types
 from errander.models.actions import ActionType
-from errander.models.vm import OSFamily, VMInfo
-from errander.safety.ai_audit import AIDecisionStore
-from tests.conftest import make_test_db
-
-
-def _vm() -> VMInfo:
-    return VMInfo(
-        os_family=OSFamily.UBUNTU,
-        os_version="22.04",
-        disk_usage={"/": 60.0},
-        docker_available=True,
-        pending_packages=3,
-        uptime_seconds=86400.0,
-    )
-
-
-def _mock_llm_with_action_types(action_types: list[str]) -> MagicMock:
-    from pydantic import BaseModel
-
-    class _Resp(BaseModel):
-        action_types: list[str]
-
-    client = MagicMock()
-    client._model = "mock-model"
-    client._base_url = "http://mock"
-    client.complete = AsyncMock(return_value=_Resp(action_types=action_types))
-    return client
-
 
 # ---------------------------------------------------------------------------
 # SRE-context adversarial payloads
@@ -104,146 +77,3 @@ class TestSREAdversarialPayloads:
         names = [a.value for a in result]
         assert "disk_cleanup" not in names
         assert "log_rotation" in names
-
-    @pytest.mark.asyncio
-    async def test_injection_action_type_never_reaches_plan(self) -> None:
-        vm = _vm()
-        llm = _mock_llm_with_action_types([
-            "patching; rm -rf /",
-            "disk_cleanup$(id)",
-            "log_rotation",
-        ])
-        actions = await prioritize_actions(vm, llm_client=llm)
-        for act in actions:
-            assert not _INJECTION_RE.search(act.action_type.value), (
-                f"Injection reached plan action: {act.action_type.value!r}"
-            )
-
-    @pytest.mark.asyncio
-    async def test_unknown_action_type_ignored(self) -> None:
-        vm = _vm()
-        llm = _mock_llm_with_action_types([
-            "nuke_everything",
-            "disable_hitl",
-            "kubectl_delete_all",
-            "disk_cleanup",
-        ])
-        actions = await prioritize_actions(vm, llm_client=llm)
-        action_types = [a.action_type for a in actions]
-        assert ActionType.DISK_CLEANUP in action_types
-        names = [a.action_type.value for a in actions]
-        assert "nuke_everything" not in names
-        assert "disable_hitl" not in names
-        assert "kubectl_delete_all" not in names
-
-
-# ---------------------------------------------------------------------------
-# LLM API exception paths — fallback never blocks
-# ---------------------------------------------------------------------------
-
-class TestLLMExceptionFallback:
-    """Every LLM exception path must fall back to deterministic ordering."""
-
-    @pytest.mark.asyncio
-    async def test_llm_timeout_falls_back_to_deterministic(self) -> None:
-        vm = _vm()
-        client = MagicMock()
-        client._model = "mock-model"
-        client._base_url = "http://mock"
-        client.complete = AsyncMock(side_effect=APITimeoutError(request=MagicMock()))  # type: ignore[call-arg]
-        try:
-            actions = await prioritize_actions(vm, llm_client=client)
-        except APITimeoutError:
-            from errander.agent.decisions import _hardcoded_priority
-            actions = _hardcoded_priority(list(ActionType), vm)
-        assert len(actions) > 0
-
-    @pytest.mark.asyncio
-    async def test_llm_connection_error_falls_back_to_deterministic(self) -> None:
-        vm = _vm()
-        client = MagicMock()
-        client._model = "mock-model"
-        client._base_url = "http://mock"
-        client.complete = AsyncMock(side_effect=APIConnectionError(message="refused", request=MagicMock()))  # type: ignore[call-arg]
-        try:
-            actions = await prioritize_actions(vm, llm_client=client)
-        except APIConnectionError:
-            from errander.agent.decisions import _hardcoded_priority
-            actions = _hardcoded_priority(list(ActionType), vm)
-        assert len(actions) > 0
-
-    @pytest.mark.asyncio
-    async def test_no_llm_client_falls_back_to_deterministic(self) -> None:
-        vm = _vm()
-        actions = await prioritize_actions(vm, llm_client=None)
-        assert len(actions) > 0
-
-    @pytest.mark.asyncio
-    async def test_fallback_actions_respect_risk_tier_ordering(self) -> None:
-        from errander.models.actions import ACTION_RISK_TIERS, RiskTier
-        vm = _vm()
-        actions = await prioritize_actions(vm, llm_client=None)
-        tiers = [ACTION_RISK_TIERS.get(a.action_type, RiskTier.MEDIUM) for a in actions]
-        tier_order = {RiskTier.LOW: 0, RiskTier.MEDIUM: 1, RiskTier.HIGH: 2, RiskTier.CRITICAL: 3}
-        for i in range(len(tiers) - 1):
-            assert tier_order[tiers[i]] <= tier_order[tiers[i + 1]], (
-                f"Fallback tier order violation: {tiers[i].value} > {tiers[i+1].value}"
-            )
-
-
-# ---------------------------------------------------------------------------
-# Audit outcome recording for adversarial scenarios
-# ---------------------------------------------------------------------------
-
-class TestAuditOutcomesOnErrors:
-    """The audit store records the correct outcome for every error path."""
-
-    @pytest.mark.asyncio
-    async def test_no_llm_outcome_logged_as_no_llm(self) -> None:
-        vm = _vm()
-        async with AIDecisionStore(make_test_db()) as store:
-            await prioritize_actions(
-                vm,
-                llm_client=None,
-                batch_id="adv-no-llm-001",
-                ai_store=store,
-            )
-            decisions = await store.get_decisions(batch_id="adv-no-llm-001")
-        assert len(decisions) == 1
-        assert decisions[0].outcome == "no_llm"
-
-    @pytest.mark.asyncio
-    async def test_fallback_outcome_logged_when_llm_returns_none(self) -> None:
-        vm = _vm()
-        client = MagicMock()
-        client._model = "mock-model"
-        client._base_url = "http://mock"
-        client.complete = AsyncMock(return_value=None)
-        async with AIDecisionStore(make_test_db()) as store:
-            await prioritize_actions(
-                vm,
-                llm_client=client,
-                batch_id="adv-fallback-001",
-                ai_store=store,
-            )
-            decisions = await store.get_decisions(batch_id="adv-fallback-001")
-        assert len(decisions) == 1
-        assert decisions[0].outcome == "fallback"
-
-    @pytest.mark.asyncio
-    async def test_injection_fallback_outcome_is_fallback_not_success(self) -> None:
-        vm = _vm()
-        llm = _mock_llm_with_action_types(["patching; rm -rf /", "disk_cleanup$(id)"])
-        async with AIDecisionStore(make_test_db()) as store:
-            await prioritize_actions(
-                vm,
-                llm_client=llm,
-                batch_id="adv-inject-001",
-                ai_store=store,
-            )
-            decisions = await store.get_decisions(batch_id="adv-inject-001")
-        assert len(decisions) == 1
-        # All injected types filtered → LLM response treated as success
-        # (injection filtering happens after parsing; the LLM call succeeded)
-        # Key invariant: no injected action_type reached the returned action list
-        assert decisions[0].outcome in ("success", "fallback")

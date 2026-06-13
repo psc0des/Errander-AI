@@ -9,8 +9,8 @@ import pytest
 
 from errander.agent.decisions import (
     DEFAULT_PRIORITY,
-    analyze_failure,
     filter_applicable_actions,
+    generate_planning_note,
     generate_report,
     prioritize_actions,
 )
@@ -144,46 +144,6 @@ class TestPrioritizeActions:
         assert actions == []
 
 
-class TestAnalyzeFailure:
-    """Tests for hardcoded failure analysis heuristics."""
-
-    @pytest.mark.asyncio
-    async def test_timeout_suggests_retry(self) -> None:
-        result = await analyze_failure("patching", "Connection timeout after 30s", {})
-        assert result == "retry"
-
-    @pytest.mark.asyncio
-    async def test_connection_error_suggests_retry(self) -> None:
-        result = await analyze_failure("disk_cleanup", "SSH connection refused", {})
-        assert result == "retry"
-
-    @pytest.mark.asyncio
-    async def test_temporary_error_suggests_retry(self) -> None:
-        result = await analyze_failure("patching", "Temporary failure resolving host", {})
-        assert result == "retry"
-
-    @pytest.mark.asyncio
-    async def test_dpkg_error_on_patching_suggests_rollback(self) -> None:
-        result = await analyze_failure("patching", "dpkg: error processing package", {})
-        assert result == "rollback"
-
-    @pytest.mark.asyncio
-    async def test_broken_deps_on_patching_suggests_rollback(self) -> None:
-        result = await analyze_failure("patching", "broken dependencies detected", {})
-        assert result == "rollback"
-
-    @pytest.mark.asyncio
-    async def test_unknown_error_suggests_escalate(self) -> None:
-        result = await analyze_failure("disk_cleanup", "Permission denied", {})
-        assert result == "escalate"
-
-    @pytest.mark.asyncio
-    async def test_dpkg_on_non_patching_escalates(self) -> None:
-        """dpkg errors only trigger rollback for patching actions."""
-        result = await analyze_failure("disk_cleanup", "dpkg lock held", {})
-        assert result == "escalate"
-
-
 class TestGenerateReport:
     """Tests for template-based report generation."""
 
@@ -280,20 +240,21 @@ class TestRedactionInDecisionPaths:
     """Secrets must not appear in prompts sent to the LLM or stored in prompt_full."""
 
     _SECRET = "sk-secret12345678901234567890"
-    _PASSWORD = "password=hunter2"
 
     def _vm(self) -> VMInfo:
         return _make_vm_info()
 
     @pytest.mark.asyncio
-    async def test_prioritize_actions_redacts_prompt_before_llm(self) -> None:
-        """prioritize_actions must not send API keys to the LLM."""
+    async def test_generate_planning_note_redacts_prompt_before_llm(self) -> None:
+        """generate_planning_note must not send API keys to the LLM."""
         from errander.safety.ai_audit import AIDecisionStore
 
         client = _make_llm("{}")
+        plan = await prioritize_actions(self._vm())
         async with AIDecisionStore(make_test_db()) as store:
-            await prioritize_actions(
+            await generate_planning_note(
                 self._vm(),
+                plan,
                 llm_client=client,
                 ai_store=store,
                 batch_id="b1",
@@ -305,7 +266,7 @@ class TestRedactionInDecisionPaths:
             assert self._SECRET not in prompt
 
     @pytest.mark.asyncio
-    async def test_prioritize_actions_prompt_full_is_redacted(self) -> None:
+    async def test_generate_planning_note_prompt_full_is_redacted(self) -> None:
         """prompt_full stored in ai_decisions must not contain raw API keys."""
         # Inject a secret via a stored_signals field that ends up in the prompt
         from errander.agent.decisions import StoredSignalContext
@@ -313,9 +274,11 @@ class TestRedactionInDecisionPaths:
 
         signals = StoredSignalContext(disk_trend_summary=f"trend ok. key={self._SECRET}")
         client = _make_llm("{}")
+        plan = await prioritize_actions(self._vm())
         async with AIDecisionStore(make_test_db()) as store:
-            await prioritize_actions(
+            await generate_planning_note(
                 self._vm(),
+                plan,
                 llm_client=client,
                 ai_store=store,
                 batch_id="b1",
@@ -326,20 +289,6 @@ class TestRedactionInDecisionPaths:
 
         for d in decisions:
             assert d.prompt_full is None or self._SECRET not in (d.prompt_full or "")
-
-    @pytest.mark.asyncio
-    async def test_analyze_failure_redacts_error_context(self) -> None:
-        """analyze_failure must redact secrets appearing in the error string."""
-        client = _make_llm("{}")
-        await analyze_failure(
-            action_type="patching",
-            error=f"failed with {self._PASSWORD}",
-            context={"note": f"key={self._SECRET}"},
-            llm_client=client,
-        )
-        for prompt in client._captured_prompts:
-            assert self._SECRET not in prompt
-            assert "hunter2" not in prompt
 
     @pytest.mark.asyncio
     async def test_generate_report_redacts_secrets_in_results(self) -> None:

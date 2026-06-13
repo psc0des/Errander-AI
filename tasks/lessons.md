@@ -1,5 +1,44 @@
 # Errander-AI — Lessons Learned
 
+## 2026-06-14 — `git stash` to triage "pre-existing failure" vs "regression I introduced"
+
+After the R1 rewrite, the full suite showed 8 failures and 171 errors that the R1 diff
+didn't obviously touch (`tests/ui/test_approval_ui.py` failures + a `RuntimeError: Runner...`
+storm across `tests/ui/*` + `tests/web/*` when run together). Rather than guess, ran
+`git stash` to get back to clean `main`, re-ran the exact same test selection, and got the
+identical counts (8 failed / 11 passed / 173 warnings / 171 errors), then `git stash pop` to
+restore the working tree. This proved both issues are pre-existing and unrelated to R1
+without spending time "fixing" something out of scope.
+
+**Why:** scope creep is a real risk during verification — a long tail of unrelated red tests
+can either (a) be silently ignored (risking a real regression slipping through) or (b) trigger
+an unbounded side-quest to fix unrelated infrastructure. `git stash`/`git stash pop` gives a
+clean, reversible A/B that settles the question in two test runs.
+
+**How to apply:** before investigating any failing test that your diff doesn't obviously
+touch, `git stash` and re-run the same selection. If the failure reproduces identically on
+clean HEAD, document it as pre-existing (with root cause if known) and move on — don't fix it
+as part of an unrelated task unless asked.
+
+## 2026-06-14 — Proving "LLM output can never change the plan": call the function twice, vary only the side input
+
+The R1 acceptance criterion "no path where LLM output influences plan content" needed a test
+that *demonstrates* the invariant structurally, not just exercises the happy path. The pattern:
+call `prioritize_actions()` once to get `plan_a`; call `generate_planning_note(vm, plan_a,
+llm_client=<mock returning an arbitrary note>, ...)`; call `prioritize_actions()` again to get
+`plan_b`; assert `plan_a == plan_b`. Because the second call has no access to the first call's
+LLM-influenced side output, byte-identical results prove the two are structurally decoupled —
+no amount of mocking the LLM differently can make them diverge.
+
+**Why:** a test that only asserts "the returned actions are in `DEFAULT_PRIORITY`" would pass
+even if a forgotten code path let the LLM filter the list, as long as the filtered list
+happened to still be a subset in priority order. Asserting equality between two independently
+produced plans — one with an LLM in the loop, one without — closes that gap.
+
+**How to apply:** when a spec says "Y must never depend on X", prefer a test that produces Y
+twice (once with X varied arbitrarily, once without X at all) and asserts equality, over a
+test that only inspects one run's output for plausibility.
+
 ## 2026-06-12 — Seed data must not live only inside a one-shot migration
 
 Migration #14 originally seeded the default `admin`/`reader` groups inside the migration SQL.

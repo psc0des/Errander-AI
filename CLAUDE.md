@@ -39,48 +39,52 @@ A supervised agentic AI SRE platform that eliminates operational toil while keep
 - No bare exceptions — always catch specific errors
 - All operations must be idempotent
 
-## Network Architecture
+## Network Architecture (R3 Process Separation, 2026-06-13)
 
 ```
-┌─────────────────────────────────────────────────┐
-│                   VPN (private)                  │
-│                                                  │
-│  ┌──────────────┐     ┌──────────────────────┐  │
-│  │ Self-hosted   │     │ Agent VM              │  │
-│  │ LLM (vLLM)   │◄────│  - Errander-AI agent    │  │
-│  │ (private IP)  │     │  - APScheduler        │  │
-│  └──────────────┘     │  - Slack notifier      │  │
-│                        │  - Audit DB (Postgres)  │  │
-│                        │  - Prometheus /metrics  │  │
-│                        └──────┬───────┬────────┘  │
-│                               │       │           │
-│                          SSH  │       │ HTTPS     │
-│                               │       │ (outbound │
-│                               ▼       │  only)    │
-│                     ┌─────────────┐   │           │
-│                     │ Target VMs   │   │           │
-│                     │ (private)    │   │           │
-│                     └─────────────┘   │           │
-└───────────────────────────────────────┼───────────┘
-                                        │
-                                        ▼
-                               ┌─────────────────┐
-                               │ Slack API        │
-                               │ (public internet)│
-                               └─────────────────┘
-                                        ▲
-                                        │
-                               ┌─────────────────┐
-                               │ Operator         │
-                               │ (mobile/laptop)  │
-                               └─────────────────┘
+┌────────────────────────────────────────────────────────────────────┐
+│                         VPN (private)                              │
+│                                                                    │
+│  ┌──────────────┐   ┌──────────────────────┐  ┌─────────────────┐ │
+│  │ Self-hosted   │   │ Agent VM              │  │ Web UI VM       │ │
+│  │ LLM (vLLM)   │◄──│  - python -m errander │  │ (separate, v2)  │ │
+│  │ (private IP)  │   │  - APScheduler        │  │ - nginx reverse │ │
+│  └──────────────┘   │  - Slack notifier      │  │   proxy (TLS)   │ │
+│                     │  - Port 9090: /metrics │  │ - Port 9091:    │ │
+│                     │           /health      │  │   /ui/* routes  │ │
+│                     │  - OS user:            │  │ - OS user:      │ │
+│                     │    errander-agent      │  │   errander-web  │ │
+│                     │  (SSH keys, executor)  │  │   (no SSH, RBAC)│ │
+│                     └──────┬────────────────┘  └─────────────────┘ │
+│                            │                                       │
+│                       SSH  │                                       │
+│                            ▼                                       │
+│                  ┌─────────────────┐                              │
+│                  │ Target VMs      │                              │
+│                  │ (private Linux) │                              │
+│                  └─────────────────┘                              │
+└────────────────────────────────────────────────────────────────────┘
+         │
+         │ HTTPS (outbound only)
+         │
+         ▼
+┌─────────────────────────────┐
+│ Slack API (public internet) │
+└─────────────────────────────┘
+         ▲
+         │
+┌─────────────────────────────┐
+│ Operator Browser (mobile)   │
+│ accesses nginx @ port 443   │
+└─────────────────────────────┘
 ```
 
-- Agent VM has NO public IP — fully private
-- All Slack communication is outbound HTTPS (notify-and-link, not webhooks)
-- LLM endpoint is a private IP / internal DNS inside VPN
-- SSH to target VMs is within the VPN
-- No nginx, no inbound webhooks, no TLS certificates to manage
+**Key separation (R3 process split):**
+- **Agent process** (`errander-agent` user): runs LLM, executor, Slack notifier; SSH keys only; 9090 metrics-only
+- **Web process** (`errander-web` user): runs approval UI, auth, RBAC; no executor/SSH imports; 9091 (behind nginx in prod)
+- **Shared state**: PostgreSQL audit DB (both processes read/write, durable across restarts)
+- **No webhook inbound traffic**: Slack → agent only (outbound HTTP), operator → nginx (TLS + rate limiting)
+- **Public mode** (nginx Mode 2): optional, enforces TOTP for admin, IP allowlist, hardened headers
 
 ## Architecture (target)
 
@@ -97,6 +101,12 @@ errander/
 │   │   └── backup_verify.py# Backup verification
 │   ├── state.py            # Agent state definitions (batch, per-VM, per-action)
 │   └── decisions.py        # LLM-powered decision logic (with hardcoded fallback)
+├── web/                    # Web UI process (R3 process split, separate OS user)
+│   ├── __main__.py         # Entry point: python -m errander.web (port, DB, stores)
+│   ├── ui.py               # Production web UI: login/TOTP/RBAC, routes, auth middleware
+│   ├── totp.py             # RFC 6238 TOTP helpers (generate_secret, verify_code, QR)
+│   ├── server.py           # Dev demo server (legacy, pre-split)
+│   └── data.py, evidence.py, providers.py  # Legacy/demo only
 ├── safety/                 # Safety architecture
 │   ├── validators.py       # Pre-execution validation checks
 │   ├── rollback.py         # Rollback capabilities per action type
@@ -150,9 +160,14 @@ example/
 ├── inventory.yaml          # Annotated reference inventory (prod/staging/dev)
 └── settings.yaml           # Annotated reference settings (schedule, LLM, Slack)
 deploy/
+├── errander-agent.service      # systemd unit for agent process (user=errander-agent)
+├── errander-web.service        # systemd unit for web UI process (user=errander-web)
+├── .env.agent.example          # Env secrets for agent (LLM, Slack, SSH, DB)
+├── .env.web.example            # Env secrets for web (DB, signing secret, port)
+├── nginx-mode2.conf.example    # Reference nginx config (TLS, rate limiting, IP allowlist)
 └── vllm/
-    ├── docker-compose.yml  # Production vLLM container (GPU passthrough, Qwen3-8B-AWQ)
-    └── .env.example        # Configurable deployment vars (model, GPU, port, cache dir)
+    ├── docker-compose.yml      # Production vLLM container (GPU passthrough, Qwen3-8B-AWQ)
+    └── .env.example            # Configurable deployment vars (model, GPU, port, cache dir)
 ```
 
 ## Risk Tiers (safety gates)

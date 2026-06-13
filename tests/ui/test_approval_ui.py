@@ -16,9 +16,9 @@ import re
 import pytest
 from aiohttp.test_utils import TestClient, TestServer
 
-from errander.observability.metrics import start_metrics_server
 from errander.safety.approval_store import ApprovalRequestStore
 from errander.safety.audit import AuditStore
+from errander.web.ui import start_web_server
 from tests.conftest import make_test_db
 
 # ---------------------------------------------------------------------------
@@ -31,7 +31,7 @@ async def _make_client(
     """Build a test aiohttp app with an audit store + durable approval store."""
     store = AuditStore(make_test_db())
     await store.initialize()
-    runner = await start_metrics_server(
+    runner = await start_web_server(
         port=0, audit_store=store, approval_store=approval_store,
     )
     # Extract the underlying app from the runner

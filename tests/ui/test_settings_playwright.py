@@ -14,9 +14,9 @@ import threading
 import pytest
 from playwright.sync_api import Page, expect
 
-from errander.observability.metrics import start_metrics_server
 from errander.safety.audit import AuditStore
 from errander.safety.overrides import OverridesStore
+from errander.web.ui import start_web_server
 from tests.conftest import make_test_db
 
 # ---------------------------------------------------------------------------
@@ -36,7 +36,7 @@ def settings_base_url() -> str:  # type: ignore[return]
         overrides = OverridesStore(make_test_db())
         await overrides.initialize()
 
-        runner = await start_metrics_server(
+        runner = await start_web_server(
             port=0, audit_store=audit, overrides_store=overrides,
         )
         site = list(runner.sites)[0]

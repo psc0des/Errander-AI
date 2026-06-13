@@ -207,6 +207,15 @@ class UserStore:
         logger.info("User %s groups set to [%s] by %s", username, ", ".join(groups), actor)
         return True
 
+    async def set_totp_secret(self, username: str, secret: str | None) -> bool:
+        """Set (or clear, with ``None``) a user's TOTP secret. False if unknown."""
+        async with self._db.begin() as conn:
+            result = await conn.execute(
+                text("UPDATE users SET totp_secret = :s WHERE username = :u"),
+                {"s": secret, "u": username},
+            )
+        return result.rowcount == 1
+
     async def delete_user(self, username: str) -> bool:
         """Delete a user (sessions/memberships cascade). False if unknown."""
         async with self._db.begin() as conn:
@@ -221,6 +230,18 @@ class UserStore:
     # ------------------------------------------------------------------
     # Reads
     # ------------------------------------------------------------------
+
+    async def get_totp_secret(self, username: str) -> str | None:
+        """Return the user's TOTP secret, or None if unset/unknown."""
+        async with self._db.begin() as conn:
+            result = await conn.execute(
+                text("SELECT totp_secret FROM users WHERE username = :u"),
+                {"u": username},
+            )
+            row = result.fetchone()
+        if row is None or row[0] is None:
+            return None
+        return str(row[0])
 
     async def verify_credentials(self, username: str, password: str) -> User | None:
         """Validate a login attempt. Returns the resolved User or None."""

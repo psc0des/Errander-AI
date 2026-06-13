@@ -16,12 +16,12 @@ import pytest
 from playwright.sync_api import Page, expect
 
 from errander.models.vm import OSFamily, VMTarget
-from errander.observability.metrics import start_metrics_server
 from errander.safety.audit import AuditStore
 from errander.safety.overrides import OverridesStore
+from errander.web.ui import start_web_server
 from tests.conftest import make_test_db
 
-# Base YAML fleet passed to start_metrics_server so yaml_override rows are visible.
+# Base YAML fleet passed to start_web_server so yaml_override rows are visible.
 _YAML_FLEET: list[VMTarget] = [
     VMTarget(vm_id="production/web-01", hostname="10.0.1.1", ssh_user="ubuntu",
              ssh_key_path="/keys/web-01.pem", os_family=OSFamily.UBUNTU),
@@ -66,7 +66,7 @@ def _start_server(seed_fn=None, base_inventory=None):  # type: ignore[no-untyped
         if seed_fn is not None:
             await seed_fn(overrides)
 
-        runner = await start_metrics_server(
+        runner = await start_web_server(
             port=0, audit_store=audit, overrides_store=overrides,
             base_inventory=base_inventory or [],
         )

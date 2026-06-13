@@ -16,10 +16,10 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from errander.observability.metrics import start_metrics_server
 from errander.safety.audit import AuditStore
 from errander.safety.overrides import OverridesStore
 from errander.safety.user_store import SessionStore, UserStore
+from errander.web.ui import start_web_server
 from tests.conftest import make_test_db
 
 if TYPE_CHECKING:
@@ -49,7 +49,7 @@ def _start_server(
                 ui_user, ui_password, groups=["admin"], actor="test",
             )
 
-        runner = await start_metrics_server(
+        runner = await start_web_server(
             port=0,
             audit_store=audit,
             overrides_store=overrides,

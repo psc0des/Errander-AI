@@ -87,6 +87,9 @@ class Settings:
         fleet_failure_threshold: Abort if this fraction of targets fail.
         vm_lock_ttl_seconds: VM lock time-to-live.
         metrics_port: Prometheus metrics server port.
+        web_port: Web UI server port (separate process, R3).
+        public_mode: Whether the web UI is reachable from outside the VPN
+            (enables mandatory TOTP for the admin group).
         dry_run_default: Whether to default to dry-run mode.
         ui_user: DEPRECATED seed credential — used once at startup to create
             the initial admin user when the users table is empty (R2).
@@ -137,6 +140,8 @@ class Settings:
 
     # Operational defaults
     metrics_port: int = 9090
+    web_port: int = 9091
+    public_mode: bool = False
     dry_run_default: bool = True
 
     # HITL guardrails — must remain enabled until immutable plan artifact
@@ -456,6 +461,8 @@ def load_settings(
         ),
         # Operational
         metrics_port=_int_field("ERRANDER_METRICS_PORT", None, 9090),
+        web_port=_int_field("ERRANDER_WEB_PORT", None, 9091),
+        public_mode=_bool_field("ERRANDER_PUBLIC_MODE", None, False),
         dry_run_default=_bool_field("ERRANDER_DRY_RUN", None, True),
         # UI auth (env-only)
         ui_user=_load_env_str("ERRANDER_UI_USER"),

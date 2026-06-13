@@ -1,4 +1,4 @@
-"""RBAC tests for the agent web UI (R2: web-only approval).
+"""RBAC tests for the web UI (R2: web-only approval).
 
 Drives the real aiohttp app (auth middleware + CSRF middleware + handlers)
 through aiohttp's TestClient against the shared test PostgreSQL.
@@ -8,6 +8,8 @@ Locks in the §8a acceptance criteria:
 - reader-group users (and anonymous visitors) cannot decide — server-side
 - decided_by / decided_by_group record the named user and group
 - zero-users bootstrap mode: GETs open on loopback, mutations 403
+
+Covers errander.web.ui — the production web UI process (R3 process split).
 """
 
 from __future__ import annotations
@@ -20,12 +22,12 @@ import pytest
 from aiohttp.test_utils import TestClient, TestServer
 
 from errander.db.core import AsyncDatabase
-from errander.observability.metrics import (
-    _CSRF_SECRET_KEY,
-    build_ui_app,
-)
 from errander.safety.approval_store import ApprovalRequestStore
 from errander.safety.user_store import SessionStore, UserStore
+from errander.web.ui import (
+    CSRF_SECRET_KEY,
+    build_ui_app,
+)
 from tests.conftest import make_test_db
 
 
@@ -63,7 +65,7 @@ async def client(
 
 def _csrf_pair(client: TestClient) -> dict[str, str]:
     """Forge a valid double-submit CSRF pair for the app under test."""
-    secret: str = client.app[_CSRF_SECRET_KEY]
+    secret: str = client.app[CSRF_SECRET_KEY]
     nonce = "test-nonce"
     token = hmac_mod.new(secret.encode(), nonce.encode(), hashlib.sha256).hexdigest()
     client.session.cookie_jar.update_cookies({"errander_csrf": nonce})

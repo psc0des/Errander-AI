@@ -1,4 +1,7 @@
-"""Tests for UI security hardening (finding #14): bind address, mandatory auth, CSRF."""
+"""Tests for UI security hardening (finding #14): bind address, mandatory auth, CSRF.
+
+Covers errander.web.ui — the production web UI process (R3 process split).
+"""
 
 from __future__ import annotations
 
@@ -8,20 +11,20 @@ import pytest
 
 
 class TestBindAddressSecurity:
-    """start_metrics_server rejects non-loopback bind without any user account
+    """start_web_server rejects non-loopback bind without any user account
     (finding #14, extended by R2: auth = named users, not a shared credential)."""
 
     @pytest.mark.asyncio
     async def test_nonloopback_without_users_raises(self) -> None:
         """Binding to 0.0.0.0 with zero user accounts must raise RuntimeError."""
-        from errander.observability.metrics import start_metrics_server
         from errander.safety.user_store import UserStore
+        from errander.web.ui import start_web_server
         from tests.conftest import make_test_db
 
         db = make_test_db()
         try:
             with pytest.raises(RuntimeError, match="non-loopback"):
-                await start_metrics_server(
+                await start_web_server(
                     bind_address="0.0.0.0",
                     user_store=UserStore(db),
                 )
@@ -31,18 +34,18 @@ class TestBindAddressSecurity:
     @pytest.mark.asyncio
     async def test_nonloopback_without_user_store_raises(self) -> None:
         """No user store wired at all counts as zero users — refuse."""
-        from errander.observability.metrics import start_metrics_server
+        from errander.web.ui import start_web_server
 
         with pytest.raises(RuntimeError, match="non-loopback"):
-            await start_metrics_server(bind_address="0.0.0.0")
+            await start_web_server(bind_address="0.0.0.0")
 
     @pytest.mark.asyncio
     async def test_nonloopback_with_users_allowed(self) -> None:
         """Binding to 0.0.0.0 WITH at least one account must NOT raise."""
         from unittest.mock import AsyncMock
 
-        from errander.observability.metrics import start_metrics_server
         from errander.safety.user_store import UserStore
+        from errander.web.ui import start_web_server
         from tests.conftest import make_test_db
 
         db = make_test_db()
@@ -57,7 +60,7 @@ class TestBindAddressSecurity:
                 mock_runner.setup = AsyncMock()
 
                 # Must not raise — a named account exists
-                await start_metrics_server(
+                await start_web_server(
                     bind_address="0.0.0.0",
                     user_store=user_store,
                 )
@@ -69,7 +72,7 @@ class TestBindAddressSecurity:
         """127.0.0.1 with zero users must NOT raise (read-only bootstrap mode)."""
         from unittest.mock import AsyncMock
 
-        from errander.observability.metrics import start_metrics_server
+        from errander.web.ui import start_web_server
 
         with patch("aiohttp.web.TCPSite") as mock_site_cls, \
              patch("aiohttp.web.AppRunner") as mock_runner_cls:
@@ -78,7 +81,7 @@ class TestBindAddressSecurity:
             mock_runner = mock_runner_cls.return_value
             mock_runner.setup = AsyncMock()
 
-            await start_metrics_server(bind_address="127.0.0.1")
+            await start_web_server(bind_address="127.0.0.1")
 
 
 class TestCSRFMiddleware:
@@ -89,7 +92,7 @@ class TestCSRFMiddleware:
         """POST /ui/approvals/X/approve without CSRF token → 403 Forbidden."""
         from aiohttp import web
 
-        from errander.observability.metrics import _csrf_middleware
+        from errander.web.ui import _csrf_middleware
 
         async def dummy_handler(request: web.Request) -> web.Response:
             return web.Response(text="ok")
@@ -110,7 +113,7 @@ class TestCSRFMiddleware:
         from aiohttp import web
         from aiohttp.test_utils import make_mocked_request
 
-        from errander.observability.metrics import _csrf_middleware
+        from errander.web.ui import _csrf_middleware
 
         async def dummy_handler(request: web.Request) -> web.Response:
             return web.Response(text="ok")
@@ -126,7 +129,7 @@ class TestCSRFMiddleware:
         from aiohttp import web
         from aiohttp.test_utils import make_mocked_request
 
-        from errander.observability.metrics import _csrf_middleware
+        from errander.web.ui import _csrf_middleware
 
         async def dummy_handler(request: web.Request) -> web.Response:
             return web.Response(text="ok")
@@ -141,7 +144,7 @@ class TestCsrfInjectHelper:
     """_re_inject_csrf injects hidden fields into form tags."""
 
     def test_injects_hidden_field_after_form_tag(self) -> None:
-        from errander.observability.metrics import _re_inject_csrf
+        from errander.web.ui import _re_inject_csrf
 
         html = '<form method="post" action="/ui/approvals"><input type="submit"></form>'
         result = _re_inject_csrf(html, '<input type="hidden" name="_csrf_token" value="abc">')
@@ -152,7 +155,7 @@ class TestCsrfInjectHelper:
         assert hidden_pos > form_pos
 
     def test_multiple_forms_all_injected(self) -> None:
-        from errander.observability.metrics import _re_inject_csrf
+        from errander.web.ui import _re_inject_csrf
 
         html = '<form id="a"><input></form><form id="b"><input></form>'
         result = _re_inject_csrf(html, '<input type="hidden" name="_csrf_token" value="x">')

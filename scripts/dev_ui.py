@@ -14,9 +14,9 @@ import asyncio
 from datetime import datetime, timezone
 
 from errander.models.events import AuditEvent, EventType
-from errander.observability.metrics import start_metrics_server
 from errander.safety.approval import ApprovalManager
 from errander.safety.audit import AuditStore
+from errander.web.ui import start_web_server
 
 
 def _ts(year: int, month: int, day: int, hour: int = 0, minute: int = 0) -> datetime:
@@ -105,7 +105,7 @@ async def main() -> None:
     manager.decide("batch-2026-04-12", approved=True, user_id="ops-team")
 
     port = 9092
-    await start_metrics_server(port=port, audit_store=store, approval_manager=manager)
+    await start_web_server(port=port, audit_store=store, approval_manager=manager)
 
     url = f"http://localhost:{port}/ui"
     print(f"\n  Errander-AI UI running at {url}")

@@ -270,3 +270,20 @@ class TestStartMetricsServer:
         mock_runner.setup.assert_called_once()
         mock_site.start.assert_called_once()
         assert runner is mock_runner
+
+
+# ---------------------------------------------------------------------------
+# Route isolation — R3 process split
+# ---------------------------------------------------------------------------
+
+class TestMetricsServerRouteIsolation:
+    @pytest.mark.asyncio
+    async def test_only_exposes_metrics_and_health(self) -> None:
+        """The agent-side server must never grow /ui/* routes — those live
+        in errander.web.ui (R3 process split)."""
+        runner = await start_metrics_server(port=0)
+        try:
+            paths = {route.resource.canonical for route in runner.app.router.routes()}
+            assert paths == {"/metrics", "/health"}
+        finally:
+            await runner.cleanup()

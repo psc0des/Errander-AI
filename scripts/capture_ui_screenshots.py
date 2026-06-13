@@ -23,11 +23,11 @@ from playwright.sync_api import sync_playwright
 
 from errander.models.events import AuditEvent, EventType
 from errander.models.vm import OSFamily, VMTarget
-from errander.observability.metrics import start_metrics_server
 from errander.safety.ai_audit import AIDecision, AIDecisionStore
 from errander.safety.approval import ApprovalManager
 from errander.safety.audit import AuditStore
 from errander.safety.overrides import OverridesStore
+from errander.web.ui import start_web_server
 
 OUT_DIR = Path(__file__).resolve().parent.parent / "docs" / "images"
 
@@ -206,7 +206,7 @@ async def _setup_server() -> tuple[AuditStore, AIDecisionStore, OverridesStore, 
     manager.register("batch-2026-05-27", "Freed 2.9 GB across 2 VMs (live run)")
     manager.decide("batch-2026-05-27", approved=True, user_id="ops-team")
 
-    runner = await start_metrics_server(
+    runner = await start_web_server(
         port=0, audit_store=audit, approval_manager=manager,
         ai_decision_store=ai, overrides_store=overrides,
         base_inventory=_demo_inventory(),

@@ -16,9 +16,9 @@ import threading
 import pytest
 from playwright.sync_api import Page, expect
 
-from errander.observability.metrics import start_metrics_server
 from errander.safety.approval_store import ApprovalRequestStore
 from errander.safety.audit import AuditStore
+from errander.web.ui import start_web_server
 from tests.conftest import make_test_db
 
 # ---------------------------------------------------------------------------
@@ -49,7 +49,7 @@ def approvals_base_url() -> str:  # type: ignore[return]
                 plan_hash="a" * 64, report=report,
             )
 
-        runner = await start_metrics_server(
+        runner = await start_web_server(
             port=0, audit_store=store, approval_store=approval_store,
         )
         site = list(runner.sites)[0]

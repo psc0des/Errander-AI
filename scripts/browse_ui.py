@@ -19,9 +19,9 @@ from datetime import datetime, timezone
 from playwright.sync_api import sync_playwright
 
 from errander.models.events import AuditEvent, EventType
-from errander.observability.metrics import start_metrics_server
 from errander.safety.approval import ApprovalManager
 from errander.safety.audit import AuditStore
+from errander.web.ui import start_web_server
 
 
 def _ts(year: int, month: int, day: int, hour: int = 0, minute: int = 0) -> datetime:
@@ -101,7 +101,7 @@ async def _setup_server() -> tuple[AuditStore, ApprovalManager, object, int]:
     manager.register("batch-2026-04-12", "Freed 2.1 GB on prod/db-01 (dry-run)")
     manager.decide("batch-2026-04-12", approved=True, user_id="ops-team")
 
-    runner = await start_metrics_server(port=0, audit_store=store, approval_manager=manager)
+    runner = await start_web_server(port=0, audit_store=store, approval_manager=manager)
     site = list(runner.sites)[0]
     port = site._server.sockets[0].getsockname()[1]  # type: ignore[union-attr]
     return store, manager, runner, port

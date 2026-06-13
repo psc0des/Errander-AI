@@ -2652,57 +2652,11 @@ async def async_main(args: argparse.Namespace) -> int:
     await hygiene_store.initialize()
     hygiene_manager = HygieneApprovalManager(hygiene_store)
 
-    # --- User/session stores (R2: web-only approval with RBAC) ---
-    from errander.safety.user_store import SessionStore as _SessionStore
-    from errander.safety.user_store import UserStore as _UserStore
-    user_store = _UserStore(_db)
-    await user_store.initialize()
-    session_store = _SessionStore(_db, user_store)
-    await session_store.purge_expired()
-
-    # One-time migration path: seed the legacy shared credential as the
-    # initial admin account when no users exist yet (audited).
-    if (
-        settings.ui_user and settings.ui_password
-        and await user_store.count_users() == 0
-    ):
-        from errander.models.events import AuditEvent as _SeedAuditEvent
-        from errander.models.events import EventType as _SeedEventType
-        await user_store.create_user(
-            settings.ui_user, settings.ui_password,
-            groups=["admin"], actor="migration:env",
-        )
-        await audit_store.log_event(_SeedAuditEvent(
-            event_type=_SeedEventType.USER_CREATED,
-            batch_id="user-management",
-            detail=(
-                f"user={settings.ui_user} groups=admin by=migration:env "
-                "(seeded from ERRANDER_UI_USER/ERRANDER_UI_PASSWORD)"
-            ),
-        ))
-        logger.info(
-            "Seeded initial admin user from ERRANDER_UI_USER",
-            username=settings.ui_user,
-        )
-
-    # --- AI decision store for Web UI (read-only, separate connection from batch store) ---
-    from errander.safety.ai_audit import AIDecisionStore as _AIDecisionStore
-    ai_decision_store_ui = _AIDecisionStore(_db)
-    await ai_decision_store_ui.initialize()
-
     try:
-        # --- Metrics server ---
+        # --- Metrics server (agent process: /metrics + /health only) ---
         metrics_runner = await start_metrics_server(
             port=settings.metrics_port,
-            audit_store=audit_store,
-            approval_store=approval_store,
-            hygiene_store=hygiene_store,
-            overrides_store=overrides_store,
-            base_inventory=flat_inventory,
-            user_store=user_store,
-            session_store=session_store,
             bind_address=settings.ui_bind_address,
-            ai_decision_store=ai_decision_store_ui,
         )
 
         # --- --run-now mode: run once and exit ---
@@ -2927,7 +2881,6 @@ async def async_main(args: argparse.Namespace) -> int:
     finally:
         if slack is not None:
             await slack.close()
-        await ai_decision_store_ui.close()
         await vm_state_store.close()
         await baseline_store.close()
         await disk_history_store.close()

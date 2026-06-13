@@ -37,7 +37,7 @@ echo -e "${BOLD}Errander-AI — System Bootstrap${NC}"
 echo "═══════════════════════════════════════════"
 
 # ── 0. Distro detection ───────────────────────────────────────────────────────
-step "0/6" "Detecting Linux distribution"
+step "0/7" "Detecting Linux distribution"
 
 [ -f /etc/os-release ] || fail "/etc/os-release not found — unsupported system"
 . /etc/os-release
@@ -68,7 +68,7 @@ _install() {
 }
 
 # ── 1. git ────────────────────────────────────────────────────────────────────
-step "1/6" "git"
+step "1/7" "git"
 if command -v git &>/dev/null; then
     ok "already installed  ($(git --version | awk '{print $3}'))"
 else
@@ -79,7 +79,7 @@ else
 fi
 
 # ── 2. curl ───────────────────────────────────────────────────────────────────
-step "2/6" "curl"
+step "2/7" "curl"
 if command -v curl &>/dev/null; then
     ok "already installed"
 else
@@ -89,7 +89,7 @@ else
 fi
 
 # ── 3. uv ─────────────────────────────────────────────────────────────────────
-step "3/6" "uv  (Python package + version manager)"
+step "3/7" "uv  (Python package + version manager)"
 export PATH="$HOME/.local/bin:$PATH"
 
 if command -v uv &>/dev/null; then
@@ -111,13 +111,13 @@ else
 fi
 
 # ── 4. Python 3.12 ────────────────────────────────────────────────────────────
-step "4/6" "Python 3.12"
+step "4/7" "Python 3.12"
 warn "installing via uv  (idempotent — safe to run again)..."
 uv python install 3.12
 ok "Python 3.12 ready"
 
 # ── 5. Service user ───────────────────────────────────────────────────────────
-step "5/6" "Service user  (${SERVICE_USER})"
+step "5/7" "Service user  (${SERVICE_USER})"
 
 if id "$SERVICE_USER" &>/dev/null; then
     ok "${SERVICE_USER} already exists"
@@ -140,8 +140,26 @@ else
     ok "PATH already configured in ${SERVICE_USER}'s .bashrc"
 fi
 
-# ── 6. Clone repo as service user ─────────────────────────────────────────────
-step "6/6" "Clone repo  →  ${REPO_DIR}"
+# ── 6. Web service user (R3 process split) ────────────────────────────────────
+step "6/7" "Web service user  (errander-web)"
+
+WEB_USER="errander-web"
+WEB_HOME="/home/${WEB_USER}"
+
+if id "$WEB_USER" &>/dev/null; then
+    ok "${WEB_USER} already exists"
+else
+    # Create web user without shell, no home SSH access (nologin or /sbin/nologin)
+    sudo useradd -r -s /sbin/nologin -d "$WEB_HOME" "$WEB_USER" 2>/dev/null || true
+    ok "created system user ${WEB_USER}  (no SSH/shell access)"
+fi
+
+sudo mkdir -p "${WEB_HOME}" 2>/dev/null || true
+sudo chown "${WEB_USER}:${WEB_USER}" "${WEB_HOME}"
+ok "home directory ready at ${WEB_HOME}"
+
+# ── 7. Clone repo as service user ──────────────────────────────────────────────
+step "7/7" "Clone repo  →  ${REPO_DIR}"
 
 _clone_repo() {
     sudo -u "$SERVICE_USER" git clone "$REPO_URL" "$REPO_DIR" \

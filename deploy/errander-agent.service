@@ -1,0 +1,21 @@
+[Unit]
+Description=Errander AI Agent
+Documentation=https://github.com/psc0des/Errander-AI
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+User=errander-agent
+Group=errander-agent
+WorkingDirectory=/home/errander-agent/Errander-AI
+EnvironmentFile=/home/errander-agent/.env.agent
+ExecStart=/home/errander-agent/.local/bin/uv run python -m errander
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=errander-agent
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

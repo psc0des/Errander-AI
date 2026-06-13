@@ -1,0 +1,21 @@
+[Unit]
+Description=Errander Web UI
+Documentation=https://github.com/psc0des/Errander-AI
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+User=errander-web
+Group=errander-web
+WorkingDirectory=/home/errander-web/Errander-AI
+EnvironmentFile=/home/errander-web/.env.web
+ExecStart=/home/errander-web/.local/bin/uv run python -m errander.web
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=errander-web
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

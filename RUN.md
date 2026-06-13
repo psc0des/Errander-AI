@@ -83,18 +83,36 @@ The agent runs until killed (Ctrl+C or service stop). Cron triggers fire automat
 
 ## Web UI
 
-The agent serves a web UI on port 9090 while running.
+**Two separate services (R3 process split, 2026-06-13):**
+
+**Agent metrics server** (port 9090, no UI):
+- `/metrics` — Raw Prometheus metrics
+- `/health` — Liveness check
+
+**Web UI server** (port 9091, separate OS user `errander-web`):
 
 | URL | What it shows |
 |---|---|
-| `http://localhost:9090/ui` | Dashboard — live stats, recent batches |
-| `http://localhost:9090/ui/batches` | Full batch history |
-| `http://localhost:9090/ui/batches/<batch-id>` | All events for a specific batch |
-| `http://localhost:9090/ui/approvals` | Pending approvals + decision history |
-| `http://localhost:9090/ui/ai-decisions` | AI decision audit log — every LLM call that influenced a plan |
-| `http://localhost:9090/ui/ai-decisions/<id>` | Full detail for one LLM decision: prompt, response, context snapshot |
-| `http://localhost:9090/metrics` | Raw Prometheus metrics |
-| `http://localhost:9090/health` | Liveness check — `{"status":"ok"}` |
+| `http://localhost:9091/ui` | Dashboard — live stats, recent batches |
+| `http://localhost:9091/ui/batches` | Full batch history |
+| `http://localhost:9091/ui/batches/<batch-id>` | All events for a specific batch |
+| `http://localhost:9091/ui/approvals` | Pending approvals + decision history |
+| `http://localhost:9091/ui/ai-decisions` | AI decision audit log — every LLM call that influenced a plan |
+| `http://localhost:9091/ui/ai-decisions/<id>` | Full detail for one LLM decision: prompt, response, context snapshot |
+| `http://localhost:9091/ui/monitoring` | Live monitoring — action success rates, batch duration, VM lock contention |
+| `http://localhost:9091/ui/inventory` | Fleet inventory + hostname/OS/tagging overrides |
+| `http://localhost:9091/ui/settings` | LLM provider configuration (env-locked or DB-overridden) |
+| `http://localhost:9091/ui/login` | Login (username/password, TOTP if public mode) |
+
+### Running the Web UI locally
+
+**Development:**
+```bash
+uv run python -m errander.web --port 9091 --bind 127.0.0.1 --db-url postgresql://errander:errander@localhost:5432/errander
+```
+
+**Production (systemd):**
+See `deploy/errander-web.service` and `deploy/.env.web.example`. Runs under `errander-web` user with no SSH key access.
 
 ### Data mode: fixture vs live
 

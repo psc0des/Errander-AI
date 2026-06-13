@@ -4,53 +4,52 @@
 2026-06-13
 
 ## Current Phase
-**§8d Step 4 — R3: process separation (IN PROGRESS).**
+**§8d Step 4 — R3: process separation (COMPLETE 2026-06-13).**
 
-Step 4 splits the web UI out of `errander/observability/metrics.py` into a
-separately-runnable `errander/web/` process (own OS user, no SSH keys, no
-executor imports). This update covers the first slice: the DB-backed
-`docker_hygiene` approval store (a Step-3 deferral that blocks the process
-split) plus TOTP groundwork (mandatory admin MFA for nginx Mode 2, also
-deferred from Step 3).
+✓ **Migration #15** (hygiene_approval_requests table + users.totp_secret column)
+✓ **HygieneApprovalStore** (DB-backed hygiene approval, mirrors approval_requests pattern)
+✓ **TOTP helpers** (`errander/web/totp.py`: RFC 6238 support)
+✓ **Web UI extraction** (`errander/web/ui.py`: 3,300+ lines, all UI routes + auth/CSRF middleware)
+✓ **Slim metrics server** (agent-side: `/metrics` + `/health` only, no UI routes)
+✓ **TOTP login wiring** (admin users → TOTP challenge in public mode; pending-MFA cookie pattern)
+✓ **Import isolation** (web process never imports execution/agent/vm_graph modules)
+✓ **Deploy artifacts** (systemd units for both processes, nginx Mode 2 config, env-var split, bootstrap script)
 
-Migration #15 adds `hygiene_approval_requests` (mirrors `approval_requests`:
-atomic `decide()` via `UPDATE ... WHERE status='pending'`, `expire_overdue()`
-for the restart reconciler, `mark_timeout()` for `wait_for_decision`'s own
-deadline) and a nullable `users.totp_secret` column. New
-`errander/safety/hygiene_store.py` (`HygieneApprovalStore`/`HygieneApprovalRow`)
-replaces the in-memory dict inside `HygieneApprovalManager`, which is now a
-thin facade — `register`/`wait_for_decision` delegate to the store, with a 2 s
-DB poll for cross-process wakeup (same pattern as `ApprovalRequestStore`). Both
-`metrics.py` and `web/server.py` hygiene-approval handlers now call
-`store.decide(...)` directly instead of `manager.resolve(...)`. The
-`_approval_reconciler` now also calls `hygiene_store.expire_overdue()`.
-`DockerHygieneAssessment` (a frozen dataclass, not Pydantic) gained
-`to_json()`/`from_json()` for `assessment_json` round-tripping.
+**2494 tests green** (up from 2460): TOTP handlers + flows, import isolation, web entry smoke, TOTP settings page, admin bypass in public mode.
 
-New `errander/web/totp.py` wraps `pyotp`: `generate_secret()`, `make_qr_uri()`,
-`verify_code()` (±30s clock-drift window). Not yet wired into the login flow —
-that lands with the `ui.py` extraction later in Step 4.
+**Two processes, two OS users, key isolation enforced:**
+- `errander-agent` runs `python -m errander` on 127.0.0.1:9090 (`/metrics`, `/health`). Has SSH keys. Can execute on targets.
+- `errander-web` runs `python -m errander.web` on 127.0.0.1:9091 (approval UI). No SSH access, nologin shell. Can read audit DB. Behind nginx reverse proxy in production.
 
-24 new tests (2460 → 2484 in CI scope): `tests/safety/test_hygiene_store.py`
-(16, NEW), `tests/web/test_totp.py` (7, NEW), `tests/safety/test_migrations.py`
-(+1, totp_secret column + hygiene_approval_requests table + version 15).
-Remaining Step 4 work (ui.py extraction, slim metrics.py, `__main__.py`
-production entry, TOTP login wiring, nginx Mode 2 + deploy artifacts, import
-isolation test) continues in this session.
+**Pending-MFA cookie pattern** (300s TTL, HMAC-signed) bridges password verification → TOTP challenge without schema changes. First-time setup generates + persists secret; recurring login validates against existing secret.
 
-### Files changed (2026-06-13 — §8d Step 4 prep: hygiene store + TOTP)
-- `errander/safety/migrations.py` — migration #15: `hygiene_approval_requests` table + `users.totp_secret` column
-- `errander/safety/hygiene_store.py` — NEW: `HygieneApprovalStore`/`HygieneApprovalRow` (create/decide/mark_timeout/expire_overdue/wait_for_decision/list_pending)
-- `errander/safety/hygiene_approval.py` — `HygieneApprovalManager` is now a thin facade over `HygieneApprovalStore`; `PendingHygieneApproval` removed; `_row_to_approval()` reconstructs `DockerHygieneApproval` from a decided row
-- `errander/models/docker_hygiene.py` — `DockerHygieneAssessment.to_json()`/`from_json()` (dataclass JSON round-trip with enum reconstruction)
-- `errander/observability/metrics.py` — `_HYGIENE_STORE_KEY` replaces `_HYGIENE_MANAGER_KEY`; hygiene approve handlers call `store.decide(...)`; `start_metrics_server`/`build_ui_app` take `hygiene_store=`
-- `errander/web/server.py` — same hygiene handler rewrite (demo server)
-- `errander/main.py` — construct + initialize `HygieneApprovalStore`, pass to `HygieneApprovalManager`, `start_metrics_server`, and `_approval_reconciler` (expire_overdue)
-- `errander/agent/vm_graph.py` — `await hygiene_manager.register(...)` (now async)
-- `errander/web/totp.py` — NEW: `generate_secret`/`make_qr_uri`/`verify_code`
-- `pyproject.toml` — `pyotp>=2.9`
-- Tests: `tests/safety/test_hygiene_store.py` (NEW, 16), `tests/web/test_totp.py` (NEW, 7), `tests/safety/test_migrations.py` (+1), rewrites in `tests/safety/test_hygiene_approval.py`, `tests/safety/test_hygiene_web_approve.py`, `tests/agent/test_hygiene_orchestration.py`, `tests/agent/test_deferred_replay.py`
-- Docs: STATUS.md, tasks/lessons.md, docs/command-log.md
+**Public mode** (nginx Mode 2): mandatory TOTP for admin group, IP allowlist, TLS hardening, rate limiting on `/ui/login` (5 req/min per IP).
+
+### Files changed (2026-06-13 — §8d Step 4: web extraction, TOTP, deploy)
+**Code:**
+- `errander/web/ui.py` — NEW: production web UI (3,300 lines, extracted from metrics.py); handlers, auth middleware, CSRF, CSS, design system; TOTP login flow + settings page; `/ui/*` routes (login, dashboard, approvals, batches, inventory, settings, glossary, AI decisions, monitoring, hygiene, docker-hygiene approve)
+- `errander/observability/metrics.py` — slim: 173 lines, only metrics + HTTP handlers (`/metrics`, `/health`, `start_metrics_server`)
+- `errander/web/__main__.py` — production entry: argparse (port, bind, db-url, public-mode), stores init, async startup
+- `errander/web/totp.py` — RFC 6238: `generate_secret`, `make_qr_uri`, `verify_code` (±30s window)
+- `errander/main.py` — `HygieneApprovalStore` init + reconciler calls; trim unused imports
+- `scripts/bootstrap.sh` — create errander-web system user (nologin), update steps 0–7
+
+**Deploy:**
+- `deploy/errander-agent.service` — systemd unit (User=errander-agent, EnvironmentFile)
+- `deploy/errander-web.service` — systemd unit (User=errander-web, EnvironmentFile)
+- `deploy/.env.agent.example` — LLM + Slack + SSH + DB secrets
+- `deploy/.env.web.example` — DB + signing secret + web port + base URL
+- `deploy/nginx-mode2.conf.example` — reference: TLS, HSTS, rate limiting, IP allowlist, upstream
+
+**Tests:**
+- `tests/observability/test_rbac.py` + 5 new tests (TestTOTPFlow): admin → TOTP, reader bypasses, code validation, flow not available in non-public mode
+- `tests/web/test_import_isolation.py` — updated to handle pre-imported modules from earlier tests
+- All 2494 tests: green
+
+**Commit log:**
+- `d6e8ed2` feat: R3 step 4 — extract web UI to errander/web/ui.py (process split)
+- `2caefa7` feat: R3 step 4 — TOTP login wiring (admin MFA in public mode)
+- `bbd158f` feat: R3 step 4 — deploy artifacts + bootstrap for two-process split
 
 ## Previous Phase
 **§8d Step 3 — R2: users/groups RBAC + web-only approval (2026-06-12, COMPLETE).**

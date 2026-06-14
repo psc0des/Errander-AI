@@ -3194,3 +3194,14 @@ git stash pop
 uv run pytest tests/ui/ tests/web/ -q   # 8 failed, 171 errors — same as clean main, confirms pre-existing
 uv run pytest -q   # full suite: 8 failed, 2476 passed, 181 warnings, 171 errors in 485.93s (pre-R1: 14 failed, 2470 passed — same total, R1 fixed 6)
 git diff --stat   # final file list for the R1 commit
+
+# Infra — automate Docker + Docker Compose + PostgreSQL provisioning (2026-06-14)
+# bootstrap.sh: new step 6/8 installs Docker Engine + Compose plugin via
+# get.docker.com, enables docker.service, adds errander-agent to docker group.
+# configure.sh: docker compose up -d --wait (with pg_isready fallback) brings
+# up local Postgres when DB_URL == the documented default. docker-compose.yml
+# postgres service gets restart: unless-stopped. deploy/*.service:
+# After=postgresql.service -> After=docker.service + Requires=docker.service.
+bash -n scripts/bootstrap.sh && echo "bootstrap.sh OK" && bash -n scripts/configure.sh && echo "configure.sh OK"   # syntax-check both modified scripts — both OK
+grep -rn "postgresql.service" deploy/ SETUP.md   # confirm no stray native-Postgres references — only SETUP.md:724, an unrelated restartable_units example for a target VM's own Postgres
+docker compose config --quiet && echo "docker compose config OK"   # validate docker-compose.yml after adding restart: unless-stopped — OK

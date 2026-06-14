@@ -136,6 +136,7 @@ curl -fsSL https://raw.githubusercontent.com/psc0des/Errander-AI/main/scripts/bo
 - Detects your distro (Ubuntu, Debian, RHEL, CentOS, Oracle Linux, Fedora)
 - Installs git, curl, uv (at `/usr/local/bin`), Python 3.12
 - Creates the `errander-agent` service user with a `.ssh` directory
+- Installs Docker Engine + Compose plugin, adds `errander-agent` to the `docker` group
 - Clones the repo into `/home/errander-agent/errander` (pulls latest on re-runs)
 
 **Step B — Install dependencies** (run as the service user — no sudo required):
@@ -144,11 +145,13 @@ curl -fsSL https://raw.githubusercontent.com/psc0des/Errander-AI/main/scripts/bo
 sudo su - errander-agent
 cd ~/errander
 uv sync --extra dev
-# PostgreSQL is required (the only supported database). Easiest path: Docker —
-#   docker compose up -d        # provides postgresql://errander:errander@localhost:5432/errander
-# or point ERRANDER_AUDIT_DB_URL at an existing PostgreSQL server.
 uv run python -c "import errander; print('OK')"
 ```
+
+> **PostgreSQL** is provisioned automatically in Step 5 (`configure.sh`) via
+> `docker compose up -d --wait` — no manual `docker compose` command needed. To use an
+> existing PostgreSQL server instead, just give `configure.sh` that server's URL when
+> prompted; the local docker-compose Postgres won't be started.
 
 > **Migrating from a pre-PostgreSQL (SQLite) build?** Errander-AI is now PostgreSQL-only.
 > There is no automated data migration — re-run `configure.sh` against a PostgreSQL URL and
@@ -526,6 +529,8 @@ bash scripts/configure.sh
 
 `configure.sh` prompts for LLM credentials, optional Slack/Prometheus/ELK, web base URL — then auto-generates `ERRANDER_SIGNING_SECRET`, writes `.env`, tests the LLM connection, and optionally pins SSH host keys.
 
+If you keep the default PostgreSQL URL, `configure.sh` also starts the local database automatically via `docker compose up -d --wait` and waits for it to become healthy before continuing.
+
 The inventory step launches an interactive Python wizard that collects: environment name, SSH credentials, maintenance window and days, per-environment action toggles (patching, disk_cleanup, log_rotation, docker_hygiene, backup_verify), and per-VM details (hostname, name, OS family, tags, critical services, optional service_restart units). The wizard generates a fully annotated `inventory.yaml` with inline comments on every field — all optional fields are present but commented out so you know they exist.
 
 Re-running `configure.sh` after initial setup: the wizard detects an existing `inventory.yaml`, shows a summary (environment names + VM counts), and asks whether to keep it or replace it. All other `.env` fields are pre-filled from the existing values.
@@ -841,7 +846,7 @@ sudo bash scripts/teardown.sh
 curl -fsSL https://raw.githubusercontent.com/psc0des/Errander-AI/main/scripts/teardown.sh | bash
 ```
 
-Type `yes` at the prompt. Removes: the `errander-agent` user + home (repo, `.env`, `inventory.yaml`) and `uv` from `/usr/local/bin`. Does **not** remove git, curl, or Python 3.12. Prometheus and Grafana run on a separate monitoring VM — use your normal process to remove them there.
+Type `yes` at the prompt. Removes: the `errander-agent` user + home (repo, `.env`, `inventory.yaml`) and `uv` from `/usr/local/bin`. Does **not** remove git, curl, Python 3.12, Docker, the `errander-postgres` container, or its data volume — audit history survives teardown by design. To also wipe the local database, run `docker compose down -v` from the repo directory before (or after) teardown. Prometheus and Grafana run on a separate monitoring VM — use your normal process to remove them there.
 
 ---
 

@@ -14,6 +14,7 @@ services:
   postgres:
     image: postgres:16
     container_name: errander-postgres
+    restart: unless-stopped
     environment:
       POSTGRES_USER: errander
       POSTGRES_PASSWORD: errander

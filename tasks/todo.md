@@ -1,3 +1,18 @@
+## Infra — automate Docker + Docker Compose + PostgreSQL provisioning (2026-06-14, COMPLETE)
+
+Not a §8d step — pure infra/setup change, no `errander/` Python code touched.
+
+- [x] `scripts/bootstrap.sh` — new step "6/8 — Docker + Docker Compose" (install via `get.docker.com` if missing, `systemctl enable --now docker`, `usermod -aG docker errander-agent`); web-user step renumbered 6/7 → 7/8, clone-repo step renumbered 7/7 → 8/8
+- [x] `scripts/configure.sh` — updated DB-URL prompt text; added `docker compose up -d --wait` bring-up block (with `pg_isready` polling fallback for older Compose) gated on `DB_URL` exactly matching the default `postgresql://errander:errander@localhost:5432/errander`; custom URLs skip provisioning entirely
+- [x] `docker-compose.yml` — `restart: unless-stopped` on the `postgres` service so it survives host reboots
+- [x] `deploy/errander-agent.service`, `deploy/errander-web.service` — `After=network.target postgresql.service` → `After=network.target docker.service` + `Requires=docker.service` (Postgres runs as a Docker container, not a native systemd service)
+- [x] `SETUP.md` — Step 1 bullet list (Docker install), Step B code block (removed manual `docker compose up -d` instruction, added auto-provisioning note), Step 5 section (note that `configure.sh` starts Postgres automatically), "Starting fresh / teardown" (Docker/Postgres survive teardown; `docker compose down -v` to wipe data)
+- [x] Doc sync: STATUS.md, docs/command-log.md, docs/learning/59-docker-postgres-bootstrap.md (NEW) + README.md index row, tasks/lessons.md
+
+**Verification:** `bash -n scripts/bootstrap.sh` / `scripts/configure.sh` clean; `docker compose config` clean; `grep -rn "postgresql.service" deploy/ SETUP.md` shows no stray native-Postgres references (the one match in SETUP.md's `restartable_units` example refers to a *target VM's* Postgres service, unrelated). No fresh Linux VM available for end-to-end testing.
+
+---
+
 ## §8d Step 5 — R1: advisory-LLM batch planning (2026-06-14, COMPLETE)
 
 - [x] `errander/agent/decisions.py` — `prioritize_actions()` now always `_hardcoded_priority` (deterministic, F2 fix); new `_PlanningNote`/`_PLANNING_NOTE_MAX_CHARS`/`_sanitize_note`/`_build_planning_note_prompt`/`generate_planning_note()`; deleted `_PrioritizedActions`, `_FailureAnalysis`, `analyze_failure()`, `_build_failure_prompt()`, dead 3.2b policy-filter block, `BUILTIN_POLICIES` import (F4 sweep)

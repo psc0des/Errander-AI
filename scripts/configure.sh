@@ -445,10 +445,32 @@ case "$_existing_db_url" in
 esac
 _db_default="${_existing_db_url:-postgresql://errander:errander@localhost:5432/errander}"
 echo "  Errander-AI stores its audit trail in PostgreSQL."
-echo "  The default URL matches the repo's docker-compose.yml — run 'docker compose up -d'"
-echo "  for a zero-config local PostgreSQL, or point at your own server."
+echo "  The default URL matches the repo's docker-compose.yml — this script will"
+echo "  start it automatically via 'docker compose up -d', or point at your own server."
 prompt_val "PostgreSQL URL" "$_db_default"
 DB_URL="$REPLY"
+
+# ── Local PostgreSQL via Docker Compose (only for the default local URL) ─────
+_default_db_url="postgresql://errander:errander@localhost:5432/errander"
+if [ "$DB_URL" = "$_default_db_url" ]; then
+    if command -v docker &>/dev/null && docker compose version &>/dev/null 2>&1; then
+        echo "  Starting local PostgreSQL (docker compose)..."
+        if docker compose up -d --wait 2>/dev/null; then
+            ok "PostgreSQL ready at localhost:5432"
+        else
+            docker compose up -d
+            warn "Waiting for PostgreSQL to become healthy..."
+            for _i in $(seq 1 30); do
+                docker compose exec -T postgres pg_isready -U errander -d errander &>/dev/null && break
+                sleep 1
+            done
+            ok "PostgreSQL ready at localhost:5432"
+        fi
+    else
+        warn "Docker not found — start PostgreSQL manually: docker compose up -d"
+        warn "(re-run bootstrap.sh to install Docker automatically)"
+    fi
+fi
 
 # ── Web base URL (auto-detected — enables signed web-approval links in Slack) ──
 # Always this VM's IP + port 9090. No prompt needed — override ERRANDER_WEB_BASE_URL

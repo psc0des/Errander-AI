@@ -1,5 +1,33 @@
 # Errander-AI — Lessons Learned
 
+## 2026-06-14 — `docker compose up -d --wait` needs a fallback for older Compose, and `usermod -aG` needs a fresh login shell
+
+While automating local PostgreSQL bring-up in `configure.sh`, two ordering details mattered:
+
+1. **`docker compose up -d --wait`** (Compose v2.17+, what `get.docker.com` installs today)
+   blocks until the service's healthcheck passes — exactly what's needed before the agent
+   tries to connect. But older pre-existing Compose installs (e.g. a host bootstrapped before
+   this change) may not support `--wait`. Fix: try `--wait` first; if that invocation fails,
+   fall back to plain `docker compose up -d` plus a manual `pg_isready` polling loop (30
+   one-second iterations) using the healthcheck command already defined in `docker-compose.yml`.
+
+2. **`usermod -aG docker errander-agent`** (added in `bootstrap.sh`) only takes effect on the
+   user's *next login* — a process with an already-open shell/session keeps its old group list.
+   `configure.sh` (which needs `docker` group access to run `docker compose`) runs as
+   `errander-agent` in Step B/5 of SETUP.md, which is *already* a fresh `sudo su -
+   errander-agent` login shell started *after* `bootstrap.sh` finishes — so no extra
+   re-login instruction was needed. If a future script needs group access *within the same
+   session* that just ran `usermod -aG`, it must either spawn a new login shell (`su - $USER`)
+   or use `sg docker -c '...'`/`newgrp docker`.
+
+**Why:** both are the kind of "works on my already-logged-in dev box, fails on a fresh VM"
+bug that's invisible until someone runs the *exact* documented sequence on a clean machine.
+
+**How to apply:** when a setup script changes a user's group membership and a *later* step
+in the same documented flow needs that group, check whether the flow already crosses a login
+boundary (`sudo su -`, SSH re-connect) between the two steps. If not, the later step needs an
+explicit `su -`/`newgrp`/`sg` — don't assume the new group is visible immediately.
+
 ## 2026-06-14 — `git stash` to triage "pre-existing failure" vs "regression I introduced"
 
 After the R1 rewrite, the full suite showed 8 failures and 171 errors that the R1 diff

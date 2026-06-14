@@ -31,6 +31,20 @@
 
 **Verification:** `uv run ruff check errander/ tests/` clean; `uv run mypy errander/` clean (112 files); full suite 8 failed / 2476 passed / 171 errors (485.93s) — the 8 failures + 171 errors are pre-existing and unrelated (confirmed via `git stash` reproducing identically on pre-R1 HEAD; see `tasks/lessons.md`).
 
+### Infra — automated Docker + Compose + PostgreSQL provisioning (2026-06-14)
+
+`bootstrap.sh` now installs Docker Engine + Compose plugin (via `get.docker.com`), enables `docker.service`, and adds `errander-agent` to the `docker` group (new step 6/8; web-user and clone-repo steps renumbered to 7/8 and 8/8). `configure.sh` brings up local PostgreSQL automatically with `docker compose up -d --wait` (falls back to a `pg_isready` poll loop on older Compose) whenever the operator keeps the default `ERRANDER_AUDIT_DB_URL`; pointing at an external PostgreSQL server skips this entirely. `docker-compose.yml`'s `postgres` service gets `restart: unless-stopped` so it survives host reboots, and `deploy/errander-agent.service` / `deploy/errander-web.service` now declare `After=network.target docker.service` + `Requires=docker.service` (previously `After=...postgresql.service`, which implied a native systemd Postgres that nothing installs).
+
+**Files changed:**
+- `scripts/bootstrap.sh` — new step 6/8 "Docker + Docker Compose"; renumbered steps 0–8
+- `scripts/configure.sh` — `docker compose up -d --wait` bring-up block for the default local DB URL
+- `docker-compose.yml` — `restart: unless-stopped` on `postgres`
+- `deploy/errander-agent.service`, `deploy/errander-web.service` — `After=docker.service` + `Requires=docker.service`
+- `SETUP.md` — Step 1 bullet list, Step B note, Step 5 note, teardown note
+- `docs/learning/59-docker-postgres-bootstrap.md` — new learning doc
+
+**Verification:** `bash -n` on both scripts clean; `docker compose config` clean; `grep -rn "postgresql.service" deploy/ SETUP.md` shows no stray native-Postgres references. No `errander/` Python changes — no pytest/ruff/mypy impact. No fresh Linux VM available for true end-to-end testing in this session.
+
 ## Previous Phase
 **§8d Step 4 — R3: process separation (COMPLETE 2026-06-13).**
 

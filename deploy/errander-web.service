@@ -1,7 +1,8 @@
 [Unit]
 Description=Errander Web UI
 Documentation=https://github.com/psc0des/Errander-AI
-After=network.target postgresql.service
+After=network.target docker.service
+Requires=docker.service
 
 [Service]
 Type=simple

@@ -1,3 +1,18 @@
+## Workflow diagram accuracy fix — ELK/Prometheus node text (2026-06-22, COMPLETE)
+
+Owner asked "is this correct?" about the ELK popup — it wasn't. Traced actual callers:
+ELK/Prometheus are read only by the daily probe (read-only observation) + Layer A, never
+the execution path; journalctl runs unconditionally (not an ELK fallback).
+
+- [x] `errander/web/server.py` — fixed ELK + Prometheus WF_NODES popups ("Layer B reads ... at probe/plan time" → "daily probe + Layer A read it; execution path never touches them; planner uses stored Postgres signals")
+- [x] Fixed "falls back to journalctl when ELK off" → "journalctl runs unconditionally in parallel, not a switch-over" (popup + glossary ELK term)
+- [x] Fixed data-band sublabel ("written by Layer B, read by both" → "Postgres = Errander's store · Prometheus & ELK = external read-only") + Investigation Engine note
+- [x] Doc sync: STATUS.md, docs/command-log.md, this file, tasks/lessons.md
+
+**Verification:** `ruff`/`mypy` clean, smoke test passes, live curl confirms corrected phrasing + zero stale claims. **Not committed yet.**
+
+---
+
 ## Workflow diagram redesign — three honest bands (2026-06-22, COMPLETE)
 
 Owner felt the diagram was "off" + could be richer/self-explanatory (couldn't name it).

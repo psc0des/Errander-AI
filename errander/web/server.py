@@ -4086,7 +4086,7 @@ _GLOSS: list[tuple[str, str, str, str, str]] = [
     ("Prometheus",         "INFRA",   "#d97706", "gloss-chip-infra",
      "Optional metrics source for VM stats (CPU, memory, disk usage) from node_exporter. Reached by direct HTTP (aiohttp GET to /api/v1/query) — no MCP. Enriches probe digests and --ask fleet analysis. Per-env URL override supported. (Separately, the agent also EXPOSES its own /metrics for an external Prometheus to scrape — a different, inbound connection.)"),
     ("ELK",                "INFRA",   "#d97706", "gloss-chip-infra",
-     "Optional Elasticsearch integration for log error analysis. Reached by direct HTTP (aiohttp POST to the _search REST API) — no MCP. Enriches probes and --ask. Falls back to journalctl SSH calls when ELK is not configured. Per-env URL override supported."),
+     "Optional Elasticsearch integration for log error analysis. Reached by direct HTTP (aiohttp POST to the _search REST API) — no MCP. Read by the daily probe and Layer A (--ask), never the execution path. When ELK is off, the probe still gathers journal errors via journalctl over SSH (run unconditionally in parallel, not a switch-over). Per-env URL override supported."),
     ("PostgreSQL",         "INFRA",   "#d97706", "gloss-chip-infra",
      "The single audit/state backend (audit trail, approvals, AI-decision log). Reached over SQL via SQLAlchemy async + the asyncpg driver (errander/db/core.py) — no MCP, no ORM models. Both the agent and web processes connect to the same DB; least-privilege enforced by separate DB roles (errander_agent read/write, errander_web limited)."),
     ("MCP",                "INFRA",   "#d97706", "gloss-chip-infra",
@@ -4192,7 +4192,7 @@ const WF_NODES = {
     checks: 'Default: Operator Assistant (fixed Prometheus/ELK/audit queries, one LLM call) · opt-in: Investigation Agent (--agentic, bounded ReAct tool-calling loop, up to 8 tool calls / 180s)',
     onfail: 'Any failure (LLM down, endpoint ignores tools=, turn-1 returns zero tool calls, budget exhausted) falls back cleanly to the deterministic Operator Assistant — never raises, never blocks',
     code: 'errander/agent/operator_assistant.py · errander/agent/investigation_agent.py',
-    note: 'Tools are plain in-process Python calls — direct HTTP to Prometheus/ELK (aiohttp), direct SQL to the audit DB (asyncpg). No MCP, no JSON-RPC. Reads the same sources the batch graph uses but never executes; every finding cites a real source ID.'
+    note: 'Tools are plain in-process Python calls — direct HTTP to Prometheus/ELK (aiohttp), direct SQL to the audit DB (asyncpg). No MCP, no JSON-RPC. Reads the audit DB the batch graph writes, plus Prometheus/ELK directly — but never executes; every finding cites a real source ID.'
   },
   'metrics-observability': {
     title: 'Metrics & AI Decisions', badge: 'OBSERVABILITY', badgeColor: '#0891b2',
@@ -4210,16 +4210,16 @@ const WF_NODES = {
   },
   'prometheus': {
     title: 'Prometheus', badge: 'DATA · METRICS (READ)', badgeColor: '#d97706',
-    checks: 'Layer B reads fixed PromQL (CPU/mem/load) per VM at plan time · Layer A (--agentic) composes arbitrary read-only PromQL, capped at 20 rows · direct HTTP via aiohttp GET to /api/v1/query — no MCP.',
-    onfail: 'Optional — an unreachable Prometheus never blocks; planning and investigation degrade to SSH-gathered state.',
-    code: 'errander/integrations/prometheus.py',
+    checks: 'Read by the daily probe (fixed CPU/mem/load PromQL per VM, fetch_vm_metrics) and by Layer A (--agentic composes arbitrary read-only PromQL, capped at 20 rows) · direct HTTP via aiohttp GET to /api/v1/query — no MCP.',
+    onfail: 'Optional — an unreachable Prometheus never blocks; the probe and investigation degrade to SSH-gathered state. Note: the batch planner does NOT read live Prometheus — it plans from STORED signals in Postgres (disk history, baselines).',
+    code: 'errander/integrations/prometheus.py · called from errander/agent/probe.py + operator_assistant.py + investigation_agent.py',
     note: 'This node is the agent READING an external Prometheus about target VMs. Distinct from the agent EXPOSING its own /metrics (see Metrics & AI Decisions) — opposite directions, different connections.'
   },
   'elk': {
     title: 'ELK / Elasticsearch', badge: 'DATA · LOG SEARCH (READ)', badgeColor: '#d97706',
-    checks: 'Layer B reads host-aggregated error counts at probe time · Layer A composes read-only term / multi_match searches, capped · direct HTTP via aiohttp POST to the _search REST API — no SDK, no MCP.',
-    onfail: 'Optional — falls back to journalctl over SSH when ELK is not configured.',
-    code: 'errander/integrations/elk.py',
+    checks: 'Read by the daily probe (fixed host-aggregated error counts, fetch_vm_errors) and by Layer A (--agentic composes read-only multi_match searches, capped) · direct HTTP via aiohttp POST to the _search REST API — no SDK, no MCP. The execution path never touches ELK.',
+    onfail: 'Optional — when ELK is unconfigured the probe still gathers journal errors via journalctl over SSH (run unconditionally every probe, in parallel — not a switch-over). ELK adds app-log error patterns on top when present.',
+    code: 'errander/integrations/elk.py · called from errander/agent/probe.py + operator_assistant.py + investigation_agent.py',
     note: 'Caller input only ever shapes the query filter content — never the URL path or index — so an LLM-composed search stays read-only and bounded.'
   },
 };
@@ -4379,7 +4379,7 @@ def page_glossary() -> str:
         '<small>the hands — scheduler-driven, writes the audit trail, no LLM in the path</small></div>'
         '<div class="wf-band-sep" style="top:812px"></div>'
         '<div class="wf-band-tag" style="top:817px">DATA &amp; OBSERVABILITY · shared substrate'
-        '<small>written by Layer B, read by both — direct HTTP / SQL, no MCP</small></div>'
+        '<small>Postgres = Errander&#39;s own store (Layer B writes audit) · Prometheus &amp; ELK = external, read-only · direct HTTP / SQL, no MCP</small></div>'
         '<div class="wf-band-sep" style="top:942px"></div>'
         '<div class="wf-band-tag" style="top:947px">LAYER A · OPERATOR BRAIN'
         '<small>read-only — investigates &amp; advises in parallel, never executes</small></div>'

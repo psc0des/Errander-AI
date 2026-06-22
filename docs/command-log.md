@@ -1,5 +1,26 @@
 # Errander-AI Command Log
 
+## Workflow diagram accuracy fix — ELK/Prometheus node text (2026-06-22)
+
+```bash
+# Owner asked if the ELK popup was correct — verify by tracing actual callers, not the layer model
+# (via Grep tool)
+grep -rn "fetch_vm_errors|ElkClient|elk_client" errander/    # callers: probe.py + operator_assistant.py + investigation_agent.py — NOT vm_graph/subgraphs
+grep -rn "fetch_vm_metrics" errander/                        # same: probe.py + operator_assistant.py only
+# probe.py:54 docstring = "Read-only — never modifies state" -> probe is NOT Layer B
+# probe.py:122-133 -> ELK + journalctl run independently in parallel, journalctl unconditional (not a fallback)
+
+# Fix ELK + Prometheus popups, band sublabel, glossary ELK term, investigation-engine note
+uv run ruff check errander/web/server.py && uv run mypy errander/web/server.py   # clean
+uv run pytest tests/ui/test_web_server_smoke.py -k glossary -q                    # 1 passed
+
+# Restart + verify corrected vs stale phrasing in rendered HTML
+curl -s -b cookies.txt http://127.0.0.1:19092/ui/glossary -o g.html
+grep -o "daily probe" g.html | wc -l            # 5 (new)
+grep -o "Layer B reads" g.html | wc -l          # 0 (stale removed)
+grep -oi "falls back to journalctl" g.html | wc -l   # 0 (stale removed)
+```
+
 ## Workflow diagram redesign — three honest bands (2026-06-22)
 
 ```bash

@@ -1,5 +1,30 @@
 # Errander-AI — Lessons Learned
 
+## 2026-06-22 — Diagram/popup copy is a factual claim — verify it against callers, don't infer it from the mental model
+
+When I built the data-substrate node popups, I wrote "Layer B reads ELK at probe time" and
+"Layer B reads Prometheus at plan time" by *reasoning from the two-layer model* — it felt
+right that the deterministic side reads observability data. The owner asked "is this
+correct?" and it wasn't: grepping the actual callers showed `fetch_vm_errors`/`fetch_vm_metrics`
+are only called by `agent/probe.py` (a read-only observation sweep, explicitly "never
+modifies state" — so not Layer B) and Layer A (`operator_assistant`, `investigation_agent`).
+The execution path never touches Prometheus/ELK at all; the planner reads STORED signals
+from Postgres. I'd also written "falls back to journalctl when ELK is off" — but the code
+runs journalctl unconditionally in parallel, not as a fallback.
+
+**Why it mattered:** a diagram that teaches the architecture is only worth anything if it's
+*true*. Plausible-sounding attributions ("the deterministic layer reads the metrics") are
+exactly the ones that slip through, because they match the reader's prior — and a wrong
+architecture diagram is worse than none, since people trust it.
+
+**How to apply:** every concrete claim in a diagram/popup/doc ("X reads Y", "A falls back to
+B", "runs at Z time") is a verifiable assertion — `grep` the callers / the conditional
+before writing it, the same way you'd verify a code change. Don't infer wiring from the
+layer model or the module's *intended* role (elk.py's docstring says "Layer A source", yet
+the probe also uses it). This is the same failure as the MCP one two entries below (asserting
+capability from the model instead of the code) — when describing how components connect,
+trace the actual call sites every time.
+
 ## 2026-06-22 — When a diagram needs a caption apologizing for its own layout, the layout is wrong
 
 The Agent Workflow diagram had a Layer A lane stacked below the batch flow with a divider

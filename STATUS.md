@@ -4,6 +4,33 @@
 2026-06-22
 
 ## Current Phase
+**Workflow diagram accuracy fix — ELK/Prometheus node text (COMPLETE 2026-06-22).**
+
+Owner read the ELK node popup and asked "is this correct?" — it wasn't. Two claims were
+wrong, caught by tracing actual callers:
+- "Layer B reads ... at probe time" — **false on two counts.** (1) The execution path
+  (Layer B proper) never touches ELK *or* Prometheus — the only callers of `fetch_vm_errors`
+  / `fetch_vm_metrics` are `agent/probe.py` (the daily probe) and `operator_assistant.py` /
+  `investigation_agent.py` (Layer A). (2) The probe is `Read-only — never modifies state`,
+  so it isn't Layer B at all. The batch planner reads STORED signals from Postgres, not
+  live Prometheus/ELK.
+- "falls back to journalctl over SSH when ELK is not configured" — **not a fallback.** In
+  `probe.py:122-133` ELK and journalctl run *independently, in parallel*; journalctl runs
+  unconditionally every probe regardless of ELK. "Falls back" implied an either/or switch
+  that doesn't exist.
+
+Fixed the ELK + Prometheus node popups, the data-band sublabel ("written by Layer B, read
+by both" → "Postgres = Errander's own store · Prometheus & ELK = external, read-only"), the
+glossary ELK term, and the Investigation Engine note ("same sources the batch graph uses" →
+"the audit DB the batch graph writes, plus Prometheus/ELK directly"). The diagram *arrows*
+were already correct (Layer A reads up into the substrate; Layer B writes audit to Postgres;
+no false Layer-B→Prometheus/ELK arrow) — this was a text-only accuracy pass.
+
+**Verification:** `ruff`/`mypy` clean, glossary smoke test passes, live curl confirms the
+corrected phrasing renders and zero stale "Layer B reads" / "falls back to journalctl"
+remain. **Not yet committed.**
+
+## Previous Phase
 **Workflow diagram redesign — three honest bands (COMPLETE 2026-06-22).**
 
 Owner felt the Agent Workflow diagram was "off" and could be richer/more self-explanatory,

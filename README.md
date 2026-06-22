@@ -476,6 +476,7 @@ uv run mypy .                                          # Type check
 uv run python -m errander --run-now --env dev --dry-run # Dry-run a batch
 uv run python -m errander --probe-now dev              # Daily probe (read-only, no maintenance)
 uv run python -m errander --ask "Any disk issues?" --env dev  # LLM fleet analysis (Layer A)
+uv run python -m errander --ask "Why is web-02 erroring?" --agentic --env dev  # agentic tool-calling --ask (opt-in)
 uv run python -m errander --check-targets dev          # Pre-flight VM readiness check
 uv run python -m errander --check-llm                  # Verify LLM endpoint
 uv run python -m errander --audit --batches            # View recent batches
@@ -655,11 +656,14 @@ uv run python -m errander --check-llm
 
 ## Roadmap
 
+### Shipped
+
+- **Layer A investigation agent** — `--ask --agentic` (opt-in, `ERRANDER_INVESTIGATION_AGENT_ENABLED`, default off): a bounded ReAct loop where the LLM composes Prometheus/ELK/audit queries on the fly to answer open-ended questions, instead of the fixed query set the default `--ask` uses. Stays strictly Layer A (read-only tools, recommends — never executes); falls back cleanly to the deterministic path on any failure. See [`docs/learning/60-investigation-agent.md`](docs/learning/60-investigation-agent.md).
+
 ### Near-term (planned — not yet built)
 
 These deepen the **agentic** side of the platform, all staying within the Layer A / Layer B safety model:
 
-- **Layer A investigation agent** — agentic, read-only `--ask`: the LLM composes Prometheus/ELK/audit queries on the fly to answer open-ended questions, instead of today's fixed query set. Stays strictly Layer A (read-only, recommends — never executes). See [`tasks/investigation-agent-implementation-plan.md`](tasks/investigation-agent-implementation-plan.md).
 - **LangSmith tracing (optional, bring-your-own)** — deep Layer-A observability for the LangGraph reasoning; off by default, never wired into Layer B. See [`docs/OBSERVABILITY.md`](docs/OBSERVABILITY.md).
 - **Dashboard chat (SRE ops-console)** — a `/ui/chat` quick-help console (patch status, CPU/mem, app health) on top of the investigation agent; multi-turn and read-only, with any action proposal routed through the **existing approval flow** — the chat never executes. See [`tasks/dashboard-chat-implementation-plan.md`](tasks/dashboard-chat-implementation-plan.md).
 

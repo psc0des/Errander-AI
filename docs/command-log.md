@@ -3205,3 +3205,34 @@ git diff --stat   # final file list for the R1 commit
 bash -n scripts/bootstrap.sh && echo "bootstrap.sh OK" && bash -n scripts/configure.sh && echo "configure.sh OK"   # syntax-check both modified scripts — both OK
 grep -rn "postgresql.service" deploy/ SETUP.md   # confirm no stray native-Postgres references — only SETUP.md:724, an unrelated restartable_units example for a target VM's own Postgres
 docker compose config --quiet && echo "docker compose config OK"   # validate docker-compose.yml after adding restart: unless-stopped — OK
+
+# Plan A — Layer A Investigation Agent (2026-06-22)
+# InvestigationAgent.investigate_agentic(): bounded ReAct loop over 6
+# read-only tools, alongside the untouched deterministic OperatorAssistant.
+# Reviewed (Opus 4.8) before implementation; see tasks/lessons.md for the
+# review deltas and the call_tools-or-tools bug caught during coding.
+uv run python -c "import errander.agent.investigation_agent as ia; print(list(ia._TOOL_REGISTRY.keys()))"   # sanity-check new module imports + tool registry
+uv run ruff check errander/agent/investigation_agent.py errander/integrations/llm.py errander/integrations/prometheus.py errander/integrations/elk.py errander/config/settings.py errander/observability/metrics.py errander/main.py   # clean
+uv run mypy errander/agent/investigation_agent.py errander/integrations/llm.py errander/integrations/prometheus.py errander/integrations/elk.py errander/config/settings.py errander/observability/metrics.py errander/main.py   # clean, 7 files
+
+# Diagnosing a test-DB connection hang (see tasks/lessons.md for the full story)
+docker ps --filter name=errander-postgres   # confirmed "healthy"
+timeout 15 uv run python -c "...asyncpg connect via AsyncDatabase..."   # EXIT=124 — hangs
+timeout 8 python -c "socket.create_connection(('localhost', 5432))"   # OK in 15ms — raw TCP fine
+timeout 8 uv run python -c "...raw asyncpg.connect()..."   # EXIT=124 — hangs even bypassing SQLAlchemy
+curl http://localhost:9090/-/healthy / :3000/login   # both 200 OK — not a Docker-networking-wide issue
+docker exec errander-postgres pg_isready -U errander -d errander_test   # "accepting connections"
+docker restart errander-postgres   # did NOT fix the hang — ruled out "Postgres itself wedged"
+# PowerShell: Get-CimInstance Win32_Process | Where CommandLine -match '<test path>|asyncpg.connect'
+#   -> found zombie python.exe processes from every earlier `timeout N ...` diagnostic
+#      (Git Bash's timeout doesn't kill the uv-run grandchild on Windows)
+# user ran a precise command-line-matched Stop-Process cleanup; connection then worked instantly
+uv run pytest tests/agent/test_investigation_agent_isolation.py tests/agent/test_investigation_tools.py -v   # 25 passed in 4.30s, post-cleanup
+uv run pytest tests/integrations/test_llm.py tests/integrations/test_prometheus.py tests/integrations/test_elk.py -v   # 79 passed (1 pre-existing-bug-in-my-edit fixed first — orphaned cache_control assert, see diff)
+uv run pytest tests/agent/test_investigation_agent.py -v   # 13 passed — the agentic loop test suite
+uv run pytest tests/agent/ tests/integrations/ tests/ai_evals/test_golden_plans.py -v   # 1015 passed in 178.41s — zero regression to the deterministic batch path
+uv run ruff check .   # full repo, clean
+uv run mypy errander/   # full package, 113 files, clean
+uv run python -m errander --help   # confirmed --agentic flag registered
+uv run python -m errander --ask "test question" --agentic --inventory example/inventory.yaml   # flag-off notice + deterministic fallback, correct
+ERRANDER_INVESTIGATION_AGENT_ENABLED=true uv run python -m errander --ask "test question" --agentic --inventory example/inventory.yaml   # flag-on, no LLM configured -> reason="llm_down" fallback, correct

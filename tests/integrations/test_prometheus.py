@@ -110,6 +110,106 @@ async def test_fetch_vm_metrics_empty_on_non_200() -> None:
     assert result == []
 
 
+# ---------------------------------------------------------------------------
+# query() — arbitrary read-only PromQL (investigation-agent tool path)
+# ---------------------------------------------------------------------------
+
+
+def _make_raw_response(rows: list[dict], status: int = 200) -> MagicMock:
+    """Build a mock aiohttp response with raw Prometheus result rows."""
+    resp = MagicMock()
+    resp.status = status
+    resp.json = AsyncMock(return_value={
+        "status": "success",
+        "data": {"resultType": "vector", "result": rows},
+    })
+    resp.__aenter__ = AsyncMock(return_value=resp)
+    resp.__aexit__ = AsyncMock(return_value=False)
+    return resp
+
+
+@pytest.mark.asyncio
+async def test_query_returns_formatted_rows() -> None:
+    client = PrometheusClient("http://prometheus:9090")
+    rows = [{"metric": {"instance": "10.0.0.1:9100"}, "value": [1700000000, "42"]}]
+    resp = _make_raw_response(rows)
+    with patch.object(client, "_get_session", new=AsyncMock(return_value=_mock_session([resp]))):
+        result = await client.query("node_load5")
+    assert len(result) == 1
+    assert "42" in result[0]
+
+
+@pytest.mark.asyncio
+async def test_query_uses_instant_endpoint_by_default() -> None:
+    client = PrometheusClient("http://prometheus:9090")
+    resp = _make_raw_response([])
+    captured_urls: list[str] = []
+
+    session = MagicMock()
+    session.closed = False
+
+    def _get(url: str, **kwargs: object) -> MagicMock:
+        captured_urls.append(url)
+        return resp
+
+    session.get = _get
+    with patch.object(client, "_get_session", new=AsyncMock(return_value=session)):
+        await client.query("up")
+    assert captured_urls[0].endswith("/api/v1/query")
+
+
+@pytest.mark.asyncio
+async def test_query_uses_range_endpoint_when_range_seconds_given() -> None:
+    client = PrometheusClient("http://prometheus:9090")
+    resp = _make_raw_response([])
+    captured_urls: list[str] = []
+
+    session = MagicMock()
+    session.closed = False
+
+    def _get(url: str, **kwargs: object) -> MagicMock:
+        captured_urls.append(url)
+        return resp
+
+    session.get = _get
+    with patch.object(client, "_get_session", new=AsyncMock(return_value=session)):
+        await client.query("up", range_seconds=3600)
+    assert captured_urls[0].endswith("/api/v1/query_range")
+
+
+@pytest.mark.asyncio
+async def test_query_caps_returned_rows() -> None:
+    from errander.integrations.prometheus import _MAX_QUERY_ROWS
+
+    client = PrometheusClient("http://prometheus:9090")
+    rows = [
+        {"metric": {"instance": f"10.0.0.{i}:9100"}, "value": [1700000000, str(i)]}
+        for i in range(_MAX_QUERY_ROWS * 3)
+    ]
+    resp = _make_raw_response(rows)
+    with patch.object(client, "_get_session", new=AsyncMock(return_value=_mock_session([resp]))):
+        result = await client.query("up")
+    assert len(result) == _MAX_QUERY_ROWS
+
+
+@pytest.mark.asyncio
+async def test_query_empty_list_on_non_200() -> None:
+    client = PrometheusClient("http://prometheus:9090")
+    resp = _make_raw_response([], status=500)
+    with patch.object(client, "_get_session", new=AsyncMock(return_value=_mock_session([resp]))):
+        result = await client.query("up")
+    assert result == []
+
+
+@pytest.mark.asyncio
+async def test_query_never_raises_on_session_exception() -> None:
+    client = PrometheusClient("http://prometheus:9090")
+    with patch.object(client, "_get_session", new=AsyncMock(side_effect=RuntimeError("boom"))):
+        result = await client.query("up")
+    assert result == []
+    assert result == []
+
+
 @pytest.mark.asyncio
 async def test_fetch_vm_metrics_empty_on_connection_error() -> None:
     client = PrometheusClient("http://prometheus:9090")

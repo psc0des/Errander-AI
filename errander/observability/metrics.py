@@ -80,6 +80,20 @@ LLM_REQUESTS_TOTAL = Counter(
     registry=REGISTRY,
 )
 
+INVESTIGATION_TOOL_CALLS_TOTAL = Counter(
+    "errander_investigation_tool_calls_total",
+    "Layer-A investigation agent tool invocations",
+    ["tool"],
+    registry=REGISTRY,
+)
+
+INVESTIGATION_FALLBACK_TOTAL = Counter(
+    "errander_investigation_fallback_total",
+    "Times the agentic investigation loop fell back to the deterministic path",
+    ["reason"],  # "unsupported" | "llm_down" | "budget_exhausted" | "empty_turn1"
+    registry=REGISTRY,
+)
+
 APPROVAL_WAIT = Histogram(
     "errander_approval_wait_seconds",
     "Seconds waiting for the operator's web UI approval decision",

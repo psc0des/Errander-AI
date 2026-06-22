@@ -65,3 +65,4 @@ Index of all learning docs created during development. Each doc explains what wa
 | 57 | [Web-Only Approval with Users/Groups RBAC](57-web-only-approval-rbac.md) | §8d-3 | `57-web-only-approval-rbac.md` |
 | 58 | [Advisory-LLM Batch Planning](58-advisory-planning-note.md) | §8d-5 | `58-advisory-planning-note.md` |
 | 59 | [Docker + Compose + PostgreSQL Bootstrap](59-docker-postgres-bootstrap.md) | infra | `59-docker-postgres-bootstrap.md` |
+| 60 | [Layer A Investigation Agent](60-investigation-agent.md) | Plan A | `60-investigation-agent.md` |

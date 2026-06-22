@@ -15,9 +15,11 @@ See docs/LLM-PROVIDERS.md for provider-specific configuration examples.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import time
+from dataclasses import dataclass, field
 from typing import Any, TypeVar
 
 from openai import APIConnectionError, APIStatusError, APITimeoutError, AsyncOpenAI
@@ -31,6 +33,34 @@ _REDACTOR = ContextRedactor()
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T", bound=BaseModel)
+
+# Sequential LLM calls preferred on self-hosted endpoints (low VRAM
+# concurrency on a single GPU) — see CLAUDE.md. Chat (multi-operator) could
+# otherwise fire concurrent multi-hop loops at one vLLM/T4 instance.
+_TOOL_CALL_SEMAPHORE = asyncio.Semaphore(1)
+
+
+@dataclass
+class ToolCallRequest:
+    """One tool call the model wants made — a stable shape independent of
+    the underlying SDK's response type, so callers don't depend on
+    `openai.types...ChatCompletionMessageToolCall` directly."""
+
+    id: str
+    name: str
+    arguments_json: str
+
+
+@dataclass
+class ToolCallResult:
+    """Result of one completion turn in a tool-calling loop.
+
+    `tool_calls` is empty when the model returned a final answer instead of
+    requesting more tool calls.
+    """
+
+    content: str | None
+    tool_calls: list[ToolCallRequest] = field(default_factory=list)
 
 #: System prompt used for all completions
 _SYSTEM_PROMPT = (
@@ -184,6 +214,90 @@ class LLMClient:
                 )
                 LLM_REQUESTS_TOTAL.labels(outcome="error").inc()
                 return None
+
+        return None  # unreachable, but satisfies type checker
+
+    async def complete_with_tools(
+        self,
+        messages: list[Any],
+        tools: list[Any],
+        *,
+        timeout_seconds: int | None = None,
+    ) -> ToolCallResult | None:
+        """One chat-completion turn with tool definitions.
+
+        Unlike complete(), this takes a growable `messages` list (the caller
+        owns the loop and extends it turn-by-turn) rather than a single
+        prompt string — so it does NOT redact internally. The caller
+        (investigation_agent.py) must redact the question/history before the
+        first message and every tool result before appending it.
+
+        An empty `tools` list omits `tools=`/`tool_choice=` from the request
+        entirely rather than sending `tools=[]` — most OpenAI-compatible
+        endpoints reject an empty tools array with a 400. This is how the
+        caller forces a final, non-tool-calling answer once its tool budget
+        is exhausted.
+
+        Returns None on any error (connection/timeout/4xx/5xx) — the caller
+        treats None as "tool-calling unavailable" and falls back to the
+        deterministic investigation path. Never raises.
+
+        Serialized via a process-wide semaphore so concurrent callers (e.g.
+        multiple dashboard-chat threads) don't contend on a single-GPU
+        self-hosted endpoint (CLAUDE.md: "sequential calls preferred").
+        """
+        effective_timeout = timeout_seconds or self._timeout_seconds
+        extra: dict[str, Any] = {"tools": tools, "tool_choice": "auto"} if tools else {}
+        async with _TOOL_CALL_SEMAPHORE:
+            for attempt in range(self._max_retries + 1):
+                try:
+                    response = await self._client.chat.completions.create(
+                        model=self._model,
+                        messages=messages,
+                        temperature=self._temperature,
+                        timeout=effective_timeout,
+                        **extra,
+                    )
+                    message = response.choices[0].message
+                    tool_calls = [
+                        ToolCallRequest(
+                            id=tc.id,
+                            name=tc.function.name,
+                            arguments_json=tc.function.arguments,
+                        )
+                        for tc in (message.tool_calls or [])
+                        if tc.type == "function"  # we only register function-type tools
+                    ]
+                    return ToolCallResult(content=message.content, tool_calls=tool_calls)
+
+                except APITimeoutError:
+                    logger.warning(
+                        "LLM tool-call timeout on attempt %d/%d (timeout=%ds)",
+                        attempt + 1, self._max_retries + 1, effective_timeout,
+                    )
+                    if attempt < self._max_retries:
+                        continue
+                    logger.error("LLM tool-call timed out after %d attempts", attempt + 1)
+                    return None
+
+                except APIConnectionError as exc:
+                    logger.warning(
+                        "LLM tool-call connection error on attempt %d/%d: %s",
+                        attempt + 1, self._max_retries + 1, exc,
+                    )
+                    if attempt < self._max_retries:
+                        continue
+                    logger.error("LLM unreachable for tool-call after %d attempts", attempt + 1)
+                    return None
+
+                except APIStatusError as exc:
+                    # Commonly a 400 when the endpoint doesn't support tools=
+                    # — the caller's capability-detection signal. Don't retry.
+                    logger.warning(
+                        "LLM tool-call API error %d: %s — endpoint may not support tools=",
+                        exc.status_code, exc.message,
+                    )
+                    return None
 
         return None  # unreachable, but satisfies type checker
 

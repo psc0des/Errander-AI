@@ -1,3 +1,26 @@
+## Plan A — Layer A Investigation Agent (2026-06-22, CODE COMPLETE — awaiting owner manual test)
+
+Roadmap item #3 (`tasks/investigation-agent-implementation-plan.md`), reconciled
+against as-built code and reviewed by a second model (Opus 4.8) before
+implementation — see the approved plan and `tasks/lessons.md` for the review
+deltas. Owner fractured their wrist 2026-06-22; decision: code Plan A + Plan B
+now, owner does the manual test pass once recovered.
+
+- [x] `errander/agent/investigation_agent.py` — `InvestigationAgent.investigate_agentic()`: tool registry (`query_prometheus`, `search_logs`, `get_audit_events`, `get_disk_trend`, `get_vm_facts`, `list_inventory`), bounded ReAct loop, citation-by-embedded-source-id, turn-1 capability detection, per-hop audit delta, fallback metric, defensive clamp, never raises
+- [x] `errander/integrations/llm.py` — `LLMClient.complete_with_tools()` (`ToolCallRequest`/`ToolCallResult`), empty-tools omits `tools=`/`tool_choice=` (provider 400 avoidance), `asyncio.Semaphore(1)` for sequential self-hosted calls; `complete()` untouched
+- [x] `errander/integrations/prometheus.py` / `elk.py` — `query()` / `search()` arbitrary read-only methods alongside the existing fixed ones (untouched)
+- [x] `errander/config/settings.py` — `investigation_agent_enabled` (default False) / `_max_tool_calls` (default 8) / `_timeout_seconds` (default 180)
+- [x] `errander/observability/metrics.py` — `INVESTIGATION_TOOL_CALLS_TOTAL`, `INVESTIGATION_FALLBACK_TOTAL{reason}`
+- [x] `errander/main.py` — `--agentic` flag (modifier on `--ask`), `run_ask_query()` branches on flag + setting, off-but-requested prints a one-line notice
+- [x] Tests (109 new/extended): `tests/agent/test_investigation_agent.py` (13, NEW), `tests/agent/test_investigation_tools.py` (26, NEW), `tests/agent/test_investigation_agent_isolation.py` (1, NEW), `tests/integrations/test_llm.py` (+11), `tests/integrations/test_prometheus.py` (+6), `tests/integrations/test_elk.py` (+7)
+- [x] Doc sync: STATUS.md, docs/OBSERVABILITY.md (flip "planned" → "available, opt-in"), README.md (Roadmap "Shipped" + CLI example), docs/learning/60-investigation-agent.md (NEW) + README.md index row, docs/command-log.md, tasks/lessons.md
+
+**Verification:** `uv run ruff check .` clean; `uv run mypy errander/` clean (113 files); `uv run pytest tests/agent/ tests/integrations/ tests/ai_evals/test_golden_plans.py` — 1015 passed, zero regression to the deterministic batch path; manual CLI smoke test (flag off, flag on + no LLM) confirms both fallback paths. **Not yet tested against a real LLM endpoint** — owner's pending step.
+
+**NEXT:** Plan B — Dashboard Chat (`tasks/dashboard-chat-implementation-plan.md`), builds on this engine. Then the owner's manual test pass on both. Then roadmap items #1/#2 (Prometheus test, LangSmith wiring).
+
+---
+
 ## Infra — automate Docker + Docker Compose + PostgreSQL provisioning (2026-06-14, COMPLETE)
 
 Not a §8d step — pure infra/setup change, no `errander/` Python code touched.

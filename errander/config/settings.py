@@ -110,6 +110,15 @@ class Settings:
     elk_api_key: str = ""           # ERRANDER_ELK_API_KEY; optional
     elk_index_pattern: str = "filebeat-*,logstash-*"  # ERRANDER_ELK_INDEX_PATTERN
 
+    # Layer A agentic investigation (--ask --agentic). Default off; falls
+    # back to the deterministic OperatorAssistant.investigate() path.
+    investigation_agent_enabled: bool = False  # ERRANDER_INVESTIGATION_AGENT_ENABLED
+    investigation_agent_max_tool_calls: int = 8  # ERRANDER_INVESTIGATION_AGENT_MAX_TOOL_CALLS
+    # Overall loop deadline — deliberately larger than LLMClient's 60s
+    # per-call timeout (a 60s overall deadline would yield ~1 hop on a
+    # self-hosted vLLM/T4 endpoint, defeating the feature).
+    investigation_agent_timeout_seconds: int = 180  # ERRANDER_INVESTIGATION_AGENT_TIMEOUT
+
     # LLM provider
     llm_model: str = ""
     llm_temperature: float = 0.1
@@ -482,6 +491,16 @@ def load_settings(
         elk_base_url=_load_env_str("ERRANDER_ELK_BASE_URL", ""),
         elk_api_key=_load_env_str("ERRANDER_ELK_API_KEY", ""),
         elk_index_pattern=_load_env_str("ERRANDER_ELK_INDEX_PATTERN", "filebeat-*,logstash-*"),
+        # Layer A agentic investigation — env-only, no settings.yaml schema entry
+        investigation_agent_enabled=_bool_field(
+            "ERRANDER_INVESTIGATION_AGENT_ENABLED", None, False,
+        ),
+        investigation_agent_max_tool_calls=_int_field(
+            "ERRANDER_INVESTIGATION_AGENT_MAX_TOOL_CALLS", None, 8,
+        ),
+        investigation_agent_timeout_seconds=_int_field(
+            "ERRANDER_INVESTIGATION_AGENT_TIMEOUT", None, 180,
+        ),
         # Source tracking
         sources=sources,
     )

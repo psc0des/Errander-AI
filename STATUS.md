@@ -1,9 +1,64 @@
 # Errander-AI — Project Status
 
 ## Last Updated
-2026-06-14
+2026-06-22
 
 ## Current Phase
+**Plan A — Layer A Investigation Agent (CODE COMPLETE 2026-06-22, awaiting owner manual test pass).**
+
+Adds an opt-in agentic tool-calling loop (`--ask --agentic`,
+`ERRANDER_INVESTIGATION_AGENT_ENABLED`, default off) alongside the existing
+deterministic `OperatorAssistant.investigate()` — both untouched, both
+produce the same `AssistantResponse` contract. `InvestigationAgent.investigate_agentic()`
+gives the LLM a bounded ReAct loop over six read-only tools
+(`query_prometheus`, `search_logs`, `get_audit_events`, `get_disk_trend`,
+`get_vm_facts`, `list_inventory`), capped by `max_tool_calls` (default 8) and
+an overall `timeout_seconds` deadline (default 180 — deliberately larger
+than `LLMClient`'s 60s per-call timeout) with a shrinking per-call timeout.
+Falls back cleanly to the deterministic path on any failure (unsupported
+endpoint, turn-1 zero-tool-calls, LLM down mid-loop, budget exhausted,
+unexpected exception) — never raises, never blocks.
+
+Built per a plan independently reviewed by a second model (Opus 4.8) before
+implementation; the review found 4 correctness gaps in the original draft,
+all fixed during this build: (1) citation validation against
+internally-tracked source IDs the model can never see — fixed by embedding
+`[source_id=...]` in each tool result message; (2) the web-wiring inventory
+type mismatch (deferred to Plan B); (3) per-hop audit rows would have grown
+quadratically — fixed by logging only the hop's delta; (4) a silently-wrong
+answer on an endpoint that ignores `tools=` — fixed by treating turn-1
+zero-tool-calls as a capability failure, not a lucky answer. A 5th bug
+(`call_tools or tools` re-offering the full tool list right after
+"exhausting" the budget) was caught during implementation itself, not the
+review — see `tasks/lessons.md`.
+
+This is **Plan A of a two-plan sequence** (owner fractured their wrist
+2026-06-22, decided: code now without hands-on testing, owner tests once
+recovered — see `tasks/lessons.md`). **Plan B (Dashboard Chat) builds on
+this engine next**, before any manual test pass — see "Files changed" below
+and the approved plan for the full two-plan scope.
+
+### Files changed (2026-06-22 — Plan A: investigation agent)
+**Code:**
+- `errander/agent/investigation_agent.py` — NEW: `InvestigationAgent.investigate_agentic()`, tool registry (6 tools), the ReAct loop, per-hop audit logging, fallback metric
+- `errander/integrations/llm.py` — NEW `LLMClient.complete_with_tools()` (`ToolCallRequest`/`ToolCallResult` dataclasses), module-level `asyncio.Semaphore(1)` for self-hosted sequential-call safety; `complete()` untouched
+- `errander/integrations/prometheus.py` — NEW `PrometheusClient.query()` (arbitrary PromQL); `fetch_vm_metrics()` untouched
+- `errander/integrations/elk.py` — NEW `ElkClient.search()` (arbitrary terms); `fetch_vm_errors()` untouched
+- `errander/config/settings.py` — 3 new fields: `investigation_agent_enabled`/`_max_tool_calls`/`_timeout_seconds`
+- `errander/observability/metrics.py` — `INVESTIGATION_TOOL_CALLS_TOTAL`, `INVESTIGATION_FALLBACK_TOTAL`
+- `errander/main.py` — `--agentic` CLI flag; `run_ask_query()` branches on flag + setting
+
+**Tests (109 new/extended):**
+- `tests/agent/test_investigation_agent.py` — NEW (13): multi-hop success + citation handling, budget-cap forced-final-answer, timeout, capability detection (unsupported / empty-turn1 / llm-down), malicious tool-result redaction, defensive clamp, never-raises
+- `tests/agent/test_investigation_tools.py` — NEW (26): per-tool read-only/validation/caps
+- `tests/agent/test_investigation_agent_isolation.py` — NEW (1): Layer-A isolation, written from scratch (no prior operator_assistant-scoped isolation test existed to mirror)
+- `tests/integrations/test_llm.py` — +11: `TestCompleteWithTools`
+- `tests/integrations/test_prometheus.py` — +6: `query()`
+- `tests/integrations/test_elk.py` — +7: `search()`
+
+**Verification:** `uv run ruff check .` clean; `uv run mypy errander/` clean (113 files); `uv run pytest tests/agent/ tests/integrations/ tests/ai_evals/test_golden_plans.py` — 1015 passed (zero regression to the deterministic batch path); manual CLI smoke test (`--ask --agentic` with flag off, with flag on + no LLM configured) confirms both fallback paths render correctly. **Not yet manually tested against a real LLM endpoint** — that's the owner's pending verification step once recovered.
+
+## Previous Phase
 **§8d Step 5 — R1: advisory-LLM batch planning (COMPLETE 2026-06-14).**
 
 `prioritize_actions()` is now 100% deterministic — always `_hardcoded_priority(available_actions, vm_info)`. The LLM can no longer add, remove, or reorder plan actions (fixes F2 — silent plan shrinkage). A new, separate Layer A call, `generate_planning_note()`, produces a short (≤700 char) informational note about the already-finalized plan — stored as `ai_note` inside each per-VM `vm_plans` dict, so it's covered by the existing plan hash and is part of the immutable approval artifact / deferred-replay record. The note never feeds back into plan content: `TestGoldenPlanSafety::test_planning_note_llm_output_never_changes_plan` proves the plan is byte-identical regardless of LLM presence or output. F4 sweep in the same change: deleted `analyze_failure()`, `_FailureAnalysis`, `_build_failure_prompt()`, `_check_failure_analysis`, `_VALID_RECOMMENDATIONS`, and the dead "3.2b policy enforcement" block (computed a filtered plan and then discarded it).

@@ -1,5 +1,105 @@
 # Errander-AI — Lessons Learned
 
+## 2026-06-22 — `empty_list or fallback_value` silently discards the empty list as a terminal state
+
+Building the agentic investigation loop's budget-exhaustion cutoff: the
+intent was "offer the full tool list normally, offer *no* tools once the
+budget is spent, forcing a final answer." The code computed
+`call_tools = tools if total_tool_calls_made < max_tool_calls else []`
+correctly, then called `complete_with_tools(messages, call_tools or tools,
+...)` — and `[] or tools` evaluates to `tools`, because `[]` is falsy in
+Python. The "exhausted" branch silently re-offered the full tool list right
+after computing the very thing meant to suppress it. Caught only because a
+test asserted the exact `tools=` payload of the *second* LLM call
+(`llm.calls[1]["tools"] == []`), not just the final response shape — a test
+that only checked "does the loop eventually return an answer" would have
+passed either way.
+
+**Why:** `x or fallback` is a common Python idiom for "use x unless it's
+missing/falsy," but it can't distinguish "x is unset" from "x is
+intentionally empty." `0`, `""`, `[]`, `{}`, and `False` are all valid,
+meaningful terminal values in plenty of designs — this budget cutoff is
+exactly that case.
+
+**How to apply:** before writing `value or fallback`, ask whether a falsy
+`value` (`0`/`""`/`[]`/`{}`/`False`) is ever a deliberate, meaningful state
+in this code path, not just "not yet set." If yes, use an explicit `is
+None` check (or just `value` directly, no fallback) instead of `or`. When
+testing a budget/cap mechanism, assert the *exact payload* sent on the
+capped call, not just that the loop eventually terminates — "it returned
+something" doesn't prove the cap actually suppressed what it was supposed to.
+
+## 2026-06-22 — A second model's pre-implementation review caught 4 real gaps; one more surfaced only while coding
+
+Before building the Layer A Investigation Agent, the plan (already
+reconciled against as-built code) was reviewed by a different model (Opus
+4.8) before any code was written. The review found 4 correctness gaps the
+original plan missed: (1) citation validation against synthetic source IDs
+the model can never see, which would have silently erased every citation;
+(2) a type mismatch between what the engine needs (`InventoryConfig`) and
+what the web process loads (`list`) — deferred to Plan B, where it's
+relevant; (3) per-hop audit rows that would grow quadratically if they
+logged the cumulative transcript instead of just that hop's delta; (4) a
+parseable-but-tool-free first answer being accepted as a lucky shortcut
+instead of treated as a capability failure. All 4 were folded into the plan
+file before implementation started, and all 4 have dedicated regression
+tests (see `docs/learning/60-investigation-agent.md`).
+
+The 5th bug — `call_tools or tools` (the entry above) — was **not** caught
+by that review; it only existed once the loop was actually written, since
+the review worked from the plan's prose description ("offer no tools once
+exhausted"), not literal code.
+
+**Why:** a second model reviewing a plan before code exists is good at
+catching gaps in *reasoning* (a silently-wrong design, a missed edge case in
+the spec) — exactly the kind of error that's invisible once code makes the
+design concrete. It is not a substitute for tests that pin down the
+*literal behavior* of the code once written; that net catches a different
+class of bug (an implementation slip that contradicts the very design the
+review approved).
+
+**How to apply:** for safety-relevant or correctness-critical new features,
+a pre-implementation review from a different model is worth the round trip
+— but budget for implementation-time bugs to still surface that no amount
+of plan review would have caught, and write tests that assert literal
+call-site payloads (not just end-to-end outcomes) to catch them.
+
+## 2026-06-22 — `timeout N cmd` in Git Bash on Windows does not kill the grandchild process, and orphaned connection attempts can wedge the Postgres test DB
+
+While running bounded diagnostic checks (`timeout 8 uv run python -c "..."`),
+every single invocation left a zombie `python.exe` process still running
+*after* the `timeout` wrapper reported exit 124. `uv run` → `uv.exe` →
+`python.exe` is a process chain, and Git Bash's `timeout` (GNU coreutils)
+only signals its immediate child; on Windows that signal does not propagate
+to the grandchild. Each zombie was mid-connection-attempt against
+`localhost:5432` (the local `errander_test` Postgres, reached via Docker
+Desktop's port-forward). With several of these accumulated, **every new**
+connection attempt — including from plain pytest runs with no relation to
+the diagnostics — started hanging indefinitely too, even though raw TCP
+connect, `pg_isready`, and unrelated HTTP-based Docker ports (Prometheus
+:9090, Grafana :3000) all kept working fine. Restarting the
+`errander-postgres` container did **not** fix it (ruling out "Postgres
+itself is wedged"); only killing the zombie processes did.
+
+**Why:** Docker Desktop's TCP port-forward proxy for a raw (non-HTTP)
+protocol like Postgres apparently has a limited number of proxy/connection
+slots, separate from its HTTP-aware proxying — a handful of stuck,
+never-completing connection attempts can exhaust that pool and wedge new
+connections, while leaving HTTP ports completely unaffected. This is a
+backend Docker Desktop behavior on this host, not an Errander code issue.
+
+**How to apply:** never wrap a `uv run`/multi-process Python invocation in
+Git Bash's `timeout` expecting clean termination on Windows — it leaves an
+orphan. If the test-DB connection (`tests/conftest.py`'s `_migrate_test_db`/
+`_clean_test_db` autouse fixtures) ever hangs with no `pg_isready` or raw-TCP
+explanation, check for orphaned python processes still mid-connection
+(`Get-CimInstance Win32_Process | Where CommandLine -match '<your test
+path>'`) before suspecting Postgres or Docker networking more broadly —
+and never bulk-kill processes by name alone; match on exact command-line
+content first (this session's blind `taskkill` by process name was
+correctly blocked — two of six matched the user's own unrelated `app.py`,
+not anything spawned by this session).
+
 ## 2026-06-14 — `docker compose up -d --wait` needs a fallback for older Compose, and `usermod -aG` needs a fresh login shell
 
 While automating local PostgreSQL bring-up in `configure.sh`, two ordering details mattered:

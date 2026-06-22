@@ -21,6 +21,7 @@ import contextlib
 import html as _html_mod
 import logging
 import secrets
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 from urllib.parse import quote as _url_quote
@@ -44,10 +45,18 @@ from errander.observability.metrics import (
 if TYPE_CHECKING:
     from prometheus_client import Counter, Histogram
 
+    from errander.config.schema import InventoryConfig
+    from errander.config.settings import Settings
+    from errander.integrations.elk import ElkClient
+    from errander.integrations.llm import LLMClient
+    from errander.integrations.prometheus import PrometheusClient
     from errander.models.vm import VMTarget
     from errander.safety.ai_audit import AIDecisionStore
     from errander.safety.approval_store import ApprovalRequestStore
     from errander.safety.audit import AuditStore
+    from errander.safety.baselines import BaselineStore
+    from errander.safety.chat_store import ChatMessage, ChatStore
+    from errander.safety.disk_history import VMDiskHistoryStore
     from errander.safety.hygiene_store import HygieneApprovalStore
     from errander.safety.overrides import OverridesStore
     from errander.safety.user_store import SessionStore, User, UserStore
@@ -67,9 +76,31 @@ BASE_INVENTORY_KEY: web.AppKey[list[VMTarget]] = web.AppKey("base_inventory")
 AI_DECISION_STORE_KEY: web.AppKey[AIDecisionStore | None] = web.AppKey("ai_decision_store")
 USER_STORE_KEY: web.AppKey[UserStore | None] = web.AppKey("user_store")
 SESSION_STORE_KEY: web.AppKey[SessionStore | None] = web.AppKey("session_store")
+CHAT_STORE_KEY: web.AppKey[ChatStore | None] = web.AppKey("chat_store")
 #: True when the bind address is loopback — gates the zero-users open-GET
 #: bootstrap mode (never expose unauthenticated pages on a network bind).
 LOOPBACK_BIND_KEY: web.AppKey[bool] = web.AppKey("loopback_bind")
+
+
+@dataclass
+class ChatEngineDeps:
+    """Bundles the Plan-A investigation engine's dependencies for the chat
+    handler under one AppKey, since they're only ever used together (unlike
+    audit_store/ai_decision_store, which are independently useful elsewhere
+    in the UI and already have their own keys)."""
+
+    disk_history_store: VMDiskHistoryStore
+    baseline_store: BaselineStore
+    inventory: InventoryConfig
+    settings: Settings
+    llm_client: LLMClient | None = None
+    prometheus_client: PrometheusClient | None = None
+    elk_client: ElkClient | None = None
+
+
+#: None when ERRANDER_CHAT_ENABLED is off, or when no inventory.yaml was
+#: found at startup — the chat page renders a "disabled" notice either way.
+CHAT_ENGINE_DEPS_KEY: web.AppKey[ChatEngineDeps | None] = web.AppKey("chat_engine_deps")
 
 #: CSRF secret key (generated fresh per server start — stateless double-submit pattern)
 CSRF_SECRET_KEY: web.AppKey[str] = web.AppKey("csrf_secret")
@@ -406,6 +437,22 @@ a:hover{color:var(--secondary)}
 }
 .apv-ai-note-body{font-size:.7rem;color:var(--text-d);padding:.45rem .75rem}
 
+/* Dashboard chat (Plan B) */
+.chat-history{display:flex;flex-direction:column;gap:.6rem;margin:.75rem 0}
+.chat-msg{border:1px solid var(--outline);border-radius:7px;padding:.55rem .75rem}
+.chat-msg-user{background:var(--surface-lo)}
+.chat-msg-role{font-size:.65rem;font-weight:700;text-transform:uppercase;color:var(--text-d);margin-bottom:.25rem}
+.chat-msg-content{font-size:.8rem;color:var(--text);white-space:pre-wrap}
+.chat-findings,.chat-recs{font-size:.72rem;color:var(--text-d);margin-top:.4rem}
+.chat-findings ul,.chat-recs ul{margin:.2rem 0 0 1rem;padding:0}
+.chat-evidence{color:var(--text-d);font-family:var(--mono);font-size:.65rem}
+.chat-new-form{margin-bottom:.75rem}
+.chat-compose-form{display:flex;gap:.5rem;margin-top:.75rem;align-items:flex-end}
+.chat-compose-form textarea{
+  flex:1;font-family:var(--sans);font-size:.8rem;padding:.5rem .65rem;
+  border:1px solid var(--outline);border-radius:6px;resize:vertical;
+}
+
 /* Reasoning section */
 .apv-reasoning{
   border:1px solid var(--outline);border-radius:7px;
@@ -653,6 +700,8 @@ def _page(
         nav["ai-decisions"] = " on"
     elif t == "monitoring":
         nav["monitoring"] = " on"
+    elif t == "chat" or t.startswith("chat:"):
+        nav["chat"] = " on"
 
     refresh_tag = f'<meta http-equiv="refresh" content="{refresh}">' if refresh else ""
     badge = (
@@ -702,6 +751,9 @@ def _page(
     </a>
     <a href="/ui/monitoring" class="sb-a{nav.get('monitoring','')}">
       <span class="sb-ico" aria-hidden="true">&#9650;</span>Monitoring
+    </a>
+    <a href="/ui/chat" class="sb-a{nav.get('chat','')}">
+      <span class="sb-ico" aria-hidden="true">&#9998;</span>Chat
     </a>
     <div class="sb-divider"></div>
     <a href="/metrics" target="_blank" class="sb-a sb-ext">
@@ -3604,6 +3656,280 @@ async def _ui_monitoring(request: web.Request) -> web.Response:
     return _page("Monitoring", body, refresh=60, pending_count=pending_count, request=request)
 
 
+# ---------------------------------------------------------------------------
+# Dashboard chat (Plan B phase 1) — read-only, multi-turn, Layer A surface
+#
+# The chat is a thin front-end over the Plan A investigation engine
+# (errander.agent.operator_assistant / errander.agent.investigation_agent).
+# It builds no queries of its own and gets no execution capability — every
+# question routes through the same engine `--ask` uses. Imported locally
+# (not at module scope) to keep ui.py's top-level imports minimal, matching
+# the existing convention for less-common dependencies elsewhere in this
+# file. Neither module is on tests/web/test_import_isolation.py's blocked
+# list (only errander.execution / agent.subgraphs / agent.graph /
+# agent.vm_graph are blocked) — that test continues to police this import
+# transitively on every CI run.
+# ---------------------------------------------------------------------------
+
+def _chat_disabled_page(pending_count: int) -> web.Response:
+    return _page(
+        "Chat",
+        '<div class="nc">Dashboard chat is disabled — set ERRANDER_CHAT_ENABLED=true '
+        "and ensure inventory.yaml is present to enable it.</div>",
+        pending_count=pending_count,
+    )
+
+
+def _render_chat_message(msg: ChatMessage) -> str:
+    import json as _json
+
+    role_label = "You" if msg.role == "user" else "Errander"
+    parts = [f'<div class="chat-msg chat-msg-{_esc(msg.role)}">']
+    parts.append(f'<div class="chat-msg-role">{_esc(role_label)}</div>')
+    parts.append(f'<div class="chat-msg-content">{_esc(msg.content)}</div>')
+
+    if msg.role == "assistant" and msg.findings_json:
+        try:
+            findings = _json.loads(msg.findings_json)
+        except Exception:  # noqa: BLE001
+            findings = []
+        if isinstance(findings, list) and findings:
+            items = "".join(
+                f"<li>{_esc(str(f.get('text', '')))}"
+                + (
+                    f' <span class="chat-evidence">[{_esc(", ".join(str(e) for e in f["evidence"]))}]</span>'
+                    if isinstance(f, dict) and f.get("evidence")
+                    else ""
+                )
+                + "</li>"
+                for f in findings if isinstance(f, dict)
+            )
+            parts.append(f'<div class="chat-findings"><strong>Findings</strong><ul>{items}</ul></div>')
+
+    if msg.role == "assistant" and msg.recommendations_json:
+        try:
+            recs = _json.loads(msg.recommendations_json)
+        except Exception:  # noqa: BLE001
+            recs = []
+        if isinstance(recs, list) and recs:
+            items = "".join(f"<li>{_esc(str(r))}</li>" for r in recs)
+            parts.append(
+                f'<div class="chat-recs"><strong>Recommendations</strong><ul>{items}</ul></div>'
+            )
+
+    if msg.role == "assistant" and msg.risk_level:
+        parts.append(f'<span class="badge bk-neu">risk: {_esc(msg.risk_level)}</span>')
+
+    parts.append("</div>")
+    return "".join(parts)
+
+
+def _render_history_for_prompt(messages: list[ChatMessage], max_turns: int) -> str:
+    """Fold prior turns into plain text the engine sees as part of the
+    question — a deliberate v1 simplification (see docs/learning/61-dashboard-chat.md):
+    the engine's contract stays `question: str -> AssistantResponse` through
+    Plan A's definition of done, rather than growing a native history param."""
+    recent = messages[-max_turns:] if max_turns > 0 else messages
+    lines = [f"{'Operator' if m.role == 'user' else 'Errander'}: {m.content}" for m in recent]
+    return "\n".join(lines)
+
+
+async def _ui_chat(request: web.Request) -> web.Response:
+    """GET /ui/chat — list the user's threads + a "new conversation" composer."""
+    approval_store: ApprovalRequestStore | None = request.app.get(APPROVAL_STORE_KEY)
+    pending_count = await approval_store.count_pending() if approval_store is not None else 0
+
+    chat_store: ChatStore | None = request.app.get(CHAT_STORE_KEY)
+    if chat_store is None:
+        return _chat_disabled_page(pending_count)
+
+    user = _request_user(request)
+    if user is None:
+        raise web.HTTPFound("/ui/login")
+
+    threads = await chat_store.list_threads(user.username, limit=50)
+    rows = [
+        [
+            f'<a class="id-a" href="/ui/chat/{_uq(t.thread_id)}">{_esc(t.title)}</a>',
+            f'<span class="mono">{t.updated_at.strftime("%Y-%m-%d %H:%M:%S")}</span>',
+        ]
+        for t in threads
+    ]
+    body = (
+        '<form method="post" action="/ui/chat/new" class="chat-new-form">'
+        '<button type="submit" class="btn btn-ok">New conversation</button>'
+        "</form>"
+        + _section("Conversations", len(threads))
+        + _table(["Title", "Last activity (UTC)"], rows)
+    )
+    return _page("Chat", body, pending_count=pending_count, request=request)
+
+
+async def _ui_chat_thread(request: web.Request) -> web.Response:
+    """GET /ui/chat/{thread_id} — render one thread's history + compose box."""
+    approval_store: ApprovalRequestStore | None = request.app.get(APPROVAL_STORE_KEY)
+    pending_count = await approval_store.count_pending() if approval_store is not None else 0
+
+    chat_store: ChatStore | None = request.app.get(CHAT_STORE_KEY)
+    if chat_store is None:
+        return _chat_disabled_page(pending_count)
+
+    user = _request_user(request)
+    if user is None:
+        raise web.HTTPFound("/ui/login")
+
+    thread_id = request.match_info["thread_id"]
+    thread = await chat_store.get_thread(thread_id)
+    if thread is None or thread.user_id != user.username:
+        return _page(
+            "Chat", '<div class="nc">Conversation not found.</div>', pending_count=pending_count,
+        )
+
+    messages = await chat_store.get_messages(thread_id, limit=200)
+    history_html = "".join(_render_chat_message(m) for m in messages) or (
+        '<div class="empty">No messages yet — ask a question below.</div>'
+    )
+    engine_deps = request.app.get(CHAT_ENGINE_DEPS_KEY)
+    compose = (
+        f'<form method="post" action="/ui/chat/{_uq(thread_id)}/message" class="chat-compose-form">'
+        '<textarea name="message" rows="2" placeholder="Ask about your fleet..." required></textarea>'
+        '<button type="submit" class="btn btn-ok">Send</button>'
+        "</form>"
+        if engine_deps is not None
+        else '<div class="nc">Chat is enabled but no LLM/inventory is configured for this server.</div>'
+    )
+    body = (
+        '<a class="back-a" href="/ui/chat">&larr; All conversations</a>'
+        + f'<div class="chat-history">{history_html}</div>'
+        + compose
+    )
+    return _page(f"Chat: {thread.title}", body, pending_count=pending_count, request=request)
+
+
+async def _ui_chat_new_thread(request: web.Request) -> web.Response:
+    """POST /ui/chat/new — create a thread (server-generated id) and redirect to it."""
+    chat_store: ChatStore | None = request.app.get(CHAT_STORE_KEY)
+    if chat_store is None:
+        raise web.HTTPFound("/ui/chat")
+    user = _request_user(request)
+    if user is None:
+        raise web.HTTPFound("/ui/login")
+    thread = await chat_store.create_thread(user.username)
+    raise web.HTTPFound(f"/ui/chat/{_uq(thread.thread_id)}")
+
+
+#: Per-thread rate limit — chat_max_history_turns only caps what's *sent* to
+#: the engine, not how often a user can submit; this bounds cost separately.
+_CHAT_MIN_SECONDS_BETWEEN_TURNS = 3
+
+
+async def _ui_chat_message_post(request: web.Request) -> web.Response:
+    """POST /ui/chat/{thread_id}/message — append the user's turn, call the
+    Plan A engine, append the assistant's turn, redirect back to the thread.
+
+    No per-handler CSRF code needed — the global _csrf_middleware already
+    covers every /ui/* POST.
+    """
+    chat_store: ChatStore | None = request.app.get(CHAT_STORE_KEY)
+    if chat_store is None:
+        raise web.HTTPFound("/ui/chat")
+    user = _request_user(request)
+    if user is None:
+        raise web.HTTPFound("/ui/login")
+
+    thread_id = request.match_info["thread_id"]
+    thread = await chat_store.get_thread(thread_id)
+    if thread is None or thread.user_id != user.username:
+        raise web.HTTPFound("/ui/chat")
+
+    data = await request.post()
+    new_message = str(data.get("message", "")).strip()
+    if not new_message:
+        raise web.HTTPFound(f"/ui/chat/{_uq(thread_id)}")
+
+    existing = await chat_store.get_messages(thread_id, limit=200)
+    if existing:
+        elapsed = (datetime.now(tz=UTC) - existing[-1].created_at.astimezone(UTC)).total_seconds()
+        if elapsed < _CHAT_MIN_SECONDS_BETWEEN_TURNS:
+            # Double-submit / rapid-fire guard — drop silently, do not queue
+            # a second expensive engine call for the same turn.
+            raise web.HTTPFound(f"/ui/chat/{_uq(thread_id)}")
+
+    await chat_store.append_message(thread_id, role="user", content=new_message)
+
+    engine_deps = request.app.get(CHAT_ENGINE_DEPS_KEY)
+    if engine_deps is None:
+        await chat_store.append_message(
+            thread_id, role="assistant",
+            content="Chat is enabled but no LLM/inventory is configured for this server.",
+        )
+        raise web.HTTPFound(f"/ui/chat/{_uq(thread_id)}")
+
+    audit_store: AuditStore | None = request.app.get(AUDIT_STORE_KEY)
+    ai_decision_store: AIDecisionStore | None = request.app.get(AI_DECISION_STORE_KEY)
+    if audit_store is None:
+        await chat_store.append_message(
+            thread_id, role="assistant",
+            content="Chat cannot reach the audit database on this server.",
+        )
+        raise web.HTTPFound(f"/ui/chat/{_uq(thread_id)}")
+
+    from errander.safety.context_redactor import ContextRedactor
+
+    history_text = _render_history_for_prompt(existing, engine_deps.settings.chat_max_history_turns)
+    question = f"{history_text}\nOperator: {new_message}" if history_text else new_message
+    question, _ = ContextRedactor().redact(question)
+
+    t0 = datetime.now(tz=UTC)
+    if engine_deps.settings.investigation_agent_enabled and engine_deps.llm_client is not None:
+        from errander.agent.investigation_agent import InvestigationAgent
+        response = await InvestigationAgent().investigate_agentic(
+            question,
+            audit_store=audit_store, disk_history_store=engine_deps.disk_history_store,
+            baseline_store=engine_deps.baseline_store, inventory=engine_deps.inventory,
+            llm_client=engine_deps.llm_client, prometheus_client=engine_deps.prometheus_client,
+            elk_client=engine_deps.elk_client, ai_decision_store=ai_decision_store,
+            max_tool_calls=engine_deps.settings.investigation_agent_max_tool_calls,
+            timeout_seconds=engine_deps.settings.investigation_agent_timeout_seconds,
+        )
+    else:
+        from errander.agent.operator_assistant import OperatorAssistant
+        response = await OperatorAssistant().investigate(
+            question,
+            audit_store=audit_store, disk_history_store=engine_deps.disk_history_store,
+            baseline_store=engine_deps.baseline_store, inventory=engine_deps.inventory,
+            llm_client=engine_deps.llm_client, prometheus_client=engine_deps.prometheus_client,
+            elk_client=engine_deps.elk_client, ai_decision_store=ai_decision_store,
+        )
+    latency_ms = (datetime.now(tz=UTC) - t0).total_seconds() * 1000
+
+    import json as _json
+
+    await chat_store.append_message(
+        thread_id, role="assistant", content=response.summary,
+        findings_json=_json.dumps([f.model_dump() for f in response.findings]),
+        recommendations_json=_json.dumps(response.recommendations),
+        risk_level=response.risk_level,
+    )
+
+    if ai_decision_store is not None:
+        from errander.safety.ai_audit import AIDecision
+        await ai_decision_store.log(AIDecision(
+            batch_id=f"chat:{thread_id}",
+            vm_id=None,
+            decision_type="dashboard_chat_turn",
+            model=getattr(engine_deps.llm_client, "_model", "unknown"),
+            base_url=getattr(engine_deps.llm_client, "_base_url", ""),
+            prompt_template_id="dashboard_chat_v1",
+            prompt_hash=AIDecision.hash_prompt(question),
+            response_raw=response.model_dump_json(),
+            outcome="success",
+            latency_ms=latency_ms,
+        ))
+
+    raise web.HTTPFound(f"/ui/chat/{_uq(thread_id)}")
+
+
 def build_ui_app(
     *,
     audit_store: AuditStore | None = None,
@@ -3614,6 +3940,8 @@ def build_ui_app(
     user_store: UserStore | None = None,
     session_store: SessionStore | None = None,
     ai_decision_store: AIDecisionStore | None = None,
+    chat_store: ChatStore | None = None,
+    chat_engine_deps: ChatEngineDeps | None = None,
     loopback_bind: bool = True,
     signing_secret: str | None = None,
     public_mode: bool = False,
@@ -3636,6 +3964,8 @@ def build_ui_app(
     app[AI_DECISION_STORE_KEY] = ai_decision_store
     app[USER_STORE_KEY] = user_store
     app[SESSION_STORE_KEY] = session_store
+    app[CHAT_STORE_KEY] = chat_store
+    app[CHAT_ENGINE_DEPS_KEY] = chat_engine_deps
     app[LOOPBACK_BIND_KEY] = loopback_bind
     app[CSRF_SECRET_KEY] = csrf_secret
     app[SIGNING_SECRET_KEY] = signing_secret
@@ -3673,6 +4003,10 @@ def build_ui_app(
     app.router.add_get("/ui/ai-decisions", _ui_ai_decisions)
     app.router.add_get(r"/ui/ai-decisions/{decision_id:\d+}", _ui_ai_decision_detail)
     app.router.add_get("/ui/monitoring", _ui_monitoring)
+    app.router.add_get("/ui/chat", _ui_chat)
+    app.router.add_post("/ui/chat/new", _ui_chat_new_thread)
+    app.router.add_get(r"/ui/chat/{thread_id:[^/]+}", _ui_chat_thread)
+    app.router.add_post(r"/ui/chat/{thread_id:[^/]+}/message", _ui_chat_message_post)
     return app
 
 
@@ -3688,6 +4022,8 @@ async def start_web_server(
     user_store: UserStore | None = None,
     session_store: SessionStore | None = None,
     ai_decision_store: AIDecisionStore | None = None,
+    chat_store: ChatStore | None = None,
+    chat_engine_deps: ChatEngineDeps | None = None,
     signing_secret: str | None = None,
     public_mode: bool = False,
 ) -> web.AppRunner:
@@ -3708,6 +4044,9 @@ async def start_web_server(
         user_store: UserStore for login + RBAC (None = bootstrap mode: read-only pages, no decisions).
         session_store: SessionStore backing the session cookie (DB rows, survives restarts).
         ai_decision_store: AIDecisionStore for the AI decisions UI pages.
+        chat_store: ChatStore for /ui/chat conversation persistence (None = chat disabled).
+        chat_engine_deps: Plan A investigation-engine dependencies for /ui/chat
+            (None = chat renders a "disabled"/"not configured" notice).
         signing_secret: HMAC secret for verifying signed docker_hygiene approval URLs.
         public_mode: When True, mandates TOTP for the admin group (nginx Mode 2).
 
@@ -3745,6 +4084,8 @@ async def start_web_server(
         user_store=user_store,
         session_store=session_store,
         ai_decision_store=ai_decision_store,
+        chat_store=chat_store,
+        chat_engine_deps=chat_engine_deps,
         loopback_bind=is_loopback,
         signing_secret=signing_secret,
         public_mode=public_mode,

@@ -1,5 +1,29 @@
 # Errander-AI — Lessons Learned
 
+## 2026-06-22 — A per-user-owned page is a deliberate exception to "bootstrap mode keeps GET pages open"
+
+Every existing read-only `/ui/*` page (`/ui/ai-decisions`, `/ui/approvals`,
+etc.) renders for anonymous visitors when zero user accounts exist yet
+(`_session_auth_middleware`'s bootstrap-mode passthrough, `request["user"] =
+None`) — that's deliberate, so a freshly-bootstrapped install isn't a 403
+wall before the first admin account exists. The new `/ui/chat` handlers
+break this pattern on purpose: `_ui_chat`/`_ui_chat_thread`/
+`_ui_chat_message_post` all explicitly `raise web.HTTPFound("/ui/login")`
+when `_request_user(request) is None`, even in bootstrap mode.
+
+**Why:** chat threads are scoped by `user_id` (`ChatStore.list_threads`,
+ownership checks on delete/post) — there is no sensible behavior for "whose
+thread is this" without a real authenticated identity. The other read-only
+pages show global data with no per-user ownership concept, so anonymous
+bootstrap access is safe for them; it isn't for chat.
+
+**How to apply:** don't "fix" the chat handlers to match the other pages'
+bootstrap-mode passthrough if this is ever revisited — it would make
+`user.username` `None`-able exactly where it's used to scope/own data. The
+right question for any *new* `/ui/*` page isn't "do other pages allow
+anonymous bootstrap access" but "does this page's data have a per-user
+owner."
+
 ## 2026-06-22 — `empty_list or fallback_value` silently discards the empty list as a terminal state
 
 Building the agentic investigation loop's budget-exhaustion cutoff: the
@@ -64,41 +88,48 @@ a pre-implementation review from a different model is worth the round trip
 of plan review would have caught, and write tests that assert literal
 call-site payloads (not just end-to-end outcomes) to catch them.
 
-## 2026-06-22 — `timeout N cmd` in Git Bash on Windows does not kill the grandchild process, and orphaned connection attempts can wedge the Postgres test DB
+## 2026-06-22 — Any Git-Bash mechanism that signals/tracks a `uv run ...` invocation by its immediate child PID misses the real grandchild process on Windows
 
-While running bounded diagnostic checks (`timeout 8 uv run python -c "..."`),
-every single invocation left a zombie `python.exe` process still running
-*after* the `timeout` wrapper reported exit 124. `uv run` → `uv.exe` →
-`python.exe` is a process chain, and Git Bash's `timeout` (GNU coreutils)
-only signals its immediate child; on Windows that signal does not propagate
-to the grandchild. Each zombie was mid-connection-attempt against
-`localhost:5432` (the local `errander_test` Postgres, reached via Docker
-Desktop's port-forward). With several of these accumulated, **every new**
-connection attempt — including from plain pytest runs with no relation to
-the diagnostics — started hanging indefinitely too, even though raw TCP
-connect, `pg_isready`, and unrelated HTTP-based Docker ports (Prometheus
-:9090, Grafana :3000) all kept working fine. Restarting the
-`errander-postgres` container did **not** fix it (ruling out "Postgres
-itself is wedged"); only killing the zombie processes did.
+Two separate incidents, same root cause. (1) Bounded diagnostic checks
+(`timeout 8 uv run python -c "..."`) every single time left a zombie
+`python.exe` running *after* `timeout` reported exit 124. (2) Backgrounding
+the actual web server (`nohup uv run python -m errander.web ... & echo
+PID=$!`) and later `kill`-ing that captured `$!` PID did **not** stop the
+server — `curl` against its port still got `HTTP 200` afterward. In both
+cases `uv run` → `uv.exe` → `python.exe` is a 2-hop process chain, and
+neither Git Bash's `timeout` (GNU coreutils) nor `kill $!` reaches past the
+immediate child (`uv.exe`/the backgrounded shell job) to the grandchild
+(the actual Python process) on Windows.
 
-**Why:** Docker Desktop's TCP port-forward proxy for a raw (non-HTTP)
-protocol like Postgres apparently has a limited number of proxy/connection
-slots, separate from its HTTP-aware proxying — a handful of stuck,
-never-completing connection attempts can exhaust that pool and wedge new
-connections, while leaving HTTP ports completely unaffected. This is a
-backend Docker Desktop behavior on this host, not an Errander code issue.
+Incident (1)'s zombies were mid-connection-attempt against `localhost:5432`
+(the local `errander_test` Postgres, reached via Docker Desktop's
+port-forward). With several accumulated, **every new** connection attempt —
+including from plain pytest runs with no relation to the diagnostics —
+started hanging indefinitely too, even though raw TCP connect, `pg_isready`,
+and unrelated HTTP-based Docker ports (Prometheus :9090, Grafana :3000) all
+kept working fine. Restarting the `errander-postgres` container did **not**
+fix it (ruling out "Postgres itself is wedged"); only killing the zombie
+processes did — likely because Docker Desktop's TCP port-forward proxy for a
+raw (non-HTTP) protocol has a limited connection-slot pool, separate from
+its HTTP-aware proxying, that a handful of stuck connections can exhaust.
 
-**How to apply:** never wrap a `uv run`/multi-process Python invocation in
-Git Bash's `timeout` expecting clean termination on Windows — it leaves an
-orphan. If the test-DB connection (`tests/conftest.py`'s `_migrate_test_db`/
-`_clean_test_db` autouse fixtures) ever hangs with no `pg_isready` or raw-TCP
-explanation, check for orphaned python processes still mid-connection
-(`Get-CimInstance Win32_Process | Where CommandLine -match '<your test
-path>'`) before suspecting Postgres or Docker networking more broadly —
-and never bulk-kill processes by name alone; match on exact command-line
-content first (this session's blind `taskkill` by process name was
-correctly blocked — two of six matched the user's own unrelated `app.py`,
-not anything spawned by this session).
+**Why:** on POSIX, signals normally propagate through a process group/job
+that `timeout`/`kill $!` correctly targets. On Windows, `uv run` (and likely
+similar wrapper-launches-real-binary tools) doesn't preserve that
+relationship the same way, so killing the wrapper leaves the real process
+running and listening/connected.
+
+**How to apply:** never trust `timeout N <cmd>`'s exit code, or a bare
+`kill $!` after backgrounding a `uv run ...`/multi-hop command, to mean the
+real process actually stopped on this Windows host — verify independently
+(`curl` the port again, or re-check the DB connection) before moving on. To
+find and stop the real process: identify it by **exact command-line match**
+(`Get-CimInstance Win32_Process | Where CommandLine -match '<your unique
+arg>'` or, for a listening server, `Get-NetTCPConnection -LocalPort <port> |
+... OwningProcess`), then `taskkill /F /PID <that exact id>` — never bulk-kill
+by process name alone (this session's blind by-name `taskkill` was correctly
+blocked: two of six matches turned out to be the user's own unrelated
+`app.py`, not anything spawned by this session).
 
 ## 2026-06-14 — `docker compose up -d --wait` needs a fallback for older Compose, and `usermod -aG` needs a fresh login shell
 

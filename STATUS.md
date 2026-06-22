@@ -4,6 +4,55 @@
 2026-06-22
 
 ## Current Phase
+**Plan B — Dashboard Chat, phase 1 (CODE COMPLETE 2026-06-22, awaiting owner manual test pass).**
+
+`/ui/chat` (opt-in, `ERRANDER_CHAT_ENABLED`, default off) — a multi-turn web
+console over the **same** Plan A investigation engine, not a second brain.
+Threads are per-user (`ChatStore`, migration #16); each turn folds prior
+messages into the question text (a deliberate v1 simplification — the
+engine's `question: str → AssistantResponse` contract is unchanged),
+redacts, calls `InvestigationAgent.investigate_agentic()` or
+`OperatorAssistant.investigate()` depending on settings, then persists +
+renders the answer with citations. CSRF is enforced by the existing global
+middleware with zero new per-handler code; ownership is. Logs a second,
+chat-specific AI-decision row (`decision_type="dashboard_chat_turn"`) per
+turn alongside whatever the engine itself logs.
+
+The biggest as-built gap the source plan didn't anticipate: the web process
+had **zero** LLM/Prometheus/ELK/disk-history/baseline wiring — only
+`AuditStore` and friends. `errander/web/__main__.py` now constructs all of
+these (gated on `settings.chat_enabled`, so the cost is zero when chat is
+off), bundled under one `ChatEngineDeps` app-state object rather than six
+more individual `AppKey`s. A second gap: the engine needs
+`inventory: InventoryConfig` but the web process only had
+`base_inventory: list[VMTarget]` (a different loader, different shape) —
+chat now calls `validate_inventory()` separately.
+
+Phase 1 only — no streaming (SSE), no "propose an action → approval flow"
+handoff. Both deferred to later phases per the source plan.
+
+This completes the two-plan sequence from the wrist-injury sprint decision
+(`tasks/lessons.md`, 2026-06-22): Plan A + Plan B are both code-complete with
+automated tests green; **manual testing against a real LLM endpoint and
+real browser use is still the owner's pending step**, once recovered.
+
+### Files changed (2026-06-22 — Plan B: dashboard chat)
+**Code:**
+- `errander/safety/chat_store.py` — NEW: `ChatStore`/`ChatThread`/`ChatMessage`, mirrors `ApprovalRequestStore`'s shape minus the approval-race machinery
+- `errander/safety/migrations.py` — migration 16 (`chat_threads`, `chat_messages`)
+- `errander/web/ui.py` — `ChatEngineDeps`, `CHAT_STORE_KEY`/`CHAT_ENGINE_DEPS_KEY`, `_ui_chat`/`_ui_chat_thread`/`_ui_chat_new_thread`/`_ui_chat_message_post`, nav entry, chat CSS, threaded through `build_ui_app`/`start_web_server`
+- `errander/web/__main__.py` — constructs `ChatStore` + `ChatEngineDeps` (LLM/Prometheus/ELK clients, disk-history/baseline stores, `InventoryConfig`) gated on `settings.chat_enabled`; closes Prom/ELK aiohttp sessions on shutdown
+- `errander/config/settings.py` — 3 new fields: `chat_enabled`/`chat_max_history_turns`/`chat_max_threads_per_user`
+
+**Tests (53 new/extended):**
+- `tests/safety/test_chat_store.py` — NEW (13): create/append/order, per-user scoping, ownership-checked delete
+- `tests/web/test_chat.py` — NEW (9): disabled/not-configured notices (never a 500), auth redirect, CSRF enforcement, engine-call + render + persistence, cross-user ownership
+- `tests/web/test_import_isolation.py` — +1: explicit proof the chat handler's lazy engine imports don't drag in execution code
+- `tests/safety/test_migrations.py` — +1 new test, 2 hardcoded migration-count assertions updated (16→17 migrations)
+
+**Verification:** `uv run ruff check .` clean; `uv run mypy errander/` clean (114 files); Plan B test scope (40 tests) + Plan A test scope, all green. Manual smoke test against the **real running `python -m errander.web` process** (not just `TestClient`): logged in, created a thread, posted a question, confirmed the deterministic-fallback answer rendered and persisted across a reload.
+
+## Previous Phase
 **Plan A — Layer A Investigation Agent (CODE COMPLETE 2026-06-22, awaiting owner manual test pass).**
 
 Adds an opt-in agentic tool-calling loop (`--ask --agentic`,

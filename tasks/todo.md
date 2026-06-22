@@ -1,3 +1,24 @@
+## Plan B — Dashboard Chat, phase 1 (2026-06-22, CODE COMPLETE — awaiting owner manual test)
+
+Roadmap item #4 (`tasks/dashboard-chat-implementation-plan.md`), built on
+Plan A's engine immediately after it, per the wrist-injury sprint decision.
+Phase 1 only (read-only chat) — phases 2 (streaming) and 3 (action handoff)
+explicitly deferred, matching the source plan's own phasing.
+
+- [x] `errander/safety/chat_store.py` — `ChatStore`/`ChatThread`/`ChatMessage`, mirrors `ApprovalRequestStore`'s shape minus approval-race machinery; server-generated `thread_id` (never client-supplied)
+- [x] `errander/safety/migrations.py` — migration 16 (`chat_threads`, `chat_messages`, FK cascade-delete)
+- [x] `errander/web/ui.py` — `ChatEngineDeps` (bundles 6 engine deps under one AppKey), `CHAT_STORE_KEY`/`CHAT_ENGINE_DEPS_KEY`, 4 routes/handlers (`_ui_chat`, `_ui_chat_thread`, `_ui_chat_new_thread`, `_ui_chat_message_post`), nav entry, chat CSS; ownership-checked, double-submit rate-limited, redacts assembled history
+- [x] `errander/web/__main__.py` — constructs `ChatStore` + `ChatEngineDeps` (LLM/Prometheus/ELK clients via lazy import, `VMDiskHistoryStore`/`BaselineStore`, `validate_inventory()`) gated on `settings.chat_enabled`; closes Prom/ELK sessions on shutdown
+- [x] `errander/config/settings.py` — `chat_enabled` (default False) / `chat_max_history_turns` (default 20) / `chat_max_threads_per_user` (default 50)
+- [x] Tests (53 new/extended): `tests/safety/test_chat_store.py` (13, NEW), `tests/web/test_chat.py` (9, NEW), `tests/web/test_import_isolation.py` (+1), `tests/safety/test_migrations.py` (+1 new, 2 hardcoded counts updated)
+- [x] Doc sync: STATUS.md, docs/OBSERVABILITY.md (new chat callout), README.md (Roadmap "Shipped" + chat description), docs/learning/61-dashboard-chat.md (NEW) + README.md index row, docs/command-log.md, tasks/lessons.md (2 new lessons)
+
+**Verification:** `uv run ruff check .` clean; `uv run mypy errander/` clean (114 files); Plan B's 40-test scope + Plan A's scope, all green. Manual smoke test against the **real running web server process** (login → create thread → post question → confirm deterministic-fallback answer renders and persists across reload) — confirms `__main__.py` wiring works end-to-end, not just `TestClient`. **Not yet tested against a real LLM endpoint or in a real browser** — owner's pending step.
+
+**NEXT:** Owner's manual test pass on Plan A + Plan B together (real LLM endpoint, real browser). Then roadmap items #1/#2 (Prometheus test, LangSmith wiring). Plan B phases 2 (streaming) and 3 (action handoff) are separate future sessions.
+
+---
+
 ## Plan A — Layer A Investigation Agent (2026-06-22, CODE COMPLETE — awaiting owner manual test)
 
 Roadmap item #3 (`tasks/investigation-agent-implementation-plan.md`), reconciled

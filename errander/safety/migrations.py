@@ -418,6 +418,36 @@ _MIGRATIONS: list[tuple[int, str]] = [
         ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_secret TEXT
         """,
     ),
+    # 0016 — chat_threads + chat_messages (Plan B: dashboard chat)
+    #
+    # Conversation storage for /ui/chat. Threads are scoped to the owning
+    # user_id (UI username); messages cascade-delete with their thread.
+    (
+        16,
+        """
+        CREATE TABLE IF NOT EXISTS chat_threads (
+            thread_id   TEXT PRIMARY KEY,
+            user_id     TEXT NOT NULL,
+            title       TEXT NOT NULL DEFAULT 'New conversation',
+            created_at  TEXT NOT NULL,
+            updated_at  TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_chat_threads_user
+            ON chat_threads (user_id, updated_at DESC);
+        CREATE TABLE IF NOT EXISTS chat_messages (
+            id                      BIGSERIAL PRIMARY KEY,
+            thread_id               TEXT NOT NULL REFERENCES chat_threads(thread_id) ON DELETE CASCADE,
+            role                    TEXT NOT NULL CHECK (role IN ('user','assistant')),
+            content                 TEXT NOT NULL,
+            findings_json           TEXT,
+            recommendations_json    TEXT,
+            risk_level              TEXT,
+            created_at              TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_chat_messages_thread
+            ON chat_messages (thread_id, created_at ASC)
+        """,
+    ),
 ]
 
 #: Default groups + their permissions (R2). Idempotent (ON CONFLICT DO

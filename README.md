@@ -659,13 +659,14 @@ uv run python -m errander --check-llm
 ### Shipped
 
 - **Layer A investigation agent** — `--ask --agentic` (opt-in, `ERRANDER_INVESTIGATION_AGENT_ENABLED`, default off): a bounded ReAct loop where the LLM composes Prometheus/ELK/audit queries on the fly to answer open-ended questions, instead of the fixed query set the default `--ask` uses. Stays strictly Layer A (read-only tools, recommends — never executes); falls back cleanly to the deterministic path on any failure. See [`docs/learning/60-investigation-agent.md`](docs/learning/60-investigation-agent.md).
+- **Dashboard chat (phase 1)** — `/ui/chat` (opt-in, `ERRANDER_CHAT_ENABLED`, default off): a multi-turn web console over the same investigation engine — "is web-02 healthy?", "any disk issues on the fleet?" — with per-user threads and citations. Read-only; no action-proposal/approval handoff yet (phase 2/3). See [`docs/learning/61-dashboard-chat.md`](docs/learning/61-dashboard-chat.md).
 
 ### Near-term (planned — not yet built)
 
 These deepen the **agentic** side of the platform, all staying within the Layer A / Layer B safety model:
 
 - **LangSmith tracing (optional, bring-your-own)** — deep Layer-A observability for the LangGraph reasoning; off by default, never wired into Layer B. See [`docs/OBSERVABILITY.md`](docs/OBSERVABILITY.md).
-- **Dashboard chat (SRE ops-console)** — a `/ui/chat` quick-help console (patch status, CPU/mem, app health) on top of the investigation agent; multi-turn and read-only, with any action proposal routed through the **existing approval flow** — the chat never executes. See [`tasks/dashboard-chat-implementation-plan.md`](tasks/dashboard-chat-implementation-plan.md).
+- **Dashboard chat action handoff (phase 3)** — when an answer implies a fix, a "propose this action" control that routes through the **existing approval flow** — the chat itself never executes. Streaming responses (phase 2) are also deferred. See [`tasks/dashboard-chat-implementation-plan.md`](tasks/dashboard-chat-implementation-plan.md).
 
 ### V2
 

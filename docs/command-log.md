@@ -3236,3 +3236,25 @@ uv run mypy errander/   # full package, 113 files, clean
 uv run python -m errander --help   # confirmed --agentic flag registered
 uv run python -m errander --ask "test question" --agentic --inventory example/inventory.yaml   # flag-off notice + deterministic fallback, correct
 ERRANDER_INVESTIGATION_AGENT_ENABLED=true uv run python -m errander --ask "test question" --agentic --inventory example/inventory.yaml   # flag-on, no LLM configured -> reason="llm_down" fallback, correct
+
+# Plan B — Dashboard Chat, phase 1 (2026-06-22)
+# /ui/chat: multi-turn web console over the same Plan A engine. ChatStore
+# (migration 16) + ChatEngineDeps (one AppKey bundling 6 engine deps) +
+# 4 routes/handlers in ui.py + __main__.py construction gated on
+# settings.chat_enabled.
+uv run ruff check errander/safety/chat_store.py errander/safety/migrations.py   # clean
+uv run mypy errander/safety/chat_store.py errander/safety/migrations.py   # clean
+uv run pytest tests/safety/test_chat_store.py tests/safety/test_migrations.py -v   # 2 hardcoded migration-count assertions needed updating (16->17 migrations) — fixed, then 28 passed
+uv run mypy errander/web/ui.py errander/config/settings.py   # clean after adding ChatEngineDeps/chat settings + audit_store None-guard
+uv run pytest tests/web/test_import_isolation.py -v   # 2 passed pre-extension; confirmed lazy chat-engine imports need their own explicit test (existing 2 only check module-scope imports)
+uv run mypy errander/web/__main__.py   # clean after wiring ChatStore/ChatEngineDeps construction + Prom/ELK shutdown close()
+uv run ruff check . && uv run mypy errander/   # full repo, clean, 114 files
+uv run pytest tests/web/test_chat.py -v   # 9 passed (1 test-assertion wording fix needed, not a code bug)
+uv run pytest tests/safety/test_chat_store.py tests/safety/test_migrations.py tests/web/test_chat.py tests/web/test_import_isolation.py -v   # 40 passed, full Plan B scope
+# Real-server smoke test (not just TestClient) — start, login, create thread,
+# post a question, confirm persistence across reload, then stop cleanly
+ERRANDER_CHAT_ENABLED=true ERRANDER_UI_USER=admin ERRANDER_UI_PASSWORD=test12345678 nohup uv run python -m errander.web --port 19091 --inventory example/inventory.yaml > /tmp/web_smoke.log 2>&1 &
+curl ... (login, scrape CSRF from rendered HTML, create thread, POST message, reload)   # all confirmed working — deterministic-fallback answer rendered + persisted
+kill <captured PID>   # did NOT stop the server (uv run grandchild process, same issue as the timeout/zombie lesson) — server still responding after
+# PowerShell: Get-NetTCPConnection -LocalPort 19091 | ... OwningProcess -> Get-CimInstance Win32_Process (exact command-line match confirmed)
+taskkill //F //PID <real PID>   # correctly stopped it this time

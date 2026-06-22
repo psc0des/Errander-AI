@@ -119,6 +119,11 @@ class Settings:
     # self-hosted vLLM/T4 endpoint, defeating the feature).
     investigation_agent_timeout_seconds: int = 180  # ERRANDER_INVESTIGATION_AGENT_TIMEOUT
 
+    # Dashboard chat (Plan B phase 1, /ui/chat). Default off.
+    chat_enabled: bool = False  # ERRANDER_CHAT_ENABLED
+    chat_max_history_turns: int = 20  # ERRANDER_CHAT_MAX_HISTORY_TURNS
+    chat_max_threads_per_user: int = 50  # ERRANDER_CHAT_MAX_THREADS_PER_USER
+
     # LLM provider
     llm_model: str = ""
     llm_temperature: float = 0.1
@@ -501,6 +506,10 @@ def load_settings(
         investigation_agent_timeout_seconds=_int_field(
             "ERRANDER_INVESTIGATION_AGENT_TIMEOUT", None, 180,
         ),
+        # Dashboard chat — env-only, no settings.yaml schema entry
+        chat_enabled=_bool_field("ERRANDER_CHAT_ENABLED", None, False),
+        chat_max_history_turns=_int_field("ERRANDER_CHAT_MAX_HISTORY_TURNS", None, 20),
+        chat_max_threads_per_user=_int_field("ERRANDER_CHAT_MAX_THREADS_PER_USER", None, 50),
         # Source tracking
         sources=sources,
     )

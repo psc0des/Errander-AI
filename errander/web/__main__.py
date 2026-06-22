@@ -27,10 +27,11 @@ from errander.models.events import AuditEvent, EventType
 from errander.safety.ai_audit import AIDecisionStore
 from errander.safety.approval_store import ApprovalRequestStore
 from errander.safety.audit import AuditStore
+from errander.safety.chat_store import ChatStore
 from errander.safety.hygiene_store import HygieneApprovalStore
 from errander.safety.overrides import OverridesStore
 from errander.safety.user_store import SessionStore, UserStore
-from errander.web.ui import start_web_server
+from errander.web.ui import ChatEngineDeps, start_web_server
 
 logger = logging.getLogger(__name__)
 
@@ -126,6 +127,63 @@ async def main(argv: list[str] | None = None) -> int:
     ai_decision_store = AIDecisionStore(_db)
     await ai_decision_store.initialize()
 
+    chat_store: ChatStore | None = None
+    chat_engine_deps: ChatEngineDeps | None = None
+    prom_client = None
+    elk_client = None
+    if settings.chat_enabled:
+        chat_store = ChatStore(_db)
+        await chat_store.initialize()
+
+        if not args.inventory.exists():
+            logger.warning(
+                "ERRANDER_CHAT_ENABLED=true but inventory file not found: %s — "
+                "/ui/chat will render but cannot answer questions",
+                args.inventory,
+            )
+        else:
+            from errander.config.schema import validate_inventory
+            from errander.integrations.elk import ElkClient
+            from errander.integrations.llm import LLMClient
+            from errander.integrations.prometheus import PrometheusClient
+            from errander.safety.baselines import BaselineStore
+            from errander.safety.disk_history import VMDiskHistoryStore
+
+            disk_history_store = VMDiskHistoryStore(_db)
+            await disk_history_store.initialize()
+            baseline_store = BaselineStore(_db)
+            await baseline_store.initialize()
+            inventory_config = validate_inventory(args.inventory)
+
+            llm_client = (
+                LLMClient(
+                    base_url=settings.llm_base_url, api_key=settings.llm_api_key,
+                    model=settings.llm_model, temperature=settings.llm_temperature,
+                )
+                if settings.llm_base_url else None
+            )
+            prom_client = (
+                PrometheusClient(settings.prometheus_base_url)
+                if settings.prometheus_base_url else None
+            )
+            elk_client = (
+                ElkClient(
+                    settings.elk_base_url, api_key=settings.elk_api_key,
+                    index_pattern=settings.elk_index_pattern,
+                )
+                if settings.elk_base_url else None
+            )
+
+            chat_engine_deps = ChatEngineDeps(
+                disk_history_store=disk_history_store,
+                baseline_store=baseline_store,
+                inventory=inventory_config,
+                settings=settings,
+                llm_client=llm_client,
+                prometheus_client=prom_client,
+                elk_client=elk_client,
+            )
+
     if (
         settings.ui_user and settings.ui_password
         and await user_store.count_users() == 0
@@ -148,6 +206,8 @@ async def main(argv: list[str] | None = None) -> int:
             user_store=user_store,
             session_store=session_store,
             ai_decision_store=ai_decision_store,
+            chat_store=chat_store,
+            chat_engine_deps=chat_engine_deps,
             signing_secret=signing_secret,
             public_mode=public_mode,
         )
@@ -177,6 +237,14 @@ async def main(argv: list[str] | None = None) -> int:
 
     logger.info("Shutting down web UI...")
     await runner.cleanup()
+    # Prom/ELK clients are long-lived for chat's reuse across turns — their
+    # aiohttp sessions must be closed explicitly or they leak on shutdown
+    # (unlike the DB-backed stores, which all share audit_store's _db and
+    # are closed by the single __aexit__ below).
+    if prom_client is not None:
+        await prom_client.close()
+    if elk_client is not None:
+        await elk_client.close()
     await audit_store.__aexit__(None, None, None)
     return 0
 

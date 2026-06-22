@@ -1,5 +1,23 @@
 # Errander-AI Command Log
 
+## Workflow diagram redesign — three honest bands (2026-06-22)
+
+```bash
+# Edit nodes/SVG/CSS/WF_NODES in server.py (GLOSS_CSS copy — the one that wins the cascade)
+uv run ruff check errander/web/server.py   # clean
+uv run mypy errander/web/server.py         # clean
+uv run pytest tests/ui/test_web_server_smoke.py -k glossary -q   # 1 passed
+
+# Restart demo server (identify by listening port + verify exact cmdline before kill)
+$p = Get-NetTCPConnection -LocalPort 19092 -State Listen | Select -First 1 -Expand OwningProcess
+# confirm (Get-CimInstance Win32_Process -Filter "ProcessId=$p").CommandLine matches 'errander.web --port 19092'
+taskkill /F /PID $p
+ERRANDER_CHAT_ENABLED=true nohup uv run python -m errander.web --port 19092 --inventory example/inventory.yaml &
+
+# Playwright: screenshot the .wf-outer-card + click all nodes, assert each opens #wf-modal.open
+uv run python _glossary_verify_tmp.py   # 17/17 nodes OK (throwaway, deleted after)
+```
+
 ## MCP reality-gap doc fix (2026-06-22)
 
 ```bash

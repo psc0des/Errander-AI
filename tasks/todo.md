@@ -1,3 +1,19 @@
+## Workflow diagram redesign — three honest bands (2026-06-22, COMPLETE)
+
+Owner felt the diagram was "off" + could be richer/self-explanatory (couldn't name it).
+Diagnosis: linear state-machine drawing of a layered system; the Layer A lane read as a
+downstream step; the shared data substrate was invisible. Redesigned in the SAME style
+(owner: "don't change the style") into 3 labeled bands.
+
+- [x] `errander/web/server.py` — reorganized into LAYER B (execution, unchanged flow) / DATA & OBSERVABILITY (new: Postgres, Prometheus, ELK, Metrics&AI-Log) / LAYER A (Investigation Engine + Ask/Chat). Layer A now reads UPWARD into the substrate (kills the "downstream step" illusion); Audit Logging → Postgres "WRITES AUDIT" arrow added; "reads · direct HTTP/SQL · no MCP" + "recommends to operator · never executes" labels
+- [x] 3 new clickable nodes (postgres/prometheus/elk) with full detail popups; metrics-observability moved into data band; 17 nodes total
+- [x] New CSS (`.wf-node-data`, `.wf-dot-blue`, `.wf-band-tag`, `.wf-band-sep`); canvas 1060→1170px; band tags + separators replace the apologetic section-divider
+- [x] Doc sync: STATUS.md, docs/command-log.md, this file, tasks/lessons.md
+
+**Verification:** `ruff`/`mypy` clean, glossary smoke test passes, Playwright confirmed all 17 nodes open their modals + screenshotted the layout. **Not committed yet.**
+
+---
+
 ## MCP reality-gap doc fix (2026-06-22, COMPLETE)
 
 Owner asked how the agent connects to Prometheus/ELK/PostgreSQL ("is it via MCP?").

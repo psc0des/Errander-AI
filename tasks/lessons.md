@@ -1,5 +1,29 @@
 # Errander-AI — Lessons Learned
 
+## 2026-06-22 — When a diagram needs a caption apologizing for its own layout, the layout is wrong
+
+The Agent Workflow diagram had a Layer A lane stacked below the batch flow with a divider
+that read "parallel · read-only · never executes · **not a step in the batch graph above**."
+The owner felt it was "off" but couldn't name it. The tell was that disclaimer: I'd written
+a caption telling the reader to ignore what the layout was visually saying (vertical stacking
+= sequence). When you have to caption a diagram with "this doesn't mean what it looks like,"
+the layout is fighting the meaning — fix the layout, don't add more caption.
+
+The real issue: it was a *linear state-machine* drawing of a system whose actual shape is
+*layered* (Layer A brain / human / Layer B hands, over a shared data substrate). The fix
+was structural — reorganize into labeled bands and, crucially, make Layer A's arrows point
+**upward** into the shared data. Direction does the semantic work: arrows going against the
+main top-down flow read as "pulls from" (parallel), not "comes after" (sequential).
+
+**How to apply:** (1) A caption that contradicts the visual ("not actually a step here") is
+a redesign signal, not a documentation gap. (2) Organize architecture diagrams around the
+system's *defining concept* (here: the A/B layer split + shared substrate), not around
+execution order, unless the thing genuinely IS a sequence. (3) Use arrow *direction* to
+encode parallel-vs-sequential — upward/against-flow arrows are a cheap, strong "this reads,
+not follows" signal. (4) A "feels off but I can't name it" from a stakeholder is usually a
+structural mismatch between the drawing's grammar and the system's true shape — diagnose
+the grammar, don't just polish pixels.
+
 ## 2026-06-22 — A "what the system MAY use" capability list reads as a build manifest unless it says otherwise
 
 CLAUDE.md's AI Safety Invariant lists "Layer A may use LLM, MCP, CLI, Skills, Prometheus,

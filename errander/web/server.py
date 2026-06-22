@@ -4199,7 +4199,28 @@ const WF_NODES = {
     checks: '/metrics — Prometheus counters/histograms for every batch action · AI Decisions log — every LLM call (prompt hash, model, latency, outcome) browsable at /ui/ai-decisions',
     onfail: 'Prometheus scrape failing never blocks the agent — metrics are emitted in-process on a best-effort basis. Audit trail is the source of truth for what happened; Prometheus is the source of truth for execution health.',
     code: 'errander/observability/metrics.py · errander/safety/ai_audit.py',
-    note: 'Fed by both tracks: the batch graph\\'s Audit Logging node above, and the Investigation Engine\\'s own per-hop decision log (investigation_agent_step rows).'
+    note: 'Fed by both tracks: the batch graph\\'s Audit Logging node, and the Investigation Engine\\'s own per-hop decision log (investigation_agent_step rows). The /metrics endpoint is the agent EXPOSING its own metrics for an external Prometheus to scrape — a separate, inbound connection from the Prometheus node it reads from.'
+  },
+  'postgres': {
+    title: 'PostgreSQL', badge: 'DATA · SYSTEM OF RECORD', badgeColor: '#2563eb',
+    checks: 'The single audit/state backend — audit trail, approval requests, AI-decision log. Reached over SQL via SQLAlchemy async + the asyncpg driver. Agent and web processes share one DB, separated by least-privilege role grants.',
+    onfail: 'Strict audit mode: a write failure halts the batch — audit integrity beats execution. Connections are pooled; transient errors retry. No MCP, no ORM models — plain parameterized SQL.',
+    code: 'errander/db/core.py · errander/safety/audit.py · approval_store.py · ai_audit.py',
+    note: 'This is the authoritative record of what actually happened to the fleet. Prometheus is for execution health, ELK for logs — neither is the system of record. Both layers connect here directly (no MCP).'
+  },
+  'prometheus': {
+    title: 'Prometheus', badge: 'DATA · METRICS (READ)', badgeColor: '#d97706',
+    checks: 'Layer B reads fixed PromQL (CPU/mem/load) per VM at plan time · Layer A (--agentic) composes arbitrary read-only PromQL, capped at 20 rows · direct HTTP via aiohttp GET to /api/v1/query — no MCP.',
+    onfail: 'Optional — an unreachable Prometheus never blocks; planning and investigation degrade to SSH-gathered state.',
+    code: 'errander/integrations/prometheus.py',
+    note: 'This node is the agent READING an external Prometheus about target VMs. Distinct from the agent EXPOSING its own /metrics (see Metrics & AI Decisions) — opposite directions, different connections.'
+  },
+  'elk': {
+    title: 'ELK / Elasticsearch', badge: 'DATA · LOG SEARCH (READ)', badgeColor: '#d97706',
+    checks: 'Layer B reads host-aggregated error counts at probe time · Layer A composes read-only term / multi_match searches, capped · direct HTTP via aiohttp POST to the _search REST API — no SDK, no MCP.',
+    onfail: 'Optional — falls back to journalctl over SSH when ELK is not configured.',
+    code: 'errander/integrations/elk.py',
+    note: 'Caller input only ever shapes the query filter content — never the URL path or index — so an LLM-composed search stays read-only and bounded.'
   },
 };
 
@@ -4241,14 +4262,16 @@ GLOSS_CSS = """
 @keyframes dash-flow { to { stroke-dashoffset: -26; } }
 .wf-outer-card { background: #0f172a; border-radius: 12px; padding: 24px; margin-bottom: 8px; }
 .wf-diagram-wrap { overflow-x: auto; padding-bottom: 8px; }
-.wf-diagram { position: relative; width: 960px; height: 1060px; margin: 0 auto; }
-.wf-svg { position: absolute; top: 0; left: 0; width: 960px; height: 1060px; pointer-events: none; overflow: visible; }
+.wf-diagram { position: relative; width: 960px; height: 1170px; margin: 0 auto; }
+.wf-svg { position: absolute; top: 0; left: 0; width: 960px; height: 1170px; pointer-events: none; overflow: visible; }
 .wf-node { position: absolute; width: 160px; height: 50px; border-radius: 8px; display: flex; align-items: center; gap: 10px; padding: 0 14px; cursor: pointer; transition: all 0.18s; background: #1e293b; user-select: none; }
 .wf-node-layer-a { border: 1.5px dashed #ec4899; background: #1e0f17 !important; }
 .wf-node-layer-a:hover { background: #2a1420 !important; }
-.wf-section-divider { position: absolute; left: 0; width: 960px; text-align: center; }
-.wf-section-divider span { font-family: 'JetBrains Mono', monospace; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.08em; color: #f472b6; text-transform: uppercase; border-top: 1px dashed #4a3344; display: block; padding-top: 10px; }
-.wf-section-divider small { display: block; font-size: 0.625rem; color: #64748b; font-weight: 400; letter-spacing: 0.02em; margin-top: 3px; text-transform: none; }
+.wf-node-data { border: 1.5px solid #334155; background: #0d1830 !important; }
+.wf-node-data:hover { background: #15233f !important; }
+.wf-band-tag { position: absolute; left: 8px; font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.06em; color: #cbd5e1; text-transform: uppercase; pointer-events: none; }
+.wf-band-tag small { display: block; font-size: 0.6rem; font-weight: 400; letter-spacing: 0.01em; color: #64748b; text-transform: none; margin-top: 2px; }
+.wf-band-sep { position: absolute; left: 0; width: 960px; border-top: 1px dashed #2a3850; }
 .wf-node:hover { background: #243348; transform: translateY(-1px); box-shadow: 0 4px 16px rgba(79,70,229,0.3); }
 .wf-node.active { background: linear-gradient(135deg, #3525cd, #712ae2) !important; box-shadow: 0 4px 24px rgba(79,70,229,0.5); border: none !important; }
 .wf-node.active .wf-node-name { color: #fff !important; }
@@ -4267,6 +4290,7 @@ GLOSS_CSS = """
 .wf-dot-green  { background: #4ade80; box-shadow: 0 0 6px #4ade80; }
 .wf-dot-white  { background: rgba(255,255,255,0.85); }
 .wf-dot-pink   { background: #f472b6; box-shadow: 0 0 6px #f472b6; }
+.wf-dot-blue   { background: #60a5fa; box-shadow: 0 0 6px #60a5fa; }
 .wf-node-name { font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; font-weight: 700; color: #e2e8f0; white-space: nowrap; }
 .wf-node-sub  { font-size: 0.585rem; color: #64748b; font-family: 'Inter', sans-serif; white-space: nowrap; margin-top: 2px; }
 .wf-legend { display: flex; align-items: center; gap: 20px; margin-bottom: 16px; flex-wrap: wrap; }
@@ -4323,16 +4347,20 @@ def page_glossary() -> str:
         ("pre-validation",   400, 200, "active",                  "wf-dot-white",  "Pre-Validation", "SSH · OS · readiness"),
         ("llm-planning",     400, 290, "",                        "wf-dot-violet", "LLM Planning",   "signals · plan · risk"),
         ("plan-enrichment",  400, 375, "",                        "wf-dot-violet", "Plan Enrichment","exact pkgs · versions · hash"),
-        ("approval-gate",    120, 470, "wf-node-conditional",     "wf-dot-amber",  "Approval Gate",  "high-risk · Slack"),
+        ("approval-gate",    120, 470, "wf-node-conditional",     "wf-dot-amber",  "Approval Gate",  "high-risk · human"),
         ("action-execution", 650, 470, "",                        "wf-dot-teal",   "Action Exec.",   "6 sub-graphs · all actions"),
         ("rollback",         755, 565, "wf-node-failure-node",    "wf-dot-red",    "Rollback",       "revert snapshot"),
         ("audit-logging",    400, 660, "",                        "wf-dot-green",  "Audit Logging",  "before + after"),
         ("report",           400, 750, "",                        "wf-dot-indigo", "Report",         "LLM or template"),
-        # ── Layer A lane — parallel, read-only, NOT part of the batch graph above ──
-        ("ask-cli",             80, 880, "wf-node-layer-a",        "wf-dot-pink",   "Ask (CLI)",          "--ask [--agentic]"),
-        ("dashboard-chat",     340, 880, "wf-node-layer-a",        "wf-dot-pink",   "Dashboard Chat",     "/ui/chat · per-user"),
-        ("investigation-engine", 210, 965, "wf-node-layer-a",      "wf-dot-pink",   "Investigation Engine","Assistant ↔ Agentic loop"),
-        ("metrics-observability", 470, 965, "wf-node-layer-a",     "wf-dot-teal",   "Metrics & Decisions","/metrics · AI Decisions"),
+        # ── DATA & OBSERVABILITY band — shared substrate, written by Layer B, read by both ──
+        ("postgres",             70, 855, "wf-node-data",         "wf-dot-blue",   "PostgreSQL",     "audit · approvals · AI log"),
+        ("prometheus",          290, 855, "wf-node-data",         "wf-dot-amber",  "Prometheus",     "VM metrics (read)"),
+        ("elk",                 510, 855, "wf-node-data",         "wf-dot-amber",  "ELK",            "log search (read)"),
+        ("metrics-observability", 730, 855, "wf-node-data",       "wf-dot-teal",   "Metrics & AI Log","/metrics · /ui logs"),
+        # ── LAYER A band — read-only operator brain; reads the substrate above, never executes ──
+        ("investigation-engine", 340, 985, "wf-node-layer-a",     "wf-dot-pink",   "Investigation Engine","Assistant ↔ Agentic loop"),
+        ("ask-cli",             120, 1075, "wf-node-layer-a",     "wf-dot-pink",   "Ask (CLI)",      "--ask [--agentic]"),
+        ("dashboard-chat",      560, 1075, "wf-node-layer-a",     "wf-dot-pink",   "Dashboard Chat", "/ui/chat · per-user"),
     ]
     nodes_html = ""
     for nid, left, top, extra, dot, name, sub in _nodes:
@@ -4345,11 +4373,16 @@ def page_glossary() -> str:
             f'<div class="wf-node-sub">{sub}</div></div></div>'
         )
     nodes_html += '<div class="wf-node-terminal" style="left:50px;top:565px">✕ SKIPPED</div>'
+    # Three honest bands (top -> bottom): Layer B executes · shared data · Layer A reads
     nodes_html += (
-        '<div class="wf-section-divider" style="top:825px">'
-        '<span>LAYER A — ASK &amp; CHAT</span>'
-        '<small>parallel · read-only · never executes · not a step in the batch graph above</small>'
-        '</div>'
+        '<div class="wf-band-tag" style="top:4px">LAYER B · DETERMINISTIC EXECUTION'
+        '<small>the hands — scheduler-driven, writes the audit trail, no LLM in the path</small></div>'
+        '<div class="wf-band-sep" style="top:812px"></div>'
+        '<div class="wf-band-tag" style="top:817px">DATA &amp; OBSERVABILITY · shared substrate'
+        '<small>written by Layer B, read by both — direct HTTP / SQL, no MCP</small></div>'
+        '<div class="wf-band-sep" style="top:942px"></div>'
+        '<div class="wf-band-tag" style="top:947px">LAYER A · OPERATOR BRAIN'
+        '<small>read-only — investigates &amp; advises in parallel, never executes</small></div>'
     )
 
     # SVG arrow overlay — all coordinates are pixel-exact for 960×1060 container
@@ -4439,20 +4472,33 @@ def page_glossary() -> str:
   <text x="820" y="533" fill="#f87171" font-family="JetBrains Mono,monospace" font-size="9" font-weight="700">FAILURE</text>
   <text x="650" y="593" fill="#4ade80" font-family="JetBrains Mono,monospace" font-size="9" font-weight="700">SUCCESS</text>
 
-  <!-- Layer A lane: Ask (CLI) → Investigation Engine -->
-  <path d="M 160,930 C 180,945 220,955 270,965"
+  <!-- Layer B writes the audit trail DOWN into PostgreSQL (green, animated) -->
+  <path d="M 450,710 C 330,765 220,815 168,855"
+        stroke="#16a34a" stroke-width="2" fill="none" stroke-dasharray="8 5"
+        marker-end="url(#mg)"
+        style="animation:dash-flow 0.9s linear infinite"/>
+  <text x="232" y="800" fill="#4ade80" font-family="JetBrains Mono,monospace" font-size="9" font-weight="700">WRITES AUDIT</text>
+
+  <!-- Layer A entry points feed the Investigation Engine (pink, pointing UP into engine) -->
+  <path d="M 240,1075 C 320,1055 380,1048 405,1037"
         stroke="#ec4899" stroke-width="1.5" fill="none" stroke-dasharray="5 4"
         marker-end="url(#mp)"/>
-  <!-- Layer A lane: Dashboard Chat → Investigation Engine -->
-  <path d="M 420,930 C 400,945 360,955 320,965"
+  <path d="M 600,1075 C 520,1055 470,1048 440,1037"
         stroke="#ec4899" stroke-width="1.5" fill="none" stroke-dasharray="5 4"
         marker-end="url(#mp)"/>
-  <!-- Layer A lane: Investigation Engine → Metrics & Decisions (reads/writes, teal) -->
-  <path d="M 370,990 L 470,990"
-        stroke="#0891b2" stroke-width="1.5" fill="none" stroke-dasharray="5 4"
+
+  <!-- Investigation Engine reads UP from the shared substrate (pink upward = parallel, not a downstream step) -->
+  <path d="M 400,985 C 320,958 210,932 162,907"
+        stroke="#ec4899" stroke-width="1.5" fill="none" stroke-dasharray="5 4"
         marker-end="url(#mp)"/>
-  <text x="178" y="945" fill="#f472b6" font-family="JetBrains Mono,monospace" font-size="8" font-weight="700">ASKS</text>
-  <text x="372" y="998" fill="#22d3ee" font-family="JetBrains Mono,monospace" font-size="8" font-weight="700">READS/WRITES</text>
+  <path d="M 418,985 C 405,958 385,932 372,907"
+        stroke="#ec4899" stroke-width="1.5" fill="none" stroke-dasharray="5 4"
+        marker-end="url(#mp)"/>
+  <path d="M 446,985 C 510,955 565,930 585,907"
+        stroke="#ec4899" stroke-width="1.5" fill="none" stroke-dasharray="5 4"
+        marker-end="url(#mp)"/>
+  <text x="612" y="930" fill="#f472b6" font-family="JetBrains Mono,monospace" font-size="8.5" font-weight="700">reads · direct HTTP/SQL · no MCP</text>
+  <text x="300" y="1112" fill="#f472b6" font-family="JetBrains Mono,monospace" font-size="8.5" font-weight="700">recommends to operator · never executes</text>
 </svg>"""
 
     legend = """
@@ -4507,8 +4553,8 @@ def page_glossary() -> str:
     workflow_section = f"""
     <div class="section-hdr" style="margin-bottom:12px">
       <div>
-        <div class="section-title">Agent Workflow</div>
-        <div class="section-sub">Click any node to see what happens at that stage</div>
+        <div class="section-title">Agent Workflow &amp; Architecture</div>
+        <div class="section-sub">Layer B executes (top) · the shared data substrate it writes &amp; both layers read (middle) · Layer A investigates in parallel (bottom). Click any node for detail.</div>
       </div>
     </div>
     {legend}

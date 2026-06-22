@@ -4,6 +4,41 @@
 2026-06-22
 
 ## Current Phase
+**Workflow diagram redesign — three honest bands (COMPLETE 2026-06-22).**
+
+Owner felt the Agent Workflow diagram was "off" and could be richer/more self-explanatory,
+but couldn't name it. Diagnosis: it was a *linear state-machine* drawing of a system whose
+real shape is *layered* — the new Layer A lane got stacked below the batch flow, reading as
+"step 11" (the divider literally had to disclaim "not a step in the batch graph above" — a
+tell that the layout fought the meaning). The product's defining idea (Layer A brain →
+human → Layer B hands, over a shared data substrate) wasn't the organizing structure, and
+the substrate both layers connect to (Postgres/Prometheus/ELK — the subject of the owner's
+earlier MCP question) was invisible.
+
+Redesigned **in the same style** (dark canvas, animated dashed-flow arrows, click-to-expand
+node modals, same dots/legend — per owner's "don't change the style") into three labeled
+bands, top→bottom:
+- **LAYER B · DETERMINISTIC EXECUTION** — the existing batch state-machine, untouched.
+- **DATA & OBSERVABILITY · shared substrate** (NEW) — PostgreSQL, Prometheus, ELK, Metrics
+  & AI Log nodes. Audit Logging now has a visible green "WRITES AUDIT" arrow down into
+  PostgreSQL.
+- **LAYER A · OPERATOR BRAIN** — Investigation Engine (center) fed by Ask (CLI) + Dashboard
+  Chat, **reading UPWARD** into the substrate (the upward pink arrows are the fix — they
+  make Layer A read as a parallel reader, not a downstream step), labeled "reads · direct
+  HTTP/SQL · no MCP" and "recommends to operator · never executes".
+
+Net: 17 clickable nodes (was 14) — added postgres/prometheus/elk with full detail popups;
+moved Metrics & AI Decisions into the data band. Canvas 1060px → 1170px. New CSS:
+`.wf-node-data`, `.wf-dot-blue`, `.wf-band-tag`, `.wf-band-sep` (retired `.wf-section-divider`
+usage). The change directly answers the owner's MCP question visually (substrate + "no MCP"
+labels) and is the natural follow-on to the MCP doc fix below.
+
+**Verification:** `ruff`/`mypy` clean, glossary smoke test passes, Playwright run confirmed
+all 17 nodes open their modals and screenshotted the new layout.
+
+**Not yet committed.**
+
+## Previous Phase
 **MCP reality-gap doc fix — Glossary + CLAUDE.md/AGENTS.md/AI-ARCHITECTURE.md (COMPLETE 2026-06-22).**
 
 Owner asked (on Opus 4.8) how the agent connects to Prometheus/ELK/PostgreSQL — "is it

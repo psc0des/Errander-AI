@@ -4169,6 +4169,34 @@ const WF_NODES = {
     code: 'errander/observability/reporting.py · errander/integrations/slack.py',
     note: 'Report includes: VMs processed, actions taken, errors, rollbacks, duration. Probe digests also include disk growth alerts, failed services, journal errors, and escalation flags.'
   },
+  'ask-cli': {
+    title: 'Ask (CLI)', badge: 'LAYER A · ENTRY POINT', badgeColor: '#ec4899',
+    checks: 'Operator runs --ask "<question>" · optional --agentic flag requests the tool-calling loop · question is redacted before any LLM call',
+    onfail: '--agentic requested but ERRANDER_INVESTIGATION_AGENT_ENABLED is off → prints a one-line notice and falls through to the deterministic engine, never silently ignored',
+    code: 'errander/main.py (run_ask_query)',
+    note: 'Read-only. Never touches a VM, never executes infrastructure changes — this whole lane is Layer A, fully separate from the batch maintenance graph above.'
+  },
+  'dashboard-chat': {
+    title: 'Dashboard Chat', badge: 'LAYER A · WEB UI', badgeColor: '#ec4899',
+    checks: 'Opt-in /ui/chat (ERRANDER_CHAT_ENABLED) · per-user threads (ChatStore) · prior turns folded into the question text · CSRF + ownership enforced',
+    onfail: 'Feature disabled → friendly notice, never a 500. Not logged in → redirect to /ui/login, even in bootstrap mode, since threads are per-user.',
+    code: 'errander/web/ui.py (_ui_chat_message_post) · errander/safety/chat_store.py',
+    note: 'Phase 1: no streaming, no action handoff — chat can recommend but never executes. Calls the same Investigation Engine as the CLI.'
+  },
+  'investigation-engine': {
+    title: 'Investigation Engine', badge: 'LAYER A · READ-ONLY', badgeColor: '#ec4899',
+    checks: 'Default: Operator Assistant (fixed Prometheus/ELK/audit queries, one LLM call) · opt-in: Investigation Agent (--agentic, bounded ReAct tool-calling loop, up to 8 tool calls / 180s)',
+    onfail: 'Any failure (LLM down, endpoint ignores tools=, turn-1 returns zero tool calls, budget exhausted) falls back cleanly to the deterministic Operator Assistant — never raises, never blocks',
+    code: 'errander/agent/operator_assistant.py · errander/agent/investigation_agent.py',
+    note: 'Reads the same Audit Trail, Prometheus, and ELK the batch graph above writes to and reads from — but never executes. Every finding cites a real source ID.'
+  },
+  'metrics-observability': {
+    title: 'Metrics & AI Decisions', badge: 'OBSERVABILITY', badgeColor: '#0891b2',
+    checks: '/metrics — Prometheus counters/histograms for every batch action · AI Decisions log — every LLM call (prompt hash, model, latency, outcome) browsable at /ui/ai-decisions',
+    onfail: 'Prometheus scrape failing never blocks the agent — metrics are emitted in-process on a best-effort basis. Audit trail is the source of truth for what happened; Prometheus is the source of truth for execution health.',
+    code: 'errander/observability/metrics.py · errander/safety/ai_audit.py',
+    note: 'Fed by both tracks: the batch graph\\'s Audit Logging node above, and the Investigation Engine\\'s own per-hop decision log (investigation_agent_step rows).'
+  },
 };
 
 function selectNode(id) {
@@ -4209,9 +4237,14 @@ GLOSS_CSS = """
 @keyframes dash-flow { to { stroke-dashoffset: -26; } }
 .wf-outer-card { background: #0f172a; border-radius: 12px; padding: 24px; margin-bottom: 8px; }
 .wf-diagram-wrap { overflow-x: auto; padding-bottom: 8px; }
-.wf-diagram { position: relative; width: 960px; height: 845px; margin: 0 auto; }
-.wf-svg { position: absolute; top: 0; left: 0; width: 960px; height: 845px; pointer-events: none; overflow: visible; }
+.wf-diagram { position: relative; width: 960px; height: 1060px; margin: 0 auto; }
+.wf-svg { position: absolute; top: 0; left: 0; width: 960px; height: 1060px; pointer-events: none; overflow: visible; }
 .wf-node { position: absolute; width: 160px; height: 50px; border-radius: 8px; display: flex; align-items: center; gap: 10px; padding: 0 14px; cursor: pointer; transition: all 0.18s; background: #1e293b; user-select: none; }
+.wf-node-layer-a { border: 1.5px dashed #ec4899; background: #1e0f17 !important; }
+.wf-node-layer-a:hover { background: #2a1420 !important; }
+.wf-section-divider { position: absolute; left: 0; width: 960px; text-align: center; }
+.wf-section-divider span { font-family: 'JetBrains Mono', monospace; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.08em; color: #f472b6; text-transform: uppercase; border-top: 1px dashed #4a3344; display: block; padding-top: 10px; }
+.wf-section-divider small { display: block; font-size: 0.625rem; color: #64748b; font-weight: 400; letter-spacing: 0.02em; margin-top: 3px; text-transform: none; }
 .wf-node:hover { background: #243348; transform: translateY(-1px); box-shadow: 0 4px 16px rgba(79,70,229,0.3); }
 .wf-node.active { background: linear-gradient(135deg, #3525cd, #712ae2) !important; box-shadow: 0 4px 24px rgba(79,70,229,0.5); border: none !important; }
 .wf-node.active .wf-node-name { color: #fff !important; }
@@ -4229,6 +4262,7 @@ GLOSS_CSS = """
 .wf-dot-red    { background: #f87171; box-shadow: 0 0 6px #f87171; }
 .wf-dot-green  { background: #4ade80; box-shadow: 0 0 6px #4ade80; }
 .wf-dot-white  { background: rgba(255,255,255,0.85); }
+.wf-dot-pink   { background: #f472b6; box-shadow: 0 0 6px #f472b6; }
 .wf-node-name { font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; font-weight: 700; color: #e2e8f0; white-space: nowrap; }
 .wf-node-sub  { font-size: 0.585rem; color: #64748b; font-family: 'Inter', sans-serif; white-space: nowrap; margin-top: 2px; }
 .wf-legend { display: flex; align-items: center; gap: 20px; margin-bottom: 16px; flex-wrap: wrap; }
@@ -4290,6 +4324,11 @@ def page_glossary() -> str:
         ("rollback",         755, 565, "wf-node-failure-node",    "wf-dot-red",    "Rollback",       "revert snapshot"),
         ("audit-logging",    400, 660, "",                        "wf-dot-green",  "Audit Logging",  "before + after"),
         ("report",           400, 750, "",                        "wf-dot-indigo", "Report",         "LLM or template"),
+        # ── Layer A lane — parallel, read-only, NOT part of the batch graph above ──
+        ("ask-cli",             80, 880, "wf-node-layer-a",        "wf-dot-pink",   "Ask (CLI)",          "--ask [--agentic]"),
+        ("dashboard-chat",     340, 880, "wf-node-layer-a",        "wf-dot-pink",   "Dashboard Chat",     "/ui/chat · per-user"),
+        ("investigation-engine", 210, 965, "wf-node-layer-a",      "wf-dot-pink",   "Investigation Engine","Assistant ↔ Agentic loop"),
+        ("metrics-observability", 470, 965, "wf-node-layer-a",     "wf-dot-teal",   "Metrics & Decisions","/metrics · AI Decisions"),
     ]
     nodes_html = ""
     for nid, left, top, extra, dot, name, sub in _nodes:
@@ -4302,8 +4341,14 @@ def page_glossary() -> str:
             f'<div class="wf-node-sub">{sub}</div></div></div>'
         )
     nodes_html += '<div class="wf-node-terminal" style="left:50px;top:565px">✕ SKIPPED</div>'
+    nodes_html += (
+        '<div class="wf-section-divider" style="top:825px">'
+        '<span>LAYER A — ASK &amp; CHAT</span>'
+        '<small>parallel · read-only · never executes · not a step in the batch graph above</small>'
+        '</div>'
+    )
 
-    # SVG arrow overlay — all coordinates are pixel-exact for 960×845 container
+    # SVG arrow overlay — all coordinates are pixel-exact for 960×1060 container
     svg = """<svg class="wf-svg" xmlns="http://www.w3.org/2000/svg">
   <defs>
     <marker id="mh" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
@@ -4314,6 +4359,8 @@ def page_glossary() -> str:
       <polygon points="0 0,8 3,0 6" fill="#d97706"/></marker>
     <marker id="mr" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
       <polygon points="0 0,8 3,0 6" fill="#ef4444"/></marker>
+    <marker id="mp" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+      <polygon points="0 0,8 3,0 6" fill="#ec4899"/></marker>
   </defs>
 
   <!-- Happy-path: APScheduler → Parent Graph → Pre-Validation → LLM Planning -->
@@ -4387,6 +4434,21 @@ def page_glossary() -> str:
   <text x="116" y="540" fill="#f87171" font-family="JetBrains Mono,monospace" font-size="9" font-weight="700">REJECTED</text>
   <text x="820" y="533" fill="#f87171" font-family="JetBrains Mono,monospace" font-size="9" font-weight="700">FAILURE</text>
   <text x="650" y="593" fill="#4ade80" font-family="JetBrains Mono,monospace" font-size="9" font-weight="700">SUCCESS</text>
+
+  <!-- Layer A lane: Ask (CLI) → Investigation Engine -->
+  <path d="M 160,930 C 180,945 220,955 270,965"
+        stroke="#ec4899" stroke-width="1.5" fill="none" stroke-dasharray="5 4"
+        marker-end="url(#mp)"/>
+  <!-- Layer A lane: Dashboard Chat → Investigation Engine -->
+  <path d="M 420,930 C 400,945 360,955 320,965"
+        stroke="#ec4899" stroke-width="1.5" fill="none" stroke-dasharray="5 4"
+        marker-end="url(#mp)"/>
+  <!-- Layer A lane: Investigation Engine → Metrics & Decisions (reads/writes, teal) -->
+  <path d="M 370,990 L 470,990"
+        stroke="#0891b2" stroke-width="1.5" fill="none" stroke-dasharray="5 4"
+        marker-end="url(#mp)"/>
+  <text x="178" y="945" fill="#f472b6" font-family="JetBrains Mono,monospace" font-size="8" font-weight="700">ASKS</text>
+  <text x="372" y="998" fill="#22d3ee" font-family="JetBrains Mono,monospace" font-size="8" font-weight="700">READS/WRITES</text>
 </svg>"""
 
     legend = """
@@ -4405,6 +4467,11 @@ def page_glossary() -> str:
         <svg width="28" height="10"><line x1="0" y1="5" x2="28" y2="5" stroke="#ef4444"
           stroke-width="1.5" stroke-dasharray="4 4"/></svg>
         Failure path
+      </span>
+      <span class="wf-legend-item">
+        <svg width="28" height="10"><line x1="0" y1="5" x2="28" y2="5" stroke="#ec4899"
+          stroke-width="1.5" stroke-dasharray="5 4"/></svg>
+        Layer A (read-only)
       </span>
     </div>"""
 

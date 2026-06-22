@@ -4,6 +4,40 @@
 2026-06-22
 
 ## Current Phase
+**Agent Workflow diagram — added the missing Layer A lane (COMPLETE 2026-06-22).**
+
+Follow-up to the doc accuracy sweep below: owner pointed out the Glossary page's
+interactive "Agent Workflow" diagram only showed the Level-1/2/3 **batch maintenance**
+graph (APScheduler → ... → Report) — it had no representation of the Investigation
+Agent, Dashboard Chat, or Prometheus/AI-Decisions observability, all shipped this
+session. Added a clearly separated "LAYER A — ASK & CHAT" lane below the existing
+pipeline (dashed pink border/edges, own section divider, own legend entry) rather than
+interleaving nodes into the batch flow, since these are parallel, read-only entry points
+— not sequential steps in that state machine.
+
+- `errander/web/server.py` (`page_glossary()` / `GLOSS_CSS` / `_WF_JS`) — 4 new clickable
+  nodes: **Ask (CLI)** (`--ask [--agentic]`), **Dashboard Chat** (`/ui/chat`),
+  **Investigation Engine** (Operator Assistant ↔ Investigation Agent, with fallback
+  behavior in its detail popup), **Metrics & AI Decisions** (`/metrics` + `/ui/ai-decisions`)
+  — each with full click-to-expand detail (checks/onfail/code/note) mirroring the existing
+  nodes' format
+- Canvas extended 845px → 1060px; new `.wf-node-layer-a` (dashed pink), `.wf-dot-pink`,
+  `.wf-section-divider` CSS; new legend entry "Layer A (read-only)"
+- **Pre-existing duplication discovered (not touched, out of scope):** the workflow/glossary
+  CSS is defined twice in `server.py` — once in the global `CSS` constant (line ~489,
+  loaded in `<head>` via `layout()`) and again in `GLOSS_CSS` (loaded inline in the
+  glossary page body). Confirmed via cascade order (GLOSS_CSS renders later in the DOM,
+  same specificity → wins) that editing only `GLOSS_CSS` is sufficient; the global copy is
+  dead weight for this page but removing it is a separate refactor, not done here.
+
+**Verification:** `ruff`/`mypy` clean, glossary smoke test passes, confirmed live via curl
+against the running demo server — all 4 new node IDs and the "LAYER A — ASK" divider text
+render in the HTML.
+
+**Not yet committed** — awaiting owner go-ahead (the prior doc-sweep commit `c5a5d43`
+predates this addition).
+
+## Previous Phase
 **Doc accuracy sweep — Glossary, README, CLAUDE.md, AGENTS.md, docs/SPEC.md (COMPLETE 2026-06-22).**
 
 Owner noticed (while reviewing the demo) that several docs hadn't caught up with the

@@ -1,5 +1,28 @@
 # Errander-AI — Lessons Learned
 
+## 2026-06-22 — An Edit tool "2 matches" error is a duplication signal, not just a friction speed bump
+
+While extending the Glossary page's workflow diagram, a routine `.wf-diagram { height:
+845px }` edit failed with "Found 2 matches" — the obvious fix is to add more surrounding
+context and move on. Investigating instead revealed the *entire* workflow/glossary CSS
+block is defined twice in `errander/web/server.py`: once in the global `CSS` constant
+(loaded in `<head>` for every page) and again in `GLOSS_CSS` (loaded inline in the
+glossary page body) — pre-existing duplication, not something this session introduced.
+
+**Why it mattered:** if I'd blindly added context and edited only one occurrence without
+checking *which* one actually governs rendering, the page could have silently kept the old
+845px height (or worse, behaved inconsistently depending on which selector won the
+cascade) while the source diff looked correct. Confirmed via cascade-order reasoning
+(GLOSS_CSS's `<style>` tag renders later in the DOM than CSS's, same specificity → later
+wins) *and* via a live curl check against the running demo server before trusting it.
+
+**How to apply:** when Edit reports multiple matches for what you expect to be a unique
+selector/string in a large server-rendered-HTML file, don't just disambiguate and move on
+— grep for how many times the surrounding construct appears and figure out *why* before
+assuming your fix is the one that takes effect. This generalizes past CSS: duplicated
+constants, duplicated route registrations, duplicated config defaults are all the same
+failure shape — a "2 matches" error is sometimes the only signal you get.
+
 ## 2026-06-22 — "Mirror" docs (AGENTS.md) silently rot unless something forces the sync; CLAUDE.md itself isn't immune
 
 `AGENTS.md` exists to mirror `CLAUDE.md` for non-Claude AI tools, and CLAUDE.md's own

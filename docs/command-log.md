@@ -1,5 +1,35 @@
 # Errander-AI Command Log
 
+## Agent Workflow diagram — add the Layer A lane (2026-06-22)
+
+```bash
+# Confirm whether the wf-* CSS selectors are duplicated elsewhere before assuming
+# an edit to GLOSS_CSS alone is sufficient
+grep -n "wf-diagram { position" errander/web/server.py   # 2 matches: global CSS (line 489) + GLOSS_CSS (line 4212)
+grep -n "wf-diagram|wf-node|wf-svg" errander/web/server.py | head -15   # confirm not used by any other page
+grep -n "def layout|<style>\{CSS\}" errander/web/server.py   # confirm CSS loads in <head>, GLOSS_CSS loads inline in body -> GLOSS_CSS wins the cascade
+
+# Edit nodes/SVG/CSS/JS in server.py (GLOSS_CSS copy only, per the cascade-order finding above)
+uv run ruff check errander/web/server.py   # clean
+uv run mypy errander/web/server.py         # clean
+uv run pytest tests/ui/test_web_server_smoke.py -k glossary -q   # 1 passed
+
+# Verify via Python repr that the escaped apostrophe in a JS string renders correctly
+uv run python -c "from errander.web.server import _WF_JS; [print(repr(l)) for l in _WF_JS.splitlines() if 'Fed by both tracks' in l]"
+
+# Restart demo server (PID changes each invocation — identify via listening port)
+Get-NetTCPConnection -LocalPort 19092 -State Listen | Select-Object OwningProcess
+Get-CimInstance Win32_Process -Filter "ProcessId=<pid>" | Select-Object CommandLine   # confirm exact match
+taskkill /F /PID <pid>
+ERRANDER_CHAT_ENABLED=true nohup uv run python -m errander.web --port 19092 --inventory example/inventory.yaml &
+
+# Verify all 4 new nodes + divider render
+curl -s -c cookies.txt http://127.0.0.1:19092/ui/login -o login.html
+curl -s -b cookies.txt -c cookies.txt -d "username=admin&password=...&_csrf_token=..." http://127.0.0.1:19092/ui/login
+curl -s -b cookies.txt http://127.0.0.1:19092/ui/glossary -o glossary.html
+grep -n -o "LAYER A — ASK|node-ask-cli|node-dashboard-chat|node-investigation-engine|node-metrics-observability" glossary.html
+```
+
 ## Doc accuracy sweep — Glossary + README/CLAUDE.md/AGENTS.md/SPEC.md (2026-06-22)
 
 ```bash

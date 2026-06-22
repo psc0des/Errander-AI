@@ -1,3 +1,20 @@
+## Agent Workflow diagram — add the Layer A lane (2026-06-22, COMPLETE)
+
+Owner-reported follow-up: the Glossary page's interactive workflow diagram only showed
+the batch maintenance graph — no Investigation Agent, Dashboard Chat, or Metrics/AI
+Decisions, all shipped earlier this session.
+
+- [x] `errander/web/server.py` — 4 new clickable nodes (Ask CLI, Dashboard Chat, Investigation Engine, Metrics & AI Decisions) in a new "LAYER A — ASK & CHAT" lane below the existing batch pipeline, visually separated (dashed pink) since they're parallel entry points, not sequential steps
+- [x] Canvas extended 845px → 1060px; new CSS classes + legend entry; full click-to-expand detail for each new node (checks/onfail/code/note) matching the existing node format
+- [x] Discovered (not fixed, out of scope): workflow/glossary CSS is defined twice in `server.py` (global `CSS` constant + `GLOSS_CSS`) — confirmed via cascade order that editing only `GLOSS_CSS` is sufficient since it renders later in the DOM
+- [x] Doc sync: STATUS.md, docs/command-log.md, this file, tasks/lessons.md
+
+**Verification:** `ruff`/`mypy` clean, glossary smoke test passes, confirmed live via curl against the running demo server — all 4 new node IDs and the divider text render.
+
+**Not committed yet** — awaiting owner go-ahead.
+
+---
+
 ## Doc accuracy sweep — Glossary + README/CLAUDE.md/AGENTS.md/SPEC.md (2026-06-22, COMPLETE)
 
 Owner-reported, while reviewing the demo: web UI Glossary stale + page layout wrong;

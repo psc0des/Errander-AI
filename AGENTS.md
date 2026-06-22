@@ -212,6 +212,8 @@ Errander-AI uses a two-layer AI architecture. See `docs/AI-ARCHITECTURE.md` for 
 
 **Layer B — Safe Execution** (deterministic Python): plans, validates, requests approval, executes, audits, verifies, rolls back. **No LLM in the live execution path. No MCP/CLI/Skill tool calls. No AI-generated shell commands. No AI self-approval.**
 
+> **MCP is an _allowed_ Layer A capability, not a built one (as of 2026-06-22).** There is no MCP client or server anywhere in the codebase and no MCP dependency in `pyproject.toml`. Today Layer A reaches Prometheus and ELK over direct HTTP (`aiohttp`) and the audit DB over SQL (`asyncpg`/SQLAlchemy), dispatched as plain in-process Python calls through the investigation agent's typed tool registry (`errander/agent/investigation_agent.py`). The "may use ... MCP" wording above is a **boundary rule** — *if* MCP is ever adopted it belongs in Layer A only, never the Layer B execution path — and a forward-looking allowance for plugging in **external, third-party** operator tools (e.g. a Grafana or GitHub MCP). It does not describe current wiring. For Errander's own data, direct clients are the deliberate choice (in-process, no trust boundary to cross, no extra egress surface).
+
 When proposing any AI-related feature or contribution, classify it as Layer A or Layer B first. If unsure, default to Layer A. Layer B changes require explicit safety review.
 
 ### Exact-Object Approval (MANDATORY for destructive actions)

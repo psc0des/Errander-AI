@@ -1,5 +1,28 @@
 # Errander-AI Command Log
 
+## MCP reality-gap doc fix (2026-06-22)
+
+```bash
+# Confirm there is genuinely no MCP in the codebase before documenting "no MCP"
+# (via Explore subagent + targeted greps)
+grep -rin "mcp" errander/ pyproject.toml   # only doc/comment mentions; no client/server, no dep
+grep -in "asyncpg\|aiohttp\|sqlalchemy" pyproject.toml   # confirm the actual transports
+
+# Edit glossary terms + Investigation Engine node note (server.py), CLAUDE.md blockquote,
+# docs/AI-ARCHITECTURE.md as-built note; mirror CLAUDE.md -> AGENTS.md
+cp CLAUDE.md AGENTS.md && diff CLAUDE.md AGENTS.md && echo IDENTICAL
+
+uv run ruff check errander/web/server.py   # clean
+uv run mypy errander/web/server.py         # clean
+uv run pytest tests/ui/test_web_server_smoke.py -k glossary -q   # 1 passed
+
+# Restart demo server + verify new terms render live
+taskkill /F /PID <pid-from-listening-port>
+ERRANDER_CHAT_ENABLED=true nohup uv run python -m errander.web --port 19092 --inventory example/inventory.yaml &
+curl -s -b cookies.txt http://127.0.0.1:19092/ui/glossary -o g.html
+grep -o "gloss-term\">MCP<|gloss-term\">PostgreSQL<|no MCP|in-process Python calls" g.html | sort | uniq -c
+```
+
 ## Agent Workflow diagram — add the Layer A lane (2026-06-22)
 
 ```bash

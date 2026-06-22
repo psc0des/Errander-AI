@@ -4084,9 +4084,13 @@ _GLOSS: list[tuple[str, str, str, str, str]] = [
     ("APScheduler",        "INFRA",   "#d97706", "gloss-chip-infra",
      "Python scheduling library that fires maintenance batches and daily probe runs on configured cron schedules inside the agent process."),
     ("Prometheus",         "INFRA",   "#d97706", "gloss-chip-infra",
-     "Optional HTTP adapter for VM metrics (CPU, memory, disk usage) from node_exporter. Enriches probe digests and --ask fleet analysis. Per-env URL override supported."),
+     "Optional metrics source for VM stats (CPU, memory, disk usage) from node_exporter. Reached by direct HTTP (aiohttp GET to /api/v1/query) — no MCP. Enriches probe digests and --ask fleet analysis. Per-env URL override supported. (Separately, the agent also EXPOSES its own /metrics for an external Prometheus to scrape — a different, inbound connection.)"),
     ("ELK",                "INFRA",   "#d97706", "gloss-chip-infra",
-     "Optional Elasticsearch integration for log error analysis. Enriches probes and --ask. Falls back to journalctl SSH calls when ELK is not configured. Per-env URL override supported."),
+     "Optional Elasticsearch integration for log error analysis. Reached by direct HTTP (aiohttp POST to the _search REST API) — no MCP. Enriches probes and --ask. Falls back to journalctl SSH calls when ELK is not configured. Per-env URL override supported."),
+    ("PostgreSQL",         "INFRA",   "#d97706", "gloss-chip-infra",
+     "The single audit/state backend (audit trail, approvals, AI-decision log). Reached over SQL via SQLAlchemy async + the asyncpg driver (errander/db/core.py) — no MCP, no ORM models. Both the agent and web processes connect to the same DB; least-privilege enforced by separate DB roles (errander_agent read/write, errander_web limited)."),
+    ("MCP",                "INFRA",   "#d97706", "gloss-chip-infra",
+     "Model Context Protocol — a standard for giving an LLM tools across a process/trust boundary. The AI Safety Invariant lists MCP as something Layer A MAY use, but it is NOT implemented: there is no MCP client or server in Errander, and no MCP dependency. The investigation agent's tools are plain in-process Python calls onto PrometheusClient / ElkClient / AuditStore. MCP would only ever matter for plugging in EXTERNAL third-party operator tools (e.g. a Grafana or GitHub MCP) in Layer A — never in the Layer B execution path."),
 ]
 
 # Node detail data for JS — plain string avoids f-string brace escaping
@@ -4188,7 +4192,7 @@ const WF_NODES = {
     checks: 'Default: Operator Assistant (fixed Prometheus/ELK/audit queries, one LLM call) · opt-in: Investigation Agent (--agentic, bounded ReAct tool-calling loop, up to 8 tool calls / 180s)',
     onfail: 'Any failure (LLM down, endpoint ignores tools=, turn-1 returns zero tool calls, budget exhausted) falls back cleanly to the deterministic Operator Assistant — never raises, never blocks',
     code: 'errander/agent/operator_assistant.py · errander/agent/investigation_agent.py',
-    note: 'Reads the same Audit Trail, Prometheus, and ELK the batch graph above writes to and reads from — but never executes. Every finding cites a real source ID.'
+    note: 'Tools are plain in-process Python calls — direct HTTP to Prometheus/ELK (aiohttp), direct SQL to the audit DB (asyncpg). No MCP, no JSON-RPC. Reads the same sources the batch graph uses but never executes; every finding cites a real source ID.'
   },
   'metrics-observability': {
     title: 'Metrics & AI Decisions', badge: 'OBSERVABILITY', badgeColor: '#0891b2',

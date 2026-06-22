@@ -4,6 +4,40 @@
 2026-06-22
 
 ## Current Phase
+**MCP reality-gap doc fix — Glossary + CLAUDE.md/AGENTS.md/AI-ARCHITECTURE.md (COMPLETE 2026-06-22).**
+
+Owner asked (on Opus 4.8) how the agent connects to Prometheus/ELK/PostgreSQL — "is it
+via MCP?" — and noted the Glossary/workflow didn't make it clear. Code investigation
+confirmed: **no MCP anywhere** (no client/server, no `pyproject.toml` dependency). All
+connections are direct — Prometheus/ELK via `aiohttp` HTTP, PostgreSQL via
+`asyncpg`/SQLAlchemy — dispatched as plain in-process Python calls through the
+investigation agent's typed tool registry. MCP is purely an *architectural allowance* in
+the Layer A safety description, never built. The confusion was a real docs gap: CLAUDE.md
+leads with "MCP belongs in the operator brain" and AI-ARCHITECTURE.md tabulates
+"Prometheus MCP, Grafana MCP, ELK MCP" as if those were wired. Fixes (docs only, no
+behavior change):
+
+- `errander/web/server.py` — Glossary: tightened Prometheus/ELK terms to name the
+  transport ("direct HTTP (aiohttp) — no MCP") + the dual-direction note for Prometheus;
+  added a **PostgreSQL** term (asyncpg/SQLAlchemy, role-based least-privilege) and an
+  **MCP** term that states plainly it's a permitted-but-unimplemented Layer A option, not
+  current wiring. Investigation Engine workflow node's detail popup now spells out
+  "in-process Python calls — direct HTTP/SQL, no MCP, no JSON-RPC".
+- `CLAUDE.md` + `AGENTS.md` (mirrored, byte-identical) — added a blockquote after the
+  Layer A/B paragraphs clarifying MCP is an allowed-not-built capability, the "may use ...
+  MCP" wording is a boundary rule + forward allowance for *external* third-party tools,
+  and direct clients are the deliberate choice for Errander's own data. Kept the slogan
+  as a principle (it's a correct "if you use MCP, it's Layer A only" rule).
+- `docs/AI-ARCHITECTURE.md` — added an as-built note under the "What Layer A is allowed to
+  use" table (the most misleading spot) marking it a permission boundary, not a build
+  manifest; fixed one stale "Docker prune" → "Docker hygiene".
+
+**Verification:** `ruff`/`mypy` clean, glossary smoke test passes, confirmed live via curl —
+new MCP + PostgreSQL terms and the "no MCP" / "in-process Python calls" phrasing render.
+
+**Not yet committed.**
+
+## Previous Phase
 **Agent Workflow diagram — added the missing Layer A lane (COMPLETE 2026-06-22).**
 
 Follow-up to the doc accuracy sweep below: owner pointed out the Glossary page's

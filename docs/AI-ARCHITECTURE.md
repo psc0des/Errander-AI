@@ -10,7 +10,7 @@ This document is the canonical safety model for Errander-AI. Every AI integratio
 
 ## Why this exists
 
-Errander-AI eliminates Linux fleet maintenance toil — patching, log rotation, Docker prune, disk cleanup, backup verification — under human supervision, with rollback and audit. The single hardest design constraint is:
+Errander-AI eliminates Linux fleet maintenance toil — patching, log rotation, Docker hygiene, disk cleanup, backup verification — under human supervision, with rollback and audit. The single hardest design constraint is:
 
 > The system must be safe enough to deploy on real production VMs, while still being meaningfully agentic and useful to operators.
 
@@ -70,6 +70,8 @@ Layer A produces **text and recommendations for humans**. It never produces a co
 | Internal APIs | Errander's own audit DB, drift baseline store, disk history store | Combine real-time observation with action history |
 | LLM tools / Skills | CVE lookup, runbook fetch, documentation search | Enrich operator-facing reports |
 | Composed workflows | Multi-step investigation: "summarize what changed on this VM in the last 24h" | Operator-driven exploration |
+
+> **As-built note (2026-06-22) — this table is the _permission boundary_, not a build manifest.** It says what Layer A *may* use; it does not say these integrations exist. As shipped, Layer A (the `--ask` Operator Assistant, the `--agentic` Investigation Agent, and `/ui/chat`) reaches **Prometheus and ELK over direct HTTP (`aiohttp`)** and the **audit DB over SQL (`asyncpg`/SQLAlchemy)** — plain in-process Python calls through `errander/agent/investigation_agent.py`'s typed tool registry. **There is no MCP client or server in the codebase, and no MCP dependency.** "MCP servers", "CLIs over SSH", and "CVE/runbook Skills" in the rows above are *permitted future* integration paths — MCP in particular is the right tool only for **external, third-party** operator systems Errander doesn't own (a Grafana MCP, a GitHub MCP). For Errander's own data, direct clients are the deliberate choice: in-process, no trust boundary to cross, no added egress surface (which matters for the no-egress self-hosted-vLLM deployment target). The boundary rule still holds regardless of mechanism: whatever Layer A uses, it stays read-only and never crosses into the Layer B execution path.
 
 ### What Layer A produces
 

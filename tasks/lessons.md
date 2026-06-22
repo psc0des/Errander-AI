@@ -1,5 +1,30 @@
 # Errander-AI — Lessons Learned
 
+## 2026-06-22 — A "what the system MAY use" capability list reads as a build manifest unless it says otherwise
+
+CLAUDE.md's AI Safety Invariant lists "Layer A may use LLM, MCP, CLI, Skills, Prometheus,
+ELK..." and AI-ARCHITECTURE.md tabulates "Prometheus MCP, Grafana MCP, ELK MCP" as Layer A
+tools. Both are *permission-boundary* statements — what Layer A is *allowed* to reach — but
+a reader (here, the owner) reasonably took them as a description of what's wired, and asked
+"do we connect via MCP?" The honest answer: no MCP exists in the codebase at all; every
+connection is direct (`aiohttp` to Prometheus/ELK, `asyncpg`/SQLAlchemy to Postgres) as
+plain in-process calls. The slogan "MCP belongs in the operator brain" made it worse by
+sounding like a shipped design decision rather than a conditional rule.
+
+**Why it mattered:** a permission list and a build manifest look identical on the page but
+mean opposite things ("you may" vs "we do"). When the gap is between an aspirational
+safety-architecture allowance and a deliberately-simpler implementation, leaving it
+unmarked invites both confusion ("how is this wired?") and bad future changes (someone
+"completes" the MCP integration the docs imply, adding egress surface and a trust boundary
+the in-process design specifically avoided).
+
+**How to apply:** when a doc enumerates capabilities a layer/component *may* use, and the
+real implementation uses a subset or a different mechanism, mark it explicitly — "this is
+the permission boundary, not a build manifest; as built, X uses Y." Especially for security
+docs, where the list is doing double duty as a *rule* (MCP, if used, is Layer-A-only) and
+readers will mistake the rule's vocabulary for the current architecture. The fix is one
+as-built note next to the list, not deleting the aspirational framing.
+
 ## 2026-06-22 — An Edit tool "2 matches" error is a duplication signal, not just a friction speed bump
 
 While extending the Glossary page's workflow diagram, a routine `.wf-diagram { height:

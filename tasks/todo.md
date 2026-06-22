@@ -1,3 +1,19 @@
+## MCP reality-gap doc fix (2026-06-22, COMPLETE)
+
+Owner asked how the agent connects to Prometheus/ELK/PostgreSQL ("is it via MCP?").
+Confirmed via code: no MCP anywhere — direct aiohttp HTTP + asyncpg/SQLAlchemy, plain
+in-process tool calls. MCP is only an architectural allowance in docs, never built. Docs
+gave a misleading impression; fixed (docs only):
+
+- [x] `errander/web/server.py` — Glossary: Prometheus/ELK terms now name transport ("direct HTTP (aiohttp) — no MCP"); added PostgreSQL term + MCP term (states it's permitted-but-unimplemented); Investigation Engine workflow node note now says "in-process Python calls — direct HTTP/SQL, no MCP"
+- [x] `CLAUDE.md` + `AGENTS.md` (byte-identical mirror) — blockquote clarifying MCP is an allowed-not-built Layer A capability; kept the slogan as a principle
+- [x] `docs/AI-ARCHITECTURE.md` — as-built note under the Layer A "allowed to use" table (permission boundary, not build manifest); fixed one stale "Docker prune"
+- [x] Doc sync: STATUS.md, docs/command-log.md, this file, tasks/lessons.md
+
+**Verification:** `ruff`/`mypy` clean, glossary smoke test passes, confirmed live via curl. **Not committed yet.**
+
+---
+
 ## Agent Workflow diagram — add the Layer A lane (2026-06-22, COMPLETE)
 
 Owner-reported follow-up: the Glossary page's interactive workflow diagram only showed

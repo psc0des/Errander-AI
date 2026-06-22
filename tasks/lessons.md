@@ -1,5 +1,32 @@
 # Errander-AI — Lessons Learned
 
+## 2026-06-22 — "Mirror" docs (AGENTS.md) silently rot unless something forces the sync; CLAUDE.md itself isn't immune
+
+`AGENTS.md` exists to mirror `CLAUDE.md` for non-Claude AI tools, and CLAUDE.md's own
+Doc Sync Rule lists "AGENTS.md — when project rules or architecture decisions change" as
+something to update. In practice it never got touched across ~6 weeks of sessions while
+CLAUDE.md was actively edited every session — `diff AGENTS.md CLAUDE.md` came back 100%
+different, predating docker_hygiene, R3 process separation, and RBAC entirely. Worse: even
+CLAUDE.md itself had an internal contradiction (Risk/Rollback Tiers tables still said
+"Docker prune" three sections above a "v1.1 transition complete: docker_prune is fully
+removed" note) — being the actively-edited file doesn't guarantee every table inside it
+gets touched when an architecture decision lands.
+
+**Why:** a doc-sync rule that says "update when relevant" relies on the editor noticing
+relevance in every section, not just the section they're actively working in. A whole
+sibling file with zero enforcement (nothing greps for AGENTS.md staleness, nothing tests
+it) has no signal at all that it's drifting — it just silently rots until someone reads
+both files side by side.
+
+**How to apply:** when editing CLAUDE.md for an architecture change, grep the *whole
+file* for the old term (not just the section being edited) before considering the edit
+done — tables far from the edited section are exactly where contradictions hide. After
+fixing CLAUDE.md, `cp CLAUDE.md AGENTS.md` is the cheapest correct sync (confirmed by
+`diff` that CLAUDE.md's body contains no Claude-Code-tool-specific content to strip) —
+don't hand-transcribe. If this drift recurs, consider a cheap CI/test guard (`assert
+Path("AGENTS.md").read_text() == Path("CLAUDE.md").read_text()`) rather than relying on
+memory.
+
 ## 2026-06-22 — A per-user-owned page is a deliberate exception to "bootstrap mode keeps GET pages open"
 
 Every existing read-only `/ui/*` page (`/ui/ai-decisions`, `/ui/approvals`,

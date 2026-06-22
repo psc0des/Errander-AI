@@ -1,5 +1,38 @@
 # Errander-AI Command Log
 
+## Doc accuracy sweep — Glossary + README/CLAUDE.md/AGENTS.md/SPEC.md (2026-06-22)
+
+```bash
+# Find every stale "Docker Prune" / "docker_prune" mention across docs and the glossary
+grep -n "glossary|Glossary|Agent Workflow|Happy path" errander/web/ui.py errander/web/server.py
+grep -rn "Docker Prune|docker_prune|Docker prune" *.md docs/*.md   # 20 files matched
+
+# Verify AGENTS.md had drifted from CLAUDE.md (not just docker naming)
+diff AGENTS.md CLAUDE.md   # 100% different — AGENTS.md predates R3 split + RBAC entirely
+
+# Apply fixes: server.py (_GLOSS list + page_glossary() section order), README.md,
+# CLAUDE.md (Risk/Rollback Tiers tables), docs/SPEC.md (as-built notes at every
+# divergence point not already flagged), then mirror corrected CLAUDE.md -> AGENTS.md
+cp CLAUDE.md AGENTS.md && diff CLAUDE.md AGENTS.md && echo IDENTICAL
+
+uv run ruff check . && uv run mypy errander/   # both clean
+uv run pytest tests/ui/test_web_server_smoke.py -k glossary -q   # 1 passed
+
+# Restart the local demo server (PID changes each `uv run` invocation on Windows —
+# identify via listening port, not a remembered PID) to pick up the server.py edit
+Get-NetTCPConnection -LocalPort 19092 -State Listen | Select-Object OwningProcess
+Get-CimInstance Win32_Process -Filter "ProcessId=<pid>" | Select-Object CommandLine   # confirm exact match before kill
+taskkill /F /PID <pid>
+ERRANDER_CHAT_ENABLED=true nohup uv run python -m errander.web --port 19092 --inventory example/inventory.yaml &
+
+# Verify live: login via curl (scrape _csrf_token from rendered HTML), fetch /ui/glossary,
+# confirm "Agent Workflow" appears before "Glossary" and all 4 new terms render
+curl -s -c cookies.txt http://127.0.0.1:19092/ui/login -o login.html
+curl -s -b cookies.txt -c cookies.txt -d "username=admin&password=...&_csrf_token=..." http://127.0.0.1:19092/ui/login
+curl -s -b cookies.txt http://127.0.0.1:19092/ui/glossary -o glossary.html
+grep -n -o "section-title\">Agent Workflow|section-title\">Glossary|Docker Hygiene|Investigation Agent|Dashboard Chat|Planning Note" glossary.html
+```
+
 ## §8d Step 4 prep — DB-backed hygiene approval store + TOTP groundwork (2026-06-12)
 
 ```bash

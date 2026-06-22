@@ -202,7 +202,7 @@ Level 3: Action Sub-Graphs
 ```
 
 - **Multi-VM parallelism**: LangGraph `Send()` fan-out processes the fleet concurrently
-- **Action isolation**: A bug in docker prune logic cannot affect the patching flow
+- **Action isolation**: A bug in docker hygiene logic cannot affect the patching flow
 - **Independent testability**: Each sub-graph tested without the parent
 - **Extensibility**: Adding a new action type = write a sub-graph + register it in the dispatcher
 

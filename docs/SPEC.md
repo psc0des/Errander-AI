@@ -1,13 +1,16 @@
 # Errander-AI — Full Project Specification
 
-> Deterministic maintenance automation with an AI-assisted operator layer for Linux fleets. Performs secure patching (non-kernel), log rotation, Docker pruning, disk cleanup, and backup verification — with safety gates, rollback, and full audit logging. Every live change requires human approval. The LLM is never in the path that changes infrastructure.
+> Deterministic maintenance automation with an AI-assisted operator layer for Linux fleets. Performs secure patching (non-kernel), log rotation, Docker hygiene, disk cleanup, and backup verification — with safety gates, rollback, and full audit logging. Every live change requires human approval. The LLM is never in the path that changes infrastructure.
 
 > **Reading note:** this is the *original* design specification, kept for lineage with
-> "as-built" notes where the implementation diverged. The largest divergence: approval
-> is **web-only with users/groups RBAC** since R2 (2026-06-12) — any diagram or flow in
-> this document showing Slack ✅/❌ reactions as a decision step is historical (see the
-> §9 as-built note). For current behavior, README.md and docs/langgraph-primer.md are
-> authoritative.
+> "as-built" notes where the implementation diverged. Two divergences are large enough to
+> read about before trusting any diagram or table below: (1) approval is **web-only with
+> users/groups RBAC** since R2 (2026-06-12) — any diagram or flow in this document showing
+> Slack ✅/❌ reactions as a decision step is historical (see the §9 as-built note); (2) the
+> bulk **Docker Prune** action (§5.2) was fully removed in v1.1 (2026-05-22) and replaced by
+> **Docker Hygiene** — rich assessment + exact-object web approval, never bulk removal (see
+> the §5.2 as-built note and CLAUDE.md's "Exact-Object Approval" invariant). For current
+> behavior, README.md and docs/langgraph-primer.md are authoritative.
 
 ---
 
@@ -52,7 +55,7 @@ See [`AI-ARCHITECTURE.md`](AI-ARCHITECTURE.md) for the canonical deep specificat
 Errander-AI is a long-lived agent process that runs on a single VM inside a private VPN. It maintains a fleet of heterogeneous Linux VMs (Ubuntu, RHEL, Debian) under human supervision by performing:
 
 - **Non-kernel OS patching** — security and package updates
-- **Docker pruning** — reclaim disk from dangling images, stopped containers, build cache
+- **Docker hygiene** — rich assessment of dangling images, stopped containers, unused images, volumes, build cache, with exact-object web approval before any removal (replaced the original bulk Docker Prune design in v1.1 — see §5.2)
 - **Log rotation** — compress and rotate oversized logs
 - **Disk cleanup** — remove files from a strict whitelist of safe paths
 - **Backup verification** — confirm backups exist and are recent
@@ -71,6 +74,12 @@ The agent follows a **Terraform plan/apply pattern**: always dry-run first, save
 ---
 
 ## 2. Network Architecture
+
+> **As-built note (R3, 2026-06-13):** the diagram below shows the original single-process
+> design. The shipped architecture splits this into two OS processes/users — `errander-agent`
+> (scheduler, executor, SSH keys, `/metrics`) and `errander-web` (approval UI, RBAC, no SSH
+> access) — sharing the PostgreSQL audit DB. See the "Network Architecture (R3 Process
+> Separation)" diagram in `CLAUDE.md` for the current topology.
 
 ```mermaid
 graph TB
@@ -152,7 +161,7 @@ Level 3: Action Sub-Graphs (one per action type)
 ### Why This Structure
 
 - **Multi-VM parallelism is day-one**: `Send()` fan-out processes the fleet concurrently, just like a DevOps engineer would
-- **Action isolation**: A bug in docker prune logic cannot affect the patching flow. Separate sub-graphs = separate failure domains
+- **Action isolation**: A bug in docker hygiene logic cannot affect the patching flow. Separate sub-graphs = separate failure domains
 - **Independent testability**: Each sub-graph can be tested without the parent
 - **Extensibility**: Adding a new action type = write a sub-graph + register it in the dispatcher
 
@@ -432,9 +441,20 @@ graph TD
 - Batch rollback — all packages rolled back, not selective
 - If rollback fails: CRITICAL alert, mark VM as `NEEDS_MANUAL_INTERVENTION`
 
-### 5.2 Docker Prune
+### 5.2 Docker Prune (historical — replaced by Docker Hygiene in v1.1)
 
-**Risk tier**: Low
+> **As-built note (2026-05-22):** the bulk-prune design below was fully removed in v1.1.
+> `docker_prune` violated the Exact-Object Approval invariant (CLAUDE.md) — bulk prune
+> approves a category ("clean up Docker"), not exact objects. It was replaced by
+> `docker_hygiene`: a rich assessment (dangling images, stopped containers, unused images,
+> volumes, build cache) where the operator approves **exact object IDs** in the Web UI, a
+> drift gate re-validates each object at execution time, and removal is per-object —
+> never bulk. Risk tier is now **Medium** (was Low), since removal is no longer
+> auto-approved. See `errander/agent/subgraphs/docker_hygiene.py` (reference
+> implementation) and `docs/learning/45-docker-hygiene-session3-cutover.md`. The section
+> below is preserved for design lineage only.
+
+**Risk tier**: Low (historical — see as-built note above; Docker Hygiene is Medium)
 
 ```mermaid
 graph TD
@@ -560,14 +580,19 @@ graph TD
 
 | Tier | Actions | Approval Behavior |
 |---|---|---|
-| Low | Disk cleanup, log rotation, Docker prune | Automatic (per policy) |
-| Medium | Non-kernel patching, config changes | Policy-dependent (auto in dev, human in prod) |
+| Low | Disk cleanup, log rotation | Automatic (per policy) |
+| Medium | Non-kernel patching, config changes, Docker hygiene *(historical: Docker Prune, §5.2)* | Policy-dependent (auto in dev, human in prod); Docker hygiene is exact-object web approval |
 | High | Service restarts, backup verification | Human approval required |
 | Critical | Kernel operations, data deletion | Blocked — never automated |
 
 ### 6.2 Policies
 
 Named policies define approval behavior per environment:
+
+> **As-built note:** `docker_prune_all` below is an obsolete key from the original design.
+> Current config uses per-target `actions.docker_hygiene.enabled` (see
+> `example/inventory.yaml` and CLAUDE.md's Architecture section) — Docker Hygiene has no
+> "prune all vs. dangling-only" toggle since every removal is individually approved.
 
 ```yaml
 policies:
@@ -598,7 +623,7 @@ policies:
 | Tier | Actions | Strategy |
 |---|---|---|
 | Full Rollback | Non-kernel patching | Snapshot full package list before execution. Batch rollback to previous versions on failure. Critical alert if rollback itself fails. |
-| Re-Pull | Docker prune | Pruned artifacts are gone. Images can be re-pulled if needed. Accept as low risk. |
+| Re-Pull | Docker hygiene *(historical: Docker Prune, §5.2)* | Removed objects are gone. Images can be re-pulled if needed. Accept as low risk; mitigated by exact-object approval + drift gate. |
 | No Rollback Needed | Log rotation, disk cleanup | Data still exists (compressed) or was ephemeral (safe whitelist paths). |
 | Never Touch | Kernel, active data dirs | Blocked at the safety gate. Never reaches execution. |
 
@@ -775,7 +800,7 @@ graph TD
 | Action | Dry-Run Command | Output Detail |
 |---|---|---|
 | Patching | `apt-get --simulate upgrade` / `dnf check-update` | List of packages: name, current_version → new_version, security flag |
-| Docker Prune | `docker system df` + `docker system prune --dry-run` | Reclaimable space by category: images, containers, build cache |
+| Docker Hygiene *(historical: Docker Prune, §5.2)* | `errander-docker-assess-v2` wrapper | Per-object findings by class: dangling images, stopped containers, unused images, volumes, build cache — exact IDs, not just totals |
 | Disk Cleanup | `du -sh` on each whitelist path | Per-directory breakdown with sizes |
 | Log Rotation | `find /var/log -size +<threshold>` | Which logs, current sizes, what would happen |
 
@@ -945,7 +970,7 @@ The agent works with **any OpenAI-compatible endpoint**. The user picks one at i
 
 ### LLM-Powered Functions (v1)
 
-#### 1. Action Planning & Prioritization
+#### 1. Action Planning & Prioritization (historical — see as-built note below)
 
 **LLM mode**: Thinking (reasoning enabled — complex tradeoff weighing)
 
@@ -953,7 +978,7 @@ The agent works with **any OpenAI-compatible endpoint**. The user picks one at i
 
 **Output**: Structured JSON → parsed into ordered list of `PlannedAction` with priorities and reasoning
 
-**What the LLM decides**:
+**What the LLM decided (original design — no longer true, see as-built note below)**:
 - Which actions to run on this VM given current state
 - Execution order (e.g., disk cleanup before patching if disk is nearly full, to ensure enough space for package downloads)
 - Whether to flag unusual conditions (e.g., abnormally high disk usage, too many pending patches suggesting the VM has been neglected)
@@ -961,11 +986,22 @@ The agent works with **any OpenAI-compatible endpoint**. The user picks one at i
 **Fallback**: Hardcoded default priority order:
 1. Disk cleanup (if above threshold)
 2. Log rotation (if above threshold)
-3. Docker prune (if Docker installed and space reclaimable)
+3. Docker hygiene *(historical: Docker Prune)* (if Docker installed and findings exist)
 4. Patching (if patches available)
 5. Backup verification
 
-#### 2. Failure Analysis
+> **As-built note (2026-06-14):** `prioritize_actions()` is now always the hardcoded
+> deterministic order above — the LLM no longer reorders or filters the plan (R1, F2 fix).
+> A separate LLM call (`generate_planning_note()`) attaches an informational note to the
+> already-finalized plan; it never changes which actions run. See
+> `docs/learning/58-advisory-planning-note.md`.
+
+#### 2. Failure Analysis (removed in R1, 2026-06-14 — never shipped past the original design)
+
+> **As-built note:** `analyze_failure()` was deleted in the R1 cutover (F4 sweep) — rollback
+> on failure is fully deterministic (per the Rollback Tiers table in §6.3), with no LLM
+> step in that path. The design below was never the shipped behavior beyond an early
+> prototype; kept for lineage only.
 
 **LLM mode**: Thinking (reasoning enabled — needs to interpret error patterns)
 
@@ -973,7 +1009,7 @@ The agent works with **any OpenAI-compatible endpoint**. The user picks one at i
 
 **Output**: Structured JSON → decision: retry, rollback, skip, or escalate
 
-**What the LLM decides**:
+**What the LLM decided (original design)**:
 - Is this a transient error (retry) or permanent (rollback/escalate)?
 - Is the error output suggesting a known issue pattern?
 - What context should the human receive if escalated?
@@ -1042,7 +1078,13 @@ async def call_llm(
 
 - Anomaly detection (unusual patterns in system state)
 - Learning from historical runs to improve planning
-- Natural language querying of audit trail
+
+> **As-built note (2026-06-22):** "Natural language querying of audit trail" shipped ahead
+> of this V2 list — first as the deterministic `--ask` Operator Assistant, then as the
+> opt-in agentic **Investigation Agent** (`--ask --agentic`, bounded tool-calling loop over
+> Prometheus/ELK/audit) and **Dashboard Chat** (`/ui/chat`, multi-turn web console over the
+> same engine). Both are Layer A — read-only, recommend only, never execute. See
+> `docs/learning/60-investigation-agent.md` and `docs/learning/61-dashboard-chat.md`.
 
 ---
 
@@ -1209,6 +1251,9 @@ environments:
 ```
 
 ### Policy Definitions (`config/policies.yaml`)
+
+> **As-built note:** `docker_prune_all` is obsolete (see §6.2) — shown here only as part of
+> the original example.
 
 ```yaml
 policies:
@@ -1490,7 +1535,7 @@ sequenceDiagram
         Agent->>Agent: exit(1) — fail fast
     end
     Agent->>Sched: 3. Register scheduled runs
-    Agent->>Agent: 4. Start Slack poller
+    Agent->>Agent: 4. Start approval reconciler
     Agent->>Agent: 5. Expose /metrics
     Agent->>Agent: 6. Expose /health
     Agent->>Slack: 7. Post "🟢 Agent started"
@@ -1501,7 +1546,8 @@ sequenceDiagram
 1. Load and validate config (parse YAML, schema check). **If config is malformed, refuse to start** — log error and exit with non-zero code.
 2. Validate secrets (all required env vars present, SSH key paths exist and are readable). **Fail-fast** if anything missing.
 3. Start APScheduler (register scheduled maintenance and discovery runs)
-4. Start the web UI server + approval reconciler (Slack is post-only since R2)
+4. Start the approval reconciler interval job (Slack is post-only since R2; the approval
+   UI itself is a separate process since R3 — `python -m errander.web`, not started here)
 5. Expose `/metrics` endpoint (Prometheus)
 6. Expose `/health` endpoint
 7. Log "Errander-AI agent ready" to operational log
@@ -1589,7 +1635,7 @@ On restart after unexpected termination:
 ### Unit Tests (Mandatory for Every Module)
 
 - **Mock**: asyncssh, LLM (vLLM responses), Slack API
-- **Test each node's logic in isolation**: patching, docker prune, disk cleanup, log rotation, rollback
+- **Test each node's logic in isolation**: patching, docker hygiene, disk cleanup, log rotation, rollback
 - **Command abstraction**: AptManager produces correct commands, DnfManager produces correct commands, for each operation
 - **Policy evaluation**: given config + risk tier → correct approval path
 - **Config parsing**: malformed YAML handled gracefully, inheritance works correctly, schema validation catches errors
@@ -1651,6 +1697,12 @@ These interfaces should be abstracted in v1 even though only one implementation 
 
 ## Appendix: Directory Structure
 
+> **As-built note:** this tree is the original target layout — it predates `errander/web/`
+> (R3 process split), `errander/agent/investigation_agent.py` (Plan A), and several
+> `safety/` stores added since (`approval_store.py`, `user_store.py`, `chat_store.py`,
+> etc.). For the current as-built tree, see the "Architecture (target)" section in
+> `CLAUDE.md`, which is kept in sync every session.
+
 ```
 errander/
 ├── agent/                  # LangGraph agent definitions
@@ -1659,7 +1711,7 @@ errander/
 │   ├── subgraphs/          # Sub-graphs per action type
 │   │   ├── patching.py
 │   │   ├── log_rotation.py
-│   │   ├── docker_prune.py
+│   │   ├── docker_hygiene.py
 │   │   ├── disk_cleanup.py
 │   │   └── backup_verify.py
 │   ├── state.py            # State definitions (batch, per-VM, per-action)
@@ -1667,7 +1719,8 @@ errander/
 ├── safety/
 │   ├── validators.py       # Pre-execution validation checks
 │   ├── rollback.py         # Rollback per action type
-│   ├── approval.py         # Slack polling approval gate
+│   ├── approval.py         # Slack notify-and-link (no decision authority)
+│   ├── approval_store.py   # Durable approval requests (DB-backed, web-only decide)
 │   ├── locking.py          # VM-level locking (file v1, Redis v2)
 │   └── audit.py            # Audit trail (PostgreSQL)
 ├── execution/

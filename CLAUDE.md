@@ -175,7 +175,7 @@ deploy/
 | Tier | Actions | Approval |
 |---|---|---|
 | Low | Disk cleanup, log rotation, backup verification | Automatic |
-| Medium | Docker prune, non-kernel patching, config changes | Log + notify |
+| Medium | Docker hygiene (object-level approval), non-kernel patching, config changes | Log + notify |
 | High | Service restart (`service_restart`) — operator-triggered only in v1 | Human approval required — Web UI (Slack notifies and links; all policy tiers) |
 | Critical | Kernel operations, data deletion | Blocked — never automated |
 
@@ -188,7 +188,7 @@ deploy/
 | Tier | Actions | Strategy |
 |---|---|---|
 | Full Rollback | Non-kernel patching | Snapshot full package list before execution. Batch rollback to previous versions on failure. Critical alert if rollback itself fails. |
-| Re-Pull (no true rollback) | Docker prune | Pruned images/containers are gone. Can re-pull images if needed. Accept that prune is destructive but low risk. |
+| Re-Pull (no true rollback) | Docker hygiene | Removed images/objects are gone. Can re-pull images if needed. Accept that removal is destructive but low risk. |
 | No Rollback Needed | Log rotation, disk cleanup | Log rotation: data still exists, just compressed/rotated. Disk cleanup: only targets known-safe paths (see whitelist below). |
 | Never Touch | Kernel, active data dirs | Running kernel, active data directories, anything not on the explicit safe-to-clean whitelist — never automated. |
 

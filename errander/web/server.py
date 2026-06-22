@@ -4032,6 +4032,12 @@ _GLOSS: list[tuple[str, str, str, str, str]] = [
      "Read-only signal sweep (disk growth, drift, failed logins, journal errors, failed services). Runs on schedule or --probe-now. Never executes maintenance actions — observation only."),
     ("Operator Assist.",   "CORE",    "#4f46e5", "gloss-chip-core",
      "Layer A CLI (--ask) that investigates fleet state using audit data, Prometheus, and ELK, then answers questions via LLM. Strictly read-only — never executes infrastructure changes."),
+    ("Investigation Agent", "CORE",   "#4f46e5", "gloss-chip-core",
+     "Opt-in agentic mode for --ask (--agentic, ERRANDER_INVESTIGATION_AGENT_ENABLED). The LLM composes its own Prometheus/ELK/audit queries in a bounded tool-calling loop instead of a fixed query set. Still Layer A — read-only, recommends only — falls back to the deterministic Operator Assistant on any failure."),
+    ("Dashboard Chat",     "CORE",    "#4f46e5", "gloss-chip-core",
+     "Opt-in multi-turn web console at /ui/chat (ERRANDER_CHAT_ENABLED). Per-user threads over the same investigation engine as --ask, with citations. Read-only — phase 1 has no streaming and no action handoff."),
+    ("Planning Note",      "CORE",    "#4f46e5", "gloss-chip-core",
+     "Short LLM-generated note attached to an already-finalized deterministic plan. Informational only — never changes which actions run or their order. Shown in the Slack approval message and the web approval card."),
     # ── SAFETY ───────────────────────────────────────────────────────────────
     ("Approval Gate",      "SAFETY",  "#7c3aed", "gloss-chip-safety",
      "High-risk actions pause here. The agent persists a durable approval request, notifies Slack with the exact packages and versions plus a web approval link, and waits for a named operator's decision in the Web UI."),
@@ -4060,8 +4066,8 @@ _GLOSS: list[tuple[str, str, str, str, str]] = [
     # ── ACTIONS ──────────────────────────────────────────────────────────────
     ("OS Patching",        "ACTIONS", "#0891b2", "gloss-chip-action",
      "Non-kernel security and package updates via apt (Ubuntu/Debian) or dnf (RHEL). Kernel updates are blocked. Exact packages shown in Slack approval message. Medium risk."),
-    ("Docker Prune",       "ACTIONS", "#0891b2", "gloss-chip-action",
-     "Removal of stopped containers, dangling images, unused networks, and volumes to reclaim disk space. Medium risk. Re-pull is the only recovery path — prune is destructive."),
+    ("Docker Hygiene",     "ACTIONS", "#0891b2", "gloss-chip-action",
+     "Rich Docker assessment — dangling images, stopped containers, unused images, volumes, build cache. Exact-object web approval before any removal (replaced the bulk Docker Prune action in v1.1). Medium risk. Re-pull is the only recovery path for removed images."),
     ("Log Rotation",       "ACTIONS", "#0891b2", "gloss-chip-action",
      "Compression and archival of old log files in /var/log via logrotate or journalctl vacuum. Low risk — data is retained, just compressed."),
     ("Disk Cleanup",       "ACTIONS", "#0891b2", "gloss-chip-action",
@@ -4447,7 +4453,7 @@ def page_glossary() -> str:
     {modal_html}
     <script>{_WF_JS}</script>"""
 
-    return grid_section + workflow_section
+    return workflow_section + grid_section
 
 
 def _trace_bar_pct(duration_s: float, max_log: float) -> int:

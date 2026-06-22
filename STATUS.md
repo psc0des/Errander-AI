@@ -4,6 +4,50 @@
 2026-06-22
 
 ## Current Phase
+**Doc accuracy sweep — Glossary, README, CLAUDE.md, AGENTS.md, docs/SPEC.md (COMPLETE 2026-06-22).**
+
+Owner noticed (while reviewing the demo) that several docs hadn't caught up with the
+v1.1 `docker_hygiene` cutover and the web UI Glossary page had stale terms. Findings:
+
+- **Web UI Glossary** (`errander/web/server.py`): page order swapped per owner preference
+  — `page_glossary()` now returns `workflow_section + grid_section` (Agent Workflow
+  diagram + legend on top, term cards at the bottom; was reversed). `_GLOSS` updated:
+  "Docker Prune" entry replaced with "Docker Hygiene" (was describing a removed v1.1
+  action); added 3 missing terms for shipped-but-undocumented features — "Investigation
+  Agent", "Dashboard Chat", "Planning Note".
+- **`CLAUDE.md`** had a real internal contradiction: its own Risk Tiers / Rollback Tiers
+  tables still said "Docker prune" while its Domain Rules section (3 subsections below)
+  correctly states `docker_prune` was fully removed in v1.1. Fixed both table rows.
+- **`AGENTS.md`** (516 lines, meant to mirror CLAUDE.md for non-Claude AI tools) had
+  drifted to a snapshot that predated docker_hygiene, R3 process separation, and RBAC
+  entirely — `diff` showed it 100% different from current CLAUDE.md. Replaced with an
+  exact copy of the now-corrected CLAUDE.md (confirmed byte-identical, confirmed no
+  Claude-Code-specific content exists in CLAUDE.md's body to strip).
+- **`docs/SPEC.md`** (1714 lines, "kept for lineage" per its own header) — added as-built
+  notes at every point where the original design materially diverged and wasn't already
+  flagged: §5.2 Docker Prune (renamed heading to "historical", full as-built note pointing
+  to `docker_hygiene.py`), Risk/Rollback Tiers tables, Dry-Run detail table, policy YAML
+  blocks (`docker_prune_all` is an obsolete key), §10 LLM Integration ("Action Planning &
+  Prioritization" no longer reorders/filters the plan post-R1; "Failure Analysis" function
+  was deleted entirely; "Natural language querying of audit trail" shipped early as the
+  Investigation Agent + Dashboard Chat, not still V2-deferred), §2 Network Architecture
+  (R3 process split not reflected in the diagram), §16 Agent Lifecycle (mermaid diagram
+  still said "Start Slack poller", contradicting its own prose 3 lines below), Appendix
+  directory tree (`docker_prune.py` → `docker_hygiene.py`, pointer to CLAUDE.md for the
+  current tree). Preserved the doc's own "original design, kept for lineage" framing —
+  did not rewrite the historical command-level detail in §5.2/§9/§13, only added
+  signposting so a reader can't mistake lineage for current behavior.
+- **`README.md`**: one stale "docker prune" mention in the graph-isolation bullet (§Three-
+  Level Graph Structure) fixed to "docker hygiene".
+
+**Verification:** `uv run ruff check .` clean, `uv run mypy errander/` clean (114 files),
+`tests/ui/test_web_server_smoke.py::test_page_glossary_renders` passes. Manually verified
+via the running demo server (logged in, fetched `/ui/glossary`, confirmed "Agent Workflow"
+renders before "Glossary" in the HTML and all 4 refreshed terms are present).
+
+**Not yet committed** — owner has not asked for a commit yet this session.
+
+## Previous Phase
 **Plan B — Dashboard Chat, phase 1 (CODE COMPLETE 2026-06-22, awaiting owner manual test pass).**
 
 `/ui/chat` (opt-in, `ERRANDER_CHAT_ENABLED`, default off) — a multi-turn web
@@ -439,16 +483,16 @@ Adds a `Monitoring` nav item and `/ui/monitoring` page to the Errander web UI. T
 | 3 | R2: users/groups RBAC + web-only approval | ✅ COMPLETE (2026-06-12) |
 | 4 | R3: process split (two OS processes, key isolation, nginx Mode 2 + TOTP) | ✅ COMPLETE (2026-06-13) |
 | 5 | R1: advisory-LLM batch planning (F2+F6 fix) | ✅ COMPLETE (2026-06-14) |
-| 6 | Plan A: investigation agent | next |
-| 7 | Plan B: dashboard chat | after 6 |
+| 6 | Plan A: investigation agent | ✅ CODE COMPLETE (2026-06-22), awaiting owner manual test |
+| 7 | Plan B: dashboard chat | ✅ CODE COMPLETE (2026-06-22), awaiting owner manual test |
 
 ## Blockers
 None.
 
 ## Test count
-Full suite: 2476 passed, 8 failed, 171 errors (485.93s), verified 2026-06-14. The 8 failures
-(`tests/ui/test_approval_ui.py`, needs a seeded user account) and 171 errors (`tests/ui/*` +
-`tests/web/*` pytest-asyncio runner-state pollution when run together) are pre-existing and
-unrelated to R1 — confirmed via `git stash` to reproduce identically on pre-R1 `main`; see
-`tasks/lessons.md`. R1 net effect: +6 tests fixed (test_llm.py, test_fault_injection.py
-fallout) + 3 new (tests/web/test_approval_ai_note.py); total passed+failed unchanged at 2484.
+Full suite: 2551 passed, 8 failed, 181 errors, verified 2026-06-22 (after Plan A + Plan B).
+The 8 failures (`tests/ui/test_approval_ui.py`, needs a seeded user account) and 181 errors
+(`tests/ui/*` + `tests/web/*` pytest-asyncio runner-state pollution when run together) are
+pre-existing and unrelated to Plan A/B — the error count rose from 171 to 181 by exactly the
+10 new tests added to `tests/web/test_chat.py` (already-affected directory), not a regression;
+see `tasks/lessons.md`. ruff + mypy clean (114 source files).

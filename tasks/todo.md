@@ -1,3 +1,22 @@
+## Doc accuracy sweep — Glossary + README/CLAUDE.md/AGENTS.md/SPEC.md (2026-06-22, COMPLETE)
+
+Owner-reported, while reviewing the demo: web UI Glossary stale + page layout wrong;
+README/docs not properly updated for the v1.1 docker_hygiene cutover.
+
+- [x] `errander/web/server.py` — `page_glossary()` returns `workflow_section + grid_section` (was reversed); owner wants the Agent Workflow diagram on top, term cards at the bottom
+- [x] `_GLOSS` — "Docker Prune" entry replaced with "Docker Hygiene" (described a removed v1.1 action); added "Investigation Agent", "Dashboard Chat", "Planning Note" (shipped features missing from the glossary)
+- [x] `CLAUDE.md` — fixed an internal contradiction: Risk/Rollback Tiers tables said "Docker prune" while the Domain Rules section 3 subsections below correctly says it was fully removed in v1.1
+- [x] `AGENTS.md` — had drifted to a pre-docker_hygiene/pre-R3/pre-RBAC snapshot (100% diff vs CLAUDE.md); replaced with an exact mirror of the corrected CLAUDE.md
+- [x] `docs/SPEC.md` — added as-built notes at every divergence point not already flagged (§2 network diagram, §5.2 Docker Prune heading + full note, Risk/Rollback Tiers + dry-run tables, policy YAML `docker_prune_all`, §10 LLM functions — planning no longer reorders the plan post-R1, Failure Analysis was deleted, NL audit querying shipped as Investigation Agent/Dashboard Chat — §16 lifecycle diagram/prose mismatch, Appendix tree); preserved the doc's "kept for lineage" framing, didn't rewrite historical command-level detail
+- [x] `README.md` — one stale "docker prune" mention (graph-isolation bullet) fixed
+- [x] Doc sync: STATUS.md, docs/command-log.md, this file
+
+**Verification:** `uv run ruff check .` clean, `uv run mypy errander/` clean (114 files), `tests/ui/test_web_server_smoke.py::test_page_glossary_renders` passes. Manually verified against the running demo server: logged in via curl, fetched `/ui/glossary`, confirmed "Agent Workflow" renders before "Glossary" and all 4 refreshed terms are present in the HTML.
+
+**Not committed yet** — awaiting owner go-ahead.
+
+---
+
 ## Plan B — Dashboard Chat, phase 1 (2026-06-22, CODE COMPLETE — awaiting owner manual test)
 
 Roadmap item #4 (`tasks/dashboard-chat-implementation-plan.md`), built on

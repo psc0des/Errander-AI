@@ -1,6 +1,6 @@
 # Errander-AI — Supervised Agentic AI SRE Platform
 
-A supervised agentic AI SRE platform that eliminates operational toil while keeping humans in control of live infrastructure changes. Performs secure patching (non-kernel), log rotation, Docker pruning, disk cleanup, and more — with safety gates, rollback, and full audit logging. Every live change requires approval by a named, authenticated operator in the Web UI (Slack notifies and links).
+A supervised agentic AI SRE platform that eliminates operational toil while keeping humans in control of live infrastructure changes. Performs secure patching (non-kernel), log rotation, Docker hygiene (object-level approval), disk cleanup, backup verification, and operator-triggered service restart — with safety gates, rollback, and full audit logging. Every live change requires approval by a named, authenticated operator in the Web UI (Slack notifies and links — it carries no decision authority).
 
 ## Stack (100% Open Source, Cloud-Agnostic)
 - Language: Python 3.12+
@@ -39,48 +39,52 @@ A supervised agentic AI SRE platform that eliminates operational toil while keep
 - No bare exceptions — always catch specific errors
 - All operations must be idempotent
 
-## Network Architecture
+## Network Architecture (R3 Process Separation, 2026-06-13)
 
 ```
-┌─────────────────────────────────────────────────┐
-│                   VPN (private)                  │
-│                                                  │
-│  ┌──────────────┐     ┌──────────────────────┐  │
-│  │ Self-hosted   │     │ Agent VM              │  │
-│  │ LLM (vLLM)   │◄────│  - Errander-AI agent    │  │
-│  │ (private IP)  │     │  - APScheduler        │  │
-│  └──────────────┘     │  - Slack notifier      │  │
-│                        │  - Audit DB (Postgres)  │  │
-│                        │  - Prometheus /metrics  │  │
-│                        └──────┬───────┬────────┘  │
-│                               │       │           │
-│                          SSH  │       │ HTTPS     │
-│                               │       │ (outbound │
-│                               ▼       │  only)    │
-│                     ┌─────────────┐   │           │
-│                     │ Target VMs   │   │           │
-│                     │ (private)    │   │           │
-│                     └─────────────┘   │           │
-└───────────────────────────────────────┼───────────┘
-                                        │
-                                        ▼
-                               ┌─────────────────┐
-                               │ Slack API        │
-                               │ (public internet)│
-                               └─────────────────┘
-                                        ▲
-                                        │
-                               ┌─────────────────┐
-                               │ Operator         │
-                               │ (mobile/laptop)  │
-                               └─────────────────┘
+┌────────────────────────────────────────────────────────────────────┐
+│                         VPN (private)                              │
+│                                                                    │
+│  ┌──────────────┐   ┌──────────────────────┐  ┌─────────────────┐ │
+│  │ Self-hosted   │   │ Agent VM              │  │ Web UI VM       │ │
+│  │ LLM (vLLM)   │◄──│  - python -m errander │  │ (separate, v2)  │ │
+│  │ (private IP)  │   │  - APScheduler        │  │ - nginx reverse │ │
+│  └──────────────┘   │  - Slack notifier      │  │   proxy (TLS)   │ │
+│                     │  - Port 9090: /metrics │  │ - Port 9091:    │ │
+│                     │           /health      │  │   /ui/* routes  │ │
+│                     │  - OS user:            │  │ - OS user:      │ │
+│                     │    errander-agent      │  │   errander-web  │ │
+│                     │  (SSH keys, executor)  │  │   (no SSH, RBAC)│ │
+│                     └──────┬────────────────┘  └─────────────────┘ │
+│                            │                                       │
+│                       SSH  │                                       │
+│                            ▼                                       │
+│                  ┌─────────────────┐                              │
+│                  │ Target VMs      │                              │
+│                  │ (private Linux) │                              │
+│                  └─────────────────┘                              │
+└────────────────────────────────────────────────────────────────────┘
+         │
+         │ HTTPS (outbound only)
+         │
+         ▼
+┌─────────────────────────────┐
+│ Slack API (public internet) │
+└─────────────────────────────┘
+         ▲
+         │
+┌─────────────────────────────┐
+│ Operator Browser (mobile)   │
+│ accesses nginx @ port 443   │
+└─────────────────────────────┘
 ```
 
-- Agent VM has NO public IP — fully private
-- All Slack communication is outbound HTTPS (notify-and-link, not webhooks)
-- LLM endpoint is a private IP / internal DNS inside VPN
-- SSH to target VMs is within the VPN
-- No nginx, no inbound webhooks, no TLS certificates to manage
+**Key separation (R3 process split):**
+- **Agent process** (`errander-agent` user): runs LLM, executor, Slack notifier; SSH keys only; 9090 metrics-only
+- **Web process** (`errander-web` user): runs approval UI, auth, RBAC; no executor/SSH imports; 9091 (behind nginx in prod)
+- **Shared state**: PostgreSQL audit DB (both processes read/write, durable across restarts)
+- **No webhook inbound traffic**: Slack → agent only (outbound HTTP), operator → nginx (TLS + rate limiting)
+- **Public mode** (nginx Mode 2): optional, enforces TOTP for admin, IP allowlist, hardened headers
 
 ## Architecture (target)
 
@@ -97,12 +101,20 @@ errander/
 │   │   └── backup_verify.py# Backup verification
 │   ├── state.py            # Agent state definitions (batch, per-VM, per-action)
 │   └── decisions.py        # LLM-powered decision logic (with hardcoded fallback)
+├── web/                    # Web UI process (R3 process split, separate OS user)
+│   ├── __main__.py         # Entry point: python -m errander.web (port, DB, stores)
+│   ├── ui.py               # Production web UI: login/TOTP/RBAC, routes, auth middleware
+│   ├── totp.py             # RFC 6238 TOTP helpers (generate_secret, verify_code, QR)
+│   ├── server.py           # Dev demo server (legacy, pre-split)
+│   └── data.py, evidence.py, providers.py  # Legacy/demo only
 ├── safety/                 # Safety architecture
 │   ├── validators.py       # Pre-execution validation checks
 │   ├── rollback.py         # Rollback capabilities per action type
 │   ├── approval.py         # Slack approval notification (notify-and-link, no decisions)
 │   ├── approval_store.py   # Durable approval requests (DB-backed, atomic decide,
 │   │                       #   survives restarts — reconciled by main.py interval job)
+│   ├── user_store.py       # Users/groups/sessions for web UI RBAC (R2 — scrypt
+│   │                       #   hashes, DB sessions, group_permissions)
 │   ├── locking.py          # VM-level locking (file-based v1, Redis v2)
 │   └── audit.py            # Audit logging for all actions
 ├── execution/              # Actual command execution layer
@@ -148,9 +160,14 @@ example/
 ├── inventory.yaml          # Annotated reference inventory (prod/staging/dev)
 └── settings.yaml           # Annotated reference settings (schedule, LLM, Slack)
 deploy/
+├── errander-agent.service      # systemd unit for agent process (user=errander-agent)
+├── errander-web.service        # systemd unit for web UI process (user=errander-web)
+├── .env.agent.example          # Env secrets for agent (LLM, Slack, SSH, DB)
+├── .env.web.example            # Env secrets for web (DB, signing secret, port)
+├── nginx-mode2.conf.example    # Reference nginx config (TLS, rate limiting, IP allowlist)
 └── vllm/
-    ├── docker-compose.yml  # Production vLLM container (GPU passthrough, Qwen3-8B-AWQ)
-    └── .env.example        # Configurable deployment vars (model, GPU, port, cache dir)
+    ├── docker-compose.yml      # Production vLLM container (GPU passthrough, Qwen3-8B-AWQ)
+    └── .env.example            # Configurable deployment vars (model, GPU, port, cache dir)
 ```
 
 ## Risk Tiers (safety gates)
@@ -158,11 +175,11 @@ deploy/
 | Tier | Actions | Approval |
 |---|---|---|
 | Low | Disk cleanup, log rotation, backup verification | Automatic |
-| Medium | Docker prune, non-kernel patching, config changes | Log + notify |
+| Medium | Docker hygiene (object-level approval), non-kernel patching, config changes | Log + notify |
 | High | Service restart (`service_restart`) — operator-triggered only in v1 | Human approval required — Web UI (Slack notifies and links; all policy tiers) |
 | Critical | Kernel operations, data deletion | Blocked — never automated |
 
-**Service restart is operator-triggered only in v1.** Auto-detection from probe output (detect-and-propose) is deferred to v1.1. Adding a unit to the `restartable_units` allowlist in inventory + on-target `/etc/errander/restart-allowlist` is required before Errander will restart it.
+**Service restart is operator-triggered only in v1.** Auto-detection from probe output (detect-and-propose) is deferred to v1.1. Adding a unit to the `restartable_units` allowlist in inventory + on-target `/etc/errander/restart-allowlist` is required before Errander will restart it. `restartable_units` should be set **per-target** (not per-environment) because different VMs run different services — use `actions.service_restart` under each individual target in `inventory.yaml`.
 
 **v1 approval coverage decision (2026-05-23):** Categorical approval is acceptable for LOW-risk, whitelist-bounded, non-destructive actions (`/tmp`, `apt-cache`, `journal`, `log_rotation`). These actions cannot permanently destroy data (files are either temp-only or compressed/rotated, not deleted), and their scope is hardcoded — never LLM-decided. They are honestly labeled `[CATEGORICAL]` in the Slack approval message. `orphaned-deps` is the exception: it removes installed packages (destructive), so it receives exact-object treatment — exact package names appear in the approval message and a drift gate re-checks candidates at execution time.
 
@@ -171,7 +188,7 @@ deploy/
 | Tier | Actions | Strategy |
 |---|---|---|
 | Full Rollback | Non-kernel patching | Snapshot full package list before execution. Batch rollback to previous versions on failure. Critical alert if rollback itself fails. |
-| Re-Pull (no true rollback) | Docker prune | Pruned images/containers are gone. Can re-pull images if needed. Accept that prune is destructive but low risk. |
+| Re-Pull (no true rollback) | Docker hygiene | Removed images/objects are gone. Can re-pull images if needed. Accept that removal is destructive but low risk. |
 | No Rollback Needed | Log rotation, disk cleanup | Log rotation: data still exists, just compressed/rotated. Disk cleanup: only targets known-safe paths (see whitelist below). |
 | Never Touch | Kernel, active data dirs | Running kernel, active data directories, anything not on the explicit safe-to-clean whitelist — never automated. |
 
@@ -185,7 +202,7 @@ Anything not on this whitelist requires human approval to clean.
 
 ## AI Safety Invariant (MANDATORY)
 
-Errander-AI uses a two-layer AI architecture. See `docs/AI-ARCHITECTURE.md` for the canonical model.
+Errander-AI uses a two-layer AI architecture. See `docs/AI-ARCHITECTURE.md` for the canonical model, and `docs/OBSERVABILITY.md` for how each layer is observed (audit trail = Layer B actions; AI decision log + LangSmith = Layer A reasoning; Prometheus = execution health).
 
 > **MCP belongs in the operator brain, not in the execution hands.**
 
@@ -354,12 +371,14 @@ Before every `git commit` + `git push`, update all files that are relevant to th
 
 ### Update when relevant (when the specific thing changes)
 - `SETUP.md` — when setup steps or scripts change
+- `docs/langgraph-primer.md` — when graph nodes, edges, state schema, fan-out structure, approval flow, or sub-graph layout changes; this file went stale before — keep it in sync
 - `README.md` — when major features, architecture, or test counts change
 - `RUN.md` — when CLI commands or run process changes
-- `AGENTS.md` — when project rules or architecture decisions change
+- `CLAUDE.md` — when project rules or architecture decisions change
 - `docs/learning/XX-feature.md` — create one for every new feature implemented
 - `docs/LLM-PROVIDERS.md` — when LLM provider support changes
 - `docs/SECRETS.md` — when secrets management changes
+- `docs/OBSERVABILITY.md` — when an observability surface changes (audit events, metrics, AI decision log, LangSmith)
 
 ---
 
@@ -402,6 +421,7 @@ The repo is fully self-contained — everything needed to run the project is in 
 git clone https://github.com/psc0des/Errander-AI.git
 cd Errander-AI
 uv sync --extra dev        # rebuilds virtualenv
+docker compose up -d       # local PostgreSQL (errander + errander_test databases)
 cp example/inventory.yaml inventory.yaml   # edit with real VM IPs
 ```
 

@@ -160,7 +160,7 @@ Because the decision engine is **LangGraph**, [LangSmith](https://docs.smith.lan
 
 ### What it adds vs. what's redundant or N/A for Errander
 
-Most of Errander's Layer A is deliberately narrow — a few structured LLM calls, no tool-using agent loop. The one exception is the opt-in agentic `--ask --agentic` investigation path (`ERRANDER_INVESTIGATION_AGENT_ENABLED`, default off — see §"What Errander can see" below), which *is* a bounded tool-calling loop. Right-size the LangSmith investment accordingly:
+Errander's Layer A is deliberately narrow — a few structured LLM calls (planning note, report, the deterministic `--ask` operator assistant), **no tool-using agent loop**. (An agentic `--ask --agentic` loop was prototyped and removed — see the Roadmap note in README.) Right-size the LangSmith investment accordingly:
 
 | LangSmith panel | Value to Errander | Why |
 |---|---|---|
@@ -168,7 +168,7 @@ Most of Errander's Layer A is deliberately narrow — a few structured LLM calls
 | **Feedback Scores** | **Medium / future** | Pairs with the existing replay-eval (`--ai-eval-replay`) for prompt-regression. Requires you to attach feedback — not automatic. |
 | **LLM Calls** (count/latency) | **Low — redundant** | Already covered by `errander_llm_requests_total` (Prometheus) + `latency_ms`/`outcome` (AI decision log). |
 | **Cost & Tokens** | **Conditional** | Important on a **cloud LLM** (real $); near-irrelevant on **self-hosted vLLM** (your own GPU). |
-| **Tools** | **Available (opt-in)** | `--ask --agentic` is a bounded ReAct loop over six read-only tools (`query_prometheus`, `search_logs`, `get_audit_events`, `get_disk_trend`, `get_vm_facts`, `list_inventory`); each call is also logged in-network to the AI decision log (`decision_type="investigation_agent_step"`). The default deterministic `--ask` path and the scheduled maintenance batch still make no tool calls at all. |
+| **Tools** | **N/A** | No tool-using agent loop in core. The deterministic `--ask`, the planning note, and the scheduled maintenance batch make no tool calls. (A bounded ReAct loop was prototyped under `--ask --agentic` and removed; if rebuilt as the separate conversational-investigation project, this row becomes relevant again.) |
 
 ### Design constraints (must hold when integrated)
 
@@ -212,11 +212,9 @@ If a question needs data outside this menu — say, per-process disk I/O, networ
 2. **It proceeds with what it has.** Every probe degrades gracefully (SSH failure → `None`/`[]`, Prometheus/ELK failure → `[]`); a missing signal is simply absent, never a crash, never a block.
 3. **Adding a signal is a code change, not a config flag and not an LLM decision.** A developer writes a new probe/query (and for a new *action*, per CLAUDE.md: a new sub-graph + manifest + risk tier + rollback strategy). It's reviewed and tested, not composed on the fly.
 
-So for the scheduled maintenance batch and the default `--ask`, Errander can only "see" what someone pre-built a probe for. This is a deliberate trade-off, not an oversight — it's what keeps the gathered context bounded, reproducible, redactable, and cheap (one LLM call, not a tool loop).
+So for the scheduled maintenance batch and the `--ask` operator assistant, Errander can only "see" what someone pre-built a probe/query for. This is a deliberate trade-off, not an oversight — it's what keeps the gathered context bounded, reproducible, redactable, and cheap (one LLM call, not a tool loop).
 
-> **The one place this line moves: the Layer-A investigation agent (available, opt-in).** `--ask --agentic` (`ERRANDER_INVESTIGATION_AGENT_ENABLED`, default off) lets the LLM *compose* read-only queries live via a bounded ReAct loop over six tools — `query_prometheus(promql)`, `search_logs(host, query_terms)`, `get_audit_events`, `get_disk_trend`, `get_vm_facts`, `list_inventory` — so it can chase a novel question like "is app X spewing errors?" that the fixed menu has no pre-built probe for. Every tool result is redacted and capped before it re-enters the model; every hop is logged (`decision_type="investigation_agent_step"`); the loop is bounded by `ERRANDER_INVESTIGATION_AGENT_MAX_TOOL_CALLS` (default 8) and `ERRANDER_INVESTIGATION_AGENT_TIMEOUT` (default 180s); and it falls back cleanly to the deterministic path on any failure (unsupported endpoint, LLM down, budget exhausted) — never raises, never blocks. The scheduled maintenance batch (`prioritize_actions`) is untouched and still deterministic. See `docs/learning/60-investigation-agent.md`, §4 above, and `AI-ARCHITECTURE.md`.
-
-> **A second Layer-A surface on top of the same engine: dashboard chat (available, opt-in).** `/ui/chat` (`ERRANDER_CHAT_ENABLED`, default off) is a multi-turn web console over the same `OperatorAssistant.investigate()` / `InvestigationAgent.investigate_agentic()` engine — it builds no queries of its own. Each turn logs a separate `decision_type="dashboard_chat_turn"` AI-decision row (question, engine outcome, latency) in addition to whatever the engine itself logs for that call. Read-only in phase 1 — no action-proposal/approval handoff yet. See `docs/learning/61-dashboard-chat.md`.
+> **An agentic version that *composed* read-only queries live (a bounded ReAct loop, `--ask --agentic`) plus a `/ui/chat` console over it were prototyped and then removed** — they're a different kind of system (a read-only "system of insight") that's been deferred to a separate conversational-investigation project rather than bundled into the deterministic core. See the Roadmap note in `README.md` and the design specs in `tasks/`. The deterministic `--ask` operator assistant (fixed read-only queries) remains.
 
 ---
 

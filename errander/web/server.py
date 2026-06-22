@@ -4032,10 +4032,6 @@ _GLOSS: list[tuple[str, str, str, str, str]] = [
      "Read-only signal sweep (disk growth, drift, failed logins, journal errors, failed services). Runs on schedule or --probe-now. Never executes maintenance actions — observation only."),
     ("Operator Assist.",   "CORE",    "#4f46e5", "gloss-chip-core",
      "Layer A CLI (--ask) that investigates fleet state using audit data, Prometheus, and ELK, then answers questions via LLM. Strictly read-only — never executes infrastructure changes."),
-    ("Investigation Agent", "CORE",   "#4f46e5", "gloss-chip-core",
-     "Opt-in agentic mode for --ask (--agentic, ERRANDER_INVESTIGATION_AGENT_ENABLED). The LLM composes its own Prometheus/ELK/audit queries in a bounded tool-calling loop instead of a fixed query set. Still Layer A — read-only, recommends only — falls back to the deterministic Operator Assistant on any failure."),
-    ("Dashboard Chat",     "CORE",    "#4f46e5", "gloss-chip-core",
-     "Opt-in multi-turn web console at /ui/chat (ERRANDER_CHAT_ENABLED). Per-user threads over the same investigation engine as --ask, with citations. Read-only — phase 1 has no streaming and no action handoff."),
     ("Planning Note",      "CORE",    "#4f46e5", "gloss-chip-core",
      "Short LLM-generated note attached to an already-finalized deterministic plan. Informational only — never changes which actions run or their order. Shown in the Slack approval message and the web approval card."),
     # ── SAFETY ───────────────────────────────────────────────────────────────
@@ -4084,13 +4080,9 @@ _GLOSS: list[tuple[str, str, str, str, str]] = [
     ("APScheduler",        "INFRA",   "#d97706", "gloss-chip-infra",
      "Python scheduling library that fires maintenance batches and daily probe runs on configured cron schedules inside the agent process."),
     ("Prometheus",         "INFRA",   "#d97706", "gloss-chip-infra",
-     "Optional metrics source for VM stats (CPU, memory, disk usage) from node_exporter. Reached by direct HTTP (aiohttp GET to /api/v1/query) — no MCP. Enriches probe digests and --ask fleet analysis. Per-env URL override supported. (Separately, the agent also EXPOSES its own /metrics for an external Prometheus to scrape — a different, inbound connection.)"),
+     "Optional HTTP adapter for VM metrics (CPU, memory, disk usage) from node_exporter. Enriches probe digests and --ask fleet analysis. Per-env URL override supported."),
     ("ELK",                "INFRA",   "#d97706", "gloss-chip-infra",
-     "Optional Elasticsearch integration for log error analysis. Reached by direct HTTP (aiohttp POST to the _search REST API) — no MCP. Read by the daily probe and Layer A (--ask), never the execution path. When ELK is off, the probe still gathers journal errors via journalctl over SSH (run unconditionally in parallel, not a switch-over). Per-env URL override supported."),
-    ("PostgreSQL",         "INFRA",   "#d97706", "gloss-chip-infra",
-     "The single audit/state backend (audit trail, approvals, AI-decision log). Reached over SQL via SQLAlchemy async + the asyncpg driver (errander/db/core.py) — no MCP, no ORM models. Both the agent and web processes connect to the same DB; least-privilege enforced by separate DB roles (errander_agent read/write, errander_web limited)."),
-    ("MCP",                "INFRA",   "#d97706", "gloss-chip-infra",
-     "Model Context Protocol — a standard for giving an LLM tools across a process/trust boundary. The AI Safety Invariant lists MCP as something Layer A MAY use, but it is NOT implemented: there is no MCP client or server in Errander, and no MCP dependency. The investigation agent's tools are plain in-process Python calls onto PrometheusClient / ElkClient / AuditStore. MCP would only ever matter for plugging in EXTERNAL third-party operator tools (e.g. a Grafana or GitHub MCP) in Layer A — never in the Layer B execution path."),
+     "Optional Elasticsearch integration for log error analysis. Enriches probes and --ask. Falls back to journalctl SSH calls when ELK is not configured. Per-env URL override supported."),
 ]
 
 # Node detail data for JS — plain string avoids f-string brace escaping
@@ -4173,55 +4165,6 @@ const WF_NODES = {
     code: 'errander/observability/reporting.py · errander/integrations/slack.py',
     note: 'Report includes: VMs processed, actions taken, errors, rollbacks, duration. Probe digests also include disk growth alerts, failed services, journal errors, and escalation flags.'
   },
-  'ask-cli': {
-    title: 'Ask (CLI)', badge: 'LAYER A · ENTRY POINT', badgeColor: '#ec4899',
-    checks: 'Operator runs --ask "<question>" · optional --agentic flag requests the tool-calling loop · question is redacted before any LLM call',
-    onfail: '--agentic requested but ERRANDER_INVESTIGATION_AGENT_ENABLED is off → prints a one-line notice and falls through to the deterministic engine, never silently ignored',
-    code: 'errander/main.py (run_ask_query)',
-    note: 'Read-only. Never touches a VM, never executes infrastructure changes — this whole lane is Layer A, fully separate from the batch maintenance graph above.'
-  },
-  'dashboard-chat': {
-    title: 'Dashboard Chat', badge: 'LAYER A · WEB UI', badgeColor: '#ec4899',
-    checks: 'Opt-in /ui/chat (ERRANDER_CHAT_ENABLED) · per-user threads (ChatStore) · prior turns folded into the question text · CSRF + ownership enforced',
-    onfail: 'Feature disabled → friendly notice, never a 500. Not logged in → redirect to /ui/login, even in bootstrap mode, since threads are per-user.',
-    code: 'errander/web/ui.py (_ui_chat_message_post) · errander/safety/chat_store.py',
-    note: 'Phase 1: no streaming, no action handoff — chat can recommend but never executes. Calls the same Investigation Engine as the CLI.'
-  },
-  'investigation-engine': {
-    title: 'Investigation Engine', badge: 'LAYER A · READ-ONLY', badgeColor: '#ec4899',
-    checks: 'Default: Operator Assistant (fixed Prometheus/ELK/audit queries, one LLM call) · opt-in: Investigation Agent (--agentic, bounded ReAct tool-calling loop, up to 8 tool calls / 180s)',
-    onfail: 'Any failure (LLM down, endpoint ignores tools=, turn-1 returns zero tool calls, budget exhausted) falls back cleanly to the deterministic Operator Assistant — never raises, never blocks',
-    code: 'errander/agent/operator_assistant.py · errander/agent/investigation_agent.py',
-    note: 'Tools are plain in-process Python calls — direct HTTP to Prometheus/ELK (aiohttp), direct SQL to the audit DB (asyncpg). No MCP, no JSON-RPC. Reads the audit DB the batch graph writes, plus Prometheus/ELK directly — but never executes; every finding cites a real source ID.'
-  },
-  'metrics-observability': {
-    title: 'Metrics & AI Decisions', badge: 'OBSERVABILITY', badgeColor: '#0891b2',
-    checks: '/metrics — Prometheus counters/histograms for every batch action · AI Decisions log — every LLM call (prompt hash, model, latency, outcome) browsable at /ui/ai-decisions',
-    onfail: 'Prometheus scrape failing never blocks the agent — metrics are emitted in-process on a best-effort basis. Audit trail is the source of truth for what happened; Prometheus is the source of truth for execution health.',
-    code: 'errander/observability/metrics.py · errander/safety/ai_audit.py',
-    note: 'Fed by both tracks: the batch graph\\'s Audit Logging node, and the Investigation Engine\\'s own per-hop decision log (investigation_agent_step rows). The /metrics endpoint is the agent EXPOSING its own metrics for an external Prometheus to scrape — a separate, inbound connection from the Prometheus node it reads from.'
-  },
-  'postgres': {
-    title: 'PostgreSQL', badge: 'DATA · SYSTEM OF RECORD', badgeColor: '#2563eb',
-    checks: 'The single audit/state backend — audit trail, approval requests, AI-decision log. Reached over SQL via SQLAlchemy async + the asyncpg driver. Agent and web processes share one DB, separated by least-privilege role grants.',
-    onfail: 'Strict audit mode: a write failure halts the batch — audit integrity beats execution. Connections are pooled; transient errors retry. No MCP, no ORM models — plain parameterized SQL.',
-    code: 'errander/db/core.py · errander/safety/audit.py · approval_store.py · ai_audit.py',
-    note: 'This is the authoritative record of what actually happened to the fleet. Prometheus is for execution health, ELK for logs — neither is the system of record. Both layers connect here directly (no MCP).'
-  },
-  'prometheus': {
-    title: 'Prometheus', badge: 'DATA · METRICS (READ)', badgeColor: '#d97706',
-    checks: 'Read by the daily probe (fixed CPU/mem/load PromQL per VM, fetch_vm_metrics) and by Layer A (--agentic composes arbitrary read-only PromQL, capped at 20 rows) · direct HTTP via aiohttp GET to /api/v1/query — no MCP.',
-    onfail: 'Optional — an unreachable Prometheus never blocks; the probe and investigation degrade to SSH-gathered state. Note: the batch planner does NOT read live Prometheus — it plans from STORED signals in Postgres (disk history, baselines).',
-    code: 'errander/integrations/prometheus.py · called from errander/agent/probe.py + operator_assistant.py + investigation_agent.py',
-    note: 'This node is the agent READING an external Prometheus about target VMs. Distinct from the agent EXPOSING its own /metrics (see Metrics & AI Decisions) — opposite directions, different connections.'
-  },
-  'elk': {
-    title: 'ELK / Elasticsearch', badge: 'DATA · LOG SEARCH (READ)', badgeColor: '#d97706',
-    checks: 'Read by the daily probe (fixed host-aggregated error counts, fetch_vm_errors) and by Layer A (--agentic composes read-only multi_match searches, capped) · direct HTTP via aiohttp POST to the _search REST API — no SDK, no MCP. The execution path never touches ELK.',
-    onfail: 'Optional — when ELK is unconfigured the probe still gathers journal errors via journalctl over SSH (run unconditionally every probe, in parallel — not a switch-over). ELK adds app-log error patterns on top when present.',
-    code: 'errander/integrations/elk.py · called from errander/agent/probe.py + operator_assistant.py + investigation_agent.py',
-    note: 'Caller input only ever shapes the query filter content — never the URL path or index — so an LLM-composed search stays read-only and bounded.'
-  },
 };
 
 function selectNode(id) {
@@ -4262,16 +4205,9 @@ GLOSS_CSS = """
 @keyframes dash-flow { to { stroke-dashoffset: -26; } }
 .wf-outer-card { background: #0f172a; border-radius: 12px; padding: 24px; margin-bottom: 8px; }
 .wf-diagram-wrap { overflow-x: auto; padding-bottom: 8px; }
-.wf-diagram { position: relative; width: 960px; height: 1170px; margin: 0 auto; }
-.wf-svg { position: absolute; top: 0; left: 0; width: 960px; height: 1170px; pointer-events: none; overflow: visible; }
+.wf-diagram { position: relative; width: 960px; height: 845px; margin: 0 auto; }
+.wf-svg { position: absolute; top: 0; left: 0; width: 960px; height: 845px; pointer-events: none; overflow: visible; }
 .wf-node { position: absolute; width: 160px; height: 50px; border-radius: 8px; display: flex; align-items: center; gap: 10px; padding: 0 14px; cursor: pointer; transition: all 0.18s; background: #1e293b; user-select: none; }
-.wf-node-layer-a { border: 1.5px dashed #ec4899; background: #1e0f17 !important; }
-.wf-node-layer-a:hover { background: #2a1420 !important; }
-.wf-node-data { border: 1.5px solid #334155; background: #0d1830 !important; }
-.wf-node-data:hover { background: #15233f !important; }
-.wf-band-tag { position: absolute; left: 8px; font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.06em; color: #cbd5e1; text-transform: uppercase; pointer-events: none; }
-.wf-band-tag small { display: block; font-size: 0.6rem; font-weight: 400; letter-spacing: 0.01em; color: #64748b; text-transform: none; margin-top: 2px; }
-.wf-band-sep { position: absolute; left: 0; width: 960px; border-top: 1px dashed #2a3850; }
 .wf-node:hover { background: #243348; transform: translateY(-1px); box-shadow: 0 4px 16px rgba(79,70,229,0.3); }
 .wf-node.active { background: linear-gradient(135deg, #3525cd, #712ae2) !important; box-shadow: 0 4px 24px rgba(79,70,229,0.5); border: none !important; }
 .wf-node.active .wf-node-name { color: #fff !important; }
@@ -4289,8 +4225,6 @@ GLOSS_CSS = """
 .wf-dot-red    { background: #f87171; box-shadow: 0 0 6px #f87171; }
 .wf-dot-green  { background: #4ade80; box-shadow: 0 0 6px #4ade80; }
 .wf-dot-white  { background: rgba(255,255,255,0.85); }
-.wf-dot-pink   { background: #f472b6; box-shadow: 0 0 6px #f472b6; }
-.wf-dot-blue   { background: #60a5fa; box-shadow: 0 0 6px #60a5fa; }
 .wf-node-name { font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; font-weight: 700; color: #e2e8f0; white-space: nowrap; }
 .wf-node-sub  { font-size: 0.585rem; color: #64748b; font-family: 'Inter', sans-serif; white-space: nowrap; margin-top: 2px; }
 .wf-legend { display: flex; align-items: center; gap: 20px; margin-bottom: 16px; flex-wrap: wrap; }
@@ -4347,20 +4281,11 @@ def page_glossary() -> str:
         ("pre-validation",   400, 200, "active",                  "wf-dot-white",  "Pre-Validation", "SSH · OS · readiness"),
         ("llm-planning",     400, 290, "",                        "wf-dot-violet", "LLM Planning",   "signals · plan · risk"),
         ("plan-enrichment",  400, 375, "",                        "wf-dot-violet", "Plan Enrichment","exact pkgs · versions · hash"),
-        ("approval-gate",    120, 470, "wf-node-conditional",     "wf-dot-amber",  "Approval Gate",  "high-risk · human"),
+        ("approval-gate",    120, 470, "wf-node-conditional",     "wf-dot-amber",  "Approval Gate",  "high-risk · Slack"),
         ("action-execution", 650, 470, "",                        "wf-dot-teal",   "Action Exec.",   "6 sub-graphs · all actions"),
         ("rollback",         755, 565, "wf-node-failure-node",    "wf-dot-red",    "Rollback",       "revert snapshot"),
         ("audit-logging",    400, 660, "",                        "wf-dot-green",  "Audit Logging",  "before + after"),
         ("report",           400, 750, "",                        "wf-dot-indigo", "Report",         "LLM or template"),
-        # ── DATA & OBSERVABILITY band — shared substrate, written by Layer B, read by both ──
-        ("postgres",             70, 855, "wf-node-data",         "wf-dot-blue",   "PostgreSQL",     "audit · approvals · AI log"),
-        ("prometheus",          290, 855, "wf-node-data",         "wf-dot-amber",  "Prometheus",     "VM metrics (read)"),
-        ("elk",                 510, 855, "wf-node-data",         "wf-dot-amber",  "ELK",            "log search (read)"),
-        ("metrics-observability", 730, 855, "wf-node-data",       "wf-dot-teal",   "Metrics & AI Log","/metrics · /ui logs"),
-        # ── LAYER A band — read-only operator brain; reads the substrate above, never executes ──
-        ("investigation-engine", 340, 985, "wf-node-layer-a",     "wf-dot-pink",   "Investigation Engine","Assistant ↔ Agentic loop"),
-        ("ask-cli",             120, 1075, "wf-node-layer-a",     "wf-dot-pink",   "Ask (CLI)",      "--ask [--agentic]"),
-        ("dashboard-chat",      560, 1075, "wf-node-layer-a",     "wf-dot-pink",   "Dashboard Chat", "/ui/chat · per-user"),
     ]
     nodes_html = ""
     for nid, left, top, extra, dot, name, sub in _nodes:
@@ -4373,19 +4298,8 @@ def page_glossary() -> str:
             f'<div class="wf-node-sub">{sub}</div></div></div>'
         )
     nodes_html += '<div class="wf-node-terminal" style="left:50px;top:565px">✕ SKIPPED</div>'
-    # Three honest bands (top -> bottom): Layer B executes · shared data · Layer A reads
-    nodes_html += (
-        '<div class="wf-band-tag" style="top:4px">LAYER B · DETERMINISTIC EXECUTION'
-        '<small>the hands — scheduler-driven, writes the audit trail, no LLM in the path</small></div>'
-        '<div class="wf-band-sep" style="top:812px"></div>'
-        '<div class="wf-band-tag" style="top:817px">DATA &amp; OBSERVABILITY · shared substrate'
-        '<small>Postgres = Errander&#39;s own store (Layer B writes audit) · Prometheus &amp; ELK = external, read-only · direct HTTP / SQL, no MCP</small></div>'
-        '<div class="wf-band-sep" style="top:942px"></div>'
-        '<div class="wf-band-tag" style="top:947px">LAYER A · OPERATOR BRAIN'
-        '<small>read-only — investigates &amp; advises in parallel, never executes</small></div>'
-    )
 
-    # SVG arrow overlay — all coordinates are pixel-exact for 960×1060 container
+    # SVG arrow overlay — all coordinates are pixel-exact for 960×845 container
     svg = """<svg class="wf-svg" xmlns="http://www.w3.org/2000/svg">
   <defs>
     <marker id="mh" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
@@ -4396,8 +4310,6 @@ def page_glossary() -> str:
       <polygon points="0 0,8 3,0 6" fill="#d97706"/></marker>
     <marker id="mr" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
       <polygon points="0 0,8 3,0 6" fill="#ef4444"/></marker>
-    <marker id="mp" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
-      <polygon points="0 0,8 3,0 6" fill="#ec4899"/></marker>
   </defs>
 
   <!-- Happy-path: APScheduler → Parent Graph → Pre-Validation → LLM Planning -->
@@ -4471,34 +4383,6 @@ def page_glossary() -> str:
   <text x="116" y="540" fill="#f87171" font-family="JetBrains Mono,monospace" font-size="9" font-weight="700">REJECTED</text>
   <text x="820" y="533" fill="#f87171" font-family="JetBrains Mono,monospace" font-size="9" font-weight="700">FAILURE</text>
   <text x="650" y="593" fill="#4ade80" font-family="JetBrains Mono,monospace" font-size="9" font-weight="700">SUCCESS</text>
-
-  <!-- Layer B writes the audit trail DOWN into PostgreSQL (green, animated) -->
-  <path d="M 450,710 C 330,765 220,815 168,855"
-        stroke="#16a34a" stroke-width="2" fill="none" stroke-dasharray="8 5"
-        marker-end="url(#mg)"
-        style="animation:dash-flow 0.9s linear infinite"/>
-  <text x="232" y="800" fill="#4ade80" font-family="JetBrains Mono,monospace" font-size="9" font-weight="700">WRITES AUDIT</text>
-
-  <!-- Layer A entry points feed the Investigation Engine (pink, pointing UP into engine) -->
-  <path d="M 240,1075 C 320,1055 380,1048 405,1037"
-        stroke="#ec4899" stroke-width="1.5" fill="none" stroke-dasharray="5 4"
-        marker-end="url(#mp)"/>
-  <path d="M 600,1075 C 520,1055 470,1048 440,1037"
-        stroke="#ec4899" stroke-width="1.5" fill="none" stroke-dasharray="5 4"
-        marker-end="url(#mp)"/>
-
-  <!-- Investigation Engine reads UP from the shared substrate (pink upward = parallel, not a downstream step) -->
-  <path d="M 400,985 C 320,958 210,932 162,907"
-        stroke="#ec4899" stroke-width="1.5" fill="none" stroke-dasharray="5 4"
-        marker-end="url(#mp)"/>
-  <path d="M 418,985 C 405,958 385,932 372,907"
-        stroke="#ec4899" stroke-width="1.5" fill="none" stroke-dasharray="5 4"
-        marker-end="url(#mp)"/>
-  <path d="M 446,985 C 510,955 565,930 585,907"
-        stroke="#ec4899" stroke-width="1.5" fill="none" stroke-dasharray="5 4"
-        marker-end="url(#mp)"/>
-  <text x="612" y="930" fill="#f472b6" font-family="JetBrains Mono,monospace" font-size="8.5" font-weight="700">reads · direct HTTP/SQL · no MCP</text>
-  <text x="300" y="1112" fill="#f472b6" font-family="JetBrains Mono,monospace" font-size="8.5" font-weight="700">recommends to operator · never executes</text>
 </svg>"""
 
     legend = """
@@ -4517,11 +4401,6 @@ def page_glossary() -> str:
         <svg width="28" height="10"><line x1="0" y1="5" x2="28" y2="5" stroke="#ef4444"
           stroke-width="1.5" stroke-dasharray="4 4"/></svg>
         Failure path
-      </span>
-      <span class="wf-legend-item">
-        <svg width="28" height="10"><line x1="0" y1="5" x2="28" y2="5" stroke="#ec4899"
-          stroke-width="1.5" stroke-dasharray="5 4"/></svg>
-        Layer A (read-only)
       </span>
     </div>"""
 
@@ -4553,8 +4432,8 @@ def page_glossary() -> str:
     workflow_section = f"""
     <div class="section-hdr" style="margin-bottom:12px">
       <div>
-        <div class="section-title">Agent Workflow &amp; Architecture</div>
-        <div class="section-sub">Layer B executes (top) · the shared data substrate it writes &amp; both layers read (middle) · Layer A investigates in parallel (bottom). Click any node for detail.</div>
+        <div class="section-title">Agent Workflow</div>
+        <div class="section-sub">Click any node to see what happens at that stage</div>
       </div>
     </div>
     {legend}

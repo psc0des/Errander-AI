@@ -1,5 +1,41 @@
 # Errander-AI — Lessons Learned
 
+## 2026-06-23 — Explore freely, ship narrowly: a feature that keeps generating architecture is unadmitted scope
+
+We built Plan A (agentic `--ask --agentic` investigation) and Plan B (`/ui/chat` dashboard
+chat), shipped them, then over the next few sessions kept discovering they needed a separate
+agent, a separate read-only credential per VM, a separate framework (LangGraph + langchain
+alongside the raw OpenAI SDK), and a separate three-layer eval pipeline. That escalation was
+the tell: **when a "feature" keeps generating more architecture every time you poke it, it's
+not a feature — it's an unadmitted second product.** The owner ultimately pulled it back out
+of the core entirely.
+
+The root mistake wasn't the thinking (the design work was sound and produced a durable
+principle — *system of action* vs *system of insight*, and "the insight system must be a
+read-only consumer of the action system, never a participant"). The mistake was **committing
+the exploration to the plate before validating the appetite.** Exploring an idea and shipping
+it are two different gates; the chat sailed through the first and skipped the second. It was
+also a *mismatch of design centers*: the maintenance engine's value is *minimizing* LLM
+involvement (the LLM is a liability in the action path); a chat's value is *maximizing* it.
+Bolting opposite-gravity subsystems together under a soft "Layer A/B invariant" meant the
+boundary was under constant pressure — we spent multiple sessions fixing docs/diagrams where
+it had blurred.
+
+**How to apply:**
+- Treat "explore" and "ship" as separate gates. A prototype can live on a branch / behind a
+  flag without being woven into the core's code, docs, diagrams, and roadmap. Don't let an
+  unvalidated idea take dependencies the core has to carry.
+- **Watch for the escalation smell:** if making a feature "good" keeps requiring net-new
+  infrastructure (credentials, processes, frameworks, eval pipelines), stop and ask "is this
+  still one product?" before building the next piece — not after.
+- When two subsystems have *opposite* design centers (here: minimize-LLM vs maximize-LLM),
+  default to **structural separation** (separate process/credential/repo + a narrow
+  interface), not a shared codebase governed by a convention. A boundary you have to keep
+  re-explaining in docs is weaker than one that's true by construction.
+- As the assistant: when the user is happily designing an ever-larger architecture for a
+  feature, it's my job to ask "should this be its own thing / has it earned this?" *early*,
+  not to enthusiastically help gold-plate it. I caught this one late.
+
 ## 2026-06-22 — Diagram/popup copy is a factual claim — verify it against callers, don't infer it from the mental model
 
 When I built the data-substrate node popups, I wrote "Layer B reads ELK at probe time" and

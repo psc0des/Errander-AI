@@ -1,9 +1,55 @@
 # Errander-AI — Project Status
 
 ## Last Updated
-2026-06-22
+2026-06-23
 
 ## Current Phase
+**Removed Plan A + Plan B (chat / agentic investigation) from core — back to the deterministic engine (COMPLETE 2026-06-23).**
+
+Owner decision after a deep design discussion: the LLM-driven, read-only investigation
+agent (`--ask --agentic`) and the `/ui/chat` dashboard chat were **pulled back out of the
+core**. The reasoning (captured in `tasks/lessons.md`): the maintenance engine is a
+*system of action* whose value is a deterministic, trustworthy action path; a gen-AI chat
+is a *system of insight* with opposite design pressures (fast-iterating, its own
+credential model, framework, and eval needs). Bundling the two complicated the core for
+demand that wasn't validated. The chat is a candidate **separate future project** — its
+design (a standalone read-only assistant that consumes the data substrate and only
+*proposes* through the existing approval flow) is preserved in
+`tasks/investigation-agent-implementation-plan.md` + `tasks/dashboard-chat-implementation-plan.md`.
+
+**What was removed:**
+- Plan A: `errander/agent/investigation_agent.py`, `LLMClient.complete_with_tools()`,
+  `PrometheusClient.query()` / `ElkClient.search()`, the `--agentic` flag, the 3
+  `investigation_agent_*` settings, the `INVESTIGATION_*` metrics, and their tests/learning doc.
+- Plan B: `errander/safety/chat_store.py`, migration 16, the `/ui/chat` routes +
+  `ChatEngineDeps` in `web/ui.py`, the chat wiring in `web/__main__.py`, the 3 `chat_*`
+  settings, and their tests/learning doc.
+- The workflow-diagram "Layer A lane" + data-substrate redesign in `web/server.py` (the
+  diagram is back to the deterministic batch-flow original).
+
+**What was kept (unrelated, genuinely good):**
+- The deterministic `--ask` operator assistant (Layer A, fixed read-only queries) — was
+  always there, untouched.
+- The docker/postgres bootstrap automation (commit `9168880`).
+- Non-chat doc fixes from the session: the `docker_prune` → `docker_hygiene` staleness
+  corrections (CLAUDE/AGENTS/SPEC/README/glossary), the MCP "allowed-not-built" clarification,
+  the AGENTS.md↔CLAUDE.md re-sync, the glossary page reorder + Planning Note term.
+
+**Mechanics:** restored 14 Plan A/B-only code files to their pre-chat state (`git checkout
+9168880 -- …`), `git rm` the 9 net-new files, restored `web/server.py` to original + re-applied
+the 3 keeper glossary edits, surgically de-referenced the chat in the kept docs
+(README roadmap, OBSERVABILITY, AI-ARCHITECTURE, SPEC, CLAUDE/AGENTS, learning index).
+
+**Verification:** `ruff` clean, `mypy` clean (112 files, down from 114), full suite green
+(2463 passed; the only 2 failures were `test_migrations.py` asserting against stale DB
+state — both `errander` and `errander_test` had migration 16 + chat tables applied from
+earlier in the session — fixed by dropping the chat tables + the version-16 row from both
+DBs so they sit at version 15, matching code; tests then green).
+
+**Not yet committed / not pushed.** The chat commits (`cfabf1c`, `479d2a6`) and the
+diagram commits remain in origin history; this is a forward removal, not a history rewrite.
+
+## Previous Phase
 **Workflow diagram accuracy fix — ELK/Prometheus node text (COMPLETE 2026-06-22).**
 
 Owner read the ELK node popup and asked "is this correct?" — it wasn't. Two claims were

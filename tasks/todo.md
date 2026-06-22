@@ -1,3 +1,20 @@
+## Removed Plan A + Plan B (chat / agentic investigation) from core (2026-06-23, COMPLETE)
+
+Owner decision after a deep design discussion (system of action vs system of insight):
+the chat over-complicated the deterministic core for unvalidated demand. Pulled it back
+out; preserved the design as a candidate separate project.
+
+- [x] Restored 14 Plan A/B-only code files to pre-chat state (`git checkout 9168880 -- …`)
+- [x] `git rm` 9 net-new files (investigation_agent.py, chat_store.py, their tests + learning docs 60/61)
+- [x] Restored `web/server.py` to original diagram + re-applied 3 keeper glossary edits (Docker Hygiene term, Planning Note term, page reorder)
+- [x] Surgically de-referenced chat/agentic in kept docs: README roadmap (→ "separate future project"), OBSERVABILITY, AI-ARCHITECTURE, SPEC, CLAUDE/AGENTS (MCP blockquote), learning index
+- [x] Kept: deterministic `--ask`, docker/postgres bootstrap, docker_prune→hygiene staleness fixes, MCP clarification, AGENTS↔CLAUDE re-sync
+- [x] Doc sync: STATUS.md, this file, tasks/lessons.md, docs/command-log.md
+
+**Verification:** `ruff` clean, `mypy` clean (112 files), full suite green. The implementation plans (`tasks/investigation-agent-implementation-plan.md`, `tasks/dashboard-chat-implementation-plan.md`) kept as the spec for the future project. **Not committed/pushed yet.**
+
+---
+
 ## Workflow diagram accuracy fix — ELK/Prometheus node text (2026-06-22, COMPLETE)
 
 Owner asked "is this correct?" about the ELK popup — it wasn't. Traced actual callers:

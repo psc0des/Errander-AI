@@ -1079,12 +1079,11 @@ async def call_llm(
 - Anomaly detection (unusual patterns in system state)
 - Learning from historical runs to improve planning
 
-> **As-built note (2026-06-22):** "Natural language querying of audit trail" shipped ahead
-> of this V2 list — first as the deterministic `--ask` Operator Assistant, then as the
-> opt-in agentic **Investigation Agent** (`--ask --agentic`, bounded tool-calling loop over
-> Prometheus/ELK/audit) and **Dashboard Chat** (`/ui/chat`, multi-turn web console over the
-> same engine). Both are Layer A — read-only, recommend only, never execute. See
-> `docs/learning/60-investigation-agent.md` and `docs/learning/61-dashboard-chat.md`.
+> **As-built note:** "Natural language querying of audit trail" shipped ahead of this V2
+> list as the deterministic `--ask` Operator Assistant (Layer A, read-only, fixed queries).
+> An agentic version (`--ask --agentic`, a tool-calling loop) and a `/ui/chat` console were
+> prototyped and then removed — deferred to a separate conversational-investigation project
+> (see README's Roadmap and the specs under `tasks/`).
 
 ---
 
@@ -1698,10 +1697,9 @@ These interfaces should be abstracted in v1 even though only one implementation 
 ## Appendix: Directory Structure
 
 > **As-built note:** this tree is the original target layout — it predates `errander/web/`
-> (R3 process split), `errander/agent/investigation_agent.py` (Plan A), and several
-> `safety/` stores added since (`approval_store.py`, `user_store.py`, `chat_store.py`,
-> etc.). For the current as-built tree, see the "Architecture (target)" section in
-> `CLAUDE.md`, which is kept in sync every session.
+> (R3 process split) and several `safety/` stores added since (`approval_store.py`,
+> `user_store.py`, etc.). For the current as-built tree, see the "Architecture (target)"
+> section in `CLAUDE.md`, which is kept in sync every session.
 
 ```
 errander/

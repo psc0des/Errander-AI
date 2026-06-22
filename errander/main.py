@@ -164,16 +164,6 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         ),
     )
 
-    parser.add_argument(
-        "--agentic",
-        action="store_true",
-        help=(
-            "With --ask: use the agentic tool-calling investigation loop "
-            "(requires ERRANDER_INVESTIGATION_AGENT_ENABLED=true) instead of "
-            "the fixed-context path. No effect without --ask."
-        ),
-    )
-
     # Service restart (operator-triggered, HIGH risk tier)
     parser.add_argument(
         "--restart-service",
@@ -1054,7 +1044,6 @@ async def run_ask_query(
     question: str,
     inventory_path: Path,
     env_name: str | None,
-    agentic: bool = False,
 ) -> int:
     """Investigate fleet state and answer a question via LLM. Layer A — read-only."""
     from errander.agent.operator_assistant import OperatorAssistant
@@ -1115,44 +1104,19 @@ async def run_ask_query(
         await baseline_store.initialize()
 
         try:
-            if agentic and not settings.investigation_agent_enabled:
-                print(
-                    "Note: --agentic requested but ERRANDER_INVESTIGATION_AGENT_ENABLED "
-                    "is not set — using the deterministic investigation path."
-                )
-                agentic = False
-
-            if agentic:
-                from errander.agent.investigation_agent import InvestigationAgent
-                response = await InvestigationAgent().investigate_agentic(
-                    question,
-                    audit_store=audit_store,
-                    disk_history_store=disk_history_store,
-                    baseline_store=baseline_store,
-                    inventory=inventory,
-                    env_name=env_name,
-                    llm_client=llm,
-                    prometheus_client=prom,
-                    elk_client=elk_ask,
-                    vm_facts_store=None,
-                    ai_decision_store=ai_decision_store_ask,
-                    max_tool_calls=settings.investigation_agent_max_tool_calls,
-                    timeout_seconds=settings.investigation_agent_timeout_seconds,
-                )
-            else:
-                assistant = OperatorAssistant()
-                response = await assistant.investigate(
-                    question,
-                    audit_store=audit_store,
-                    disk_history_store=disk_history_store,
-                    baseline_store=baseline_store,
-                    inventory=inventory,
-                    env_name=env_name,
-                    llm_client=llm,
-                    prometheus_client=prom,
-                    elk_client=elk_ask,
-                    ai_decision_store=ai_decision_store_ask,
-                )
+            assistant = OperatorAssistant()
+            response = await assistant.investigate(
+                question,
+                audit_store=audit_store,
+                disk_history_store=disk_history_store,
+                baseline_store=baseline_store,
+                inventory=inventory,
+                env_name=env_name,
+                llm_client=llm,
+                prometheus_client=prom,
+                elk_client=elk_ask,
+                ai_decision_store=ai_decision_store_ask,
+            )
         finally:
             if prom is not None:
                 await prom.close()
@@ -2513,7 +2477,6 @@ async def async_main(args: argparse.Namespace) -> int:
             question=args.ask,
             inventory_path=args.inventory,
             env_name=args.env,
-            agentic=args.agentic,
         )
 
     if args.restart_service is not None:

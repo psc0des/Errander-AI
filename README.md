@@ -475,8 +475,7 @@ uv run ruff check .                                    # Lint
 uv run mypy .                                          # Type check
 uv run python -m errander --run-now --env dev --dry-run # Dry-run a batch
 uv run python -m errander --probe-now dev              # Daily probe (read-only, no maintenance)
-uv run python -m errander --ask "Any disk issues?" --env dev  # LLM fleet analysis (Layer A)
-uv run python -m errander --ask "Why is web-02 erroring?" --agentic --env dev  # agentic tool-calling --ask (opt-in)
+uv run python -m errander --ask "Any disk issues?" --env dev  # LLM fleet analysis (Layer A, read-only)
 uv run python -m errander --check-targets dev          # Pre-flight VM readiness check
 uv run python -m errander --check-llm                  # Verify LLM endpoint
 uv run python -m errander --audit --batches            # View recent batches
@@ -656,17 +655,13 @@ uv run python -m errander --check-llm
 
 ## Roadmap
 
-### Shipped
-
-- **Layer A investigation agent** — `--ask --agentic` (opt-in, `ERRANDER_INVESTIGATION_AGENT_ENABLED`, default off): a bounded ReAct loop where the LLM composes Prometheus/ELK/audit queries on the fly to answer open-ended questions, instead of the fixed query set the default `--ask` uses. Stays strictly Layer A (read-only tools, recommends — never executes); falls back cleanly to the deterministic path on any failure. See [`docs/learning/60-investigation-agent.md`](docs/learning/60-investigation-agent.md).
-- **Dashboard chat (phase 1)** — `/ui/chat` (opt-in, `ERRANDER_CHAT_ENABLED`, default off): a multi-turn web console over the same investigation engine — "is web-02 healthy?", "any disk issues on the fleet?" — with per-user threads and citations. Read-only; no action-proposal/approval handoff yet (phase 2/3). See [`docs/learning/61-dashboard-chat.md`](docs/learning/61-dashboard-chat.md).
-
 ### Near-term (planned — not yet built)
 
-These deepen the **agentic** side of the platform, all staying within the Layer A / Layer B safety model:
-
 - **LangSmith tracing (optional, bring-your-own)** — deep Layer-A observability for the LangGraph reasoning; off by default, never wired into Layer B. See [`docs/OBSERVABILITY.md`](docs/OBSERVABILITY.md).
-- **Dashboard chat action handoff (phase 3)** — when an answer implies a fix, a "propose this action" control that routes through the **existing approval flow** — the chat itself never executes. Streaming responses (phase 2) are also deferred. See [`tasks/dashboard-chat-implementation-plan.md`](tasks/dashboard-chat-implementation-plan.md).
+
+### Conversational investigation — a separate future project (intentionally not in core)
+
+An LLM-driven, read-only operator assistant — a CLI agentic `--ask` loop and a `/ui/chat` console over Errander's data — was prototyped in mid-2026 and then **deliberately pulled back out of the core**. The maintenance engine's value is its deterministic, trustworthy action path; a fast-iterating gen-AI chat is a different kind of system (a read-only "system of insight") with opposite design pressures, its own credential model, framework, and eval needs. Bundling the two complicated the core for unvalidated demand. The design — a standalone read-only assistant that *consumes* the audit/telemetry substrate and can only *propose* (never execute) through the existing approval flow — is captured in [`tasks/investigation-agent-implementation-plan.md`](tasks/investigation-agent-implementation-plan.md) and [`tasks/dashboard-chat-implementation-plan.md`](tasks/dashboard-chat-implementation-plan.md) for if/when it's built as its own project. The deterministic `--ask` operator assistant (fixed read-only queries, Layer A) remains in core.
 
 ### V2
 

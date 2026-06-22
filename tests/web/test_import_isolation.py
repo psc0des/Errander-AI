@@ -58,29 +58,3 @@ def test_ui_module_does_not_import_agent_package() -> None:
         assert not name.startswith("errander.agent.vm_graph"), name
         assert not name.startswith("errander.execution"), name
         assert not name.startswith("errander.agent.subgraphs"), name
-
-
-def test_chat_engine_imports_do_not_drag_in_execution_code() -> None:
-    """Dashboard chat (Plan B) imports the Plan A engine lazily, inside the
-    message-POST handler — not at errander.web.ui module scope, so the two
-    tests above never actually exercise that import. This is the concrete
-    proof for the safety argument in CLAUDE.md/AI-ARCHITECTURE.md: even
-    when the chat handler runs and pulls in
-    errander.agent.operator_assistant / errander.agent.investigation_agent,
-    neither drags in execution/SSH code, directly or transitively.
-
-    errander.agent itself is NOT a blocked prefix (only execution, and the
-    agent.subgraphs/graph/vm_graph submodules are) — this is intentional:
-    the chat needs the Plan A engine, which lives under errander.agent.
-    """
-    pre_modules = set(sys.modules.keys())
-    importlib.import_module("errander.agent.operator_assistant")
-    importlib.import_module("errander.agent.investigation_agent")
-    new_modules = set(sys.modules.keys()) - pre_modules
-
-    for name in new_modules:
-        for prefix in _BLOCKED_PREFIXES:
-            assert not (name == prefix or name.startswith(prefix + ".")), (
-                f"chat engine import pulled in blocked module {name!r} "
-                f"(matches blocked prefix {prefix!r})"
-            )

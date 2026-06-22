@@ -1,5 +1,35 @@
 # Errander-AI Command Log
 
+## Remove Plan A + Plan B (chat / agentic investigation) from core (2026-06-23)
+
+```bash
+# Tried git-revert of the 5 chat/diagram commits first — too many conflicts on interleaved
+# diagram + narrative-doc commits, so aborted and went surgical/forward instead.
+git revert --no-commit ad9f72d b539bec 25bbc88 479d2a6 cfabf1c   # conflicted on 25bbc88
+git revert --abort                                                # back to clean HEAD
+
+# Confirm the Plan A/B code files were touched ONLY by cfabf1c/479d2a6 since the infra commit
+for f in <14 files>; do git log --oneline 9168880..HEAD -- "$f"; done   # all => cfabf1c/479d2a6 only
+
+# Restore those 14 to pre-chat state; delete the 9 net-new files
+git checkout 9168880 -- errander/integrations/{llm,prometheus,elk}.py errander/config/settings.py \
+  errander/main.py errander/observability/metrics.py errander/safety/migrations.py \
+  errander/web/{ui,__main__}.py tests/integrations/test_{llm,prometheus,elk}.py \
+  tests/web/test_import_isolation.py tests/safety/test_migrations.py
+git rm errander/agent/investigation_agent.py errander/safety/chat_store.py \
+  tests/agent/test_investigation_*.py tests/safety/test_chat_store.py tests/web/test_chat.py \
+  docs/learning/6{0,1}-*.md
+
+# server.py: restore original diagram, re-apply 3 keeper glossary edits (Docker Hygiene term,
+# Planning Note term, page reorder)
+git checkout 9168880 -- errander/web/server.py
+
+# Confirm nothing still references the deleted modules (Grep tool) — clean
+uv run ruff check .          # All checks passed
+uv run mypy errander/        # 112 source files (was 114)
+uv run pytest tests/ -q --ignore=tests/ui --ignore=tests/web   # green
+```
+
 ## Workflow diagram accuracy fix — ELK/Prometheus node text (2026-06-22)
 
 ```bash

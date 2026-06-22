@@ -194,7 +194,7 @@ AUDIT_EVIDENCE: list[dict[str, Any]] = [
         "stderr_summary":  "RHEL 8.7 repo metadata mismatch — libssl3 1.1 cannot be removed (kept by openssh-server-8.0)",
         "rollback_status": "completed — full pinned-version revert via stored package manifest (14/14 OK)",
     },
-    {  # idx 5 — docker prune prod-api-02
+    {  # idx 5 — docker hygiene prod-api-02
         "event_id":        "evt-2b9c5e3f",
         "action_id":       "act-4d1a8c6e",
         "plan_hash":       "sha256:0e8d…3a47",

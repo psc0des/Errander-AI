@@ -28,7 +28,7 @@ VMS: list[dict[str, Any]] = [
     {
         "hostname": "prod-api-02",    "os": "RHEL 8.7",     "env": "PROD",
         "status": "ok",      "disk": 52, "cpu": 32, "mem": 59,
-        "pending_patches": 6, "last_action_type": "Docker Prune",
+        "pending_patches": 6, "last_action_type": "Docker Hygiene",
         "last_action": "2026-04-23 02:10", "ip": "10.0.1.13",
         "uptime": "47d 14h 22m", "note": "",
     },
@@ -188,7 +188,7 @@ AUDIT_EVENTS: list[dict[str, Any]] = [
     },
     {
         "ts": "2026-04-23 02:03:55", "batch": "prod-0423-0200",
-        "vm": "prod-api-02",    "action": "Docker Prune",
+        "vm": "prod-api-02",    "action": "Docker Hygiene",
         "status": "ok",     "duration": "34s",    "op": "agent",
         "detail": "Freed 8.3 GB — removed 12 dangling images, 3 unused volumes, 5 stopped containers",
     },
@@ -218,7 +218,7 @@ AUDIT_EVENTS: list[dict[str, Any]] = [
     },
     {
         "ts": "2026-04-22 02:07:33", "batch": "prod-0422-0200",
-        "vm": "prod-web-01",    "action": "Docker Prune",
+        "vm": "prod-web-01",    "action": "Docker Hygiene",
         "status": "ok",     "duration": "28s",    "op": "agent",
         "detail": "Freed 4.2 GB — removed 7 dangling images, 2 unused networks",
     },
@@ -419,7 +419,7 @@ VM_TRACE: list[dict[str, Any]] = [
     {"vm": "prod-web-01",    "env": "PROD",    "pre_val": "ok", "plan": "ok", "enrich": "ok", "approval": "skip",     "exec": "ok",   "notes": "Disk Cleanup · Log Rotation"},
     {"vm": "prod-web-02",    "env": "PROD",    "pre_val": "ok", "plan": "ok", "enrich": "ok", "approval": "skip",     "exec": "ok",   "notes": "OS Patching · 11 pkgs updated"},
     {"vm": "prod-api-01",    "env": "PROD",    "pre_val": "ok", "plan": "ok", "enrich": "ok", "approval": "skip",     "exec": "warn", "notes": "Log Rotation · OS Patching · 2 kernel pkgs held back"},
-    {"vm": "prod-api-02",    "env": "PROD",    "pre_val": "ok", "plan": "ok", "enrich": "ok", "approval": "skip",     "exec": "ok",   "notes": "Docker Prune · freed 8.3 GB"},
+    {"vm": "prod-api-02",    "env": "PROD",    "pre_val": "ok", "plan": "ok", "enrich": "ok", "approval": "skip",     "exec": "ok",   "notes": "Docker Hygiene · freed 8.3 GB"},
     {"vm": "prod-db-01",     "env": "PROD",    "pre_val": "ok", "plan": "ok", "enrich": "ok", "approval": "approved", "exec": "ok",   "notes": "Service Restart · approved 02:18 UTC"},
     {"vm": "prod-db-02",     "env": "PROD",    "pre_val": "ok", "plan": "ok", "enrich": "ok", "approval": "skip",     "exec": "ok",   "notes": "Log Rotation"},
     {"vm": "staging-web-01", "env": "STAGING", "pre_val": "ok", "plan": "ok", "enrich": "ok", "approval": "skip",     "exec": "ok",   "notes": "Disk Cleanup · freed 1.1 GB"},

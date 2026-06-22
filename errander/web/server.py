@@ -1865,7 +1865,7 @@ def page_fleet() -> str:
         <span class="stat-chip">⏱ {b['duration']}</span>
         <span class="stat-chip">{b['patched']} VMs patched</span>
         <span class="stat-chip">{b['rotations']} log rotations</span>
-        <span class="stat-chip">{b['prunes']} Docker prunes</span>
+        <span class="stat-chip">{b['prunes']} Docker hygiene runs</span>
         <span class="stat-chip err">⚠ {b['errors']} errors — see Audit Log</span>
         <a href="/batches" class="stat-chip" style="color:#4f46e5;text-decoration:none">Full History →</a>
       </div>
@@ -2824,7 +2824,7 @@ def page_vm(hostname: str, metrics_by_window: dict[str, dict[str, Any]] | None =
         <div class="kpi-subtitle">sessions</div>
       </div>
       <div class="card kpi-tile kpi-top-border" style="border-color:#0891b2">
-        <div class="kpi-label">Docker Prunes (30d)</div>
+        <div class="kpi-label">Docker Hygiene (30d)</div>
         <div class="kpi-value" style="color:#0891b2">{'3' if _is_fixture else '—'}</div>
         <div class="kpi-subtitle">runs</div>
       </div>

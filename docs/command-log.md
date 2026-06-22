@@ -1,5 +1,17 @@
 # Errander-AI Command Log
 
+## Stale "Docker Prune" label sweep in legacy demo UI (2026-06-23)
+
+```bash
+# Follow-up: docker_prune was removed in v1.1 but the legacy demo dashboard/fixtures still
+# labelled it. Swept the displayed strings (KPI tile, stat chip, data.py/evidence.py fixtures)
+# to "Docker Hygiene". Kept the glossary term's historical "replaced Docker Prune in v1.1" note.
+grep -rn "Docker Prune|docker prune|docker_prune" errander/web   # only the historical glossary ref remains
+uv run ruff check errander/web/   # clean
+uv run mypy errander/web/server.py errander/web/data.py errander/web/evidence.py   # clean
+uv run pytest tests/ui/test_web_server_smoke.py -q   # 14 passed
+```
+
 ## Remove Plan A + Plan B (chat / agentic investigation) from core (2026-06-23)
 
 ```bash

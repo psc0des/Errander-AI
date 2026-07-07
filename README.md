@@ -659,9 +659,13 @@ uv run python -m errander --check-llm
 
 The agent now **originates work** without a human asking: the daily probe's signals (disk growth, config drift, failed SSH logins) are turned into **agent proposals** by a deterministic detector — no LLM anywhere in the path. Each proposal carries an evidence chain and lands in the Web UI queue (`/ui/proposals`, badged **AGENT-ORIGINATED**); Slack notifies and links. A named operator approves, rejects, or snoozes; an approved *actionable* proposal (LOW-risk `disk_cleanup` / `log_rotation` only) is executed by the agent's reconciler through the **existing** deterministic sub-graph path — approval originates work, it never bypasses the safety gates. Review-only proposals (drift, login spikes) surface evidence and execute nothing. Later phases (agentic investigation loop that *enriches* proposals with correlated evidence, probe-triggered investigations, rejection-memory suppression, eval harness) are planned in [`tasks/fable-plan.md`](tasks/fable-plan.md) with diagrams in [`docs/diagrams/detect-and-propose.md`](docs/diagrams/detect-and-propose.md).
 
+### Agentic investigation engine (Phase 2 shipped — opt-in `--ask --agentic`)
+
+`--ask --agentic` runs a **bounded, read-only tool-calling loop** (Layer A, default OFF): the LLM chooses which read-only tools to call — audit trail, disk trends, VM facts, inventory, and Prometheus/ELK when configured — within a tool-call and wall-clock budget, then answers and may recommend LOW-risk work. Recommendations become agent proposals in the same `/ui/proposals` queue; every hop is redacted and audited (`investigation_agent_step`), and any LLM/tool failure falls back to the deterministic fixed-context path. Enable persistently with `ERRANDER_INVESTIGATION_AGENT_ENABLED=true`. See [`tasks/fable-plan.md`](tasks/fable-plan.md) §3 and [`docs/learning/61-investigation-agent-phase2.md`](docs/learning/61-investigation-agent-phase2.md).
+
 ### Near-term (planned — not yet built)
 
-- **Agentic investigation engine (fable-plan Phases 2–3)** — a bounded, read-only tool-calling loop (Prometheus, ELK, audit DB) that enriches detector proposals with correlated evidence; default off, Layer A only. Adopts [`tasks/investigation-agent-implementation-plan.md`](tasks/investigation-agent-implementation-plan.md).
+- **Probe-triggered investigations (fable-plan Phase 3)** — the daily probe's anomalies auto-launch bounded investigations that *enrich* detector proposals with correlated evidence; caps + kill switch, default off. Adopts [`tasks/investigation-agent-implementation-plan.md`](tasks/investigation-agent-implementation-plan.md).
 - **LangSmith tracing (optional, bring-your-own)** — deep Layer-A observability for the LangGraph reasoning; off by default, never wired into Layer B. See [`docs/OBSERVABILITY.md`](docs/OBSERVABILITY.md).
 
 ### Conversational chat — a separate future project (intentionally not in core)

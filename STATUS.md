@@ -4,6 +4,25 @@
 2026-07-07
 
 ## Current Phase
+**Detect-and-propose Phase 2 — agentic investigation engine (COMPLETE 2026-07-07).**
+
+Opt-in `--ask --agentic` (default OFF) runs a bounded, read-only tool-calling ReAct loop
+(Layer A): `LLMClient.chat_with_tools` + `InvestigationAgent` drive a set of read-only
+tools (`investigation_tools.py`: audit, disk trend, vm_facts, inventory; Prometheus/ELK
+when configured) within a `max_tool_calls` + wall-clock budget, redacting and auditing
+every hop (`investigation_agent_step`), and falling back to the deterministic
+`OperatorAssistant.investigate` on any failure. The final answer may carry
+`proposed_work` (LOW-risk only, triple-validated: action-set + identifier in the model,
+per-item drop in the parser, inventory gate at conversion) which the *caller* files as
+`AgentProposal`s (origin `investigation_agent`) into the Phase 1 queue — the agent itself
+never writes a store (Layer-A isolation, AST + subprocess test-enforced). 3 settings
+(default OFF), `--agentic` flag. **New:** `agent/investigation_agent.py`,
+`agent/investigation_tools.py`, `docs/learning/61-*.md`, 3 test files (35 tests).
+**Changed:** `integrations/llm.py`, `models/analysis.py`, `config/settings.py`,
+`main.py`, `docs/OBSERVABILITY.md`, `README.md`. `ruff`/`mypy` clean (117 files);
+391 tests across touched areas green.
+
+## Previous Phase
 **Detect-and-propose Phase 1 — the proposal bridge (COMPLETE 2026-07-07).**
 
 Made the "agentic" in *supervised agentic AI* real at the origination end: the daily

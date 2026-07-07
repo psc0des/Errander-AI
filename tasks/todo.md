@@ -22,10 +22,42 @@ Diagrams (Mermaid, render on GitHub): pipeline in `docs/diagrams/detect-and-prop
   - [x] 9 lifecycle EventTypes; per-transition audit
   - [x] Tests: 60 new (models 14, store 18, detector 15, reconciler 10, web UI 12); green
   - [x] Fixed a pre-existing latent circular import (validators↔subgraphs.patching) the new module exposed — see lessons.md 2026-07-07
-- [ ] Phase 2 — agentic investigation engine: resurrect Plan A (hand-rolled tool loop, read-only tools, budgets, per-hop audit) + `proposed_work` output validated against action set/inventory, `--ask --agentic`, default OFF
+- [x] Phase 2 — agentic investigation engine, COMPLETE 2026-07-07:
+  - [x] `integrations/llm.py` — `chat_with_tools()` + `AssistantTurn`/`ToolCall` (single-turn; agent owns the loop)
+  - [x] `agent/investigation_tools.py` — `ReadOnlyTool`/`ToolRegistry` + `build_readonly_tools` (audit, disk trend, vm_facts, inventory; Prometheus/ELK when configured); arg validation, output caps, never-raise dispatch
+  - [x] `agent/investigation_agent.py` — bounded ReAct loop (max_tool_calls + wall-clock), per-hop redaction + `investigation_agent_step` audit, graceful fallback to deterministic `investigate()`; `_parse_final` (per-item drop + evidence honesty); `proposed_work_to_proposals` (no store write)
+  - [x] `models/analysis.py` — `ProposedWorkItem` (action-set + identifier validated) + `AssistantResponse.proposed_work`
+  - [x] `main.py` — `run_ask_query(agentic=…)` wires the loop with the deterministic assistant as fallback; `_file_agent_proposals` (caller files, not the agent); `--agentic` flag
+  - [x] `config/settings.py` — 3 settings (`investigation_agent_enabled` default OFF, max_tool_calls=8, timeout=60) + env loaders
+  - [x] Layer-A isolation test (AST scan + fresh-subprocess) — no Layer B / proposal_store / approval_store import
+  - [x] Tests: 35 new (agent loop 10, tools 14→incl isolation, llm chat_with_tools 3, + model coverage via agent tests); all green
+  - [x] Docs: OBSERVABILITY (agentic loop now built), learning doc 61, README roadmap
 - [ ] Phase 3 — event-driven trigger: probe anomalies enqueue bounded investigations that enrich Phase 1 proposals; caps + dedup window + kill switch (default off)
 - [ ] Phase 4 — memory loop: proposal decisions/outcomes as VM facts, facts fed into investigation context, rejected-2× suppression policy with digest surfacing
 - [ ] Phase 5 — evals + LangSmith: golden-scenario replay harness (offline fake-LLM in CI), proposal precision/recall scoring, opt-in LangSmith tracing
+
+### Pre-existing test-infra follow-ups (filed 2026-07-07, not caused by detect-and-propose)
+
+Discovered while verifying Phase 1. Proven pre-existing via `git stash -u` + full run on
+clean HEAD (10 failed / 171 errors there too). Neither blocks the feature; both deserve
+their own change on CI/Linux where the suite baseline is green.
+
+- [ ] **FOLLOW-UP A — stale `tests/ui/test_approval_ui.py` (8 failing tests).** They assert
+  pre-R2 approval behavior: decide POST → 302 with `decided_by="ui:ui"` and no login. R2
+  (web-only RBAC) correctly made zero-users bootstrap mode return **403** for decisions
+  (see `tests/observability/test_rbac.py::test_decide_post_forbidden`). Fix: update these
+  tests to log in an admin user (mirror `test_rbac.py`'s `_login` helper), or delete them
+  as superseded by `test_rbac.py`. Owner call on update-vs-delete.
+- [ ] **FOLLOW-UP B — Windows/pytest-asyncio `tests/web` "RuntimeError" cascade + lock
+  cascade under full suite.** On the Windows dev box a full `uv run pytest` cascades into
+  ~170 errors in the last dir (`tests/web`) — a pytest-asyncio event-loop teardown issue,
+  independent of any code change (reproduces on clean HEAD). Separately, a failing test can
+  strand an `idle in transaction` backend so the next test's `TRUNCATE … CASCADE`
+  deadlocks. A `_clean_test_db` hardening (reap leaked backends + `lock_timeout`) fixes the
+  lock cascade but not the RuntimeError one, and "terminate all non-self connections" is an
+  xdist footgun — so it was NOT committed. Proper fix belongs on CI: investigate the
+  event-loop teardown (loop scope / undisposed engines) and add a conservative,
+  xdist-safe cleanup guard. Verify against the CI/Linux baseline, not this box.
 
 **Key invariants:** proposal approval = work origination, not execution authorization
 (targeted run through the existing Layer B path; exact-object gate unchanged); LLM-optional

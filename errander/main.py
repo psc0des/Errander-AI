@@ -167,6 +167,15 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "Layer A only — no changes made. Use --env to scope to one environment."
         ),
     )
+    parser.add_argument(
+        "--agentic",
+        action="store_true",
+        help=(
+            "With --ask: use the bounded read-only tool-calling investigation "
+            "loop instead of the fixed-context path (Layer A; default OFF). "
+            "Falls back to deterministic on any LLM/tool failure."
+        ),
+    )
 
     # Agent proposals (detect-and-propose, fable-plan Phase 1)
     parser.add_argument(
@@ -1217,12 +1226,87 @@ async def run_proposal_show(proposal_id: str) -> int:
 # ---------------------------------------------------------------------------
 
 
+async def _file_agent_proposals(
+    response: Any,
+    inventory: Any,
+    env_name: str | None,
+    settings: Settings,
+) -> None:
+    """Convert an agentic response's proposed_work into filed AgentProposals.
+
+    Caller-side (not the agent) so the Layer A agent never writes a store.
+    Validates each item's vm_id against live inventory before filing.
+    """
+    from errander.agent.investigation_agent import proposed_work_to_proposals
+    from errander.models.events import AuditEvent
+    from errander.safety.audit import AuditStore as _AuditStore
+
+    target_env = env_name or next(iter(inventory.environments), None)
+    if target_env is None:
+        return
+    env_schema = inventory.environments.get(target_env)
+    if env_schema is None:
+        return
+    valid_vm_ids = {t.name for t in env_schema.targets}
+    proposals = proposed_work_to_proposals(
+        response, env_name=target_env, valid_vm_ids=valid_vm_ids,
+    )
+    if not proposals:
+        return
+
+    _db = AsyncDatabase(settings.audit_db_url)
+    store = ProposalStore(_db)
+    audit = _AuditStore(_db, strict_mode=False)
+    filed = 0
+    try:
+        await store.initialize()
+        async with audit:
+            for proposal in proposals:
+                # Skip if the action is disabled in inventory for this VM.
+                target = next(
+                    (t for t in env_schema.targets if t.name == proposal.vm_id), None,
+                )
+                if target is None:
+                    continue
+                cfg = target.resolve_actions(env_schema.actions).get(proposal.action_type)
+                if cfg is None or not cfg.enabled:
+                    continue
+                stored, created = await store.create_or_refresh(proposal)
+                filed += 1 if created else 0
+                await audit.log_event(AuditEvent(
+                    event_type=(
+                        EventType.PROPOSAL_CREATED if created
+                        else EventType.PROPOSAL_REFRESHED
+                    ),
+                    batch_id=stored.probe_id or "ask-agentic",
+                    vm_id=stored.vm_id,
+                    action_type=stored.action_type,
+                    detail=(
+                        f"proposal {stored.proposal_id}: {stored.action_key} "
+                        f"(origin=investigation_agent)"
+                    ),
+                    metadata={"proposal_id": stored.proposal_id},
+                ))
+    finally:
+        await store.close()
+    if filed:
+        print(f"\nFiled {filed} agent proposal(s) — review in the Web UI (/ui/proposals).")
+
+
 async def run_ask_query(
     question: str,
     inventory_path: Path,
     env_name: str | None,
+    agentic: bool = False,
 ) -> int:
-    """Investigate fleet state and answer a question via LLM. Layer A — read-only."""
+    """Investigate fleet state and answer a question via LLM. Layer A — read-only.
+
+    With ``agentic`` (and the engine enabled + an LLM configured), runs the
+    bounded read-only tool-calling loop (fable-plan Phase 2); otherwise uses
+    the deterministic fixed-context path. The agentic path falls back to the
+    deterministic one on any LLM/tool failure, and files any recommended
+    LOW-risk work as agent proposals in the queue.
+    """
     from errander.agent.operator_assistant import OperatorAssistant
     from errander.config.schema import validate_inventory
     from errander.config.settings import load_settings
@@ -1230,6 +1314,7 @@ async def run_ask_query(
     from errander.safety.audit import AuditStore
     from errander.safety.baselines import BaselineStore
     from errander.safety.disk_history import VMDiskHistoryStore
+    from errander.safety.vm_facts import VMFactsStore
 
     try:
         inventory = validate_inventory(inventory_path)
@@ -1272,6 +1357,11 @@ async def run_ask_query(
 
     from errander.safety.ai_audit import AIDecisionStore as _AIDecisionStoreAsk
     ai_decision_store_ask = _AIDecisionStoreAsk(_db_ask)
+    vm_facts_store = VMFactsStore(_db_ask)
+
+    # Decide the path up front: agentic requires the opt-in flag (or setting),
+    # tool-calling support, and a configured LLM. Otherwise deterministic.
+    use_agentic = (agentic or settings.investigation_agent_enabled) and llm is not None
 
     async with (
         audit_store,
@@ -1279,26 +1369,64 @@ async def run_ask_query(
     ):
         await disk_history_store.initialize()
         await baseline_store.initialize()
+        await vm_facts_store.initialize()
 
+        assistant = OperatorAssistant()
+        fallback_kwargs: dict[str, Any] = {
+            "question": question,
+            "audit_store": audit_store,
+            "disk_history_store": disk_history_store,
+            "baseline_store": baseline_store,
+            "inventory": inventory,
+            "env_name": env_name,
+            "llm_client": llm,
+            "prometheus_client": prom,
+            "elk_client": elk_ask,
+            "vm_facts_store": vm_facts_store,
+            "ai_decision_store": ai_decision_store_ask,
+        }
         try:
-            assistant = OperatorAssistant()
-            response = await assistant.investigate(
-                question,
-                audit_store=audit_store,
-                disk_history_store=disk_history_store,
-                baseline_store=baseline_store,
-                inventory=inventory,
-                env_name=env_name,
-                llm_client=llm,
-                prometheus_client=prom,
-                elk_client=elk_ask,
-                ai_decision_store=ai_decision_store_ask,
-            )
+            if use_agentic and llm is not None:
+                from errander.agent.investigation_agent import InvestigationAgent
+                from errander.agent.investigation_tools import build_readonly_tools
+
+                inv_vms = [
+                    {"vm_id": t.name, "env": name, "os_family": t.os_family}
+                    for name, e in inventory.environments.items()
+                    if env_name is None or name == env_name
+                    for t in e.targets
+                ]
+                tools = build_readonly_tools(
+                    audit_store=audit_store,
+                    disk_history=disk_history_store,
+                    vm_facts=vm_facts_store,
+                    inventory_vms=inv_vms,
+                    prometheus_client=prom,
+                    elk_client=elk_ask,
+                )
+                agent = InvestigationAgent(
+                    max_tool_calls=settings.investigation_agent_max_tool_calls,
+                    timeout_seconds=settings.investigation_agent_timeout_seconds,
+                )
+                response = await agent.investigate_agentic(
+                    question,
+                    tools=tools,
+                    llm_client=llm,
+                    fallback=assistant,
+                    fallback_kwargs=fallback_kwargs,
+                    ai_decision_store=ai_decision_store_ask,
+                )
+            else:
+                response = await assistant.investigate(**fallback_kwargs)
         finally:
             if prom is not None:
                 await prom.close()
             if elk_ask is not None:
                 await elk_ask.close()
+
+    # File any recommended LOW-risk work as agent proposals (agentic path only).
+    if use_agentic and response.proposed_work:
+        await _file_agent_proposals(response, inventory, env_name, settings)
 
     print(f"\n[{response.risk_level.upper()} RISK] {response.summary}\n")
     print("Findings:")
@@ -1308,6 +1436,10 @@ async def run_ask_query(
         print("\nRecommendations:")
         for rec in response.recommendations:
             print(f"  - {rec}")
+    if response.proposed_work:
+        print("\nProposed work (LOW-risk — filed as proposals for human approval):")
+        for item in response.proposed_work:
+            print(f"  - {item.action_type} on {item.vm_id}: {item.rationale}")
     if response.data_sources:
         print(f"\nSources consulted: {', '.join(response.data_sources)}")
         tips: list[str] = []
@@ -2851,6 +2983,7 @@ async def async_main(args: argparse.Namespace) -> int:
             question=args.ask,
             inventory_path=args.inventory,
             env_name=args.env,
+            agentic=args.agentic,
         )
 
     if args.restart_service is not None:

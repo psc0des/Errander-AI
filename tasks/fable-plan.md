@@ -173,7 +173,14 @@ produces a pending proposal visible in UI + Slack; approving it runs the targete
 deterministic path end-to-end (dry-run in tests); ruff/mypy/pytest clean; docs synced
 (`docs/learning/XX-proposal-bridge.md`).
 
-### Phase 2 — Agentic investigation engine (resurrect Plan A, re-aimed)
+### Phase 2 — Agentic investigation engine (resurrect Plan A, re-aimed) — ✅ COMPLETE 2026-07-07
+> Shipped: `chat_with_tools` (Decision A, hand-rolled loop), `investigation_tools.py`
+> (audit/disk/vm_facts/inventory + Prometheus/ELK when configured), `investigation_agent.py`
+> (bounded loop, per-hop redaction+audit, graceful fallback, `proposed_work` triple-validated
+> → proposals via caller), `--ask --agentic` (default OFF). Prometheus/ELK tools use the
+> existing fixed methods (no arbitrary-query generalization yet — deferred). See
+> `docs/learning/61-investigation-agent-phase2.md`.
+
 Implement `tasks/investigation-agent-implementation-plan.md` §3–§6 as written
 (Decision A: hand-rolled tool loop on `LLMClient`; the six read-only tools; budgets;
 per-hop redaction; per-step `AIDecisionStore` rows; graceful fallback). Deltas:

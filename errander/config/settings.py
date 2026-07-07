@@ -165,6 +165,14 @@ class Settings:
     # are never silently under-audited (finding #13).
     audit_mode: str = "strict"
 
+    # Agentic investigation engine (fable-plan Phase 2) — Layer A, read-only.
+    # Default OFF: `--ask` uses the deterministic fixed-context path unless the
+    # operator opts in with `--agentic` (or this flag). max_tool_calls and
+    # timeout bound the ReAct loop (T4-friendly conservative defaults).
+    investigation_agent_enabled: bool = False
+    investigation_agent_max_tool_calls: int = 8
+    investigation_agent_timeout_seconds: int = 60
+
     # SSH host key verification (finding #9).
     # known_hosts_path: path to known_hosts file.  Empty = TOFU mode (log warning per connect).
     # ssh_strict_host_keys: when True (default), reject hosts not in known_hosts.
@@ -402,6 +410,16 @@ def load_settings(
             "ERRANDER_LLM_MAX_RETRIES",
             llm.max_retries if llm else None,
             2,
+        ),
+        # Agentic investigation engine (Phase 2) — default OFF
+        investigation_agent_enabled=_bool_field(
+            "ERRANDER_INVESTIGATION_AGENT_ENABLED", None, False,
+        ),
+        investigation_agent_max_tool_calls=_int_field(
+            "ERRANDER_INVESTIGATION_AGENT_MAX_TOOL_CALLS", None, 8,
+        ),
+        investigation_agent_timeout_seconds=_int_field(
+            "ERRANDER_INVESTIGATION_AGENT_TIMEOUT", None, 60,
         ),
         # Agent settings
         approval_timeout_seconds=_int_field(

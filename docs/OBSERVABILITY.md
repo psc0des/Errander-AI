@@ -96,7 +96,7 @@ Web UI: `/ui/batches`, `/ui/batches/{id}` (per-event), `/ui/vms/{vm_id}` (histor
 Every LLM call that influences a decision is logged for explainability. This is **Layer A**: it captures what the model was asked and what it returned — *not* whether anything was executed.
 
 - **Store:** `errander/safety/ai_audit.py` → `AIDecisionStore`. Query via `get_decisions(batch_id, vm_id, decision_type, limit)` and `get_decision_by_id(id)`.
-- **Record (`AIDecision`):** `decision_type` (e.g. `planning_note`, `operator_assistant`, `generate_report`), `model`, `base_url` (redacted), `prompt_template_id`, `prompt_hash`, `prompt_full` (redacted), `response_raw`, `outcome` (`success` / `fallback` / `no_llm`), `latency_ms`, `context_snapshot` (incl. redaction + budget stats), `model_params`, `timestamp`.
+- **Record (`AIDecision`):** `decision_type` (e.g. `planning_note`, `operator_assistant`, `generate_report`, and — when `--ask --agentic` is on — `investigation_agent_step` per tool hop + `investigation_agent` for the final answer), `model`, `base_url` (redacted), `prompt_template_id`, `prompt_hash`, `prompt_full` (redacted), `response_raw`, `outcome` (`success` / `fallback` / `no_llm`), `latency_ms`, `context_snapshot` (incl. redaction + budget stats), `model_params`, `timestamp`.
 - **`planning_note` (R1):** the only LLM call in the batch-planning path. The plan itself (`prioritize_actions()`) is 100% deterministic — `generate_planning_note()` produces a short (≤700 char) informational note about the already-finalized plan, stored as `ai_note` inside `vm_plans` and rendered on the approval surfaces under "AI analysis — informational only". The note can never change which actions run, in what order, or with what parameters. Historical `prioritize_actions` rows from before R1 remain replayable (`evals/replay.py`).
 - **Redaction:** prompts pass through `ContextRedactor` before storage (secrets stripped). Source IDs in LLM output are validated against known sources; hallucinated citations are dropped.
 
@@ -160,7 +160,7 @@ Because the decision engine is **LangGraph**, [LangSmith](https://docs.smith.lan
 
 ### What it adds vs. what's redundant or N/A for Errander
 
-Errander's Layer A is deliberately narrow — a few structured LLM calls (planning note, report, the deterministic `--ask` operator assistant), **no tool-using agent loop**. (An agentic `--ask --agentic` loop was prototyped and removed — see the Roadmap note in README.) Right-size the LangSmith investment accordingly:
+Errander's Layer A is mostly structured single-shot LLM calls (planning note, report, the deterministic `--ask` operator assistant) plus **one bounded tool-using loop**: the opt-in agentic investigation engine (`--ask --agentic`, default OFF — fable-plan Phase 2). Right-size the LangSmith investment accordingly:
 
 | LangSmith panel | Value to Errander | Why |
 |---|---|---|
@@ -168,7 +168,7 @@ Errander's Layer A is deliberately narrow — a few structured LLM calls (planni
 | **Feedback Scores** | **Medium / future** | Pairs with the existing replay-eval (`--ai-eval-replay`) for prompt-regression. Requires you to attach feedback — not automatic. |
 | **LLM Calls** (count/latency) | **Low — redundant** | Already covered by `errander_llm_requests_total` (Prometheus) + `latency_ms`/`outcome` (AI decision log). |
 | **Cost & Tokens** | **Conditional** | Important on a **cloud LLM** (real $); near-irrelevant on **self-hosted vLLM** (your own GPU). |
-| **Tools** | **N/A** | No tool-using agent loop in core. The deterministic `--ask`, the planning note, and the scheduled maintenance batch make no tool calls. (A bounded ReAct loop was prototyped under `--ask --agentic` and removed; if rebuilt as the separate conversational-investigation project, this row becomes relevant again.) |
+| **Tools** | **Conditional — relevant when `--ask --agentic` is enabled** | The deterministic `--ask`, planning note, and scheduled batch make no tool calls. The opt-in agentic investigation loop (fable-plan Phase 2) DOES make read-only tool calls; each hop is recorded in the built-in decision log as `decision_type="investigation_agent_step"`, and LangSmith's tool trace becomes the richer external view. Default OFF. |
 
 ### Design constraints (must hold when integrated)
 
@@ -214,7 +214,7 @@ If a question needs data outside this menu — say, per-process disk I/O, networ
 
 So for the scheduled maintenance batch and the `--ask` operator assistant, Errander can only "see" what someone pre-built a probe/query for. This is a deliberate trade-off, not an oversight — it's what keeps the gathered context bounded, reproducible, redactable, and cheap (one LLM call, not a tool loop).
 
-> **An agentic version that *composed* read-only queries live (a bounded ReAct loop, `--ask --agentic`) plus a `/ui/chat` console over it were prototyped and then removed** — they're a different kind of system (a read-only "system of insight") that's been deferred to a separate conversational-investigation project rather than bundled into the deterministic core. See the Roadmap note in `README.md` and the design specs in `tasks/`. The deterministic `--ask` operator assistant (fixed read-only queries) remains.
+> **An opt-in agentic version that *composes* read-only queries live (a bounded ReAct loop, `--ask --agentic`, default OFF) is now built** (fable-plan Phase 2): it loosens the fixed menu *for that path only* — the LLM chooses which read-only tools to call, within a tool-call and wall-clock budget, and falls back to this deterministic path on any failure. Each hop is redacted and audited (`investigation_agent_step`). The scheduled maintenance batch and the default `--ask` still use the fixed menu — reproducible, cheap, one call. (The separate `/ui/chat` console remains out of core — see the Roadmap note in `README.md`.)
 
 ---
 

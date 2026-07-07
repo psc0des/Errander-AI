@@ -3452,3 +3452,23 @@ uv run pytest tests/safety -q -p no:cacheprovider   # 535 passed, 2 migration-co
 
 # Full suite re-run after fix
 uv run pytest -q -p no:randomly              # (in progress at time of writing)
+
+## 2026-07-07 — detect-and-propose Phase 2 (agentic investigation engine)
+
+# Interface discovery
+grep -n "async def complete\|chat.completions.create" errander/integrations/llm.py
+grep -n "async def get_events" errander/safety/audit.py
+grep -n "class ActionOutcomeFact\|used_pct" errander/safety/vm_facts.py errander/safety/disk_history.py
+
+# Iterative lint/type
+uv run ruff check errander/                 # all checks passed
+uv run mypy errander/                       # no issues in 117 source files (2 new modules)
+
+# Tests (fake tool-calling LLM — no network)
+uv run pytest tests/agent/test_investigation_agent.py -q          # 10 passed
+uv run pytest tests/agent/test_investigation_tools.py tests/agent/test_investigation_isolation.py -q   # 14 passed
+uv run pytest tests/integrations/test_llm.py -q                   # 38 passed (incl chat_with_tools)
+uv run pytest tests/agent/test_investigation_* tests/integrations/test_llm.py tests/agent/test_operator_assistant.py tests/models/test_proposals.py tests/config -q   # 391 passed
+
+# CLI flag smoke
+uv run python -m errander --help | grep -A2 agentic   # --agentic renders

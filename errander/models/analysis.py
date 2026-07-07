@@ -6,10 +6,13 @@ They are never used to drive execution decisions in Layer B.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, field_validator
+
+from errander.models.proposals import PROPOSABLE_ACTIONS
 
 if TYPE_CHECKING:
     from errander.safety.vm_facts import (
@@ -17,6 +20,38 @@ if TYPE_CHECKING:
         ActionRejectionFact,
         VMRebootPatternFact,
     )
+
+_VM_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$")
+
+
+class ProposedWorkItem(BaseModel):
+    """An actionable item the investigation agent proposes (fable-plan Phase 2).
+
+    The agent's *only* channel to origination: it may propose that a specific
+    LOW-risk action run on a specific VM, with a rationale. Validated here
+    (action in the proposable set, vm_id well-formed) and again against live
+    inventory when converted to an AgentProposal. Anything else is dropped.
+    """
+
+    vm_id: str
+    action_type: str
+    rationale: str
+
+    @field_validator("vm_id")
+    @classmethod
+    def _valid_vm(cls, v: str) -> str:
+        if not _VM_ID_RE.match(v):
+            raise ValueError(f"invalid vm_id: {v!r}")
+        return v
+
+    @field_validator("action_type")
+    @classmethod
+    def _valid_action(cls, v: str) -> str:
+        if v not in PROPOSABLE_ACTIONS:
+            raise ValueError(
+                f"action_type {v!r} not in proposable set {sorted(PROPOSABLE_ACTIONS)}"
+            )
+        return v
 
 
 class Finding(BaseModel):
@@ -43,6 +78,9 @@ class AssistantResponse(BaseModel):
     recommendations: list[str]
     risk_level: str  # "low" | "medium" | "high" | "unknown"
     data_sources: list[str] = []
+    #: Actionable proposals the agentic path may emit (Phase 2). Empty for the
+    #: deterministic investigate() path. Invalid items are dropped, not raised.
+    proposed_work: list[ProposedWorkItem] = []
 
     @field_validator("findings", mode="before")
     @classmethod

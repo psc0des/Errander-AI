@@ -66,3 +66,4 @@ Index of all learning docs created during development. Each doc explains what wa
 | 58 | [Advisory-LLM Batch Planning](58-advisory-planning-note.md) | §8d-5 | `58-advisory-planning-note.md` |
 | 59 | [Docker + Compose + PostgreSQL Bootstrap](59-docker-postgres-bootstrap.md) | infra | `59-docker-postgres-bootstrap.md` |
 | 60 | [Detect-and-Propose, Phase 1: the proposal bridge](60-detect-and-propose-phase1.md) | fable-plan P1 | `60-detect-and-propose-phase1.md` |
+| 61 | [Detect-and-Propose, Phase 2: the agentic investigation engine](61-investigation-agent-phase2.md) | fable-plan P2 | `61-investigation-agent-phase2.md` |

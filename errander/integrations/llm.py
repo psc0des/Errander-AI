@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import logging
 import time
+from dataclasses import dataclass, field
 from typing import Any, TypeVar
 
 from openai import APIConnectionError, APIStatusError, APITimeoutError, AsyncOpenAI
@@ -31,6 +32,27 @@ _REDACTOR = ContextRedactor()
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T", bound=BaseModel)
+
+
+@dataclass
+class ToolCall:
+    """One tool call requested by the model in a tool-enabled turn."""
+
+    id: str
+    name: str
+    arguments: str  # raw JSON string as emitted by the model
+
+
+@dataclass
+class AssistantTurn:
+    """The model's reply to a tool-enabled chat turn.
+
+    Either it returns final ``content`` (loop terminates) or one or more
+    ``tool_calls`` (caller dispatches them and continues the loop).
+    """
+
+    content: str | None = None
+    tool_calls: list[ToolCall] = field(default_factory=list)
 
 #: System prompt used for all completions
 _SYSTEM_PROMPT = (
@@ -186,6 +208,71 @@ class LLMClient:
                 return None
 
         return None  # unreachable, but satisfies type checker
+
+    async def chat_with_tools(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+        timeout_seconds: int | None = None,
+    ) -> AssistantTurn | None:
+        """Run one tool-enabled chat turn (the caller owns the ReAct loop).
+
+        Passes ``tools`` to the OpenAI-compatible endpoint and returns the
+        model's reply as an :class:`AssistantTurn` — either final ``content``
+        or ``tool_calls`` for the caller to dispatch. Returns ``None`` on any
+        transport failure so the caller can fall back deterministically
+        (the agent must never block on the LLM).
+
+        Unlike :meth:`complete`, this does NOT redact — the caller
+        (InvestigationAgent) redacts every message and tool result before it
+        enters the loop, which is the correct place for a multi-hop loop.
+        """
+        effective_timeout = timeout_seconds or self._timeout_seconds
+        for attempt in range(self._max_retries + 1):
+            try:
+                response = await self._client.chat.completions.create(  # type: ignore[call-overload]
+                    model=self._model,
+                    messages=messages,
+                    tools=tools,
+                    tool_choice="auto",
+                    temperature=self._temperature,
+                    timeout=effective_timeout,
+                )
+                message = response.choices[0].message
+                raw_calls = getattr(message, "tool_calls", None) or []
+                calls = [
+                    ToolCall(
+                        id=str(tc.id),
+                        name=str(tc.function.name),
+                        arguments=str(tc.function.arguments or "{}"),
+                    )
+                    for tc in raw_calls
+                ]
+                LLM_REQUESTS_TOTAL.labels(outcome="success").inc()
+                return AssistantTurn(content=message.content, tool_calls=calls)
+
+            except (APITimeoutError, APIConnectionError) as exc:
+                logger.warning(
+                    "LLM tool-turn transient error on attempt %d/%d: %s",
+                    attempt + 1, self._max_retries + 1, exc,
+                )
+                if attempt < self._max_retries:
+                    continue
+                outcome = "timeout" if isinstance(exc, APITimeoutError) else "error"
+                LLM_REQUESTS_TOTAL.labels(outcome=outcome).inc()
+                return None
+
+            except APIStatusError as exc:
+                # 4xx/5xx — some endpoints/models don't support tool calling.
+                # Don't retry; return None so the caller falls back.
+                logger.error(
+                    "LLM tool-turn API error %d: %s — falling back",
+                    exc.status_code, exc.message,
+                )
+                LLM_REQUESTS_TOTAL.labels(outcome="error").inc()
+                return None
+
+        return None  # unreachable, satisfies type checker
 
     async def health_check(self) -> bool:
         """Check if the LLM endpoint is reachable.

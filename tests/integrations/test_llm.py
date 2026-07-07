@@ -514,3 +514,65 @@ class TestPrefixCaching:
         system_content = captured[0][0]["content"]
         assert isinstance(system_content, list), "Anthropic path must use content-block list"
         assert captured[0][0]["content"][0].get("cache_control") == {"type": "ephemeral"}  # type: ignore[index]
+
+
+# --- chat_with_tools (Phase 2) ---
+
+def _make_tool_response(content: str | None, tool_calls: list[tuple[str, str, str]]) -> MagicMock:
+    """Build a mock OpenAI tool-turn response. tool_calls = [(id, name, args)]."""
+    msg = MagicMock()
+    msg.content = content
+    calls = []
+    for cid, name, args in tool_calls:
+        tc = MagicMock()
+        tc.id = cid
+        tc.function.name = name
+        tc.function.arguments = args
+        calls.append(tc)
+    msg.tool_calls = calls or None
+    choice = MagicMock()
+    choice.message = msg
+    response = MagicMock()
+    response.choices = [choice]
+    return response
+
+
+class TestChatWithTools:
+    @pytest.mark.asyncio
+    async def test_returns_tool_calls(self, llm_client: LLMClient) -> None:
+        resp = _make_tool_response(None, [("c1", "get_audit_events", '{"limit": 5}')])
+        with patch.object(
+            llm_client._client.chat.completions, "create",
+            AsyncMock(return_value=resp),
+        ):
+            turn = await llm_client.chat_with_tools([{"role": "user", "content": "q"}], [])
+        assert turn is not None
+        assert turn.content is None
+        assert len(turn.tool_calls) == 1
+        assert turn.tool_calls[0].name == "get_audit_events"
+        assert turn.tool_calls[0].arguments == '{"limit": 5}'
+
+    @pytest.mark.asyncio
+    async def test_returns_final_content(self, llm_client: LLMClient) -> None:
+        resp = _make_tool_response('{"summary": "done"}', [])
+        with patch.object(
+            llm_client._client.chat.completions, "create",
+            AsyncMock(return_value=resp),
+        ):
+            turn = await llm_client.chat_with_tools([{"role": "user", "content": "q"}], [])
+        assert turn is not None
+        assert turn.content == '{"summary": "done"}'
+        assert turn.tool_calls == []
+
+    @pytest.mark.asyncio
+    async def test_returns_none_on_api_error(self, llm_client_no_retry: LLMClient) -> None:
+        from openai import APIConnectionError
+
+        with patch.object(
+            llm_client_no_retry._client.chat.completions, "create",
+            AsyncMock(side_effect=APIConnectionError(request=MagicMock())),
+        ):
+            turn = await llm_client_no_retry.chat_with_tools(
+                [{"role": "user", "content": "q"}], [],
+            )
+        assert turn is None

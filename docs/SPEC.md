@@ -1081,9 +1081,12 @@ async def call_llm(
 
 > **As-built note:** "Natural language querying of audit trail" shipped ahead of this V2
 > list as the deterministic `--ask` Operator Assistant (Layer A, read-only, fixed queries).
-> An agentic version (`--ask --agentic`, a tool-calling loop) and a `/ui/chat` console were
-> prototyped and then removed — deferred to a separate conversational-investigation project
-> (see README's Roadmap and the specs under `tasks/`).
+> An opt-in **agentic** version (`--ask --agentic`, a bounded read-only tool-calling loop,
+> default OFF) is now built (fable-plan Phase 2): the LLM composes read-only queries live,
+> within a tool-call + wall-clock budget, and its recommendations become agent proposals in
+> the `/ui/proposals` queue — still Layer A, still human-approved before Layer B acts. The
+> separate `/ui/chat` console remains out of core (see README's Roadmap and the specs under
+> `tasks/`).
 
 ---
 

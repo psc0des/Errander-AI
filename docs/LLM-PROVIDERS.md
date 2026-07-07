@@ -9,6 +9,14 @@ After configuring, verify with:
 uv run python -m errander --check-llm
 ```
 
+> **Tool/function calling** is required only for the opt-in agentic investigation loop
+> (`--ask --agentic`, default OFF). The scheduled maintenance batch, the planning note,
+> reports, and the default `--ask` use plain structured completions and work on any
+> OpenAI-compatible endpoint. If an endpoint/model does not support tool calling, the
+> agentic loop detects it and falls back to the deterministic fixed-context path — it
+> never errors. For self-hosted vLLM, enable it at serve time with
+> `--enable-auto-tool-choice --tool-call-parser hermes` (already in the reference command).
+
 ---
 
 ## Option A: Self-hosted vLLM (Qwen3-8B-AWQ)

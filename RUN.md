@@ -444,6 +444,9 @@ The agent will not interrupt a running SSH command mid-flight — it finishes th
 | `--bootstrap-known-hosts <env>` | Connect once to every VM in ENV and pin SSH host keys, then exit |
 | `--probe-now <env>` | Run daily probe (disk, drift, failed logins, journal errors, ELK) — read-only |
 | `--ask "<question>"` | LLM fleet analysis (Layer A — read-only, no changes) |
+| `--agentic` | With `--ask`: use the bounded read-only tool-calling investigation loop instead of the fixed-context path (Layer A; default OFF; falls back to deterministic on any LLM/tool failure) |
+| `--proposals` | List agent proposals (pending queue + recent history). Decisions happen in the Web UI, never here |
+| `--proposal-show <id>` | Print one agent proposal in full, including its evidence chain |
 | `--migrate-inventory <path>` | Convert a legacy flat inventory to the nested `actions:` format; writes `<path>.migrated` |
 | `--restart-service <env>` | Trigger an operator-initiated service restart (HIGH risk, Slack approval required) |
 | `--unit <name>` | Systemd unit name to restart (required with `--restart-service`) |

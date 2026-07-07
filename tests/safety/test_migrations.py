@@ -85,7 +85,7 @@ class TestRunMigrations:
                 text("SELECT version FROM schema_migrations ORDER BY version")
             )
             versions = [int(str(row[0])) for row in result.fetchall()]
-        assert versions == [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+        assert versions == [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
         await db.close()
 
     async def test_idempotent_on_second_run(self) -> None:
@@ -96,7 +96,7 @@ class TestRunMigrations:
         async with db.begin() as conn:
             result = await conn.execute(text("SELECT COUNT(*) FROM schema_migrations"))
             row = result.fetchone()
-        assert int(str(row[0])) == 16  # exactly 16 migrations (0-15)
+        assert int(str(row[0])) == 17  # exactly 17 migrations (0-16)
         await db.close()
 
     async def test_audit_events_schema_correct(self) -> None:

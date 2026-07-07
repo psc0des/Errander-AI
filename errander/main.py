@@ -23,7 +23,7 @@ import signal
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import structlog
 
@@ -43,6 +43,7 @@ from errander.safety.hygiene_approval import HygieneApprovalManager
 from errander.safety.hygiene_store import HygieneApprovalStore
 from errander.safety.locking import FileLocker
 from errander.safety.overrides import OverridesStore
+from errander.safety.proposal_store import ProposalStore
 from errander.scheduling.scheduler import MaintenanceScheduler
 from errander.scheduling.windows import (
     MaintenanceWindow,
@@ -50,6 +51,9 @@ from errander.scheduling.windows import (
     next_window_open,
     window_start_cron,
 )
+
+if TYPE_CHECKING:
+    from errander.models.reports import DigestReport
 
 logger = structlog.get_logger(__name__)
 
@@ -162,6 +166,22 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "Investigate fleet state and answer QUESTION using LLM analysis. "
             "Layer A only — no changes made. Use --env to scope to one environment."
         ),
+    )
+
+    # Agent proposals (detect-and-propose, fable-plan Phase 1)
+    parser.add_argument(
+        "--proposals",
+        action="store_true",
+        help=(
+            "List agent proposals (pending queue + recent history). "
+            "Decisions happen in the Web UI, never here."
+        ),
+    )
+    parser.add_argument(
+        "--proposal-show",
+        metavar="PROPOSAL_ID",
+        default=None,
+        help="Print one proposal in full, including its evidence chain.",
     )
 
     # Service restart (operator-triggered, HIGH risk tier)
@@ -915,6 +935,61 @@ async def run_check_targets(env_name: str, inventory_path: Path) -> int:
 # ---------------------------------------------------------------------------
 
 
+def _enabled_actions_by_vm(env: EnvironmentSchema) -> dict[str, set[str]]:
+    """vm_id → inventory-enabled action names (detector filing filter)."""
+    enabled: dict[str, set[str]] = {}
+    for target in env.targets:
+        resolved = target.resolve_actions(env.actions)
+        enabled[target.name] = {
+            name for name, cfg in resolved.items() if cfg is not None and cfg.enabled
+        }
+    return enabled
+
+
+async def _detect_and_file_probe_proposals(
+    report: DigestReport,
+    *,
+    env: EnvironmentSchema,
+    db: AsyncDatabase,
+    audit_store: AuditStore,
+    slack: SlackClient | None,
+    web_base_url: str = "",
+) -> tuple[int, int]:
+    """Phase 1 detector: file template proposals from probe signals.
+
+    Deterministic, no LLM (fable-plan D2). Returns (created, refreshed).
+    Never raises — a detector failure must not break the probe digest.
+    """
+    from errander.agent.proposal_detector import detect_proposals, file_proposals
+    from errander.safety.proposal_store import ProposalStore
+
+    try:
+        proposals = detect_proposals(
+            report, enabled_actions_by_vm=_enabled_actions_by_vm(env),
+        )
+        if not proposals:
+            return 0, 0
+        store = ProposalStore(db)
+        created, refreshed = await file_proposals(
+            proposals, store=store, audit_store=audit_store,
+        )
+    except Exception as exc:  # noqa: BLE001 — detector must never break the probe
+        logger.error("Proposal detector failed for %s: %s", report.env_name, exc)
+        return 0, 0
+
+    if created > 0 and slack is not None:
+        link = f"\nReview: {web_base_url}/ui/proposals" if web_base_url else ""
+        try:
+            await slack.post_alert(
+                f":bulb: *{created} new agent proposal(s)* filed from the "
+                f"{report.env_name} probe (AGENT-ORIGINATED — approval required "
+                f"in the Web UI; Slack carries no decision authority).{link}"
+            )
+        except Exception as exc:  # noqa: BLE001 — notify is best-effort
+            logger.warning("Slack proposal notification failed: %s", exc)
+    return created, refreshed
+
+
 async def run_env_probe_main(env_name: str, inventory_path: Path) -> int:
     """Run a proactive signal probe for ENV and post digest to Slack.
 
@@ -1011,6 +1086,22 @@ async def run_env_probe_main(env_name: str, inventory_path: Path) -> int:
             if elk is not None:
                 await elk.close()
 
+        # Detect-and-propose Phase 1: deterministic template proposals from
+        # the probe signals (no LLM — fable-plan D2).
+        _created, _refreshed = await _detect_and_file_probe_proposals(
+            report,
+            env=env,
+            db=_db_probe,
+            audit_store=audit_store,
+            slack=slack,
+            web_base_url=settings.web_base_url or "",
+        )
+        if _created or _refreshed:
+            print(
+                f"\nAgent proposals: {_created} created, {_refreshed} refreshed "
+                f"— review in the Web UI under /ui/proposals"
+            )
+
     digest_text = render_digest_report(report)
     print(digest_text)
 
@@ -1032,6 +1123,92 @@ async def run_env_probe_main(env_name: str, inventory_path: Path) -> int:
         )
 
     await ssh_manager.close_all()
+    return 0
+
+
+# ---------------------------------------------------------------------------
+# Proposals CLI (detect-and-propose Phase 1 — read-only; decisions in Web UI)
+# ---------------------------------------------------------------------------
+
+
+def _format_proposal_line(p: Any) -> str:
+    exec_note = f" exec={p.execution_status}" if p.execution_status else ""
+    return (
+        f"  {p.proposal_id[:8]}  {p.status.value:<8}  {p.vm_id:<16}  "
+        f"{p.kind.value}:{p.action_key:<24}  conf={p.confidence:<6}  "
+        f"origin={p.origin}{exec_note}"
+    )
+
+
+async def run_proposals_list() -> int:
+    """Print the pending proposal queue and recent history."""
+    try:
+        settings = load_settings()
+    except Exception as exc:  # noqa: BLE001
+        print(f"Error loading settings: {exc}")
+        return 1
+    store = ProposalStore(AsyncDatabase(settings.audit_db_url))
+    try:
+        await store.initialize()
+        pending = await store.get_pending()
+        history = await store.get_history(limit=20)
+    finally:
+        await store.close()
+
+    print(f"Pending proposals ({len(pending)}) — decide in the Web UI (/ui/proposals):")
+    if not pending:
+        print("  (none)")
+    for p in pending:
+        print(_format_proposal_line(p))
+    print(f"\nRecent history ({len(history)}):")
+    if not history:
+        print("  (none)")
+    for p in history:
+        print(_format_proposal_line(p))
+    return 0
+
+
+async def run_proposal_show(proposal_id: str) -> int:
+    """Print one proposal in full, including its evidence chain."""
+    try:
+        settings = load_settings()
+    except Exception as exc:  # noqa: BLE001
+        print(f"Error loading settings: {exc}")
+        return 1
+    store = ProposalStore(AsyncDatabase(settings.audit_db_url))
+    try:
+        await store.initialize()
+        proposal = await store.get(proposal_id)
+    finally:
+        await store.close()
+
+    if proposal is None:
+        print(f"No proposal with id {proposal_id!r}")
+        return 1
+
+    p = proposal
+    print(f"Proposal {p.proposal_id}")
+    print(f"  Status     : {p.status.value}")
+    print(f"  Kind       : {p.kind.value}"
+          + (f" → {p.action_type}" if p.action_type else " (review-only)"))
+    print(f"  VM         : {p.vm_id} (env {p.env_name})")
+    print(f"  Signal     : {p.signal_kind}  confidence={p.confidence}")
+    print(f"  Origin     : {p.origin}  probe={p.probe_id or 'n/a'}")
+    print(f"  Created    : {p.created_at.isoformat()}  updated {p.updated_at.isoformat()}")
+    if p.expires_at:
+        print(f"  Expires    : {p.expires_at.isoformat()}")
+    if p.decided_by:
+        print(f"  Decided    : by {p.decided_by} ({p.decided_by_group or 'n/a'}) "
+              f"at {(p.decided_at.isoformat() if p.decided_at else '?')}")
+    if p.snoozed_until:
+        print(f"  Snoozed to : {p.snoozed_until.isoformat()}")
+    if p.execution_started_at:
+        print(f"  Execution  : started {p.execution_started_at.isoformat()} "
+              f"status={p.execution_status or 'running'}")
+    print(f"  Evidence   ({len(p.evidence)}):")
+    for ev in p.evidence:
+        print(f"    - [{ev.source}] {ev.check}")
+        print(f"      {ev.observation}")
     return 0
 
 
@@ -2402,6 +2579,197 @@ async def _approval_reconciler(
 
 
 # ---------------------------------------------------------------------------
+# Proposal reconciler (detect-and-propose, fable-plan Phase 1 — D1 execution)
+# ---------------------------------------------------------------------------
+
+
+async def _proposal_reconciler(
+    environments: dict[str, EnvironmentSchema],
+    settings: Settings,
+    executor: SandboxExecutor,
+    locker: FileLocker,
+    audit_store: AuditStore,
+    proposal_store: ProposalStore,
+    agent_dry_run: bool,
+) -> None:
+    """Execute approved actionable proposals through the deterministic path.
+
+    D1 (fable-plan §2): a proposal approval is work origination, not a new
+    execution path — this job runs the *existing* action sub-graph for the
+    single target VM, mirroring the --restart-service execution pattern
+    (lock → sub-graph ainvoke → per-action audit).
+
+    Passes:
+    1. Expire — pending proposals past expires_at become 'expired'.
+    2. Wake  — snoozed proposals past snoozed_until return to pending.
+    3. Execute — approved actionable proposals are claimed atomically and
+       executed. Window-closed or lock-held targets are left unclaimed for
+       the next tick. In agent dry-run mode nothing is claimed or executed.
+    """
+    from typing import cast
+
+    from errander.agent.subgraphs.disk_cleanup import (
+        DiskCleanupGraphState,  # noqa: F401 — used in cast()
+        build_disk_cleanup_subgraph,
+    )
+    from errander.agent.subgraphs.log_rotation import (
+        LogRotationGraphState,  # noqa: F401 — used in cast()
+        build_log_rotation_subgraph,
+    )
+    from errander.models.actions import ActionStatus
+    from errander.models.events import AuditEvent, EventType
+
+    # --- Pass 1: expire overdue pending proposals ---
+    for proposal_id in await proposal_store.expire_overdue():
+        await audit_store.log_event(AuditEvent(
+            event_type=EventType.PROPOSAL_EXPIRED,
+            batch_id=proposal_id,
+            detail="Reconciler: pending proposal expired without a decision",
+            metadata={"proposal_id": proposal_id, "reconciler": True},
+        ))
+
+    # --- Pass 2: wake snoozed proposals whose snooze elapsed ---
+    await proposal_store.wake_snoozed()
+
+    # --- Pass 3: execute approved-but-unclaimed actionable proposals ---
+    if agent_dry_run:
+        # Honest dry-run: never claim, never execute — approved proposals
+        # wait for a live agent instead of being marked done by a rehearsal.
+        return
+
+    now = datetime.now(tz=UTC)
+    for proposal in await proposal_store.get_approved_unclaimed():
+        env_schema = environments.get(proposal.env_name)
+        target = None
+        if env_schema is not None:
+            target = next(
+                (t for t in env_schema.targets if t.name == proposal.vm_id), None,
+            )
+        if env_schema is None or target is None:
+            # Fail closed and stop this row from looping: claim + record.
+            if await proposal_store.mark_execution_started(proposal.proposal_id):
+                await proposal_store.set_execution_status(proposal.proposal_id, "failed")
+                await audit_store.log_event(AuditEvent(
+                    event_type=EventType.PROPOSAL_EXECUTION_FAILED,
+                    batch_id=proposal.proposal_id,
+                    vm_id=proposal.vm_id,
+                    action_type=proposal.action_type,
+                    detail=(
+                        "Reconciler: approved proposal references unknown "
+                        f"environment/VM ({proposal.env_name}/{proposal.vm_id})"
+                    ),
+                    metadata={"proposal_id": proposal.proposal_id, "reconciler": True},
+                ))
+            continue
+
+        # Config drift gate: the action must STILL be enabled in inventory.
+        resolved_cfg = target.resolve_actions(env_schema.actions).get(proposal.action_type)
+        if resolved_cfg is None or not resolved_cfg.enabled:
+            if await proposal_store.mark_execution_started(proposal.proposal_id):
+                await proposal_store.set_execution_status(proposal.proposal_id, "failed")
+                await audit_store.log_event(AuditEvent(
+                    event_type=EventType.PROPOSAL_EXECUTION_FAILED,
+                    batch_id=proposal.proposal_id,
+                    vm_id=proposal.vm_id,
+                    action_type=proposal.action_type,
+                    detail=(
+                        f"Reconciler: {proposal.action_type} no longer enabled in "
+                        f"inventory for {proposal.vm_id} — refusing to execute "
+                        "(config drift between approval and execution)"
+                    ),
+                    metadata={"proposal_id": proposal.proposal_id, "reconciler": True},
+                ))
+            continue
+
+        # Maintenance window: retry next tick rather than claim-and-defer.
+        env_window = _build_maintenance_window(env_schema)
+        if env_window is not None and not check_window_from_config(now, env_window):
+            logger.info(
+                "Proposal %s waits for the maintenance window (env=%s)",
+                proposal.proposal_id, proposal.env_name,
+            )
+            continue
+
+        # Lock before claim so a lost lock leaves the proposal retryable.
+        acquired = await locker.acquire(
+            proposal.vm_id, proposal.proposal_id, ttl_seconds=300,
+        )
+        if not acquired:
+            logger.info(
+                "Proposal %s waits — VM %s is locked by another batch",
+                proposal.proposal_id, proposal.vm_id,
+            )
+            continue
+        try:
+            if not await proposal_store.mark_execution_started(proposal.proposal_id):
+                continue  # lost the claim race — another executor owns it
+
+            await audit_store.log_event(AuditEvent(
+                event_type=EventType.PROPOSAL_EXECUTION_STARTED,
+                batch_id=proposal.proposal_id,
+                vm_id=proposal.vm_id,
+                action_type=proposal.action_type,
+                detail=(
+                    f"Reconciler: executing approved proposal "
+                    f"(approved by {proposal.decided_by} at "
+                    f"{(proposal.decided_at or now).isoformat()})"
+                ),
+                metadata={"proposal_id": proposal.proposal_id, "reconciler": True},
+            ))
+
+            username = target.ssh_user or env_schema.ssh_user
+            key_path = str(
+                Path(target.ssh_key_path or env_schema.ssh_key_path).expanduser()
+            )
+            sub_state: dict[str, Any] = {
+                "vm_id": proposal.vm_id,
+                "os_family": target.os_family,
+                "dry_run": False,
+                "hostname": target.host,
+                "username": username,
+                "key_path": key_path,
+            }
+
+            final: dict[str, Any]
+            try:
+                if proposal.action_type == "disk_cleanup":
+                    final = dict(await build_disk_cleanup_subgraph(executor)
+                                 .compile()
+                                 .ainvoke(cast("DiskCleanupGraphState", sub_state)))
+                else:  # log_rotation — PROPOSABLE_ACTIONS bounds this branch
+                    final = dict(await build_log_rotation_subgraph(executor)
+                                 .compile()
+                                 .ainvoke(cast("LogRotationGraphState", sub_state)))
+            except Exception as exc:  # noqa: BLE001 — one VM must not kill the loop
+                logger.error(
+                    "Proposal %s sub-graph raised: %s", proposal.proposal_id, exc,
+                )
+                final = {"status": ActionStatus.FAILED.value, "error": str(exc)}
+
+            status = str(final.get("status", ActionStatus.FAILED.value))
+            ok = status in (ActionStatus.SUCCESS.value, ActionStatus.DRY_RUN_OK.value)
+            await proposal_store.set_execution_status(
+                proposal.proposal_id, "success" if ok else "failed",
+            )
+            await audit_store.log_event(AuditEvent(
+                event_type=(
+                    EventType.PROPOSAL_EXECUTION_COMPLETED if ok
+                    else EventType.PROPOSAL_EXECUTION_FAILED
+                ),
+                batch_id=proposal.proposal_id,
+                vm_id=proposal.vm_id,
+                action_type=proposal.action_type,
+                detail=(
+                    f"status={status}"
+                    + (f" error={final.get('error')}" if final.get("error") else "")
+                ),
+                metadata={"proposal_id": proposal.proposal_id, "reconciler": True},
+            ))
+        finally:
+            await locker.release(proposal.vm_id, proposal.proposal_id)
+
+
+# ---------------------------------------------------------------------------
 # Long-running agent (scheduler mode)
 # ---------------------------------------------------------------------------
 
@@ -2471,6 +2839,12 @@ async def async_main(args: argparse.Namespace) -> int:
             env_name=args.probe_now,
             inventory_path=args.inventory,
         )
+
+    if args.proposals:
+        return await run_proposals_list()
+
+    if args.proposal_show is not None:
+        return await run_proposal_show(args.proposal_show)
 
     if args.ask:
         return await run_ask_query(
@@ -2650,6 +3024,10 @@ async def async_main(args: argparse.Namespace) -> int:
     await hygiene_store.initialize()
     hygiene_manager = HygieneApprovalManager(hygiene_store)
 
+    # --- Proposal store (detect-and-propose Phase 1; same DB, migration #16) ---
+    proposal_store = ProposalStore(_db)
+    await proposal_store.initialize()
+
     try:
         # --- Metrics server (agent process: /metrics + /health only) ---
         metrics_runner = await start_metrics_server(
@@ -2807,6 +3185,15 @@ async def async_main(args: argparse.Namespace) -> int:
                             await _prom.close()
                         if _sched_elk is not None:
                             await _sched_elk.close()
+                    # Detect-and-propose Phase 1: template proposals (no LLM).
+                    await _detect_and_file_probe_proposals(
+                        report,
+                        env=_schema,
+                        db=_db,
+                        audit_store=audit_store,
+                        slack=slack,
+                        web_base_url=settings.web_base_url or "",
+                    )
                     digest_text = render_digest_report(report)
                     if slack is not None:
                         await slack.post_digest(digest_text)
@@ -2845,6 +3232,23 @@ async def async_main(args: argparse.Namespace) -> int:
 
         scheduler.add_interval_job(
             _reconcile_approvals, seconds=60, job_id="approval-reconciler",
+        )
+
+        # Detect-and-propose Phase 1: expire/wake proposals and execute
+        # approved actionable ones through the deterministic sub-graph path.
+        async def _reconcile_proposals() -> None:
+            await _proposal_reconciler(
+                environments=dict(inventory.environments),
+                settings=settings,
+                executor=executor,
+                locker=locker,
+                audit_store=audit_store,
+                proposal_store=proposal_store,
+                agent_dry_run=dry_run,
+            )
+
+        scheduler.add_interval_job(
+            _reconcile_proposals, seconds=60, job_id="proposal-reconciler",
         )
 
         await scheduler.start()

@@ -166,6 +166,35 @@ This is the entire safety architecture in one sentence: **the LLM never has the 
 
 ---
 
+## Detect-and-propose (agency in origination, never in execution)
+
+The handoff above starts with an operator *asking*. Detect-and-propose adds a second, agent-*initiated* entry into the very same pipeline — the agent notices a signal, evidences a case, and files a **proposal** — without weakening any trust boundary.
+
+The crucial framing: **the agent's agency lives entirely at the origination end.** A proposal is a *suggestion record*, not an authorization. Approving it does not create a new execution path — it originates a targeted run of the *existing* deterministic Layer B pipeline, which re-assesses fresh state and raises its own exact-object approval where the risk tier demands it.
+
+```
+Probe signal (disk growth / drift / failed logins)
+        |
+        v
+Deterministic detector (Layer B; NO LLM) → template proposal
+   (optionally enriched later by a read-only Layer A investigation loop)
+        |
+        v
+AgentProposal (exact target, action from the fixed set, evidence chain)
+        |
+        v
+Operator decides in the Web UI (AGENT-ORIGINATED badge; Slack notifies)
+        |  approved + actionable
+        v
+EXISTING Layer B path → execute → per-object audit
+```
+
+Phase 1 (shipped) is deterministic-only: the detector proposes `disk_cleanup` / `log_rotation` from disk-growth signals and surfaces drift / login spikes as review-only proposals. Later phases add a bounded, read-only Layer A tool-calling loop that *enriches* proposals with correlated evidence — still Layer A, still never executing. Full design and phasing: [`../tasks/fable-plan.md`](../tasks/fable-plan.md); pipeline diagram: [`diagrams/detect-and-propose.md`](diagrams/detect-and-propose.md).
+
+The invariant is unchanged, and if anything strengthened: **Layer A (and the detector) may originate and evidence work; a named human approves exact objects; Layer B alone executes.** The moment anyone proposes auto-approving high-confidence proposals, stop — that is self-approval with extra steps.
+
+---
+
 ## Examples
 
 ### Example 1: Disk usage alert → maintenance batch

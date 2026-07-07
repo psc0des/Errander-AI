@@ -1,9 +1,43 @@
 # Errander-AI — Project Status
 
 ## Last Updated
-2026-06-23
+2026-07-07
 
 ## Current Phase
+**Detect-and-propose Phase 1 — the proposal bridge (COMPLETE 2026-07-07).**
+
+Made the "agentic" in *supervised agentic AI* real at the origination end: the daily
+probe's signals are now turned into **agent proposals** by a deterministic detector
+(no LLM), filed into a durable store, surfaced in a new `/ui/proposals` queue
+(AGENT-ORIGINATED badge + evidence chain), and — on operator approval of an actionable
+one — executed by a proposal reconciler through the *existing* deterministic sub-graph
+path (D1: approval originates work, it never bypasses the safety gates). Chat stays out
+of core; this is the in-core refinement of the 2026-06-23 decision (the investigate→
+propose loop terminates in the core's own approval pipeline). Full plan:
+`tasks/fable-plan.md`; diagram: `docs/diagrams/detect-and-propose.md`.
+
+**New files:** `errander/models/proposals.py`, `errander/safety/proposal_store.py`
+(migration #16), `errander/agent/proposal_detector.py`, `docs/diagrams/detect-and-propose.md`,
+`docs/learning/60-detect-and-propose-phase1.md`, `tasks/fable-plan.md`, and 5 test files.
+**Changed:** `main.py` (detector wiring, `_proposal_reconciler`, `--proposals`/
+`--proposal-show`, interval job), `web/ui.py` + `web/__main__.py` (queue page, routes,
+store wiring), `models/events.py` (9 lifecycle events), `safety/migrations.py`
+(migration #16), `README.md`, `docs/AI-ARCHITECTURE.md`.
+
+**Also fixed:** a pre-existing latent circular import (`safety/validators` ↔
+`agent/subgraphs/patching`) the new module exposed — `validate_no_pkg_lock` is now a
+function-level import in `patching.py`. See `tasks/lessons.md` 2026-07-07.
+
+**Verification:** `ruff` clean, `mypy` clean (115 files), 156 tests across every touched
+area green in isolation (60 new + migrations + patching/validators). Note: a full
+`uv run pytest` on this Windows dev box is red for **pre-existing, environmental**
+reasons — clean HEAD (all changes stashed) also produces 10 failed / 171 errors, a
+`tests/web` "RuntimeError" cascade under pytest-asyncio plus stale post-R2
+`test_approval_ui.py` tests and browserless Playwright tests. None are caused by this
+work (my changes net-improved the counts to 8 failed / 2527 passed). The green baseline
+lives on CI/Linux.
+
+## Previous Phase
 **Removed Plan A + Plan B (chat / agentic investigation) from core — back to the deterministic engine (COMPLETE 2026-06-23).**
 
 Owner decision after a deep design discussion: the LLM-driven, read-only investigation

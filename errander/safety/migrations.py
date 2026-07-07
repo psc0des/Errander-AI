@@ -418,6 +418,52 @@ _MIGRATIONS: list[tuple[int, str]] = [
         ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_secret TEXT
         """,
     ),
+    # 0016 — agent_proposals (detect-and-propose, fable-plan Phase 1)
+    #
+    # A proposal is a suggestion record, never an authorization: the probe
+    # detector (deterministic) files it, a named operator decides it in the
+    # web UI, and the agent-side proposal reconciler executes approved
+    # actionable ones through the existing sub-graph path (D1).
+    # Dedup: the partial unique index enforces one OPEN proposal per
+    # (vm_id, action_key) — create_or_refresh() upserts evidence onto the
+    # open row instead of duplicating.
+    (
+        16,
+        """
+        CREATE TABLE IF NOT EXISTS agent_proposals (
+            proposal_id          TEXT PRIMARY KEY,
+            env_name             TEXT NOT NULL,
+            vm_id                TEXT NOT NULL,
+            kind                 TEXT NOT NULL
+                CHECK (kind IN ('action', 'review')),
+            action_type          TEXT NOT NULL DEFAULT '',
+            action_key           TEXT NOT NULL,
+            signal_kind          TEXT NOT NULL,
+            origin               TEXT NOT NULL DEFAULT 'probe_detector',
+            probe_id             TEXT NOT NULL DEFAULT '',
+            evidence_json        TEXT NOT NULL DEFAULT '[]',
+            confidence           TEXT NOT NULL DEFAULT 'medium',
+            status               TEXT NOT NULL DEFAULT 'pending'
+                CHECK (status IN ('pending', 'approved', 'rejected', 'snoozed', 'expired')),
+            created_at           TEXT NOT NULL,
+            updated_at           TEXT NOT NULL,
+            expires_at           TEXT,
+            decided_by           TEXT,
+            decided_by_group     TEXT,
+            decided_at           TEXT,
+            snoozed_until        TEXT,
+            execution_started_at TEXT,
+            execution_status     TEXT
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_proposals_open
+            ON agent_proposals (vm_id, action_key)
+            WHERE status = 'pending';
+        CREATE INDEX IF NOT EXISTS idx_agent_proposals_status
+            ON agent_proposals (status, expires_at);
+        CREATE INDEX IF NOT EXISTS idx_agent_proposals_created
+            ON agent_proposals (created_at DESC)
+        """,
+    ),
 ]
 
 #: Default groups + their permissions (R2). Idempotent (ON CONFLICT DO

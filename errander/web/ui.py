@@ -21,7 +21,7 @@ import contextlib
 import html as _html_mod
 import logging
 import secrets
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 from urllib.parse import quote as _url_quote
 
@@ -50,6 +50,7 @@ if TYPE_CHECKING:
     from errander.safety.audit import AuditStore
     from errander.safety.hygiene_store import HygieneApprovalStore
     from errander.safety.overrides import OverridesStore
+    from errander.safety.proposal_store import ProposalStore
     from errander.safety.user_store import SessionStore, User, UserStore
 
 _esc = _html_mod.escape  # escape untrusted data before HTML interpolation
@@ -67,6 +68,7 @@ BASE_INVENTORY_KEY: web.AppKey[list[VMTarget]] = web.AppKey("base_inventory")
 AI_DECISION_STORE_KEY: web.AppKey[AIDecisionStore | None] = web.AppKey("ai_decision_store")
 USER_STORE_KEY: web.AppKey[UserStore | None] = web.AppKey("user_store")
 SESSION_STORE_KEY: web.AppKey[SessionStore | None] = web.AppKey("session_store")
+PROPOSAL_STORE_KEY: web.AppKey[ProposalStore | None] = web.AppKey("proposal_store")
 #: True when the bind address is loopback — gates the zero-users open-GET
 #: bootstrap mode (never expose unauthenticated pages on a network bind).
 LOOPBACK_BIND_KEY: web.AppKey[bool] = web.AppKey("loopback_bind")
@@ -643,6 +645,8 @@ def _page(
         nav["batches"] = " on"
     elif t == "approvals":
         nav["approvals"] = " on"
+    elif t == "proposals":
+        nav["proposals"] = " on"
     elif t == "settings":
         nav["settings"] = " on"
     elif t == "inventory":
@@ -684,6 +688,9 @@ def _page(
     </a>
     <a href="/ui/approvals" class="sb-a{nav.get('approvals','')}">
       <span class="sb-ico" aria-hidden="true">&#10003;</span>Approval Queue{badge}
+    </a>
+    <a href="/ui/proposals" class="sb-a{nav.get('proposals','')}">
+      <span class="sb-ico" aria-hidden="true">&#9733;</span>Agent Proposals
     </a>
     <a href="/ui/batches" class="sb-a{nav.get('batches','')}">
       <span class="sb-ico" aria-hidden="true">&#9776;</span>Batch History
@@ -2671,6 +2678,218 @@ async def _ui_approval_decide(request: web.Request) -> web.Response:
 
 
 # ---------------------------------------------------------------------------
+# Agent proposal handlers (detect-and-propose, fable-plan Phase 1)
+# ---------------------------------------------------------------------------
+
+
+_PROPOSAL_SNOOZE_CHOICES = {"1": 1, "3": 3, "7": 7}  # days
+
+
+def _proposal_status_badge(p: object) -> str:
+    status = str(getattr(p, "status", "")).replace("ProposalStatus.", "").lower()
+    status = status.split(".")[-1]
+    label = {
+        "approved": '<span class="dec-ok">&#10003; Approved</span>',
+        "rejected": '<span class="dec-no">&#10007; Rejected</span>',
+        "snoozed": '<span style="color:var(--text-d)">&#8986; Snoozed</span>',
+        "expired": '<span style="color:var(--text-d)">Expired</span>',
+    }
+    return label.get(status, f'<span class="mono">{_esc(status)}</span>')
+
+
+async def _ui_proposals(request: web.Request) -> web.Response:
+    """GET /ui/proposals — agent-originated proposal queue + history.
+
+    Every card carries the AGENT-ORIGINATED badge, its origin and signal
+    provenance, and the full evidence chain (fable-plan §5.5: human-visible
+    provenance). Approving an actionable proposal originates a targeted run
+    executed by the agent's proposal reconciler — it is not a second
+    execution path (D1).
+    """
+    store: ProposalStore | None = request.app.get(PROPOSAL_STORE_KEY)
+    if store is None:
+        return _page("Proposals", '<div class="nc">Proposal store not connected.</div>')
+
+    pending = await store.get_pending()
+    history = await store.get_history(limit=20)
+
+    if pending:
+        cards: list[str] = []
+        for p in pending:
+            evidence_rows = "".join(
+                f'<div style="margin:.3rem 0;padding:.4rem .6rem;'
+                f'background:var(--bg);border-radius:6px">'
+                f'<div class="mono" style="font-size:.62rem;color:var(--text-d)">'
+                f'[{_esc(ev.source)}] {_esc(ev.check)}</div>'
+                f'<div style="font-size:.72rem">{_esc(ev.observation)}</div>'
+                f'</div>'
+                for ev in p.evidence
+            )
+            if p.is_actionable:
+                what = (
+                    f'Approval originates a targeted <b>{_esc(p.action_type)}</b> run '
+                    f'on <b>{_esc(p.vm_id)}</b>, executed by the agent within the '
+                    "maintenance window (deterministic sub-graph, per-action audit)."
+                )
+            else:
+                what = (
+                    "Review-only: approving acknowledges the finding — "
+                    "<b>nothing is executed</b>."
+                )
+            cards.append(
+                f'<div class="apv">'
+                f'<div class="apv-id">{_esc(p.vm_id)} &mdash; '
+                f'{_esc(p.kind.value)}:{_esc(p.action_key)}'
+                f' <span style="background:#7c3aed;color:#fff;border-radius:4px;'
+                f'padding:.1rem .4rem;font-size:.58rem;vertical-align:middle">'
+                f'AGENT-ORIGINATED</span></div>'
+                f'<div class="apv-meta">signal={_esc(p.signal_kind)} &bull; '
+                f'confidence={_esc(p.confidence)} &bull; origin={_esc(p.origin)} '
+                f'&bull; probe={_esc(p.probe_id or "n/a")} &bull; '
+                f'filed {p.created_at.strftime("%Y-%m-%d %H:%M")} UTC</div>'
+                f'<div style="font-size:.72rem;margin:.4rem 0">{what}</div>'
+                f'<details open><summary style="font-size:.7rem;cursor:pointer">'
+                f'Evidence ({len(p.evidence)})</summary>{evidence_rows}</details>'
+                f'<form method="POST" action="/ui/proposals/{_uq(p.proposal_id)}/approve">'
+                f'<div class="apv-btns">'
+                f'<button type="submit" class="btn btn-ok">&#10003; Approve</button>'
+                f'<button type="submit" class="btn btn-no" '
+                f'formaction="/ui/proposals/{_uq(p.proposal_id)}/reject">'
+                f'&#10007; Reject</button>'
+                f'<button type="submit" class="btn" '
+                f'formaction="/ui/proposals/{_uq(p.proposal_id)}/snooze">'
+                f'&#8986; Snooze</button>'
+                f'<select name="snooze_days" style="font-size:.68rem">'
+                f'<option value="1">1 day</option>'
+                f'<option value="3" selected>3 days</option>'
+                f'<option value="7">7 days</option>'
+                f'</select>'
+                f'</div>'
+                f'</form>'
+                f'</div>'
+            )
+        pending_section = _section("Pending", len(pending)) + "".join(cards)
+    else:
+        pending_section = (
+            _section("Pending")
+            + '<div class="tbl"><div class="empty">'
+            "No pending proposals. The daily probe files them when it detects "
+            "actionable signals (disk growth, drift, failed logins)."
+            "</div></div>"
+        )
+
+    if history:
+        rows_h = [
+            [
+                f'<span class="mono">{_esc(h.proposal_id[:8])}</span>',
+                f'<span class="mono">{_esc(h.vm_id)}</span>',
+                _esc(f"{h.kind.value}:{h.action_key}"),
+                _proposal_status_badge(h),
+                f'<span class="mono">{_esc(h.decided_by or "—")}</span>',
+                (
+                    f'<span class="mono" style="font-size:.62rem">'
+                    f'{_esc(h.execution_status)}</span>'
+                    if h.execution_status
+                    else '<span style="color:var(--text-d);font-size:.65rem">—</span>'
+                ),
+            ]
+            for h in history
+        ]
+        history_section = (
+            _section("Recent Decisions", len(history))
+            + _table(
+                ["Proposal", "VM", "What", "Decision", "Decided by", "Execution"],
+                rows_h,
+            )
+        )
+    else:
+        history_section = (
+            _section("Recent Decisions")
+            + '<div class="tbl"><div class="empty">No decisions recorded yet.</div></div>'
+        )
+
+    return _page(
+        "Proposals",
+        pending_section + history_section,
+        refresh=15,
+        request=request,
+    )
+
+
+async def _ui_proposal_decide(request: web.Request) -> web.Response:
+    """POST /ui/proposals/{proposal_id}/{action} — approve / reject / snooze.
+
+    Server-side RBAC: requires ``decide_approvals`` (same permission that
+    gates batch approvals — a proposal decision has the same weight).
+    The decision is atomic in the store; the audit trail records who did it.
+    """
+    from errander.safety.user_store import PERM_DECIDE_APPROVALS
+
+    user = _require_permission(request, PERM_DECIDE_APPROVALS)
+
+    store: ProposalStore | None = request.app.get(PROPOSAL_STORE_KEY)
+    if store is None:
+        return web.Response(status=503, text="Proposal store not connected")
+
+    proposal_id = request.match_info["proposal_id"]
+    action = request.match_info["action"]  # "approve" | "reject" | "snooze"
+    ui_username = f"ui:{user.username}"
+    group = user.group_granting(PERM_DECIDE_APPROVALS)
+
+    proposal = await store.get(proposal_id)
+    if proposal is None:
+        return web.Response(status=404, text="No such proposal")
+
+    if action == "snooze":
+        data = await request.post()
+        days = _PROPOSAL_SNOOZE_CHOICES.get(str(data.get("snooze_days", "3")), 3)
+        until = datetime.now(tz=UTC) + timedelta(days=days)
+        won = await store.snooze(
+            proposal_id, snoozed_until=until,
+            decided_by=ui_username, decided_by_group=group,
+        )
+        event_type = EventType.PROPOSAL_SNOOZED
+        detail = f"snoozed {days}d until {until.isoformat()} by {ui_username}"
+    else:
+        approved = action == "approve"
+        won = await store.decide(
+            proposal_id, approved=approved,
+            decided_by=ui_username, decided_by_group=group,
+        )
+        event_type = (
+            EventType.PROPOSAL_APPROVED if approved else EventType.PROPOSAL_REJECTED
+        )
+        detail = (
+            f"{'approved' if approved else 'rejected'} by {ui_username} "
+            f"({group or 'n/a'})"
+            + (
+                " — targeted run will be executed by the agent reconciler"
+                if approved and proposal.is_actionable else ""
+            )
+        )
+
+    if won:
+        audit_store: AuditStore | None = request.app.get(AUDIT_STORE_KEY)
+        if audit_store is not None:
+            from errander.models.events import AuditEvent
+            with contextlib.suppress(Exception):
+                await audit_store.log_event(AuditEvent(
+                    event_type=event_type,
+                    batch_id=proposal_id,
+                    vm_id=proposal.vm_id,
+                    action_type=proposal.action_type or None,
+                    detail=detail,
+                    metadata={"proposal_id": proposal_id},
+                ))
+    logger.info(
+        "UI proposal %s: %s by %s%s",
+        proposal_id, action, ui_username,
+        "" if won else " — ignored, already decided",
+    )
+    raise web.HTTPFound("/ui/proposals")
+
+
+# ---------------------------------------------------------------------------
 # docker_hygiene web approval handlers
 # ---------------------------------------------------------------------------
 
@@ -3614,6 +3833,7 @@ def build_ui_app(
     user_store: UserStore | None = None,
     session_store: SessionStore | None = None,
     ai_decision_store: AIDecisionStore | None = None,
+    proposal_store: ProposalStore | None = None,
     loopback_bind: bool = True,
     signing_secret: str | None = None,
     public_mode: bool = False,
@@ -3636,6 +3856,7 @@ def build_ui_app(
     app[AI_DECISION_STORE_KEY] = ai_decision_store
     app[USER_STORE_KEY] = user_store
     app[SESSION_STORE_KEY] = session_store
+    app[PROPOSAL_STORE_KEY] = proposal_store
     app[LOOPBACK_BIND_KEY] = loopback_bind
     app[CSRF_SECRET_KEY] = csrf_secret
     app[SIGNING_SECRET_KEY] = signing_secret
@@ -3654,6 +3875,11 @@ def build_ui_app(
     app.router.add_post(
         r"/ui/approvals/{batch_id:[^/]+}/{action:(approve|reject)}",
         _ui_approval_decide,
+    )
+    app.router.add_get("/ui/proposals", _ui_proposals)
+    app.router.add_post(
+        r"/ui/proposals/{proposal_id:[^/]+}/{action:(approve|reject|snooze)}",
+        _ui_proposal_decide,
     )
     app.router.add_get("/ui/settings", _ui_settings_get)
     app.router.add_post("/ui/settings", _ui_settings_post)
@@ -3688,6 +3914,7 @@ async def start_web_server(
     user_store: UserStore | None = None,
     session_store: SessionStore | None = None,
     ai_decision_store: AIDecisionStore | None = None,
+    proposal_store: ProposalStore | None = None,
     signing_secret: str | None = None,
     public_mode: bool = False,
 ) -> web.AppRunner:
@@ -3745,6 +3972,7 @@ async def start_web_server(
         user_store=user_store,
         session_store=session_store,
         ai_decision_store=ai_decision_store,
+        proposal_store=proposal_store,
         loopback_bind=is_loopback,
         signing_secret=signing_secret,
         public_mode=public_mode,

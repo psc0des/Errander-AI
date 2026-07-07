@@ -65,3 +65,4 @@ Index of all learning docs created during development. Each doc explains what wa
 | 57 | [Web-Only Approval with Users/Groups RBAC](57-web-only-approval-rbac.md) | §8d-3 | `57-web-only-approval-rbac.md` |
 | 58 | [Advisory-LLM Batch Planning](58-advisory-planning-note.md) | §8d-5 | `58-advisory-planning-note.md` |
 | 59 | [Docker + Compose + PostgreSQL Bootstrap](59-docker-postgres-bootstrap.md) | infra | `59-docker-postgres-bootstrap.md` |
+| 60 | [Detect-and-Propose, Phase 1: the proposal bridge](60-detect-and-propose-phase1.md) | fable-plan P1 | `60-detect-and-propose-phase1.md` |

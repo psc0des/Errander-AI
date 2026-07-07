@@ -3425,3 +3425,30 @@ curl ... (login, scrape CSRF from rendered HTML, create thread, POST message, re
 kill <captured PID>   # did NOT stop the server (uv run grandchild process, same issue as the timeout/zombie lesson) — server still responding after
 # PowerShell: Get-NetTCPConnection -LocalPort 19091 | ... OwningProcess -> Get-CimInstance Win32_Process (exact command-line match confirmed)
 taskkill //F //PID <real PID>   # correctly stopped it this time
+
+## 2026-07-07 — detect-and-propose Phase 1 (proposal bridge)
+
+# Pre-flight (mandatory before destructive-action work)
+grep -rn "INVARIANT" errander/ scripts/    # read every load-bearing marker before touching sub-graphs
+
+# Iterative lint/type during build
+uv run ruff check errander/                 # all checks passed
+uv run mypy .                               # no issues in 116 source files
+
+# New-module + new-test runs
+uv run pytest tests/models/test_proposals.py tests/safety/test_proposal_store.py -q   # 32 passed
+uv run pytest tests/agent/test_proposal_detector.py tests/test_proposal_reconciler.py tests/web/test_ui_proposals.py -q   # 28 passed
+
+# Diagnosing the full-suite failures (180 errors in tests/web)
+uv run pytest tests/web/ -q                  # 23 passed ALONE — so ordering/cross-dir issue, not web logic
+uv run pytest tests/safety -q -p no:cacheprovider   # circular-import COLLECTION error on test_validators
+uv run python -c "import errander.safety.validators"   # FAILS standalone → pre-existing latent cycle
+git stash; uv run python -c "import errander.safety.validators"   # still FAILS on clean HEAD → confirmed pre-existing
+git stash pop
+
+# Fix: validate_no_pkg_lock made a function-level import in patching.py (breaks the cycle)
+uv run python -c "import errander.safety.validators; print('OK')"   # OK
+uv run pytest tests/safety -q -p no:cacheprovider   # 535 passed, 2 migration-count assertions updated (16→17)
+
+# Full suite re-run after fix
+uv run pytest -q -p no:randomly              # (in progress at time of writing)

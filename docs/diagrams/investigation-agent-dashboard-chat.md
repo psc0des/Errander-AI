@@ -4,6 +4,11 @@
 > `tasks/dashboard-chat-implementation-plan.md`, reconciled against the current as-built code
 > (post-R3 process split). Not yet implemented — see `tasks/todo.md` for status.
 > Renders inline on GitHub. Companion to `errander-system-architecture.md` (the whole-system view).
+>
+> **2026-07-07 update:** the Plan A engine drawn here is adopted by `tasks/fable-plan.md`
+> Phase 2 (re-aimed: output extends to validated `proposed_work` → proposals; trigger extends
+> to probe events) — see `detect-and-propose.md` for the pipeline it now feeds. The Plan B
+> chat surface remains out of core per the 2026-06-23 decision.
 
 ```mermaid
 flowchart TB

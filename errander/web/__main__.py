@@ -29,6 +29,7 @@ from errander.safety.approval_store import ApprovalRequestStore
 from errander.safety.audit import AuditStore
 from errander.safety.hygiene_store import HygieneApprovalStore
 from errander.safety.overrides import OverridesStore
+from errander.safety.proposal_store import ProposalStore
 from errander.safety.user_store import SessionStore, UserStore
 from errander.web.ui import start_web_server
 
@@ -126,6 +127,9 @@ async def main(argv: list[str] | None = None) -> int:
     ai_decision_store = AIDecisionStore(_db)
     await ai_decision_store.initialize()
 
+    proposal_store = ProposalStore(_db)
+    await proposal_store.initialize()
+
     if (
         settings.ui_user and settings.ui_password
         and await user_store.count_users() == 0
@@ -148,6 +152,7 @@ async def main(argv: list[str] | None = None) -> int:
             user_store=user_store,
             session_store=session_store,
             ai_decision_store=ai_decision_store,
+            proposal_store=proposal_store,
             signing_secret=signing_secret,
             public_mode=public_mode,
         )

@@ -70,6 +70,16 @@ class EventType(StrEnum):
     DOCKER_HYGIENE_OBJECT_REMOVED = "docker_hygiene_object_removed"
     DOCKER_HYGIENE_OBJECT_DRIFT_SKIPPED = "docker_hygiene_object_drift_skipped"
     DOCKER_HYGIENE_OBJECT_REMOVE_FAILED = "docker_hygiene_object_remove_failed"
+    # Detect-and-propose (fable-plan Phase 1) — proposal lifecycle
+    PROPOSAL_CREATED = "proposal_created"
+    PROPOSAL_REFRESHED = "proposal_refreshed"
+    PROPOSAL_APPROVED = "proposal_approved"
+    PROPOSAL_REJECTED = "proposal_rejected"
+    PROPOSAL_SNOOZED = "proposal_snoozed"
+    PROPOSAL_EXPIRED = "proposal_expired"
+    PROPOSAL_EXECUTION_STARTED = "proposal_execution_started"
+    PROPOSAL_EXECUTION_COMPLETED = "proposal_execution_completed"
+    PROPOSAL_EXECUTION_FAILED = "proposal_execution_failed"
     # R2 — user/group management (web-only approval RBAC)
     USER_CREATED = "user_created"
     USER_DELETED = "user_deleted"

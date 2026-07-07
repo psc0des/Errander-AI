@@ -27,7 +27,12 @@ from errander.execution.reboot_check import detect_reboot_required
 from errander.execution.service_check import check_services, find_regressions
 from errander.models.actions import ActionStatus
 from errander.models.manifest import ActionManifest
-from errander.safety.validators import validate_no_pkg_lock
+
+# NOTE: validate_no_pkg_lock is imported lazily inside preflight_lock_node (not
+# at module level) to break a circular import: errander.safety.validators imports
+# errander.agent.subgraphs.disk_cleanup, whose package __init__ imports this
+# module. A module-level import here closes the cycle and makes
+# `import errander.safety.validators` fail depending on collection order.
 
 if TYPE_CHECKING:
     from errander.execution.sandbox import SandboxExecutor
@@ -495,6 +500,7 @@ async def preflight_lock_node(
     audit_store is provided.
     """
     from errander.models.events import AuditEvent, EventType
+    from errander.safety.validators import validate_no_pkg_lock  # lazy — see module note
 
     vm_id = state["vm_id"]
     os_family = state.get("os_family", "ubuntu")

@@ -655,13 +655,18 @@ uv run python -m errander --check-llm
 
 ## Roadmap
 
+### Detect-and-propose (Phase 1 shipped — deterministic proposals)
+
+The agent now **originates work** without a human asking: the daily probe's signals (disk growth, config drift, failed SSH logins) are turned into **agent proposals** by a deterministic detector — no LLM anywhere in the path. Each proposal carries an evidence chain and lands in the Web UI queue (`/ui/proposals`, badged **AGENT-ORIGINATED**); Slack notifies and links. A named operator approves, rejects, or snoozes; an approved *actionable* proposal (LOW-risk `disk_cleanup` / `log_rotation` only) is executed by the agent's reconciler through the **existing** deterministic sub-graph path — approval originates work, it never bypasses the safety gates. Review-only proposals (drift, login spikes) surface evidence and execute nothing. Later phases (agentic investigation loop that *enriches* proposals with correlated evidence, probe-triggered investigations, rejection-memory suppression, eval harness) are planned in [`tasks/fable-plan.md`](tasks/fable-plan.md) with diagrams in [`docs/diagrams/detect-and-propose.md`](docs/diagrams/detect-and-propose.md).
+
 ### Near-term (planned — not yet built)
 
+- **Agentic investigation engine (fable-plan Phases 2–3)** — a bounded, read-only tool-calling loop (Prometheus, ELK, audit DB) that enriches detector proposals with correlated evidence; default off, Layer A only. Adopts [`tasks/investigation-agent-implementation-plan.md`](tasks/investigation-agent-implementation-plan.md).
 - **LangSmith tracing (optional, bring-your-own)** — deep Layer-A observability for the LangGraph reasoning; off by default, never wired into Layer B. See [`docs/OBSERVABILITY.md`](docs/OBSERVABILITY.md).
 
-### Conversational investigation — a separate future project (intentionally not in core)
+### Conversational chat — a separate future project (intentionally not in core)
 
-An LLM-driven, read-only operator assistant — a CLI agentic `--ask` loop and a `/ui/chat` console over Errander's data — was prototyped in mid-2026 and then **deliberately pulled back out of the core**. The maintenance engine's value is its deterministic, trustworthy action path; a fast-iterating gen-AI chat is a different kind of system (a read-only "system of insight") with opposite design pressures, its own credential model, framework, and eval needs. Bundling the two complicated the core for unvalidated demand. The design — a standalone read-only assistant that *consumes* the audit/telemetry substrate and can only *propose* (never execute) through the existing approval flow — is captured in [`tasks/investigation-agent-implementation-plan.md`](tasks/investigation-agent-implementation-plan.md) and [`tasks/dashboard-chat-implementation-plan.md`](tasks/dashboard-chat-implementation-plan.md) for if/when it's built as its own project. The deterministic `--ask` operator assistant (fixed read-only queries, Layer A) remains in core.
+A `/ui/chat` console over Errander's data was prototyped in mid-2026 and then **deliberately pulled back out of the core**. The maintenance engine's value is its deterministic, trustworthy action path; a fast-iterating gen-AI chat is a different kind of system (a read-only "system of insight") with opposite design pressures, its own credential model, framework, and eval needs. The design is captured in [`tasks/dashboard-chat-implementation-plan.md`](tasks/dashboard-chat-implementation-plan.md) for if/when it's built as its own project. (The *investigate→propose loop* from that same prototype was re-scoped **into** core — it terminates in the core's own approval pipeline; see the detect-and-propose roadmap entry above.) The deterministic `--ask` operator assistant (fixed read-only queries, Layer A) remains in core.
 
 ### V2
 

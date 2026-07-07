@@ -1,3 +1,39 @@
+## Detect-and-Propose — genuinely agentic origination, HITL execution (2026-07-07, Phase 1 COMPLETE)
+
+Owner decision: make the "agentic" in *supervised agentic AI* real — the agent notices
+signals, investigates (read-only), and files evidenced **proposals** into the approval
+pipeline; execution stays deterministic Layer B behind human approval. Refines (does not
+reverse) the 2026-06-23 removal: the **chat surface stays out**; the **investigate→propose
+loop comes into core** because it terminates in the core's own approval pipeline.
+
+Full plan: `tasks/fable-plan.md`. Phase 2 adopts `tasks/investigation-agent-implementation-plan.md`
+(runtime, tools, guardrails) with a re-aimed output (proposals) and trigger (probe events).
+Diagrams (Mermaid, render on GitHub): pipeline in `docs/diagrams/detect-and-propose.md`
+(canonical) + compact version inline in fable-plan §2; engine internals unchanged in
+`docs/diagrams/investigation-agent-dashboard-chat.md`.
+
+- [x] Phase 0 — decision record: lessons.md reconciliation entry, AI-ARCHITECTURE "Detect-and-propose" subsection, README roadmap rewrite (2026-07-07)
+- [x] Phase 1 — proposal bridge (deterministic, no LLM), COMPLETE 2026-07-07:
+  - [x] `errander/models/proposals.py` — AgentProposal + ProposalEvidence; validated action set (disk_cleanup/log_rotation only), identifier + kind-consistency validators
+  - [x] `errander/safety/proposal_store.py` + migration #16 — dedup upsert (partial unique index: one open per vm/action_key), atomic decide, snooze/wake, expiry, execution claim
+  - [x] `errander/agent/proposal_detector.py` — deterministic post-probe detector (disk→cleanup+logrot; drift/logins→review-only), inventory-enabled filter, dedup-aware filing
+  - [x] `main.py` — detector wired into both probe paths; `_proposal_reconciler` (D1: targeted run via existing sub-graph; config-drift + window + lock gates; dry-run-safe); `--proposals`/`--proposal-show` CLI; interval job registered
+  - [x] `web/ui.py` — `/ui/proposals` queue (AGENT-ORIGINATED badge, evidence chain, approve/reject/snooze, RBAC decide_approvals), nav entry, routes; wired via `web/__main__.py`
+  - [x] 9 lifecycle EventTypes; per-transition audit
+  - [x] Tests: 60 new (models 14, store 18, detector 15, reconciler 10, web UI 12); green
+  - [x] Fixed a pre-existing latent circular import (validators↔subgraphs.patching) the new module exposed — see lessons.md 2026-07-07
+- [ ] Phase 2 — agentic investigation engine: resurrect Plan A (hand-rolled tool loop, read-only tools, budgets, per-hop audit) + `proposed_work` output validated against action set/inventory, `--ask --agentic`, default OFF
+- [ ] Phase 3 — event-driven trigger: probe anomalies enqueue bounded investigations that enrich Phase 1 proposals; caps + dedup window + kill switch (default off)
+- [ ] Phase 4 — memory loop: proposal decisions/outcomes as VM facts, facts fed into investigation context, rejected-2× suppression policy with digest surfacing
+- [ ] Phase 5 — evals + LangSmith: golden-scenario replay harness (offline fake-LLM in CI), proposal precision/recall scoring, opt-in LangSmith tracing
+
+**Key invariants:** proposal approval = work origination, not execution authorization
+(targeted run through the existing Layer B path; exact-object gate unchanged); LLM-optional
+at every stage (detector works with LLM down); agent never imports the approval store;
+proposals validated against the fixed action set — no free-text targets or actions.
+
+---
+
 ## Removed Plan A + Plan B (chat / agentic investigation) from core (2026-06-23, COMPLETE)
 
 Owner decision after a deep design discussion (system of action vs system of insight):

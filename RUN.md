@@ -477,6 +477,8 @@ The agent will not interrupt a running SSH command mid-flight — it finishes th
 | `--decision-type <type>` | Filter `--ai-decisions` by decision type (e.g. `prioritize_actions`) |
 | `--ai-eval-replay` | Replay stored LLM decisions against a candidate model and print pass/fail/error summary |
 | `--eval-model <id>` | Model ID to use as the candidate in `--ai-eval-replay` (default: current `ERRANDER_LLM_MODEL`) |
+| `--eval-golden-scenarios` | Run the golden-scenario decision-correctness harness (detector precision/recall + agentic guardrail regression) and print pass/fail summary. Store-less — safe against a live deployment's config |
+| `--live-llm` | With `--eval-golden-scenarios`, also run a cheap, unscored live-LLM connectivity smoke test via `NoOpFallback` |
 
 ---
 

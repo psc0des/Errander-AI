@@ -1360,7 +1360,7 @@ LANGCHAIN_API_KEY=lsv2_pt_...
 LANGCHAIN_PROJECT=errander-ai
 ```
 
-Sign up at [smith.langchain.com](https://smith.langchain.com), create a project, copy your API key. LangGraph auto-detects `LANGCHAIN_TRACING_V2=true` at startup — no code changes needed.
+Sign up at [smith.langchain.com](https://smith.langchain.com), create a project, copy your API key. **Mechanism (Phase 5):** `LLMClient.__init__` wraps its internal `AsyncOpenAI` client with `langsmith.wrappers.wrap_openai` whenever `langsmith.utils.tracing_is_enabled()` reads these env vars as true — not LangGraph auto-instrumentation (Layer A's reasoning calls are hand-rolled OpenAI SDK, never LangGraph nodes). The env-var-only activation experience above is unchanged; every `LLMClient` call (planning note, report, `--ask`, and the agentic loop) traces with zero further code changes on your part. See `docs/OBSERVABILITY.md` §4 for the full mechanism and why it can't cross into Layer B.
 
 ### ELK / Elasticsearch log aggregation *(optional)*
 

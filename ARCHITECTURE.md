@@ -2,7 +2,7 @@
 
 > Supervised agentic AI · two-layer safety model · AI investigates and recommends, humans approve, deterministic code acts.
 > As-built as of **2026-07-09** (post-R3 process split · detect-and-propose Phases 1–4 shipped).
-> Renders inline on GitHub. The editable draw.io version is [`docs/diagrams/errander-system-architecture.drawio`](docs/diagrams/errander-system-architecture.drawio) (older revision — not yet refreshed for detect-and-propose).
+> Renders inline on GitHub. The editable draw.io version is [`docs/diagrams/errander-system-architecture.drawio`](docs/diagrams/errander-system-architecture.drawio) (same as-built state, swim-lane layout).
 
 ```mermaid
 flowchart TB

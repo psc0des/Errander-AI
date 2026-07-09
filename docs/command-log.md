@@ -1,5 +1,15 @@
 # Errander-AI Command Log
 
+## draw.io twin refresh + HTML viewer regen (2026-07-09)
+
+```bash
+# Same as-built refresh as ARCHITECTURE.md, applied to the draw.io XML by direct edit
+# (mxGraph XML — Edit tool, ~16 targeted cell edits; reused existing geometry slots).
+# errander-view.html embeds a full HTML-escaped copy of the XML in data-mxgraph, so it must
+# be regenerated whenever the .drawio changes — script validates well-formedness first:
+uv run python <scratchpad>/regen_view.py   # xml.dom.minidom.parse + json.dumps + html.escape
+```
+
 ## ARCHITECTURE.md — promote to repo root + refresh to as-built (2026-07-09)
 
 ```bash

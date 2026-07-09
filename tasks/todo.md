@@ -7,8 +7,8 @@ Owner: the end-to-end Mermaid diagram living in `docs/diagrams/` "feels like hid
 - [x] "Reading the diagram" section rewritten to match (detect-and-propose, R3, R1, proposal-approval-is-origination-not-execution-authorization invariant)
 - [x] References repointed: README Architecture section leads with ARCHITECTURE.md (previously only the .drawio was linked); companion refs in `docs/diagrams/detect-and-propose.md` + `investigation-agent-dashboard-chat.md`
 - [x] Validated with mermaid-cli (SVG + PNG render clean)
-- [ ] FOLLOW-UP (optional): redraw the draw.io twin (`docs/diagrams/errander-system-architecture.drawio`) — header now flags it as an older revision
-- [ ] FOLLOW-UP (after Phase 5 commits): flip ARCHITECTURE.md's LangSmith node from planned→shipped
+- [x] FOLLOW-UP: redraw the draw.io twin (`docs/diagrams/errander-system-architecture.drawio`) — DONE 2026-07-09: same as-built edits as the Mermaid (Investigation Agent solid+shipped, chat nodes → Daily Probe + Proposal Detector + /ui/proposals queue, approval gate covers agent proposals, agent_proposals in Audit DB, R3 two-process Controller tab, Web UI :9091/errander-web, BYO Monitoring Prometheus, one-way Slack edge from controller, LangSmith "planned (Phase 5)"); XML validated well-formed; `errander-view.html` regenerated from the new XML (embeds a full escaped copy); ARCHITECTURE.md header caveat removed
+- [ ] FOLLOW-UP (after Phase 5 commits): flip ARCHITECTURE.md's + drawio's LangSmith node from planned→shipped
 
 ---
 

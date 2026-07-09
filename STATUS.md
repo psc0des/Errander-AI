@@ -19,11 +19,23 @@ plan from Layer B, Layer A contributes only the dashed advisory `ai_note` edge);
 originate from the agent process. Diagram validated with mermaid-cli (renders clean). README
 Architecture section now links `ARCHITECTURE.md` first (previously only the draw.io was
 linked); companion references in `docs/diagrams/detect-and-propose.md` +
-`investigation-agent-dashboard-chat.md` repointed. The draw.io twin is an older revision —
-flagged as such in the file header, not yet redrawn.
+`investigation-agent-dashboard-chat.md` repointed.
+
+**Follow-up (same day):** the draw.io twin
+(`docs/diagrams/errander-system-architecture.drawio`) redrawn to the same as-built state —
+Investigation Agent solid + shipped text, chat nodes replaced by the Daily Probe + Proposal
+Detector and the `/ui/proposals` queue node, approval gate covers batch plans + agent
+proposals, `agent_proposals` added to the Audit DB cylinder, Controller-VM tab names the two
+R3 OS processes, Web UI corrected to :9091/errander-web, Monitoring Prometheus marked
+BYO/external, Slack edge re-sourced from the controller (one-way outbound, was a bidirectional
+webui edge), LangSmith marked "planned (Phase 5)", blocked-bar "direct chat execution" →
+"agent self-execution of proposals". XML validated (well-formed) and
+`docs/diagrams/errander-view.html` regenerated from the new XML (it embeds a full escaped
+copy).
 
 **Changed:** `ARCHITECTURE.md` (moved + rewritten), `README.md`,
-`docs/diagrams/detect-and-propose.md`, `docs/diagrams/investigation-agent-dashboard-chat.md`.
+`docs/diagrams/detect-and-propose.md`, `docs/diagrams/investigation-agent-dashboard-chat.md`,
+`docs/diagrams/errander-system-architecture.drawio`, `docs/diagrams/errander-view.html`.
 No Python code touched. (Detect-and-propose Phase 5 work is in flight in the same tree —
 committed separately by that workstream.)
 

@@ -97,6 +97,7 @@ The agent runs until killed (Ctrl+C or service stop). Cron triggers fire automat
 | `http://localhost:9091/ui/batches` | Full batch history |
 | `http://localhost:9091/ui/batches/<batch-id>` | All events for a specific batch |
 | `http://localhost:9091/ui/approvals` | Pending approvals + decision history |
+| `http://localhost:9091/ui/proposals` | Agent-detected proposals awaiting approve/reject (detect-and-propose) |
 | `http://localhost:9091/ui/ai-decisions` | AI decision audit log — every LLM call that influenced a plan |
 | `http://localhost:9091/ui/ai-decisions/<id>` | Full detail for one LLM decision: prompt, response, context snapshot |
 | `http://localhost:9091/ui/monitoring` | Live monitoring — action success rates, batch duration, VM lock contention |

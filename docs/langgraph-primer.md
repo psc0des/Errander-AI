@@ -332,6 +332,10 @@ sequenceDiagram
 - `require_live_approval=True` (default) forces all live tiers through approval regardless of policy
 - Approval outside the maintenance window → execution is deferred, not run immediately (per-item selections survive via `approved_items_json`)
 
+### A third invocation path: the proposal reconciler (detect-and-propose)
+
+Batch fan-out and the `--restart-service` CLI aren't the only ways into the `disk_cleanup`/`log_rotation` sub-graphs. The **proposal reconciler** (60 s interval job in `main.py`, `job_id="proposal-reconciler"`) is a third: the deterministic detector (`proposal_detector.py`) files an `AgentProposal` when a probe signal matches a narrow, LOW-risk pattern (disk growth, var growth); once an operator approves it in `/ui/proposals`, the reconciler's execute pass (`_proposal_reconciler` in `main.py`) claims it atomically and runs the *existing* sub-graph for that single target VM — lock, `ainvoke`, per-action audit — exactly mirroring the `--restart-service` execution pattern rather than inventing a new one (D1, fable-plan §2: **approval is work origination, not a new execution authorization path**). The reconciler also runs two housekeeping passes each tick: expiring pending proposals past `expires_at`, and waking proposals whose snooze window elapsed. In agent dry-run mode, nothing is ever claimed or executed — approved proposals simply wait for a live agent tick.
+
 ---
 
 ## Retry Policies

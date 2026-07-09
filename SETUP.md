@@ -893,6 +893,14 @@ Type `yes` at the prompt. Removes: the `errander-agent` user + home (repo, `.env
 | `ERRANDER_INVENTORY_PATH` | No | `inventory.yaml` | Path to inventory file — used by the web UI in live mode to read VM identity |
 | `ERRANDER_SSH_STRICT_HOST_KEYS` | No | `true` | SSH host key policy. `false` = TOFU mode (WARNING logged per connection). Set `true` after running `--bootstrap-known-hosts` to enable strict verification. |
 | `ERRANDER_SSH_KNOWN_HOSTS` | No | — | Path to known_hosts file for SSH host key pinning. Set automatically by `--bootstrap-known-hosts` (default: `~/.ssh/errander_known_hosts`). Required when `ERRANDER_SSH_STRICT_HOST_KEYS=true`. |
+| `ERRANDER_INVESTIGATION_AGENT_ENABLED` | No | `false` | Make `--ask` use the agentic bounded tool-calling loop by default (same engine as `--ask --agentic`) |
+| `ERRANDER_INVESTIGATION_AGENT_MAX_TOOL_CALLS` | No | `8` | Max tool-calling hops in one agentic investigation before it's forced to answer |
+| `ERRANDER_INVESTIGATION_AGENT_TIMEOUT` | No | `60` | Wall-clock timeout in seconds for one agentic investigation |
+| `ERRANDER_INVESTIGATION_TRIGGER_ENABLED` | No | `false` | Let the daily probe automatically launch bounded investigations on flagged signals (separate kill switch from `ERRANDER_INVESTIGATION_AGENT_ENABLED`, which only affects `--ask`) |
+| `ERRANDER_INVESTIGATION_MAX_PER_PROBE` | No | `3` | Max probe-triggered investigations per probe run, across all VMs |
+| `ERRANDER_INVESTIGATION_TRIGGER_DEDUP_HOURS` | No | `24` | Minimum hours between probe-triggered investigations for the same VM |
+| `ERRANDER_PROPOSAL_SUPPRESSION_THRESHOLD` | No | `2` | Rejections of the same `(vm_id, action_type)` proposal before further auto-proposals for that pair are suppressed |
+| `ERRANDER_PROPOSAL_SUPPRESSION_WINDOW_DAYS` | No | `14` | Days from the most recent rejection that suppression stays in effect |
 | `LANGCHAIN_TRACING_V2` | No | unset (off) | Set to `true` to enable LangSmith tracing of Layer-A LangGraph reasoning. **Dev/staging only** — sends prompt contents to LangChain cloud. Never enable in no-egress prod. |
 | `LANGCHAIN_API_KEY` | No | — | LangSmith API key (`lsv2_pt_...`). Required when `LANGCHAIN_TRACING_V2=true`. |
 | `LANGCHAIN_PROJECT` | No | `default` | LangSmith project name to group traces under (e.g. `errander-ai`). |

@@ -1076,7 +1076,6 @@ async def call_llm(
 
 ### V2 LLM Functions (Deferred)
 
-- Anomaly detection (unusual patterns in system state)
 - Learning from historical runs to improve planning
 
 > **As-built note:** "Natural language querying of audit trail" shipped ahead of this V2
@@ -1087,6 +1086,14 @@ async def call_llm(
 > the `/ui/proposals` queue — still Layer A, still human-approved before Layer B acts. The
 > separate `/ui/chat` console remains out of core (see README's Roadmap and the specs under
 > `tasks/`).
+>
+> **As-built note:** "Anomaly detection (unusual patterns in system state)" also shipped
+> ahead of this V2 list, in a HITL-safe form (fable-plan Phase 3, default OFF): the daily
+> probe can launch the Phase 2 agentic loop automatically for VMs whose signals it just
+> flagged, without an operator asking first. It only ever *enriches* the deterministic
+> Phase 1 proposal with correlated evidence — never executes, never bypasses the detector's
+> dedup, and a failed/unavailable LLM leaves the proposal exactly as originally filed. See
+> `docs/AI-ARCHITECTURE.md` → "Detect-and-propose" and `docs/learning/62-*.md`.
 
 ---
 

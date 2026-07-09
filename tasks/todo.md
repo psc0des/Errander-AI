@@ -7,8 +7,9 @@ Owner: the end-to-end Mermaid diagram living in `docs/diagrams/` "feels like hid
 - [x] "Reading the diagram" section rewritten to match (detect-and-propose, R3, R1, proposal-approval-is-origination-not-execution-authorization invariant)
 - [x] References repointed: README Architecture section leads with ARCHITECTURE.md (previously only the .drawio was linked); companion refs in `docs/diagrams/detect-and-propose.md` + `investigation-agent-dashboard-chat.md`
 - [x] Validated with mermaid-cli (SVG + PNG render clean)
-- [ ] FOLLOW-UP (optional): redraw the draw.io twin (`docs/diagrams/errander-system-architecture.drawio`) — header now flags it as an older revision
-- [ ] FOLLOW-UP (after Phase 5 commits): flip ARCHITECTURE.md's LangSmith node from planned→shipped
+- [x] FOLLOW-UP: redraw the draw.io twin — DONE 2026-07-09 (commit 87ddfea): same as-built edits as the Mermaid; `errander-view.html` regenerated (it embeds a full escaped copy of the XML)
+- [x] FOLLOW-UP: visual QA of the drawio — DONE 2026-07-10: rendered in a real browser via `python -m http.server 8767` + Claude-in-Chrome; caught 3 text-overflow bugs XML validation can't (Web UI box 46→56px, approval gate 50→68px/370w with explicit line breaks, probe node 80→84px) + dropped the unreadable "triggers · opt-in" label on the 10px probe→agent edge (moved into Investigation Agent node text)
+- [x] FOLLOW-UP (after Phase 5 commits): flip LangSmith planned→shipped — DONE 2026-07-10 in BOTH twins (Mermaid re-validated with mermaid-cli; drawio + viewer regenerated); as-built dates bumped to 2026-07-10
 
 ---
 

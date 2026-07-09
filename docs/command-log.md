@@ -1,5 +1,19 @@
 # Errander-AI Command Log
 
+## drawio visual QA + LangSmith planned→shipped flip (2026-07-10)
+
+```bash
+# Render the drawio in a real browser — XML validity alone missed 3 text-overflow bugs
+python -m http.server 8767 --directory docs/diagrams   # background; serves errander-view.html
+# (Claude-in-Chrome: navigate http://localhost:8767/errander-view.html + screenshot/zoom)
+# Gotcha: the browser caches the viewer HTML — after regenerating, reload with ?v=2 cache-bust
+# or the screenshot silently shows the OLD diagram.
+
+# After fixes + LangSmith flip in both twins:
+uv run python <scratchpad>/regen_view.py                 # validate XML + regen errander-view.html
+npx -y @mermaid-js/mermaid-cli -i arch2.mmd -o arch2.svg # re-validate ARCHITECTURE.md Mermaid
+```
+
 ## draw.io twin refresh + HTML viewer regen (2026-07-09)
 
 ```bash

@@ -1,5 +1,21 @@
 # Errander-AI — Lessons Learned
 
+## 2026-07-10 — A diagram edit isn't verified until it's rendered; well-formed XML can still be visually broken
+
+The 2026-07-09 draw.io refresh was validated with `xml.dom.minidom.parse` (well-formed: OK)
+and shipped. Rendering it in a real browser the next day found three text boxes overflowing
+their borders and an edge label sitting in a 10px gap — all invisible to XML validation,
+because geometry is data, not syntax. Rules going forward: (1) any `.drawio`/Mermaid edit
+gets a **render check** before commit (Mermaid: `mmdc`; drawio: serve `errander-view.html`
+and screenshot — there's no local drawio CLI here); (2) when node text grows, grow the
+geometry in the same edit — draw.io `whiteSpace=wrap` wraps text but never clips or resizes,
+so overflow renders outside the border; (3) `errander-view.html` embeds a full escaped copy
+of the drawio XML — it silently goes stale unless regenerated after every XML edit; (4) the
+browser caches that HTML — cache-bust (`?v=N`) after regenerating or the "verification"
+screenshot shows the old file. Two-session meta-lesson: the first session honestly flagged
+"couldn't eyeball the layout" as a caveat instead of claiming done — that flag is what got
+the bugs caught; keep writing that sentence when a verification step is skipped.
+
 ## 2026-06-23 — Explore freely, ship narrowly: a feature that keeps generating architecture is unadmitted scope
 
 We built Plan A (agentic `--ask --agentic` investigation) and Plan B (`/ui/chat` dashboard

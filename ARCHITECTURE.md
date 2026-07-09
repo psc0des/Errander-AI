@@ -1,7 +1,7 @@
 # Errander-AI — System Architecture
 
 > Supervised agentic AI · two-layer safety model · AI investigates and recommends, humans approve, deterministic code acts.
-> As-built as of **2026-07-09** (post-R3 process split · detect-and-propose Phases 1–4 shipped).
+> As-built as of **2026-07-10** (post-R3 process split · detect-and-propose Phases 1–5 shipped).
 > Renders inline on GitHub. The editable draw.io version is [`docs/diagrams/errander-system-architecture.drawio`](docs/diagrams/errander-system-architecture.drawio) (same as-built state, swim-lane layout).
 
 ```mermaid
@@ -49,7 +49,7 @@ flowchart TB
       GRAF["Grafana<br/>dashboards"]:::infra
       FPROM["Fleet Prometheus<br/>target VM metrics<br/>BYO · optional"]:::infra
       ELK["ELK / Loki<br/>target + agent logs<br/>BYO · optional"]:::infra
-      LS["LangSmith / equivalent<br/>Layer A traces<br/>· planned (Phase 5) · BYO · egress"]:::planned
+      LS["LangSmith tracing + eval harness<br/>Layer A traces · golden scenarios<br/>shipped · opt-in via env vars · egress only when enabled"]:::infra
     end
   end
 
@@ -93,6 +93,6 @@ flowchart TB
 - **Layer B (green)** is deterministic Python. Since R1 the batch plan's membership and ordering are 100% deterministic — the LLM can only attach the clearly-labeled advisory note, never change what executes. The thick **SSH edge is the only path that changes a target VM**.
 - **R3 process split:** the agent process (`errander-agent`, holds SSH keys, `:9090` metrics-only) and the web process (`errander-web`, no SSH keys, `:9091`, RBAC + TOTP) are separate OS users; the shared PostgreSQL database is the **only** link between them, with table-level role grants (the web role cannot write audit tables). The Layer A / Layer B boundary is an OS-enforced privilege boundary, not just a code convention.
 - **Prometheus, twice:** a BYO Monitoring Prometheus on an external VM scrapes Errander's own `/metrics` (who watches the watcher); a separate Fleet Prometheus scrapes target node_exporters `:9100` for Layer A to read when investigating fleet health. Neither runs on the controller.
-- **Dashed purple = planned:** only LangSmith tracing remains (detect-and-propose Phase 5). The Dashboard Chat / Operator Chat Interface shown in older revisions was removed from core scope on 2026-06-23 and lives on as a separate future project.
+- **Nothing on this diagram is aspirational** — every component is shipped. LangSmith tracing + the golden-scenario eval harness landed with detect-and-propose Phase 5 (opt-in via the standard `LANGSMITH_*`/`LANGCHAIN_*` env vars; `--eval-golden-scenarios` runs offline). The Dashboard Chat / Operator Chat Interface shown in older revisions was removed from core scope on 2026-06-23 and lives on as a separate future project.
 - Everything inside **VPN** is private; the only outbound path is HTTPS to Slack (and optionally LangSmith).
 - **Observability lane** is bring-your-own and read-only — the daily probe and Layer A may read these sources; Layer B never depends on them.

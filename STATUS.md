@@ -1,9 +1,30 @@
 # Errander-AI — Project Status
 
 ## Last Updated
-2026-07-09
+2026-07-10
 
 ## Current Phase
+**Docs — architecture diagrams visually verified + LangSmith flipped to shipped (2026-07-10).**
+
+Follow-through on the 2026-07-09 diagram refresh: served `docs/diagrams/errander-view.html`
+locally and rendered it in a real browser (the one verification step the earlier session
+couldn't do). XML well-formedness had passed, but rendering caught three real layout bugs:
+the Web UI node's third line overflowed its 46px box (→ 56px), the approval gate's longer
+post-refresh text overflowed its 50px box (→ 4 explicit lines, 370×68, shifted left clear of
+the plan-snapshot node), and the probe/detector node's last line touched its bottom edge
+(→ 84px). Also dropped the "triggers · opt-in" label from the 10px-wide probe→agent edge
+(unreadable there; the fact moved into the Investigation Agent node text as
+"probe-triggered"). With detect-and-propose Phase 5 now committed, the LangSmith node was
+flipped planned→shipped in BOTH diagram twins (`ARCHITECTURE.md` Mermaid re-validated with
+mermaid-cli; drawio + regenerated `errander-view.html`): "LangSmith tracing + eval harness ·
+golden scenarios · opt-in via env vars · egress only when enabled"; as-built dates bumped to
+2026-07-10. Re-rendered in the browser and confirmed all fixes (note: the viewer HTML is
+browser-cached — cache-bust when re-checking).
+
+**Changed:** `ARCHITECTURE.md`, `docs/diagrams/errander-system-architecture.drawio`,
+`docs/diagrams/errander-view.html` (regenerated). No Python code touched.
+
+## Previous Phase
 **Detect-and-propose Phase 5 — eval harness + LangSmith, the credibility layer (COMPLETE 2026-07-09). fable-plan.md roadmap (Phases 0-5) fully shipped.**
 
 Two things a project claiming AI safety should show its work on: `errander/evals/

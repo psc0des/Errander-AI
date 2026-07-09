@@ -258,7 +258,8 @@ The "Agent restarts during a live batch" count equals interrupted batches — a 
 
 ## VM operational facts (B3)
 
-Spot-check the historical outcome facts that OperatorAssistant surfaces to the LLM.
+Spot-check the historical outcome facts that OperatorAssistant surfaces to the LLM —
+including agent-proposal history and re-proposal suppression state (fable-plan Phase 4).
 
 ```bash
 # All action outcomes for one VM
@@ -283,6 +284,12 @@ Action outcomes — prod/web-01
 Reboot pattern — prod/web-01
 ------------------------------------------------------------------------
   prod/web-01: 3 / 8 patching runs required a reboot
+
+Agent proposal history — prod/web-01
+------------------------------------------------------------------------
+  ACTION        PROPOSED  APPROVED  REJECTED  EXEC OK  EXEC FAIL  STATUS
+  ----------------------------------------------------------------------
+  disk_cleanup         2         0         2        0          0  SUPPRESSED until 2026-07-23
 
 Approval rejections — last 90 days (fleet-wide)
 ------------------------------------------------------------------------
@@ -462,7 +469,7 @@ The agent will not interrupt a running SSH command mid-flight — it finishes th
 | `--audit --last <n>` | Maximum audit events to return (default: 50) |
 | `--measure-durability` | Print durability snapshot (completion rate, duration/approval percentiles) |
 | `--window-days <n>` | Look-back window for `--measure-durability` in days (default: 14) |
-| `--vm-facts <vm_id>` | Print action outcome, reboot pattern, and rejection facts for a VM |
+| `--vm-facts <vm_id>` | Print action outcome, reboot pattern, agent-proposal history (incl. suppression state), and rejection facts for a VM |
 | `--vm-facts-action <type>` | Filter `--vm-facts` to one action type, or use alone for cross-fleet view |
 | `--plan-show <plan-id>` | Print the full package/object list for a saved plan snapshot (use when Slack message is truncated) |
 | `--ai-decisions` | Query the AI decision audit log and exit |

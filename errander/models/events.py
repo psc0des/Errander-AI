@@ -80,6 +80,8 @@ class EventType(StrEnum):
     PROPOSAL_EXECUTION_STARTED = "proposal_execution_started"
     PROPOSAL_EXECUTION_COMPLETED = "proposal_execution_completed"
     PROPOSAL_EXECUTION_FAILED = "proposal_execution_failed"
+    # Detect-and-propose (fable-plan Phase 4) — rejection-memory suppression
+    PROPOSAL_SUPPRESSED = "proposal_suppressed"
     # R2 — user/group management (web-only approval RBAC)
     USER_CREATED = "user_created"
     USER_DELETED = "user_deleted"

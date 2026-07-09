@@ -199,6 +199,7 @@ def _vm_facts_tool(vm_facts: VMFactsStore) -> ReadOnlyTool:
             return "ERROR: vm_id is required and must be a valid identifier"
         outcomes = await vm_facts.action_outcomes(vm_id)
         reboot = await vm_facts.reboot_pattern(vm_id)
+        proposals = await vm_facts.proposal_outcomes(vm_id)
         parts: list[str] = []
         if outcomes:
             parts.append(
@@ -214,13 +215,23 @@ def _vm_facts_tool(vm_facts: VMFactsStore) -> ReadOnlyTool:
                 f"reboots after patching: {reboot.reboots_required_after_patching}"
                 f"/{reboot.sample_size}"
             )
+        if proposals:
+            parts.append(
+                "agent proposal history: "
+                + ", ".join(
+                    f"{p.action_type}: proposed {p.proposed_count}x, "
+                    f"rejected {p.rejected_count}x, approved {p.approved_count}x"
+                    for p in proposals
+                )
+            )
         return "; ".join(parts) if parts else f"No learned facts for {vm_id}."
 
     return ReadOnlyTool(
         name="get_vm_facts",
         description=(
             "Read learned facts about a VM: historical action success/failure "
-            "rates and reboot patterns."
+            "rates, reboot patterns, and agent-proposal rejection history "
+            "(useful before recommending an action that's been rejected before)."
         ),
         parameters={
             "type": "object",

@@ -268,6 +268,38 @@ class TestRunTriggeredInvestigations:
         assert new_ones[0].action_type == "log_rotation"
 
     @pytest.mark.asyncio
+    async def test_new_proposed_work_respects_suppression(self) -> None:
+        """fable-plan Phase 4: the trigger's own proposed_work filing must not
+        bypass suppression — an agentic recommendation for a repeatedly-
+        rejected (vm, action) pair is suppressed the same as the detector's."""
+        pstore = ProposalStore(make_test_db())
+        await pstore.initialize()
+
+        # web-02/log_rotation has been rejected twice already.
+        for _ in range(2):
+            rejected, _ = await pstore.create_or_refresh(
+                _proposal("web-02", action_type="log_rotation"),
+            )
+            await pstore.decide(rejected.proposal_id, approved=False, decided_by="ui:a")
+
+        stored, _ = await pstore.create_or_refresh(_proposal("web-01", action_type="disk_cleanup"))
+        llm = _FakeLLM([_final(proposed_work=[
+            {"vm_id": "web-02", "action_type": "log_rotation", "rationale": "logs huge"},
+        ])])
+        audit = AsyncMock()
+
+        await run_triggered_investigations(
+            [stored], env_name="prod", valid_vm_ids={"web-01", "web-02"},
+            tools=_empty_registry(), llm_client=llm,  # type: ignore[arg-type]
+            proposal_store=pstore, audit_store=audit, ai_decision_store=None,
+            max_investigations_per_probe=3, dedup_hours=24,
+            max_tool_calls=8, timeout_seconds=60,
+            suppression_threshold=2, suppression_window_days=14,
+        )
+        pending = await pstore.get_pending()
+        assert [p.vm_id for p in pending] == ["web-01"]  # web-02 suppressed
+
+    @pytest.mark.asyncio
     async def test_no_candidates_returns_zero_without_llm_call(self) -> None:
         llm = AsyncMock()
         result = await run_triggered_investigations(

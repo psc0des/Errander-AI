@@ -229,18 +229,44 @@ per-hop redaction; per-step `AIDecisionStore` rows; graceful fallback). Deltas:
       failure-doesn't-kill-loop, NoOpFallback; `test_investigation_isolation.py` +1;
       `test_main_probe.py` +3 kill-switch/no-LLM at the main.py wiring level). All green.
 
-### Phase 4 — Memory loop (close it with what already exists)
-`VMFactsStore` already derives `action_outcomes()` / `rejection_facts()` /
-`reboot_pattern()`. Close the loop:
+### Phase 4 — Memory loop (close it with what already exists) — ✅ COMPLETE 2026-07-09
+> Shipped: `ProposalOutcomeFact` + `VMFactsStore.proposal_outcomes()` (derived from
+> the Phase 1-3 `proposal_*` audit events, no new tables); `ProposalStore.is_suppressed`
+> / `rejection_window_state` / `get_open` / `create_or_refresh_unless_suppressed`
+> (Phase 1's `count_rejections` docstring literally said "suppression input (Phase 4)" —
+> this is that input, now consumed); a single shared `file_or_suppress_one()` helper in
+> `proposal_detector.py` that ALL THREE filing call sites (Phase 1 detector, Phase 3
+> trigger's new-proposal filing, `--ask --agentic`'s filer) delegate to, so suppression
+> and its `PROPOSAL_SUPPRESSED` audit trail are enforced identically regardless of
+> origin — closing what would otherwise have been a suppression bypass via the agentic
+> path. `FleetContext.proposal_history` + `_format_prompt` (deterministic `--ask`) and
+> the `get_vm_facts` tool (agentic path) both surface it. `--vm-facts <vm_id>` CLI gained
+> an "Agent proposal history" table with a SUPPRESSED-until-date annotation. See
+> `docs/learning/63-suppression-memory-phase4.md`.
+>
+> **Scope delta from the checklist below:** suppression is scoped to **ACTION-kind
+> proposals only** (a real `action_type`) — the plan's own wording ("rejected ≥2× for
+> `(vm_id, action_type)`") already implied this; review-only proposals (drift, failed
+> logins) are never suppressed, matching how re-surfacing that evidence daily is
+> actually desired, not spam.
 
-- [ ] Proposal decisions + downstream run outcomes recorded as facts (extend the
+- [x] Proposal decisions + downstream run outcomes recorded as facts (extend the
       existing derivation to include proposal lifecycle events from Phase 1 audit rows).
-- [ ] Investigation context includes relevant facts (feed through the existing
-      `StoredSignalContext` / `FleetContext` pattern — deterministic assembly, budgeted).
-- [ ] Re-proposal suppression policy: rejected ≥2× for (vm_id, action_type) ⇒ suppress
+- [x] Investigation context includes relevant facts (feed through the existing
+      `FleetContext` pattern for `--ask`, and the `get_vm_facts` tool for `--ask --agentic`
+      — both deterministic assembly, no new prompt-injection surface: counts + a
+      timestamp only, no free-text fields).
+- [x] Re-proposal suppression policy: rejected ≥2× for (vm_id, action_type) ⇒ suppress
       auto-proposals for N days (default 14) and surface a "suppressed — needs human
-      review" line in the digest instead. Snooze honored verbatim.
-- [ ] Tests: suppression math; snooze; facts appear in investigation context; digest line.
+      review" line in the digest instead. Snooze honored verbatim (independent code path,
+      regression-tested).
+- [x] Tests: 29 new — suppression math (threshold/window boundaries, action-key
+      isolation, ACTION-only scope) in `test_proposal_store.py`; snooze-unaffected
+      regression; `ProposalOutcomeFact` derivation in `test_vm_facts.py`; facts appear in
+      `FleetContext`/prompt/tool in `test_operator_assistant_facts.py`; digest line +
+      Slack wording in `test_main_probe.py`; detector/trigger/agentic-filer suppression
+      integration; CLI proposal-history + SUPPRESSED-status rendering. 576 tests across
+      all Phase 1-4 touched areas green.
 
 ### Phase 5 — Evals + LangSmith (the credibility layer)
 - [ ] `tests/evals/` (or `evals/`) — golden fleet scenarios: recorded synthetic probe

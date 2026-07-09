@@ -466,3 +466,122 @@ class TestConfidenceLabels:
         results = await facts.action_outcomes("vm1")
         assert results[0].confidence == "high"
         await audit.close()
+
+
+# ---------------------------------------------------------------------------
+# ProposalOutcomeFact tests (fable-plan Phase 4)
+# ---------------------------------------------------------------------------
+
+
+class TestProposalOutcomes:
+    async def test_counts_each_lifecycle_event_type(self) -> None:
+        audit, facts = await _make_stores()
+
+        await _insert_event(
+            audit, event_type="proposal_created", vm_id="web-01", action_type="disk_cleanup",
+        )
+        await _insert_event(
+            audit, event_type="proposal_approved", vm_id="web-01", action_type="disk_cleanup",
+        )
+        await _insert_event(
+            audit, event_type="proposal_execution_completed",
+            vm_id="web-01", action_type="disk_cleanup",
+        )
+        await _insert_event(
+            audit, event_type="proposal_created", vm_id="web-01", action_type="disk_cleanup",
+        )
+        await _insert_event(
+            audit, event_type="proposal_rejected", vm_id="web-01", action_type="disk_cleanup",
+        )
+
+        results = await facts.proposal_outcomes("web-01")
+        assert len(results) == 1
+        f = results[0]
+        assert f.action_type == "disk_cleanup"
+        assert f.proposed_count == 2
+        assert f.approved_count == 1
+        assert f.rejected_count == 1
+        assert f.executed_success_count == 1
+        assert f.executed_failed_count == 0
+        await audit.close()
+
+    async def test_last_decided_at_is_most_recent_decision(self) -> None:
+        audit, facts = await _make_stores()
+        older = datetime(2026, 1, 1, tzinfo=UTC)
+        newer = datetime(2026, 6, 1, tzinfo=UTC)
+
+        await _insert_event(
+            audit, event_type="proposal_approved", vm_id="web-01",
+            action_type="disk_cleanup", timestamp=older,
+        )
+        await _insert_event(
+            audit, event_type="proposal_rejected", vm_id="web-01",
+            action_type="disk_cleanup", timestamp=newer,
+        )
+
+        results = await facts.proposal_outcomes("web-01")
+        assert results[0].last_decided_at == newer
+        await audit.close()
+
+    async def test_separates_by_action_type(self) -> None:
+        audit, facts = await _make_stores()
+
+        await _insert_event(
+            audit, event_type="proposal_created", vm_id="web-01", action_type="disk_cleanup",
+        )
+        await _insert_event(
+            audit, event_type="proposal_created", vm_id="web-01", action_type="log_rotation",
+        )
+
+        results = await facts.proposal_outcomes("web-01")
+        assert {f.action_type for f in results} == {"disk_cleanup", "log_rotation"}
+        await audit.close()
+
+    async def test_review_only_events_excluded(self) -> None:
+        """REVIEW proposals have no action_type — must not appear in facts."""
+        audit, facts = await _make_stores()
+
+        # A review-kind proposal's audit event carries action_type=None (or
+        # empty) — mirroring detector.py's `action_type=stored.action_type or None`.
+        await _insert_event(
+            audit, event_type="proposal_created", vm_id="web-01", action_type=None,
+        )
+        await _insert_event(
+            audit, event_type="proposal_created", vm_id="web-01", action_type="disk_cleanup",
+        )
+
+        results = await facts.proposal_outcomes("web-01")
+        assert len(results) == 1
+        assert results[0].action_type == "disk_cleanup"
+        await audit.close()
+
+    async def test_no_history_returns_empty_list(self) -> None:
+        _audit, facts = await _make_stores()
+        assert await facts.proposal_outcomes("web-99") == []
+
+    async def test_scoped_to_the_requested_vm(self) -> None:
+        audit, facts = await _make_stores()
+
+        await _insert_event(
+            audit, event_type="proposal_created", vm_id="web-01", action_type="disk_cleanup",
+        )
+        await _insert_event(
+            audit, event_type="proposal_created", vm_id="web-02", action_type="disk_cleanup",
+        )
+
+        results = await facts.proposal_outcomes("web-01")
+        assert len(results) == 1
+        await audit.close()
+
+    async def test_confidence_derived_from_proposed_count(self) -> None:
+        audit, facts = await _make_stores()
+
+        for _ in range(10):
+            await _insert_event(
+                audit, event_type="proposal_created",
+                vm_id="web-01", action_type="disk_cleanup",
+            )
+
+        results = await facts.proposal_outcomes("web-01")
+        assert results[0].confidence == "high"
+        await audit.close()

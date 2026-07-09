@@ -963,12 +963,14 @@ async def _detect_and_file_probe_proposals(
     audit_store: AuditStore,
     slack: SlackClient | None,
     web_base_url: str = "",
-) -> tuple[int, int, list[Any]]:
+    suppression_threshold: int = 2,
+    suppression_window_days: int = 14,
+) -> tuple[int, int, int, list[Any]]:
     """Phase 1 detector: file template proposals from probe signals.
 
     Deterministic, no LLM (fable-plan D2). Returns (created, refreshed,
-    stored_proposals) — the third element feeds the Phase 3 trigger, which
-    only ever acts on proposals filed THIS probe run.
+    suppressed, stored_proposals) — the fourth element feeds the Phase 3
+    trigger, which only ever acts on proposals filed THIS probe run.
     Never raises — a detector failure must not break the probe digest.
     """
     from errander.agent.proposal_detector import detect_proposals, file_proposals
@@ -979,26 +981,36 @@ async def _detect_and_file_probe_proposals(
             report, enabled_actions_by_vm=_enabled_actions_by_vm(env),
         )
         if not proposals:
-            return 0, 0, []
+            return 0, 0, 0, []
         store = ProposalStore(db)
-        created, refreshed, stored = await file_proposals(
+        created, refreshed, suppressed, stored = await file_proposals(
             proposals, store=store, audit_store=audit_store,
+            suppression_threshold=suppression_threshold,
+            suppression_window_days=suppression_window_days,
         )
     except Exception as exc:  # noqa: BLE001 — detector must never break the probe
         logger.error("Proposal detector failed for %s: %s", report.env_name, exc)
-        return 0, 0, []
+        return 0, 0, 0, []
 
-    if created > 0 and slack is not None:
+    if (created > 0 or suppressed > 0) and slack is not None:
         link = f"\nReview: {web_base_url}/ui/proposals" if web_base_url else ""
+        parts = []
+        if created:
+            parts.append(f"*{created} new agent proposal(s)* filed")
+        if suppressed:
+            parts.append(
+                f"*{suppressed} suppressed* (repeatedly rejected — needs human review, "
+                "not re-proposed automatically)"
+            )
         try:
             await slack.post_alert(
-                f":bulb: *{created} new agent proposal(s)* filed from the "
-                f"{report.env_name} probe (AGENT-ORIGINATED — approval required "
-                f"in the Web UI; Slack carries no decision authority).{link}"
+                f":bulb: {' — '.join(parts)} from the {report.env_name} probe "
+                f"(AGENT-ORIGINATED — approval required in the Web UI; Slack "
+                f"carries no decision authority).{link}"
             )
         except Exception as exc:  # noqa: BLE001 — notify is best-effort
             logger.warning("Slack proposal notification failed: %s", exc)
-    return created, refreshed, stored
+    return created, refreshed, suppressed, stored
 
 
 async def _maybe_run_triggered_investigations(
@@ -1076,6 +1088,8 @@ async def _maybe_run_triggered_investigations(
             max_tool_calls=settings.investigation_agent_max_tool_calls,
             timeout_seconds=settings.investigation_agent_timeout_seconds,
             probe_id=report.probe_id,
+            suppression_threshold=settings.proposal_suppression_rejection_threshold,
+            suppression_window_days=settings.proposal_suppression_window_days,
         )
     except Exception as exc:  # noqa: BLE001 — trigger must never break the probe
         logger.error("Investigation trigger failed for %s: %s", env_name, exc)
@@ -1175,17 +1189,22 @@ async def run_env_probe_main(env_name: str, inventory_path: Path) -> int:
 
             # Detect-and-propose Phase 1: deterministic template proposals
             # from the probe signals (no LLM — fable-plan D2).
-            _created, _refreshed, _stored_this_probe = await _detect_and_file_probe_proposals(
-                report,
-                env=env,
-                db=_db_probe,
-                audit_store=audit_store,
-                slack=slack,
-                web_base_url=settings.web_base_url or "",
+            _created, _refreshed, _suppressed, _stored_this_probe = (
+                await _detect_and_file_probe_proposals(
+                    report,
+                    env=env,
+                    db=_db_probe,
+                    audit_store=audit_store,
+                    slack=slack,
+                    web_base_url=settings.web_base_url or "",
+                    suppression_threshold=settings.proposal_suppression_rejection_threshold,
+                    suppression_window_days=settings.proposal_suppression_window_days,
+                )
             )
-            if _created or _refreshed:
+            if _created or _refreshed or _suppressed:
                 print(
-                    f"\nAgent proposals: {_created} created, {_refreshed} refreshed "
+                    f"\nAgent proposals: {_created} created, {_refreshed} refreshed, "
+                    f"{_suppressed} suppressed (repeatedly rejected) "
                     f"— review in the Web UI under /ui/proposals"
                 )
 
@@ -1338,7 +1357,7 @@ async def _file_agent_proposals(
     Validates each item's vm_id against live inventory before filing.
     """
     from errander.agent.investigation_agent import proposed_work_to_proposals
-    from errander.models.events import AuditEvent
+    from errander.agent.proposal_detector import file_or_suppress_one
     from errander.safety.audit import AuditStore as _AuditStore
 
     target_env = env_name or next(iter(inventory.environments), None)
@@ -1358,6 +1377,7 @@ async def _file_agent_proposals(
     store = ProposalStore(_db)
     audit = _AuditStore(_db, strict_mode=False)
     filed = 0
+    suppressed = 0
     try:
         await store.initialize()
         async with audit:
@@ -1371,26 +1391,27 @@ async def _file_agent_proposals(
                 cfg = target.resolve_actions(env_schema.actions).get(proposal.action_type)
                 if cfg is None or not cfg.enabled:
                     continue
-                stored, created = await store.create_or_refresh(proposal)
-                filed += 1 if created else 0
-                await audit.log_event(AuditEvent(
-                    event_type=(
-                        EventType.PROPOSAL_CREATED if created
-                        else EventType.PROPOSAL_REFRESHED
-                    ),
-                    batch_id=stored.probe_id or "ask-agentic",
-                    vm_id=stored.vm_id,
-                    action_type=stored.action_type,
-                    detail=(
-                        f"proposal {stored.proposal_id}: {stored.action_key} "
-                        f"(origin=investigation_agent)"
-                    ),
-                    metadata={"proposal_id": stored.proposal_id},
-                ))
+                # file_or_suppress_one is the single filing path shared with
+                # the Phase 1 detector and Phase 3 trigger — repeatedly
+                # rejected (vm, action) pairs are suppressed here too.
+                _stored, outcome = await file_or_suppress_one(
+                    proposal, store=store, audit_store=audit,
+                    suppression_threshold=settings.proposal_suppression_rejection_threshold,
+                    suppression_window_days=settings.proposal_suppression_window_days,
+                )
+                if outcome == "created":
+                    filed += 1
+                elif outcome == "suppressed":
+                    suppressed += 1
     finally:
         await store.close()
     if filed:
         print(f"\nFiled {filed} agent proposal(s) — review in the Web UI (/ui/proposals).")
+    if suppressed:
+        print(
+            f"{suppressed} recommendation(s) suppressed — repeatedly rejected, "
+            "needs human review."
+        )
 
 
 async def run_ask_query(
@@ -3063,7 +3084,11 @@ async def async_main(args: argparse.Namespace) -> int:
         except Exception as exc:  # noqa: BLE001
             print(f"Error loading settings: {exc}")
             return 1
-        return dispatch_vm_facts(args, _vf_settings.audit_db_url)
+        return dispatch_vm_facts(
+            args, _vf_settings.audit_db_url,
+            suppression_threshold=_vf_settings.proposal_suppression_rejection_threshold,
+            suppression_window_days=_vf_settings.proposal_suppression_window_days,
+        )
 
     if args.migrate_inventory:
         return _run_migrate_inventory(Path(args.migrate_inventory))
@@ -3422,13 +3447,15 @@ async def async_main(args: argparse.Namespace) -> int:
                             elk_client=_sched_elk,
                         )
                         # Detect-and-propose Phase 1: template proposals (no LLM).
-                        _c, _r, _stored_sched = await _detect_and_file_probe_proposals(
+                        _c, _r, _s, _stored_sched = await _detect_and_file_probe_proposals(
                             report,
                             env=_schema,
                             db=_db,
                             audit_store=audit_store,
                             slack=slack,
                             web_base_url=settings.web_base_url or "",
+                            suppression_threshold=settings.proposal_suppression_rejection_threshold,
+                            suppression_window_days=settings.proposal_suppression_window_days,
                         )
                         # Phase 3: probe-triggered investigations (default off).
                         await _maybe_run_triggered_investigations(

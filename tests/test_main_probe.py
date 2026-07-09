@@ -262,3 +262,62 @@ async def test_trigger_noop_when_no_llm_configured() -> None:
         disk_history_store=MagicMock(), prom=None, elk=None,
     )
     assert result == 0
+
+
+# ---------------------------------------------------------------------------
+# _detect_and_file_probe_proposals — suppression digest wording (Phase 4)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_detect_and_file_reports_suppressed_and_slacks_it() -> None:
+    from errander.config.schema import ActionConfig, EnvironmentSchema, TargetSchema
+    from errander.db.core import AsyncDatabase
+    from errander.main import _detect_and_file_probe_proposals
+    from errander.models.reports import DigestReport, ProbeVMResult
+    from errander.safety.audit import AuditStore
+    from errander.safety.proposal_store import ProposalStore
+    from tests.conftest import TEST_DB_URL, make_test_db
+
+    db = make_test_db()
+    audit = AuditStore(db, strict_mode=False)
+    await audit.initialize()
+
+    env = EnvironmentSchema(targets=[TargetSchema(
+        host="10.0.0.1", name="web-01", os_family="ubuntu",
+        actions={"disk_cleanup": ActionConfig(enabled=True)},
+    )])
+    report = DigestReport(
+        probe_id="probe-1", env_name="dev", generated_at=MagicMock(),
+        vm_results=[ProbeVMResult(
+            vm_id="web-01", hostname="10.0.0.1",
+            disk_growth_alerts=[{"mountpoint": "/", "used_pct_end": 85.0, "delta_pct": 6.0}],
+        )],
+    )
+
+    # Pre-reject the same pair twice so this probe's detection is suppressed.
+    from errander.agent.proposal_detector import detect_proposals
+    pstore = ProposalStore(db)
+    await pstore.initialize()
+    for _ in range(2):
+        candidate = detect_proposals(
+            report, enabled_actions_by_vm={"web-01": {"disk_cleanup"}},
+        )[0]
+        stored, _ = await pstore.create_or_refresh(candidate)
+        await pstore.decide(stored.proposal_id, approved=False, decided_by="ui:a")
+
+    slack = MagicMock()
+    slack.post_alert = AsyncMock()
+
+    created, refreshed, suppressed, stored_list = await _detect_and_file_probe_proposals(
+        report, env=env, db=AsyncDatabase(TEST_DB_URL), audit_store=audit, slack=slack,
+        suppression_threshold=2, suppression_window_days=14,
+    )
+    assert suppressed == 1
+    assert created == 0
+    assert stored_list == []
+
+    slack.post_alert.assert_awaited_once()
+    posted_text = slack.post_alert.await_args.args[0]
+    assert "suppressed" in posted_text
+    assert "needs human review" in posted_text

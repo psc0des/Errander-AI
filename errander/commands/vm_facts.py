@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import timedelta
 from typing import TYPE_CHECKING
 
 from errander.db.core import AsyncDatabase
@@ -124,6 +125,55 @@ async def _print_reboot(db: AsyncDatabase, vm_id: str) -> None:
     print(f"  {vm_id}: {ratio}")
 
 
+async def _print_proposal_history(
+    db: AsyncDatabase,
+    vm_id: str,
+    *,
+    suppression_threshold: int,
+    suppression_window_days: int,
+) -> None:
+    """Print agent-proposal lifecycle facts + suppression state for one VM."""
+    from errander.safety.proposal_store import ProposalStore
+    from errander.safety.vm_facts import VMFactsStore
+
+    async with VMFactsStore(db) as store:
+        facts = await store.proposal_outcomes(vm_id)
+
+    if not facts:
+        print(f"  No agent-proposal history for {vm_id}.")
+        return
+
+    proposal_store = ProposalStore(db)
+    col_at = max(max(len(f.action_type) for f in facts), 6)
+
+    hdr = (
+        f"  {'ACTION':<{col_at}}  {'PROPOSED':>8}  {'APPROVED':>8}  "
+        f"{'REJECTED':>8}  {'EXEC OK':>7}  {'EXEC FAIL':>9}  STATUS"
+    )
+    print(hdr)
+    print("  " + "-" * (len(hdr) - 2))
+    for f in sorted(facts, key=lambda x: x.action_type):
+        suppressed = await proposal_store.is_suppressed(
+            vm_id, f.action_type,
+            threshold=suppression_threshold, window_days=suppression_window_days,
+        )
+        if suppressed:
+            cooldown = (
+                f.last_decided_at + timedelta(days=suppression_window_days)
+                if f.last_decided_at else None
+            )
+            status = (
+                f"SUPPRESSED until {cooldown:%Y-%m-%d}" if cooldown else "SUPPRESSED"
+            )
+        else:
+            status = "—"
+        print(
+            f"  {f.action_type:<{col_at}}  {f.proposed_count:>8}  {f.approved_count:>8}  "
+            f"{f.rejected_count:>8}  {f.executed_success_count:>7}  "
+            f"{f.executed_failed_count:>9}  {status}"
+        )
+
+
 async def _print_rejections(db: AsyncDatabase) -> None:
     """Print approval rejection counts (all action types, last 90 days)."""
     from errander.safety.vm_facts import VMFactsStore
@@ -148,7 +198,13 @@ async def _print_rejections(db: AsyncDatabase) -> None:
         )
 
 
-async def cmd_vm_facts(args: argparse.Namespace, db_path: str) -> int:
+async def cmd_vm_facts(
+    args: argparse.Namespace,
+    db_path: str,
+    *,
+    suppression_threshold: int = 2,
+    suppression_window_days: int = 14,
+) -> int:
     """Main handler for `errander vm-facts`."""
     vm_id: str | None = getattr(args, "vm_facts_vm_id", None)
     action_type: str | None = getattr(args, "vm_facts_action", None)
@@ -178,6 +234,16 @@ async def cmd_vm_facts(args: argparse.Namespace, db_path: str) -> int:
         print(_SEP)
         await _print_reboot(db, vm_id)
 
+    # ── Agent proposal history (Phase 4; only makes sense per-VM) ────────────
+    if vm_id is not None:
+        print(f"\nAgent proposal history — {vm_id}")
+        print(_SEP)
+        await _print_proposal_history(
+            db, vm_id,
+            suppression_threshold=suppression_threshold,
+            suppression_window_days=suppression_window_days,
+        )
+
     # ── Rejection facts (fleet-wide, not per-VM or per-action) ───────────────
     print("\nApproval rejections — last 90 days (fleet-wide)")
     print(_SEP)
@@ -189,6 +255,16 @@ async def cmd_vm_facts(args: argparse.Namespace, db_path: str) -> int:
     return 0
 
 
-def dispatch_vm_facts(args: argparse.Namespace, db_path: str) -> int:
+def dispatch_vm_facts(
+    args: argparse.Namespace,
+    db_path: str,
+    *,
+    suppression_threshold: int = 2,
+    suppression_window_days: int = 14,
+) -> int:
     """Synchronous entry point — runs cmd_vm_facts in an event loop."""
-    return asyncio.run(cmd_vm_facts(args, db_path))
+    return asyncio.run(cmd_vm_facts(
+        args, db_path,
+        suppression_threshold=suppression_threshold,
+        suppression_window_days=suppression_window_days,
+    ))

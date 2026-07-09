@@ -233,3 +233,156 @@ class TestReadsAndSuppressionInput:
             await store.decide(stored.proposal_id, approved=False, decided_by="ui:a")
         assert await store.count_rejections("web-01", "disk_cleanup") == 2
         assert await store.count_rejections("web-01", "log_rotation") == 0
+
+
+class TestSuppression:
+    """fable-plan Phase 4 — re-proposal suppression after repeated rejection."""
+
+    @pytest.mark.asyncio
+    async def test_rejection_window_state_count_and_timestamp(self) -> None:
+        store = await _make_store()
+        count, latest = await store.rejection_window_state("web-01", "disk_cleanup")
+        assert (count, latest) == (0, None)
+
+        stored, _ = await store.create_or_refresh(_proposal())
+        await store.decide(stored.proposal_id, approved=False, decided_by="ui:a")
+        count, latest = await store.rejection_window_state("web-01", "disk_cleanup")
+        assert count == 1
+        assert latest is not None
+
+    @pytest.mark.asyncio
+    async def test_below_threshold_not_suppressed(self) -> None:
+        store = await _make_store()
+        stored, _ = await store.create_or_refresh(_proposal())
+        await store.decide(stored.proposal_id, approved=False, decided_by="ui:a")
+        assert await store.is_suppressed(
+            "web-01", "disk_cleanup", threshold=2, window_days=14,
+        ) is False
+
+    @pytest.mark.asyncio
+    async def test_at_threshold_is_suppressed(self) -> None:
+        store = await _make_store()
+        for _ in range(2):
+            stored, _ = await store.create_or_refresh(_proposal())
+            await store.decide(stored.proposal_id, approved=False, decided_by="ui:a")
+        assert await store.is_suppressed(
+            "web-01", "disk_cleanup", threshold=2, window_days=14,
+        ) is True
+
+    @pytest.mark.asyncio
+    async def test_outside_window_not_suppressed(self) -> None:
+        store = await _make_store()
+        for _ in range(2):
+            stored, _ = await store.create_or_refresh(_proposal())
+            await store.decide(stored.proposal_id, approved=False, decided_by="ui:a")
+        # threshold met, but the cooldown window has already elapsed
+        assert await store.is_suppressed(
+            "web-01", "disk_cleanup", threshold=2, window_days=0,
+        ) is False
+
+    @pytest.mark.asyncio
+    async def test_different_action_key_not_suppressed(self) -> None:
+        store = await _make_store()
+        for _ in range(2):
+            stored, _ = await store.create_or_refresh(_proposal())
+            await store.decide(stored.proposal_id, approved=False, decided_by="ui:a")
+        assert await store.is_suppressed(
+            "web-01", "log_rotation", threshold=2, window_days=14,
+        ) is False
+
+    @pytest.mark.asyncio
+    async def test_get_open_returns_pending_row(self) -> None:
+        store = await _make_store()
+        stored, _ = await store.create_or_refresh(_proposal())
+        found = await store.get_open("web-01", "disk_cleanup")
+        assert found is not None and found.proposal_id == stored.proposal_id
+
+    @pytest.mark.asyncio
+    async def test_get_open_none_when_no_pending_row(self) -> None:
+        store = await _make_store()
+        assert await store.get_open("web-01", "disk_cleanup") is None
+        stored, _ = await store.create_or_refresh(_proposal())
+        await store.decide(stored.proposal_id, approved=False, decided_by="ui:a")
+        assert await store.get_open("web-01", "disk_cleanup") is None
+
+    @pytest.mark.asyncio
+    async def test_create_blocked_when_suppressed(self) -> None:
+        store = await _make_store()
+        for _ in range(2):
+            stored, _ = await store.create_or_refresh(_proposal())
+            await store.decide(stored.proposal_id, approved=False, decided_by="ui:a")
+
+        result, created = await store.create_or_refresh_unless_suppressed(
+            _proposal(), suppression_threshold=2, suppression_window_days=14,
+        )
+        assert (result, created) == (None, False)
+        assert await store.count_pending() == 0  # nothing was written
+
+    @pytest.mark.asyncio
+    async def test_create_allowed_below_threshold(self) -> None:
+        store = await _make_store()
+        stored, _ = await store.create_or_refresh(_proposal())
+        await store.decide(stored.proposal_id, approved=False, decided_by="ui:a")
+
+        result, created = await store.create_or_refresh_unless_suppressed(
+            _proposal(), suppression_threshold=2, suppression_window_days=14,
+        )
+        assert result is not None
+        assert created is True
+
+    @pytest.mark.asyncio
+    async def test_refresh_of_open_row_never_suppressed(self) -> None:
+        """Suppression only blocks a fresh CREATE — an already-open pending
+        proposal must always be refreshable, even if this exact pair has
+        also racked up 2+ historical rejections from an earlier cycle."""
+        store = await _make_store()
+        for _ in range(2):
+            stored, _ = await store.create_or_refresh(_proposal())
+            await store.decide(stored.proposal_id, approved=False, decided_by="ui:a")
+        # A third proposal is now legitimately open (suppression only blocks
+        # the CREATE, and by construction there's no open row yet here) —
+        # simulate that by creating one directly below threshold, then
+        # driving the count to threshold via a same-cycle extra rejection
+        # is not representative; instead verify refresh directly:
+        third, created = await store.create_or_refresh_unless_suppressed(
+            _proposal(evidence=[]), suppression_threshold=99, suppression_window_days=14,
+        )
+        assert third is not None and created is True
+        # Now refresh that SAME open row while suppression conditions (2
+        # historical rejections) are independently true for this pair.
+        refreshed, created2 = await store.create_or_refresh_unless_suppressed(
+            _proposal(evidence=[ProposalEvidence(
+                source="probe:disk_history", check="c", observation="new evidence",
+            )]),
+            suppression_threshold=2, suppression_window_days=14,
+        )
+        assert refreshed is not None
+        assert created2 is False
+        assert refreshed.proposal_id == third.proposal_id
+
+    @pytest.mark.asyncio
+    async def test_snooze_unaffected_by_suppression_state(self) -> None:
+        """Snooze is an independent code path — works normally regardless
+        of whether suppression conditions are also met for the pair."""
+        store = await _make_store()
+        for _ in range(2):
+            stored, _ = await store.create_or_refresh(_proposal())
+            await store.decide(stored.proposal_id, approved=False, decided_by="ui:a")
+        assert await store.is_suppressed(
+            "web-01", "disk_cleanup", threshold=2, window_days=14,
+        ) is True
+
+        # A fresh open proposal (e.g. filed with a high threshold override)
+        # can still be snoozed normally.
+        fresh, _ = await store.create_or_refresh_unless_suppressed(
+            _proposal(), suppression_threshold=99, suppression_window_days=14,
+        )
+        assert fresh is not None
+        won = await store.snooze(
+            fresh.proposal_id,
+            snoozed_until=datetime.now(tz=UTC) + timedelta(days=3),
+            decided_by="ui:a",
+        )
+        assert won is True
+        loaded = await store.get(fresh.proposal_id)
+        assert loaded is not None and loaded.status == ProposalStatus.SNOOZED

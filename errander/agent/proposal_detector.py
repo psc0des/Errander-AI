@@ -20,6 +20,7 @@ forbids.
 from __future__ import annotations
 
 import logging
+from datetime import timedelta
 from typing import TYPE_CHECKING
 
 from errander.models.events import AuditEvent, EventType
@@ -33,6 +34,14 @@ if TYPE_CHECKING:
     from errander.models.reports import DigestReport, ProbeVMResult
     from errander.safety.audit import AuditStore
     from errander.safety.proposal_store import ProposalStore
+
+#: Keep in sync with Settings.proposal_suppression_rejection_threshold /
+#: proposal_suppression_window_days (fable-plan Phase 4) — defaults here
+#: exist so file_or_suppress_one/file_proposals work without a Settings
+#: object in hand (tests, one-off scripts); real callers pass explicit
+#: values sourced from Settings.
+_DEFAULT_SUPPRESSION_THRESHOLD = 2
+_DEFAULT_SUPPRESSION_WINDOW_DAYS = 14
 
 logger = logging.getLogger(__name__)
 
@@ -182,42 +191,112 @@ def detect_proposals(
     return proposals
 
 
+async def file_or_suppress_one(
+    proposal: AgentProposal,
+    *,
+    store: ProposalStore,
+    audit_store: AuditStore,
+    suppression_threshold: int = _DEFAULT_SUPPRESSION_THRESHOLD,
+    suppression_window_days: int = _DEFAULT_SUPPRESSION_WINDOW_DAYS,
+    expiry_days: int | None = None,
+) -> tuple[AgentProposal | None, str]:
+    """File one proposal, respecting Phase 4 re-proposal suppression.
+
+    The single place all three filing call sites delegate to (Phase 1's
+    ``file_proposals`` below, Phase 3's investigation trigger, and the
+    ``--ask --agentic`` filer in main.py) — so suppression and its audit
+    trail are enforced identically regardless of origin.
+
+    Returns ``(stored_or_none, outcome)`` where outcome is one of
+    ``"created"``, ``"refreshed"``, ``"suppressed"``. Suppression applies
+    only to ACTION-kind proposals — review-only proposals (drift, failed
+    logins) are never suppressed, matching the settings' documented scope.
+    """
+    from errander.safety.proposal_store import DEFAULT_EXPIRY_DAYS
+
+    days = expiry_days if expiry_days is not None else DEFAULT_EXPIRY_DAYS
+
+    if proposal.kind == ProposalKind.ACTION:
+        stored, created = await store.create_or_refresh_unless_suppressed(
+            proposal,
+            suppression_threshold=suppression_threshold,
+            suppression_window_days=suppression_window_days,
+            expiry_days=days,
+        )
+        if stored is None:
+            count, latest = await store.rejection_window_state(
+                proposal.vm_id, proposal.action_key,
+            )
+            cooldown_until = (
+                (latest + timedelta(days=suppression_window_days)).isoformat()
+                if latest is not None else "unknown"
+            )
+            await audit_store.log_event(AuditEvent(
+                event_type=EventType.PROPOSAL_SUPPRESSED,
+                batch_id=proposal.probe_id or "unknown",
+                vm_id=proposal.vm_id,
+                action_type=proposal.action_type or None,
+                detail=(
+                    f"{proposal.action_key} on {proposal.vm_id} suppressed: "
+                    f"rejected {count}x (threshold {suppression_threshold}), "
+                    f"cooldown until {cooldown_until}"
+                ),
+                metadata={"vm_id": proposal.vm_id, "action_key": proposal.action_key},
+            ))
+            return None, "suppressed"
+    else:
+        stored, created = await store.create_or_refresh(proposal, expiry_days=days)
+
+    await audit_store.log_event(AuditEvent(
+        event_type=(
+            EventType.PROPOSAL_CREATED if created else EventType.PROPOSAL_REFRESHED
+        ),
+        batch_id=stored.probe_id or proposal.probe_id,
+        vm_id=stored.vm_id,
+        action_type=stored.action_type or None,
+        detail=(
+            f"proposal {stored.proposal_id}: {stored.kind.value} "
+            f"{stored.action_key} (signal={stored.signal_kind}, "
+            f"confidence={stored.confidence}, origin={stored.origin})"
+        ),
+        metadata={"proposal_id": stored.proposal_id},
+    ))
+    return stored, ("created" if created else "refreshed")
+
+
 async def file_proposals(
     proposals: list[AgentProposal],
     *,
     store: ProposalStore,
     audit_store: AuditStore,
-) -> tuple[int, int, list[AgentProposal]]:
-    """Persist detected proposals (dedup-aware) and audit each transition.
+    suppression_threshold: int = _DEFAULT_SUPPRESSION_THRESHOLD,
+    suppression_window_days: int = _DEFAULT_SUPPRESSION_WINDOW_DAYS,
+) -> tuple[int, int, int, list[AgentProposal]]:
+    """Persist detected proposals (dedup- and suppression-aware) and audit
+    each transition.
 
-    Returns ``(created, refreshed, stored_proposals)`` — the third element is
-    every stored row touched this call (with real, persisted proposal_ids),
-    so a caller (e.g. the Phase 3 trigger) knows exactly what to act on
-    without a second query.
+    Returns ``(created, refreshed, suppressed, stored_proposals)`` —
+    ``stored_proposals`` holds only proposals actually written (never the
+    suppressed ones), with real, persisted proposal_ids, so a caller (e.g.
+    the Phase 3 trigger) knows exactly what to act on without a second query.
     """
     created_count = 0
     refreshed_count = 0
+    suppressed_count = 0
     stored_proposals: list[AgentProposal] = []
     for proposal in proposals:
-        stored, created = await store.create_or_refresh(proposal)
+        stored, outcome = await file_or_suppress_one(
+            proposal, store=store, audit_store=audit_store,
+            suppression_threshold=suppression_threshold,
+            suppression_window_days=suppression_window_days,
+        )
+        if outcome == "suppressed":
+            suppressed_count += 1
+            continue
+        assert stored is not None  # created/refreshed always returns a row
         stored_proposals.append(stored)
-        if created:
+        if outcome == "created":
             created_count += 1
         else:
             refreshed_count += 1
-        await audit_store.log_event(AuditEvent(
-            event_type=(
-                EventType.PROPOSAL_CREATED if created
-                else EventType.PROPOSAL_REFRESHED
-            ),
-            batch_id=stored.probe_id or proposal.probe_id,
-            vm_id=stored.vm_id,
-            action_type=stored.action_type or None,
-            detail=(
-                f"proposal {stored.proposal_id}: {stored.kind.value} "
-                f"{stored.action_key} (signal={stored.signal_kind}, "
-                f"confidence={stored.confidence}, origin={stored.origin})"
-            ),
-            metadata={"proposal_id": stored.proposal_id},
-        ))
-    return created_count, refreshed_count, stored_proposals
+    return created_count, refreshed_count, suppressed_count, stored_proposals

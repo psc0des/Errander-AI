@@ -3500,3 +3500,38 @@ uv run pytest tests/agent/test_investigation_trigger.py tests/agent/test_investi
 uv run python -m errander --help | grep -c usage
 uv run python -c "from errander.config.settings import Settings; s=Settings(); \
   assert s.investigation_trigger_enabled is False"
+
+## 2026-07-09 — detect-and-propose Phase 4 (memory loop + re-proposal suppression)
+
+# Iterative lint/type
+uv run ruff check errander/                 # all checks passed
+uv run mypy errander/                       # no issues in 118 source files
+
+# Manual smoke tests during design (real Postgres test DB)
+uv run python -c "..."   # suppression math: 1 rejection not suppressed, 2 suppressed
+uv run python -c "..."   # VMFactsStore.proposal_outcomes() derivation from seeded audit_events
+uv run python -c "..."   # --vm-facts proposal-history table + SUPPRESSED-until rendering
+
+# Real bug caught while writing suppression tests (not a product bug):
+# reusing one AgentProposal object (same proposal_id) across multiple
+# create_or_refresh -> decide(rejected) cycles causes an IntegrityError on
+# the second INSERT (partial unique index only matches status='pending',
+# so the primary key collides). Fixed by constructing a fresh proposal per
+# loop iteration in the tests, matching real detector behavior.
+uv run pytest tests/agent/test_proposal_detector.py -q   # 3 failed -> fixed -> 15 passed
+
+# Full Phase 1-4 touched-area run
+uv run pytest tests/safety/test_vm_facts.py tests/safety/test_proposal_store.py \
+  tests/agent/test_proposal_detector.py tests/agent/test_investigation_trigger.py \
+  tests/agent/test_investigation_agent.py tests/agent/test_investigation_tools.py \
+  tests/agent/test_investigation_isolation.py tests/agent/test_operator_assistant.py \
+  tests/agent/test_operator_assistant_facts.py tests/agent/test_operator_assistant_prometheus.py \
+  tests/agent/test_operator_assistant_sources.py tests/test_main_probe.py \
+  tests/test_proposal_reconciler.py tests/test_approval_reconciler.py \
+  tests/commands/test_vm_facts.py tests/integrations/test_llm.py tests/models/test_proposals.py \
+  tests/web/test_ui_proposals.py tests/config -q -p no:randomly   # 576 passed
+
+# CLI + settings smoke
+uv run python -m errander --help | grep -c usage
+uv run python -c "from errander.config.settings import Settings; s=Settings(); \
+  assert (s.proposal_suppression_rejection_threshold, s.proposal_suppression_window_days) == (2, 14)"

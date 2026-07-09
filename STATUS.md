@@ -1,9 +1,44 @@
 # Errander-AI — Project Status
 
 ## Last Updated
-2026-07-07
+2026-07-09
 
 ## Current Phase
+**Detect-and-propose Phase 4 — memory loop / re-proposal suppression (COMPLETE 2026-07-09).**
+
+Closes the loop `VMFactsStore` was built for: `ProposalOutcomeFact` +
+`VMFactsStore.proposal_outcomes()` derive proposed/approved/rejected/executed counts per
+(vm_id, action_type) from the `proposal_*` audit events Phases 1-3 already log — no new
+tables. `ProposalStore` gained the suppression primitives (`rejection_window_state`,
+`is_suppressed`, `get_open`, `create_or_refresh_unless_suppressed`): reject the same
+(vm_id, action_type) twice (default threshold) and further auto-proposals are suppressed
+for 14 days (default) from the most recent rejection — refreshing an already-open pending
+proposal is never affected. Always on (not a kill switch); scoped to ACTION-kind proposals
+only per the plan's own wording. A single new helper, `file_or_suppress_one()` in
+`proposal_detector.py`, is the ONE enforcement point all three filing call sites (Phase 1
+detector, Phase 3 trigger's new-proposal filing, `--ask --agentic`'s filer) delegate to —
+closing what would otherwise have been a suppression bypass via the agentic path.
+Investigation context now includes proposal history on both paths: `FleetContext.
+proposal_history` (deterministic `--ask`, rendered in the prompt) and the `get_vm_facts`
+tool (agentic `--ask --agentic` / probe-triggered). `--vm-facts <vm_id>` CLI gained an
+"Agent proposal history" table with a SUPPRESSED-until-date annotation. The probe digest
+and Slack alert now report suppressed counts alongside created/refreshed.
+
+**New:** `docs/learning/63-suppression-memory-phase4.md`. **Changed:** `safety/vm_facts.py`,
+`safety/proposal_store.py`, `agent/proposal_detector.py`, `models/analysis.py`,
+`agent/operator_assistant.py`, `agent/investigation_tools.py`, `agent/investigation_trigger.py`,
+`commands/vm_facts.py`, `main.py`, `config/settings.py`, `models/events.py`. `ruff`/`mypy`
+clean (118 files); 576 tests across all Phase 1-4 areas green (29 new).
+
+**Notable gotcha:** writing the suppression tests surfaced a real object-reuse bug in the
+tests themselves — reusing one `AgentProposal` instance (same client-generated
+`proposal_id`) across multiple `create_or_refresh` → `decide(rejected)` cycles causes a
+primary-key collision on the next `INSERT`, because the partial unique index only matches
+`status='pending'` rows, so a rejected row's `proposal_id` collides with a fresh INSERT
+attempt. Fixed by constructing a new proposal object per iteration (matches how the real
+detector always builds fresh candidates). See `tasks/lessons.md`.
+
+## Previous Phase
 **Detect-and-propose Phase 3 — probe-triggered investigations (COMPLETE 2026-07-07).**
 
 Default-OFF (`ERRANDER_INVESTIGATION_TRIGGER_ENABLED`): the daily probe can now launch

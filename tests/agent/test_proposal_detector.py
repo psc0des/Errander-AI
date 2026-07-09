@@ -15,10 +15,11 @@ import pytest
 from errander.agent.proposal_detector import (
     FAILED_LOGIN_THRESHOLD,
     detect_proposals,
+    file_or_suppress_one,
     file_proposals,
 )
 from errander.models.events import EventType
-from errander.models.proposals import ProposalKind
+from errander.models.proposals import AgentProposal, ProposalKind
 from errander.models.reports import DigestReport, ProbeVMResult
 from errander.safety.proposal_store import ProposalStore
 from tests.conftest import make_test_db
@@ -155,10 +156,10 @@ class TestFileProposals:
         )])
         proposals = detect_proposals(report, enabled_actions_by_vm=_ALL_ENABLED)
 
-        created, refreshed, stored = await file_proposals(
+        created, refreshed, suppressed, stored = await file_proposals(
             proposals, store=store, audit_store=audit,
         )
-        assert (created, refreshed) == (1, 0)
+        assert (created, refreshed, suppressed) == (1, 0, 0)
         assert len(stored) == 1
         assert stored[0].vm_id == "web-01"
         event = audit.log_event.await_args_list[0].args[0]
@@ -167,11 +168,117 @@ class TestFileProposals:
         assert event.action_type == "disk_cleanup"
 
         # Same detection on the next probe → refresh, not duplicate
-        created, refreshed, stored2 = await file_proposals(
+        created, refreshed, suppressed, stored2 = await file_proposals(
             proposals, store=store, audit_store=audit,
         )
-        assert (created, refreshed) == (0, 1)
+        assert (created, refreshed, suppressed) == (0, 1, 0)
         assert stored2[0].proposal_id == stored[0].proposal_id  # same open row
         event = audit.log_event.await_args_list[1].args[0]
         assert event.event_type == EventType.PROPOSAL_REFRESHED
         assert await store.count_pending() == 1
+
+
+def _action_candidate() -> AgentProposal:
+    return AgentProposal(
+        env_name="prod", vm_id="web-01", kind=ProposalKind.ACTION,
+        action_type="disk_cleanup", signal_kind="disk_growth",
+    )
+
+
+def _review_candidate() -> AgentProposal:
+    return AgentProposal(
+        env_name="prod", vm_id="web-01", kind=ProposalKind.REVIEW,
+        signal_kind="drift",
+    )
+
+
+class TestSuppression:
+    """fable-plan Phase 4 — suppression integration at the filing layer."""
+
+    @pytest.mark.asyncio
+    async def test_suppressed_proposal_not_written_and_audited(self) -> None:
+        store = ProposalStore(make_test_db())
+        await store.initialize()
+        audit = AsyncMock()
+
+        # Reject the same pair twice via the normal flow — a fresh
+        # AgentProposal each iteration, matching real detector behavior
+        # (each probe run builds new candidate objects).
+        for _ in range(2):
+            stored, _ = await store.create_or_refresh(_action_candidate())
+            await store.decide(stored.proposal_id, approved=False, decided_by="ui:a")
+
+        result, outcome = await file_or_suppress_one(
+            _action_candidate(), store=store, audit_store=audit,
+            suppression_threshold=2, suppression_window_days=14,
+        )
+        assert (result, outcome) == (None, "suppressed")
+        assert await store.count_pending() == 0
+
+        suppressed_event = audit.log_event.await_args_list[-1].args[0]
+        assert suppressed_event.event_type == EventType.PROPOSAL_SUPPRESSED
+        assert suppressed_event.vm_id == "web-01"
+        assert "rejected 2x" in suppressed_event.detail
+
+    @pytest.mark.asyncio
+    async def test_review_proposals_never_suppressed(self) -> None:
+        """Suppression scope is ACTION-kind only per the settings docstring."""
+        store = ProposalStore(make_test_db())
+        await store.initialize()
+        audit = AsyncMock()
+
+        # Reject the review proposal twice.
+        for _ in range(2):
+            stored, _ = await store.create_or_refresh(_review_candidate())
+            await store.decide(stored.proposal_id, approved=False, decided_by="ui:a")
+
+        result, outcome = await file_or_suppress_one(
+            _review_candidate(), store=store, audit_store=audit,
+            suppression_threshold=2, suppression_window_days=14,
+        )
+        assert outcome == "created"
+        assert result is not None
+
+    @pytest.mark.asyncio
+    async def test_file_proposals_reports_suppressed_count(self) -> None:
+        store = ProposalStore(make_test_db())
+        await store.initialize()
+        audit = AsyncMock()
+
+        report = _digest([ProbeVMResult(
+            vm_id="web-01", hostname="10.0.0.1",
+            disk_growth_alerts=[_disk_alert()],
+        )])
+
+        # Reject the disk_cleanup pair twice before the detector runs again
+        # — a fresh detect_proposals() call each time, matching how the real
+        # probe path re-derives candidates on every run.
+        for _ in range(2):
+            stored, _ = await store.create_or_refresh(
+                detect_proposals(report, enabled_actions_by_vm=_ALL_ENABLED)[0],
+            )
+            await store.decide(stored.proposal_id, approved=False, decided_by="ui:a")
+
+        proposals = detect_proposals(report, enabled_actions_by_vm=_ALL_ENABLED)
+        created, refreshed, suppressed, stored_list = await file_proposals(
+            proposals, store=store, audit_store=audit,
+            suppression_threshold=2, suppression_window_days=14,
+        )
+        assert suppressed >= 1
+        assert all(p.action_type != "disk_cleanup" for p in stored_list)
+
+    @pytest.mark.asyncio
+    async def test_refresh_still_works_under_default_suppression_args(self) -> None:
+        """file_proposals' suppression kwargs default to (2, 14) — a single
+        rejection must not block the next detection cycle's refresh."""
+        store = ProposalStore(make_test_db())
+        await store.initialize()
+        audit = AsyncMock()
+        report = _digest([ProbeVMResult(
+            vm_id="web-01", hostname="10.0.0.1",
+            disk_growth_alerts=[_disk_alert()],
+        )])
+        proposals = detect_proposals(report, enabled_actions_by_vm=_ALL_ENABLED)
+
+        created, _, _, _ = await file_proposals(proposals, store=store, audit_store=audit)
+        assert created == 1

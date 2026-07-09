@@ -68,3 +68,4 @@ Index of all learning docs created during development. Each doc explains what wa
 | 60 | [Detect-and-Propose, Phase 1: the proposal bridge](60-detect-and-propose-phase1.md) | fable-plan P1 | `60-detect-and-propose-phase1.md` |
 | 61 | [Detect-and-Propose, Phase 2: the agentic investigation engine](61-investigation-agent-phase2.md) | fable-plan P2 | `61-investigation-agent-phase2.md` |
 | 62 | [Detect-and-Propose, Phase 3: probe-triggered investigations](62-investigation-trigger-phase3.md) | fable-plan P3 | `62-investigation-trigger-phase3.md` |
+| 63 | [Detect-and-Propose, Phase 4: the memory loop and re-proposal suppression](63-suppression-memory-phase4.md) | fable-plan P4 | `63-suppression-memory-phase4.md` |

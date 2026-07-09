@@ -20,6 +20,7 @@ from errander.models.analysis import FleetContext, VMSignalSummary
 from errander.safety.vm_facts import (
     ActionOutcomeFact,
     ActionRejectionFact,
+    ProposalOutcomeFact,
     VMRebootPatternFact,
 )
 
@@ -58,11 +59,13 @@ def _make_vm_facts_store(
     outcomes: list[ActionOutcomeFact] | None = None,
     reboot_pattern: VMRebootPatternFact | None = None,
     rejections: list[ActionRejectionFact] | None = None,
+    proposal_history: list[ProposalOutcomeFact] | None = None,
 ) -> MagicMock:
     store = MagicMock()
     store.action_outcomes = AsyncMock(return_value=outcomes or [])
     store.reboot_pattern = AsyncMock(return_value=reboot_pattern)
     store.rejection_facts = AsyncMock(return_value=rejections or [])
+    store.proposal_outcomes = AsyncMock(return_value=proposal_history or [])
     return store
 
 
@@ -70,6 +73,7 @@ def _context_with_facts(
     outcomes: list[ActionOutcomeFact] | None = None,
     reboot_patterns: list[VMRebootPatternFact] | None = None,
     rejections: list[ActionRejectionFact] | None = None,
+    proposal_history: list[ProposalOutcomeFact] | None = None,
 ) -> FleetContext:
     return FleetContext(
         env_name="prod",
@@ -80,6 +84,7 @@ def _context_with_facts(
         action_outcomes=outcomes or [],
         reboot_patterns=reboot_patterns or [],
         frequently_rejected_actions=rejections or [],
+        proposal_history=proposal_history or [],
     )
 
 
@@ -160,6 +165,27 @@ class TestBuildContextWithFacts:
         assert len(ctx.frequently_rejected_actions) == 1
         assert ctx.frequently_rejected_actions[0].action_type == "patching"
 
+    async def test_proposal_history_included_in_context(self) -> None:
+        ph = ProposalOutcomeFact(
+            vm_id="vm1", action_type="disk_cleanup",
+            proposed_count=3, approved_count=1, rejected_count=2,
+            executed_success_count=1, executed_failed_count=0,
+            last_decided_at=None,
+        )
+        store = _make_vm_facts_store(proposal_history=[ph])
+        assistant = OperatorAssistant()
+        ctx = await assistant._build_context(
+            audit_store=_empty_audit_store(),
+            disk_history_store=_empty_disk_store(),
+            baseline_store=_empty_baseline_store(),
+            inventory=_make_inventory(["vm1"]),
+            env_name="prod",
+            vm_facts_store=store,
+        )
+        assert len(ctx.proposal_history) == 1
+        assert ctx.proposal_history[0].action_type == "disk_cleanup"
+        assert ctx.proposal_history[0].rejected_count == 2
+
     async def test_facts_store_failure_does_not_propagate(self) -> None:
         store = MagicMock()
         store.action_outcomes = AsyncMock(side_effect=RuntimeError("db error"))
@@ -224,6 +250,19 @@ class TestFormatPromptWithFacts:
         ctx = _context_with_facts()
         prompt = _format_prompt("What's happening?", ctx)
         assert "Operational history facts" not in prompt
+
+    def test_prompt_includes_proposal_history(self) -> None:
+        ph = ProposalOutcomeFact(
+            vm_id="vm1", action_type="disk_cleanup",
+            proposed_count=3, approved_count=1, rejected_count=2,
+            executed_success_count=1, executed_failed_count=0,
+            last_decided_at=None,
+        )
+        ctx = _context_with_facts(proposal_history=[ph])
+        prompt = _format_prompt("Should I clean disk on vm1?", ctx)
+        assert "Agent proposal history" in prompt
+        assert "disk_cleanup" in prompt
+        assert "rejected 2x" in prompt
 
     def test_prompt_includes_confidence_label_for_outcomes(self) -> None:
         fact = ActionOutcomeFact(

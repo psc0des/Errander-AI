@@ -37,6 +37,7 @@ if TYPE_CHECKING:
     from errander.safety.vm_facts import (
         ActionOutcomeFact,
         ActionRejectionFact,
+        ProposalOutcomeFact,
         VMFactsStore,
         VMRebootPatternFact,
     )
@@ -287,6 +288,7 @@ class OperatorAssistant:
         action_outcomes: list[ActionOutcomeFact] = []
         reboot_patterns: list[VMRebootPatternFact] = []
         rejection_facts: list[ActionRejectionFact] = []
+        proposal_history: list[ProposalOutcomeFact] = []
         if vm_facts_store is not None:
             try:
                 for target in targets:
@@ -295,6 +297,9 @@ class OperatorAssistant:
                     rp = await vm_facts_store.reboot_pattern(target.name)
                     if rp is not None:
                         reboot_patterns.append(rp)
+                    proposal_history.extend(
+                        await vm_facts_store.proposal_outcomes(target.name)
+                    )
                 rejection_facts = await vm_facts_store.rejection_facts()
                 sources.append("vm_facts")
             except Exception as exc:  # noqa: BLE001
@@ -310,6 +315,7 @@ class OperatorAssistant:
             action_outcomes=action_outcomes,
             reboot_patterns=reboot_patterns,
             frequently_rejected_actions=rejection_facts,
+            proposal_history=proposal_history,
         )
 
 
@@ -349,7 +355,10 @@ def _format_prompt(question: str, context: FleetContext) -> str:
         if vm.journal_errors and not vm.elk_errors:
             lines.append(f"  Journal errors: {'; '.join(vm.journal_errors[:3])}")
 
-    if context.action_outcomes or context.reboot_patterns or context.frequently_rejected_actions:
+    if (
+        context.action_outcomes or context.reboot_patterns
+        or context.frequently_rejected_actions or context.proposal_history
+    ):
         lines += ["", "## Operational history facts"]
 
         if context.action_outcomes:
@@ -380,6 +389,19 @@ def _format_prompt(question: str, context: FleetContext) -> str:
                     f"  {rf.action_type}: {rf.rejections_last_90d} rejection(s)"
                     f" [confidence: {rf.confidence}]"
                     + (f" — {reasons[:120]}" if reasons else "")
+                )
+
+        if context.proposal_history:
+            lines.append("Agent proposal history (repeated rejections may be suppressed):")
+            for ph in context.proposal_history:
+                decided = (
+                    ph.last_decided_at.strftime("%Y-%m-%d") if ph.last_decided_at else "never"
+                )
+                lines.append(
+                    f"  {ph.vm_id} {ph.action_type}: proposed {ph.proposed_count}x, "
+                    f"approved {ph.approved_count}x, rejected {ph.rejected_count}x, "
+                    f"executed {ph.executed_success_count} ok / {ph.executed_failed_count} failed"
+                    f" (last decision: {decided}, confidence: {ph.confidence})"
                 )
 
     if context.sources_used:

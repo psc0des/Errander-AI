@@ -1,4 +1,4 @@
-## Detect-and-Propose — genuinely agentic origination, HITL execution (2026-07-07, Phase 3 COMPLETE)
+## Detect-and-Propose — genuinely agentic origination, HITL execution (2026-07-09, Phase 4 COMPLETE)
 
 Owner decision: make the "agentic" in *supervised agentic AI* real — the agent notices
 signals, investigates (read-only), and files evidenced **proposals** into the approval
@@ -40,7 +40,18 @@ Diagrams (Mermaid, render on GitHub): pipeline in `docs/diagrams/detect-and-prop
   - [x] `config/settings.py` — 3 settings (`investigation_trigger_enabled` default OFF — separate kill switch from Phase 2's `investigation_agent_enabled`, `investigation_max_investigations_per_probe`=3, `investigation_trigger_dedup_hours`=24)
   - [x] Tests: 25 new (trigger module 17, isolation +1, main.py wiring 3, adapted proposal_detector test); 443 across all Phase 1+2+3 areas green
   - [x] Docs: fable-plan Phase 3 checkboxes + VM-level-dedup delta note, learning doc 62, README, STATUS, deploy env template, command-log
-- [ ] Phase 4 — memory loop: proposal decisions/outcomes as VM facts, facts fed into investigation context, rejected-2× suppression policy with digest surfacing
+- [x] Phase 4 — memory loop, COMPLETE 2026-07-09:
+  - [x] `safety/vm_facts.py` — `ProposalOutcomeFact` model + `VMFactsStore.proposal_outcomes()` derived from `proposal_*` audit events (no new tables), scoped to ACTION-kind proposals (real action_type) only
+  - [x] `safety/proposal_store.py` — `rejection_window_state` (count + latest decided_at, extends Phase 1's `count_rejections`), `is_suppressed` (threshold + window-days check), `get_open`, `create_or_refresh_unless_suppressed` (blocks CREATE only, never blocks refreshing an already-open pending row)
+  - [x] `agent/proposal_detector.py` — new `file_or_suppress_one()` single-proposal helper (suppression check + `PROPOSAL_SUPPRESSED` audit event) that Phase 1's `file_proposals()`, Phase 3's trigger, and `--ask --agentic`'s filer ALL delegate to — one enforcement point, not three; `file_proposals()` now returns `(created, refreshed, suppressed, stored)`
+  - [x] `models/analysis.py` + `agent/operator_assistant.py` — `FleetContext.proposal_history`, populated in `_build_context`, rendered in `_format_prompt` ("Agent proposal history" section)
+  - [x] `agent/investigation_tools.py` — `get_vm_facts` tool includes proposal history (agentic path parity with the deterministic `--ask` path)
+  - [x] `commands/vm_facts.py` — new "Agent proposal history" table with SUPPRESSED-until-date annotation
+  - [x] `main.py` — digest print + Slack wording mentions suppressed count; suppression settings threaded through both probe call sites, the trigger, and `_file_agent_proposals`
+  - [x] `config/settings.py` — 2 settings (`proposal_suppression_rejection_threshold`=2, `proposal_suppression_window_days`=14, always-on — not a kill switch)
+  - [x] `models/events.py` — `PROPOSAL_SUPPRESSED` EventType
+  - [x] Tests: 29 new; 576 across all Phase 1-4 areas green
+  - [x] Docs: fable-plan Phase 4 checkboxes + scope-delta note, learning doc 63, README, STATUS, command-log, lessons (reused-object PK-collision gotcha)
 - [ ] Phase 5 — evals + LangSmith: golden-scenario replay harness (offline fake-LLM in CI), proposal precision/recall scoring, opt-in LangSmith tracing
 
 ### Pre-existing test-infra follow-ups (filed 2026-07-07, not caused by detect-and-propose)

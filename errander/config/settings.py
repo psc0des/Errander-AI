@@ -184,6 +184,17 @@ class Settings:
     investigation_max_investigations_per_probe: int = 3
     investigation_trigger_dedup_hours: int = 24
 
+    # Re-proposal suppression (fable-plan Phase 4) — always on, not a kill
+    # switch. Scoped to ACTION-kind proposals only (a real action_type, not
+    # review-only signals): once an operator rejects the same (vm_id,
+    # action_type) at least `proposal_suppression_rejection_threshold` times,
+    # further auto-proposals for that pair are suppressed for
+    # `proposal_suppression_window_days` days from the most recent rejection
+    # — a genuinely NEW open proposal for that pair is refused; refreshing an
+    # already-open pending proposal is never affected.
+    proposal_suppression_rejection_threshold: int = 2
+    proposal_suppression_window_days: int = 14
+
     # SSH host key verification (finding #9).
     # known_hosts_path: path to known_hosts file.  Empty = TOFU mode (log warning per connect).
     # ssh_strict_host_keys: when True (default), reject hosts not in known_hosts.
@@ -441,6 +452,13 @@ def load_settings(
         ),
         investigation_trigger_dedup_hours=_int_field(
             "ERRANDER_INVESTIGATION_TRIGGER_DEDUP_HOURS", None, 24,
+        ),
+        # Re-proposal suppression (Phase 4)
+        proposal_suppression_rejection_threshold=_int_field(
+            "ERRANDER_PROPOSAL_SUPPRESSION_THRESHOLD", None, 2,
+        ),
+        proposal_suppression_window_days=_int_field(
+            "ERRANDER_PROPOSAL_SUPPRESSION_WINDOW_DAYS", None, 14,
         ),
         # Agent settings
         approval_timeout_seconds=_int_field(

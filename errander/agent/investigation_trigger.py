@@ -36,6 +36,7 @@ from errander.agent.investigation_agent import (
     InvestigationAgent,
     proposed_work_to_proposals,
 )
+from errander.agent.proposal_detector import file_or_suppress_one
 from errander.models.events import AuditEvent, EventType
 from errander.models.proposals import AgentProposal, ProposalEvidence
 
@@ -191,6 +192,8 @@ async def run_triggered_investigations(
     max_tool_calls: int,
     timeout_seconds: int,
     probe_id: str = "",
+    suppression_threshold: int = 2,
+    suppression_window_days: int = 14,
 ) -> int:
     """Run bounded investigations for affected VMs; enrich their proposals.
 
@@ -246,23 +249,17 @@ async def run_triggered_investigations(
                     probe_id=probe_id,
                 )
                 for new_proposal in new_proposals:
-                    stored, created = await proposal_store.create_or_refresh(
+                    # file_or_suppress_one is the single filing path shared
+                    # with the Phase 1 detector — a VM the operator has
+                    # rejected repeatedly for an action is suppressed here
+                    # too, closing what would otherwise be a suppression
+                    # bypass via the agentic path (fable-plan Phase 4).
+                    await file_or_suppress_one(
                         new_proposal,
+                        store=proposal_store, audit_store=audit_store,
+                        suppression_threshold=suppression_threshold,
+                        suppression_window_days=suppression_window_days,
                     )
-                    await audit_store.log_event(AuditEvent(
-                        event_type=(
-                            EventType.PROPOSAL_CREATED if created
-                            else EventType.PROPOSAL_REFRESHED
-                        ),
-                        batch_id=stored.probe_id or "probe-trigger",
-                        vm_id=stored.vm_id,
-                        action_type=stored.action_type or None,
-                        detail=(
-                            f"proposal {stored.proposal_id}: {stored.action_key} "
-                            "(origin=investigation_agent, probe-triggered)"
-                        ),
-                        metadata={"proposal_id": stored.proposal_id, "trigger": True},
-                    ))
         except Exception as exc:  # noqa: BLE001 — one VM must not kill the loop
             logger.error(
                 "Probe-triggered investigation failed for %s: %s", vm_id, exc,

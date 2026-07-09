@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from errander.safety.vm_facts import (
         ActionOutcomeFact,
         ActionRejectionFact,
+        ProposalOutcomeFact,
         VMRebootPatternFact,
     )
 
@@ -121,3 +122,7 @@ class FleetContext:
     action_outcomes: list[ActionOutcomeFact] = field(default_factory=list)
     reboot_patterns: list[VMRebootPatternFact] = field(default_factory=list)
     frequently_rejected_actions: list[ActionRejectionFact] = field(default_factory=list)
+    #: Agent-proposal lifecycle history per (vm_id, action_type) — fable-plan
+    #: Phase 4. Distinct from frequently_rejected_actions above (that one
+    #: covers the older batch-approval rejection flow, not agent proposals).
+    proposal_history: list[ProposalOutcomeFact] = field(default_factory=list)

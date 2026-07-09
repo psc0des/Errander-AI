@@ -41,6 +41,12 @@ def _rejection_confidence(rejections: int) -> str:
     return "low"
 
 
+def _parse_ts(value: object) -> datetime | None:
+    with suppress(ValueError, TypeError):
+        return datetime.fromisoformat(str(value))
+    return None
+
+
 class ActionOutcomeFact(BaseModel):
     """Historical outcome statistics for one (vm_id, action_type) pair."""
 
@@ -81,6 +87,42 @@ class ActionRejectionFact(BaseModel):
     @property
     def confidence(self) -> str:
         return _rejection_confidence(self.rejections_last_90d)
+
+
+#: Audit event types that make up the agent-proposal lifecycle (fable-plan
+#: Phase 4). Kept in sync with errander.models.events.EventType by hand —
+#: these are string-literal here (not the enum) to avoid this read-only,
+#: audit-events-only store importing anything beyond sqlalchemy/pydantic.
+_PROPOSAL_LIFECYCLE_EVENTS = (
+    "proposal_created",
+    "proposal_approved",
+    "proposal_rejected",
+    "proposal_execution_completed",
+    "proposal_execution_failed",
+)
+
+
+class ProposalOutcomeFact(BaseModel):
+    """Agent-proposal history for one (vm_id, action_type) pair (Phase 4).
+
+    Scoped to ACTION-kind proposals only — review-only proposals (drift,
+    failed logins) have no action_type and are intentionally excluded, same
+    scope as the Phase 4 suppression policy itself.
+    """
+
+    vm_id: str
+    action_type: str
+    proposed_count: int
+    approved_count: int
+    rejected_count: int
+    executed_success_count: int
+    executed_failed_count: int
+    last_decided_at: datetime | None
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def confidence(self) -> str:
+        return _sample_confidence(self.proposed_count)
 
 
 class VMFactsStore:
@@ -256,4 +298,73 @@ class VMFactsStore:
                 rejection_reasons=info["reasons"][:10],
             )
             for at, info in sorted(action_type_data.items())
+        ]
+
+    async def proposal_outcomes(self, vm_id: str) -> list[ProposalOutcomeFact]:
+        """Agent-proposal lifecycle facts for a VM, one row per action_type.
+
+        Derived entirely from audit_events (the proposal_* event types Phase
+        1-3 already log) — no dependency on agent_proposals/ProposalStore, so
+        this store keeps its existing "reads audit_events only" contract.
+        """
+        placeholders = ", ".join(f":et{i}" for i in range(len(_PROPOSAL_LIFECYCLE_EVENTS)))
+        params: dict[str, object] = {
+            f"et{i}": et for i, et in enumerate(_PROPOSAL_LIFECYCLE_EVENTS)
+        }
+        params["vm_id"] = vm_id
+
+        async with self._db.begin() as conn:
+            result = await conn.execute(
+                text(f"""
+                SELECT event_type, action_type, timestamp
+                FROM audit_events
+                WHERE vm_id = :vm_id
+                  AND event_type IN ({placeholders})
+                  AND action_type IS NOT NULL AND action_type != ''
+                ORDER BY timestamp ASC
+                """),  # noqa: S608 — placeholders are bound params, not interpolated values
+                params,
+            )
+            rows = result.fetchall()
+
+        class _Entry(TypedDict):
+            proposed: int
+            approved: int
+            rejected: int
+            exec_ok: int
+            exec_failed: int
+            last_decided_at: datetime | None
+
+        by_action: dict[str, _Entry] = {}
+        for row in rows:
+            et, at = str(row[0]), str(row[1])
+            entry = by_action.setdefault(at, {
+                "proposed": 0, "approved": 0, "rejected": 0,
+                "exec_ok": 0, "exec_failed": 0, "last_decided_at": None,
+            })
+            if et == "proposal_created":
+                entry["proposed"] += 1
+            elif et == "proposal_approved":
+                entry["approved"] += 1
+                entry["last_decided_at"] = _parse_ts(row[2])
+            elif et == "proposal_rejected":
+                entry["rejected"] += 1
+                entry["last_decided_at"] = _parse_ts(row[2])
+            elif et == "proposal_execution_completed":
+                entry["exec_ok"] += 1
+            elif et == "proposal_execution_failed":
+                entry["exec_failed"] += 1
+
+        return [
+            ProposalOutcomeFact(
+                vm_id=vm_id,
+                action_type=at,
+                proposed_count=e["proposed"],
+                approved_count=e["approved"],
+                rejected_count=e["rejected"],
+                executed_success_count=e["exec_ok"],
+                executed_failed_count=e["exec_failed"],
+                last_decided_at=e["last_decided_at"],
+            )
+            for at, e in sorted(by_action.items())
         ]

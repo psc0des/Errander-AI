@@ -303,3 +303,66 @@ async def test_success_indicator_low(db_path: str, capsys) -> None:
     assert rc == 0
     out = capsys.readouterr().out
     assert "✗" in out
+
+
+# ---------------------------------------------------------------------------
+# Agent proposal history section (fable-plan Phase 4)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_proposal_history_shows_counts(db_path: str, capsys) -> None:
+    await _insert_events(db_path, [
+        {"event_type": "proposal_created", "vm_id": "web-01", "action_type": "disk_cleanup"},
+        {"event_type": "proposal_approved", "vm_id": "web-01", "action_type": "disk_cleanup"},
+        {"event_type": "proposal_execution_completed",
+         "vm_id": "web-01", "action_type": "disk_cleanup"},
+    ])
+    args = _make_args(vm_id="web-01")
+    rc = await cmd_vm_facts(args, db_path)
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "Agent proposal history" in out
+    assert "disk_cleanup" in out
+
+
+@pytest.mark.asyncio
+async def test_proposal_history_no_data(db_path: str, capsys) -> None:
+    args = _make_args(vm_id="web-01")
+    rc = await cmd_vm_facts(args, db_path)
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "No agent-proposal history for web-01" in out
+
+
+@pytest.mark.asyncio
+async def test_proposal_history_shows_suppressed_status(db_path: str, capsys) -> None:
+    from errander.models.proposals import AgentProposal, ProposalKind
+    from errander.safety.proposal_store import ProposalStore
+
+    store = ProposalStore(AsyncDatabase(db_path))
+    await store.initialize()
+
+    def candidate() -> AgentProposal:
+        return AgentProposal(
+            env_name="prod", vm_id="web-01", kind=ProposalKind.ACTION,
+            action_type="disk_cleanup", signal_kind="disk_growth",
+        )
+
+    for _ in range(2):
+        stored, _ = await store.create_or_refresh(candidate())
+        await store.decide(stored.proposal_id, approved=False, decided_by="ui:a")
+    await _insert_events(db_path, [
+        {"event_type": "proposal_created", "vm_id": "web-01", "action_type": "disk_cleanup"},
+        {"event_type": "proposal_rejected", "vm_id": "web-01", "action_type": "disk_cleanup"},
+        {"event_type": "proposal_created", "vm_id": "web-01", "action_type": "disk_cleanup"},
+        {"event_type": "proposal_rejected", "vm_id": "web-01", "action_type": "disk_cleanup"},
+    ])
+
+    args = _make_args(vm_id="web-01")
+    rc = await cmd_vm_facts(
+        args, db_path, suppression_threshold=2, suppression_window_days=14,
+    )
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "SUPPRESSED" in out

@@ -373,6 +373,90 @@ class ProposalStore:
             count = result.scalar()
         return int(count or 0)
 
+    async def rejection_window_state(
+        self, vm_id: str, action_key: str,
+    ) -> tuple[int, datetime | None]:
+        """(rejection_count, most_recent_decided_at) for (vm_id, action_key).
+
+        Suppression input (Phase 4) — pairs the all-time count with the
+        latest rejection's timestamp so the caller can apply a rolling
+        cooldown window on top of a threshold count.
+        """
+        async with self._db.begin() as conn:
+            result = await conn.execute(
+                text(
+                    "SELECT COUNT(*), MAX(decided_at) FROM agent_proposals "
+                    "WHERE vm_id = :vm_id AND action_key = :action_key "
+                    "AND status = 'rejected'"
+                ),
+                {"vm_id": vm_id, "action_key": action_key},
+            )
+            row = result.fetchone()
+        if row is None or row[0] is None:
+            return 0, None
+        count = int(row[0])
+        latest = datetime.fromisoformat(str(row[1])) if row[1] is not None else None
+        return count, latest
+
+    async def is_suppressed(
+        self, vm_id: str, action_key: str, *, threshold: int, window_days: int,
+    ) -> bool:
+        """True iff a NEW proposal for (vm_id, action_key) should be refused.
+
+        Rejected >= threshold times AND the most recent rejection is within
+        window_days. Does not affect refreshing an already-open proposal —
+        callers must check :meth:`get_open` first (see
+        :meth:`create_or_refresh_unless_suppressed`).
+        """
+        count, latest = await self.rejection_window_state(vm_id, action_key)
+        if count < threshold or latest is None:
+            return False
+        cutoff = datetime.now(tz=UTC) - timedelta(days=window_days)
+        if latest.tzinfo is None:
+            latest = latest.replace(tzinfo=UTC)
+        return latest >= cutoff
+
+    async def get_open(self, vm_id: str, action_key: str) -> AgentProposal | None:
+        """The open (pending) proposal for (vm_id, action_key), if any."""
+        async with self._db.begin() as conn:
+            result = await conn.execute(
+                text(
+                    f"SELECT {_COLUMNS} FROM agent_proposals "  # noqa: S608
+                    "WHERE vm_id = :vm_id AND action_key = :action_key "
+                    "AND status = 'pending'"
+                ),
+                {"vm_id": vm_id, "action_key": action_key},
+            )
+            row = result.mappings().fetchone()
+        return _row_to_proposal(row) if row is not None else None
+
+    async def create_or_refresh_unless_suppressed(
+        self,
+        proposal: AgentProposal,
+        *,
+        suppression_threshold: int,
+        suppression_window_days: int,
+        expiry_days: int = DEFAULT_EXPIRY_DAYS,
+    ) -> tuple[AgentProposal | None, bool]:
+        """Like :meth:`create_or_refresh`, but refuses to CREATE a genuinely
+        new proposal when (vm_id, action_key) is currently suppressed
+        (fable-plan Phase 4). Refreshing an already-open pending proposal is
+        never suppressed — suppression only blocks a fresh re-propose after
+        the operator has rejected the same pair repeatedly.
+
+        Returns ``(None, False)`` when suppressed; otherwise identical to
+        :meth:`create_or_refresh`'s ``(stored, created)``.
+        """
+        existing = await self.get_open(proposal.vm_id, proposal.action_key)
+        if existing is None:
+            suppressed = await self.is_suppressed(
+                proposal.vm_id, proposal.action_key,
+                threshold=suppression_threshold, window_days=suppression_window_days,
+            )
+            if suppressed:
+                return None, False
+        return await self.create_or_refresh(proposal, expiry_days=expiry_days)
+
 
 def _row_to_proposal(row: Any) -> AgentProposal:
     def _dt(value: object) -> datetime | None:

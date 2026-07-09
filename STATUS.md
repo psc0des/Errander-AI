@@ -4,6 +4,30 @@
 2026-07-09
 
 ## Current Phase
+**Docs — ARCHITECTURE.md promoted to repo root + refreshed to as-built state (2026-07-09).**
+
+The end-to-end Mermaid system diagram moved from `docs/diagrams/errander-system-architecture.md`
+to root-level `ARCHITECTURE.md` (owner: "having it in docs/diagrams feels like hiding it") and
+was refreshed from its stale 2026-06-03 revision to as-built reality: Investigation Agent
+flipped from "· planned ·" to shipped (opt-in, bounded ReAct loop); Dashboard Chat / Operator
+Chat Interface nodes removed (out of core since 2026-06-23); detect-and-propose pipeline added
+(probe + detector → `agent_proposals` → `/ui/proposals` queue → same Layer B path, plus the
+Phase 4 suppression memory-loop edge); R3 two-process split drawn (agent :9090 metrics-only vs
+web :9091, PostgreSQL as the ONLY inter-process link); R1 batch path corrected (deterministic
+plan from Layer B, Layer A contributes only the dashed advisory `ai_note` edge); stale
+"Controller Prometheus" replaced with BYO external Monitoring Prometheus; Slack edges now
+originate from the agent process. Diagram validated with mermaid-cli (renders clean). README
+Architecture section now links `ARCHITECTURE.md` first (previously only the draw.io was
+linked); companion references in `docs/diagrams/detect-and-propose.md` +
+`investigation-agent-dashboard-chat.md` repointed. The draw.io twin is an older revision —
+flagged as such in the file header, not yet redrawn.
+
+**Changed:** `ARCHITECTURE.md` (moved + rewritten), `README.md`,
+`docs/diagrams/detect-and-propose.md`, `docs/diagrams/investigation-agent-dashboard-chat.md`.
+No Python code touched. (Detect-and-propose Phase 5 work is in flight in the same tree —
+committed separately by that workstream.)
+
+## Previous Phase
 **Detect-and-propose Phase 4 — memory loop / re-proposal suppression (COMPLETE 2026-07-09).**
 
 Closes the loop `VMFactsStore` was built for: `ProposalOutcomeFact` +

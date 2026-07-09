@@ -3,7 +3,7 @@
 > Design-time diagram for the plan in `tasks/investigation-agent-implementation-plan.md` and
 > `tasks/dashboard-chat-implementation-plan.md`, reconciled against the current as-built code
 > (post-R3 process split). Not yet implemented — see `tasks/todo.md` for status.
-> Renders inline on GitHub. Companion to `errander-system-architecture.md` (the whole-system view).
+> Renders inline on GitHub. Companion to [`ARCHITECTURE.md`](../../ARCHITECTURE.md) at the repo root (the whole-system view).
 >
 > **2026-07-07 update:** the Plan A engine drawn here is adopted by `tasks/fable-plan.md`
 > Phase 2 (re-aimed: output extends to validated `proposed_work` → proposals; trigger extends

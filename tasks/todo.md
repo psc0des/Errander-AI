@@ -1,3 +1,17 @@
+## ARCHITECTURE.md — promote to root + refresh to as-built (2026-07-09, COMPLETE)
+
+Owner: the end-to-end Mermaid diagram living in `docs/diagrams/` "feels like hiding it".
+
+- [x] `git mv docs/diagrams/errander-system-architecture.md ARCHITECTURE.md` (history preserved)
+- [x] Rewrote the diagram to as-built reality (was stale from 2026-06-03): Investigation Agent planned→shipped (opt-in, bounded ReAct); Dashboard Chat / Operator Chat Interface nodes removed (out of core 2026-06-23); detect-and-propose pipeline added (probe+detector → agent_proposals → /ui/proposals → same Layer B path, + Phase 4 suppression memory-loop edge); R3 two-process split drawn (agent :9090 metrics-only / web :9091, Postgres = ONLY link); R1 batch path corrected (deterministic plan, dashed advisory ai_note edge); Controller Prometheus → BYO external Monitoring Prometheus; Slack edges from agent process; LangSmith stays dashed/planned
+- [x] "Reading the diagram" section rewritten to match (detect-and-propose, R3, R1, proposal-approval-is-origination-not-execution-authorization invariant)
+- [x] References repointed: README Architecture section leads with ARCHITECTURE.md (previously only the .drawio was linked); companion refs in `docs/diagrams/detect-and-propose.md` + `investigation-agent-dashboard-chat.md`
+- [x] Validated with mermaid-cli (SVG + PNG render clean)
+- [ ] FOLLOW-UP (optional): redraw the draw.io twin (`docs/diagrams/errander-system-architecture.drawio`) — header now flags it as an older revision
+- [ ] FOLLOW-UP (after Phase 5 commits): flip ARCHITECTURE.md's LangSmith node from planned→shipped
+
+---
+
 ## Detect-and-Propose — genuinely agentic origination, HITL execution (2026-07-09, Phase 4 COMPLETE)
 
 Owner decision: make the "agentic" in *supervised agentic AI* real — the agent notices

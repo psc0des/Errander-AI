@@ -1,6 +1,27 @@
 # Errander-AI Command Log
 
-## Stale "Docker Prune" label sweep in legacy demo UI (2026-06-23)
+## ARCHITECTURE.md — promote to repo root + refresh to as-built (2026-07-09)
+
+```bash
+# Move the end-to-end Mermaid system diagram to root (owner: docs/diagrams "feels like hiding it");
+# git mv preserves history
+git mv docs/diagrams/errander-system-architecture.md ARCHITECTURE.md
+
+# Find every reference that needs repointing (Grep tool): README.md linked only the .drawio;
+# two companion diagrams referenced the old path; tasks/todo.md hits are historical log — left alone
+grep -rn "errander-system-architecture" .
+
+# Rewrote the Mermaid to as-built (investigation agent shipped, chat nodes removed,
+# detect-and-propose pipeline + R3 process split + R1 deterministic-plan path added),
+# then validated it actually parses/renders:
+npx -y @mermaid-js/mermaid-cli -i "$TEMP/arch.mmd" -o "$TEMP/arch.svg"          # parse check
+npx -y @mermaid-js/mermaid-cli -i "$TEMP/arch.mmd" -o "$TEMP/arch.png" -w 1600  # visual check
+# Gotcha: extracting the block with Windows PowerShell 5.1 `Get-Content -Raw` (no -Encoding)
+# read the UTF-8 file as ANSI, so em-dashes rendered as mojibake in the PREVIEW ONLY — the
+# committed file is clean UTF-8 and GitHub renders it correctly.
+# Also: first extraction attempt wrote the temp .mmd with a relative path while the PowerShell
+# tool's cwd wasn't the repo root → "input file doesn't exist"; fixed by using absolute paths.
+```
 
 ```bash
 # Follow-up: docker_prune was removed in v1.1 but the legacy demo dashboard/fixtures still

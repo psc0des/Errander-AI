@@ -177,7 +177,7 @@ The agent never stops working. It degrades from "AI-assisted" to "smart automati
 
 ## Architecture
 
-> **Visual diagram:** [`docs/diagrams/errander-system-architecture.drawio`](docs/diagrams/errander-system-architecture.drawio) — open in [draw.io](https://app.diagrams.net) (File → Open from → Device) or the [draw.io VS Code extension](https://marketplace.visualstudio.com/items?itemName=hediet.vscode-drawio). A pre-rendered HTML viewer is at [`docs/diagrams/errander-view.html`](docs/diagrams/errander-view.html) — serve it locally with `python -m http.server 8767 --directory docs/diagrams` and open `http://localhost:8767/errander-view.html`.
+> **Visual diagram:** [`ARCHITECTURE.md`](ARCHITECTURE.md) — the end-to-end system architecture (Mermaid, renders inline on GitHub). The editable draw.io twin is [`docs/diagrams/errander-system-architecture.drawio`](docs/diagrams/errander-system-architecture.drawio) — open in [draw.io](https://app.diagrams.net) (File → Open from → Device) or the [draw.io VS Code extension](https://marketplace.visualstudio.com/items?itemName=hediet.vscode-drawio). A pre-rendered HTML viewer is at [`docs/diagrams/errander-view.html`](docs/diagrams/errander-view.html) — serve it locally with `python -m http.server 8767 --directory docs/diagrams` and open `http://localhost:8767/errander-view.html`.
 >
 > The diagram shows all six swim lanes: Operator Experience → AI/Advisory (Layer A) → Human Control (approval gate) → Deterministic Execution (Layer B) → Managed Infrastructure (target VMs) → Observability (two groups: Errander-side and Target Fleet). Planned components are marked with dashed borders and `· planned ·` labels.
 

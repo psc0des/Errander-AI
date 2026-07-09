@@ -3,7 +3,7 @@
 > Design-time diagram for the plan in `tasks/fable-plan.md`, reconciled against the current
 > as-built code (post-R3 process split, post-2026-06-23 chat removal). Not yet implemented —
 > see `tasks/todo.md` for status. Renders inline on GitHub. Companion to
-> `errander-system-architecture.md` (whole-system view) and
+> [`ARCHITECTURE.md`](../../ARCHITECTURE.md) at the repo root (whole-system view) and
 > `investigation-agent-dashboard-chat.md` (the Plan A engine internals that Phase 2 adopts).
 
 ```mermaid

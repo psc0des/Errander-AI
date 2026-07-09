@@ -963,10 +963,12 @@ async def _detect_and_file_probe_proposals(
     audit_store: AuditStore,
     slack: SlackClient | None,
     web_base_url: str = "",
-) -> tuple[int, int]:
+) -> tuple[int, int, list[Any]]:
     """Phase 1 detector: file template proposals from probe signals.
 
-    Deterministic, no LLM (fable-plan D2). Returns (created, refreshed).
+    Deterministic, no LLM (fable-plan D2). Returns (created, refreshed,
+    stored_proposals) — the third element feeds the Phase 3 trigger, which
+    only ever acts on proposals filed THIS probe run.
     Never raises — a detector failure must not break the probe digest.
     """
     from errander.agent.proposal_detector import detect_proposals, file_proposals
@@ -977,14 +979,14 @@ async def _detect_and_file_probe_proposals(
             report, enabled_actions_by_vm=_enabled_actions_by_vm(env),
         )
         if not proposals:
-            return 0, 0
+            return 0, 0, []
         store = ProposalStore(db)
-        created, refreshed = await file_proposals(
+        created, refreshed, stored = await file_proposals(
             proposals, store=store, audit_store=audit_store,
         )
     except Exception as exc:  # noqa: BLE001 — detector must never break the probe
         logger.error("Proposal detector failed for %s: %s", report.env_name, exc)
-        return 0, 0
+        return 0, 0, []
 
     if created > 0 and slack is not None:
         link = f"\nReview: {web_base_url}/ui/proposals" if web_base_url else ""
@@ -996,7 +998,88 @@ async def _detect_and_file_probe_proposals(
             )
         except Exception as exc:  # noqa: BLE001 — notify is best-effort
             logger.warning("Slack proposal notification failed: %s", exc)
-    return created, refreshed
+    return created, refreshed, stored
+
+
+async def _maybe_run_triggered_investigations(
+    report: DigestReport,
+    *,
+    env: EnvironmentSchema,
+    env_name: str,
+    stored_this_probe: list[Any],
+    settings: Settings,
+    db: AsyncDatabase,
+    audit_store: AuditStore,
+    disk_history_store: Any,
+    prom: Any | None,
+    elk: Any | None,
+) -> int:
+    """Phase 3: launch bounded investigations for VMs the probe just flagged.
+
+    No-ops instantly (returns 0) when disabled, no proposals were filed this
+    probe, or no LLM is configured. Never raises — mirrors the Phase 1
+    detector's own must-not-break-the-probe contract.
+    """
+    if not settings.investigation_trigger_enabled or not stored_this_probe:
+        return 0
+    if not settings.llm_base_url:
+        logger.info(
+            "Investigation trigger enabled but no LLM configured — skipping (%s)",
+            env_name,
+        )
+        return 0
+
+    from errander.agent.investigation_tools import build_readonly_tools
+    from errander.agent.investigation_trigger import run_triggered_investigations
+    from errander.integrations.llm import LLMClient
+    from errander.safety.ai_audit import AIDecisionStore
+    from errander.safety.proposal_store import ProposalStore
+    from errander.safety.vm_facts import VMFactsStore
+
+    try:
+        llm = LLMClient(
+            base_url=settings.llm_base_url,
+            api_key=settings.llm_api_key,
+            model=settings.llm_model,
+            temperature=settings.llm_temperature,
+        )
+        vm_facts_store = VMFactsStore(db)
+        await vm_facts_store.initialize()
+        ai_decision_store = AIDecisionStore(db)
+        proposal_store = ProposalStore(db)
+
+        inv_vms = [
+            {"vm_id": t.name, "env": env_name, "os_family": t.os_family}
+            for t in env.targets
+        ]
+        tools = build_readonly_tools(
+            audit_store=audit_store,
+            disk_history=disk_history_store,
+            vm_facts=vm_facts_store,
+            inventory_vms=inv_vms,
+            prometheus_client=prom,
+            elk_client=elk,
+        )
+        valid_vm_ids = {t.name for t in env.targets}
+
+        return await run_triggered_investigations(
+            stored_this_probe,
+            env_name=env_name,
+            valid_vm_ids=valid_vm_ids,
+            tools=tools,
+            llm_client=llm,
+            proposal_store=proposal_store,
+            audit_store=audit_store,
+            ai_decision_store=ai_decision_store,
+            max_investigations_per_probe=settings.investigation_max_investigations_per_probe,
+            dedup_hours=settings.investigation_trigger_dedup_hours,
+            max_tool_calls=settings.investigation_agent_max_tool_calls,
+            timeout_seconds=settings.investigation_agent_timeout_seconds,
+            probe_id=report.probe_id,
+        )
+    except Exception as exc:  # noqa: BLE001 — trigger must never break the probe
+        logger.error("Investigation trigger failed for %s: %s", env_name, exc)
+        return 0
 
 
 async def run_env_probe_main(env_name: str, inventory_path: Path) -> int:
@@ -1089,27 +1172,44 @@ async def run_env_probe_main(env_name: str, inventory_path: Path) -> int:
                 prometheus_client=prom,
                 elk_client=elk,
             )
+
+            # Detect-and-propose Phase 1: deterministic template proposals
+            # from the probe signals (no LLM — fable-plan D2).
+            _created, _refreshed, _stored_this_probe = await _detect_and_file_probe_proposals(
+                report,
+                env=env,
+                db=_db_probe,
+                audit_store=audit_store,
+                slack=slack,
+                web_base_url=settings.web_base_url or "",
+            )
+            if _created or _refreshed:
+                print(
+                    f"\nAgent proposals: {_created} created, {_refreshed} refreshed "
+                    f"— review in the Web UI under /ui/proposals"
+                )
+
+            # Phase 3: probe-triggered investigations (default off) — reuses
+            # the still-open prom/elk clients, closed in the finally below.
+            _investigated = await _maybe_run_triggered_investigations(
+                report,
+                env=env,
+                env_name=env_name,
+                stored_this_probe=_stored_this_probe,
+                settings=settings,
+                db=_db_probe,
+                audit_store=audit_store,
+                disk_history_store=disk_history_store,
+                prom=prom,
+                elk=elk,
+            )
+            if _investigated:
+                print(f"Investigated {_investigated} VM(s) — evidence merged into proposals.")
         finally:
             if prom is not None:
                 await prom.close()
             if elk is not None:
                 await elk.close()
-
-        # Detect-and-propose Phase 1: deterministic template proposals from
-        # the probe signals (no LLM — fable-plan D2).
-        _created, _refreshed = await _detect_and_file_probe_proposals(
-            report,
-            env=env,
-            db=_db_probe,
-            audit_store=audit_store,
-            slack=slack,
-            web_base_url=settings.web_base_url or "",
-        )
-        if _created or _refreshed:
-            print(
-                f"\nAgent proposals: {_created} created, {_refreshed} refreshed "
-                f"— review in the Web UI under /ui/proposals"
-            )
 
     digest_text = render_digest_report(report)
     print(digest_text)
@@ -1387,7 +1487,10 @@ async def run_ask_query(
         }
         try:
             if use_agentic and llm is not None:
-                from errander.agent.investigation_agent import InvestigationAgent
+                from errander.agent.investigation_agent import (
+                    InvestigationAgent,
+                    InvestigationFallback,
+                )
                 from errander.agent.investigation_tools import build_readonly_tools
 
                 inv_vms = [
@@ -1408,11 +1511,16 @@ async def run_ask_query(
                     max_tool_calls=settings.investigation_agent_max_tool_calls,
                     timeout_seconds=settings.investigation_agent_timeout_seconds,
                 )
+                # mypy can't prove OperatorAssistant.investigate's fixed
+                # keyword-only params satisfy Protocol.investigate(**kwargs:
+                # Any) structurally, though the runtime call is exact — a
+                # known mypy limitation for **kwargs Protocol conformance.
+                from typing import cast as _cast
                 response = await agent.investigate_agentic(
                     question,
                     tools=tools,
                     llm_client=llm,
-                    fallback=assistant,
+                    fallback=_cast("InvestigationFallback", assistant),
                     fallback_kwargs=fallback_kwargs,
                     ai_decision_store=ai_decision_store_ask,
                 )
@@ -3313,20 +3421,33 @@ async def async_main(args: argparse.Namespace) -> int:
                             prometheus_client=_prom,
                             elk_client=_sched_elk,
                         )
+                        # Detect-and-propose Phase 1: template proposals (no LLM).
+                        _c, _r, _stored_sched = await _detect_and_file_probe_proposals(
+                            report,
+                            env=_schema,
+                            db=_db,
+                            audit_store=audit_store,
+                            slack=slack,
+                            web_base_url=settings.web_base_url or "",
+                        )
+                        # Phase 3: probe-triggered investigations (default off).
+                        await _maybe_run_triggered_investigations(
+                            report,
+                            env=_schema,
+                            env_name=_env,
+                            stored_this_probe=_stored_sched,
+                            settings=settings,
+                            db=_db,
+                            audit_store=audit_store,
+                            disk_history_store=disk_history_store,
+                            prom=_prom,
+                            elk=_sched_elk,
+                        )
                     finally:
                         if _prom is not None:
                             await _prom.close()
                         if _sched_elk is not None:
                             await _sched_elk.close()
-                    # Detect-and-propose Phase 1: template proposals (no LLM).
-                    await _detect_and_file_probe_proposals(
-                        report,
-                        env=_schema,
-                        db=_db,
-                        audit_store=audit_store,
-                        slack=slack,
-                        web_base_url=settings.web_base_url or "",
-                    )
                     digest_text = render_digest_report(report)
                     if slack is not None:
                         await slack.post_digest(digest_text)

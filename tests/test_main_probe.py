@@ -202,3 +202,63 @@ def test_schedule_schema_signals_and_maintenance_independent() -> None:
     schema = ScheduleSchema(maintenance="0 2 * * 0", signals="0 6 * * *")
     assert schema.maintenance == "0 2 * * 0"
     assert schema.signals == "0 6 * * *"
+
+
+# ---------------------------------------------------------------------------
+# _maybe_run_triggered_investigations — Phase 3 kill switch / no-LLM skip
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_trigger_noop_when_disabled() -> None:
+    from errander.main import _maybe_run_triggered_investigations
+    from errander.models.proposals import AgentProposal, ProposalKind
+    from errander.models.reports import DigestReport
+
+    settings = MagicMock(investigation_trigger_enabled=False, llm_base_url="http://x")
+    report = DigestReport(probe_id="p1", env_name="dev", generated_at=MagicMock())
+    proposal = AgentProposal(
+        env_name="dev", vm_id="web-01", kind=ProposalKind.ACTION,
+        action_type="disk_cleanup", signal_kind="disk_growth",
+    )
+    result = await _maybe_run_triggered_investigations(
+        report, env=MagicMock(), env_name="dev", stored_this_probe=[proposal],
+        settings=settings, db=MagicMock(), audit_store=MagicMock(),
+        disk_history_store=MagicMock(), prom=None, elk=None,
+    )
+    assert result == 0
+
+
+@pytest.mark.asyncio
+async def test_trigger_noop_when_no_proposals() -> None:
+    from errander.main import _maybe_run_triggered_investigations
+    from errander.models.reports import DigestReport
+
+    settings = MagicMock(investigation_trigger_enabled=True, llm_base_url="http://x")
+    report = DigestReport(probe_id="p1", env_name="dev", generated_at=MagicMock())
+    result = await _maybe_run_triggered_investigations(
+        report, env=MagicMock(), env_name="dev", stored_this_probe=[],
+        settings=settings, db=MagicMock(), audit_store=MagicMock(),
+        disk_history_store=MagicMock(), prom=None, elk=None,
+    )
+    assert result == 0
+
+
+@pytest.mark.asyncio
+async def test_trigger_noop_when_no_llm_configured() -> None:
+    from errander.main import _maybe_run_triggered_investigations
+    from errander.models.proposals import AgentProposal, ProposalKind
+    from errander.models.reports import DigestReport
+
+    settings = MagicMock(investigation_trigger_enabled=True, llm_base_url="")
+    report = DigestReport(probe_id="p1", env_name="dev", generated_at=MagicMock())
+    proposal = AgentProposal(
+        env_name="dev", vm_id="web-01", kind=ProposalKind.ACTION,
+        action_type="disk_cleanup", signal_kind="disk_growth",
+    )
+    result = await _maybe_run_triggered_investigations(
+        report, env=MagicMock(), env_name="dev", stored_this_probe=[proposal],
+        settings=settings, db=MagicMock(), audit_store=MagicMock(),
+        disk_history_store=MagicMock(), prom=None, elk=None,
+    )
+    assert result == 0

@@ -198,18 +198,36 @@ per-hop redaction; per-step `AIDecisionStore` rows; graceful fallback). Deltas:
       `proposed_work` is rejected; proposals created by the engine carry the evidence
       chain from tools actually called (cite-what-you-used validation).
 
-### Phase 3 — Event-driven triggering (what makes it an agent)
-- [ ] Post-probe: anomaly signals enqueue an investigation run per affected VM
-      (APScheduler job or inline after digest — keep sequential; T4 constraint).
-- [ ] The investigation *enriches* the Phase 1 template proposal (attaches correlated
+### Phase 3 — Event-driven triggering (what makes it an agent) — ✅ COMPLETE 2026-07-07
+> Shipped: `agent/investigation_trigger.py` — inline after the digest, sequential
+> (T4-friendly), one `InvestigationAgent.investigate_agentic` call per affected VM.
+> **Design delta from the checklist below:** dedup is **VM-level**, not
+> per-signal-kind — one investigation per VM covers all its flagged signals in a
+> single call (cheaper, one budget/fallback per VM, matches "an investigation run
+> per affected VM" literally). A VM investigated within the window is skipped even
+> for a newly-appeared signal kind; documented as a deliberate simplification in
+> the module docstring. Dedup marker: `get_decisions(batch_id=f"probe-trigger:
+> {vm_id}", decision_type="investigation_agent")`, counting only `outcome=="success"`
+> (a prior failure never blocks a retry). Fallback is a `NoOpFallback` (not
+> `OperatorAssistant`) — returns instantly, empty, so D2 costs zero extra LLM calls.
+> See `docs/learning/62-investigation-trigger-phase3.md`.
+
+- [x] Post-probe: anomaly signals enqueue an investigation run per affected VM
+      (inline after digest, sequential — T4 constraint honored).
+- [x] The investigation *enriches* the Phase 1 template proposal (attaches correlated
       evidence, adjusts confidence, may add a related proposal) — it never bypasses
-      the detector's dedup.
-- [ ] Caps (settings, conservative defaults): `max_investigations_per_probe` (3),
-      per-signal-kind dedup window (24 h), global kill switch
-      (`ERRANDER_INVESTIGATION_TRIGGER_ENABLED`, default `false`).
-- [ ] LLM down / unsupported ⇒ Phase 1 template proposal stands untouched (D2).
-- [ ] Tests: trigger fan-out respects caps; dedup window; kill switch; LLM-down leaves
-      deterministic proposal intact.
+      the detector's dedup (enrichment goes through `ProposalStore.create_or_refresh`,
+      the same path `file_proposals()` uses).
+- [x] Caps (settings, conservative defaults): `investigation_max_investigations_per_probe`
+      (3), VM-level dedup window (`investigation_trigger_dedup_hours`, 24h — see delta
+      above), global kill switch (`ERRANDER_INVESTIGATION_TRIGGER_ENABLED`, default `false`).
+- [x] LLM down / unsupported ⇒ Phase 1 template proposal stands untouched (D2) — verified:
+      `NoOpFallback` returns empty findings/proposed_work, enrichment is a no-op, zero
+      audit writes.
+- [x] Tests: 25 new (`test_investigation_trigger.py` 17: grouping, dedup window ×5,
+      cap enforcement, enrichment, D2 untouched-on-failure, new-proposal dedup, one-VM-
+      failure-doesn't-kill-loop, NoOpFallback; `test_investigation_isolation.py` +1;
+      `test_main_probe.py` +3 kill-switch/no-LLM at the main.py wiring level). All green.
 
 ### Phase 4 — Memory loop (close it with what already exists)
 `VMFactsStore` already derives `action_outcomes()` / `rejection_facts()` /

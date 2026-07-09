@@ -173,6 +173,17 @@ class Settings:
     investigation_agent_max_tool_calls: int = 8
     investigation_agent_timeout_seconds: int = 60
 
+    # Probe-triggered investigations (fable-plan Phase 3) — a SEPARATE kill
+    # switch from investigation_agent_enabled above (that one only affects
+    # --ask's default path). This one gates whether the daily probe launches
+    # bounded investigations automatically. Default OFF. Dedup is VM-level
+    # (one investigation per VM per window, covering all its flagged signals
+    # in one call) rather than per-signal-kind — see investigation_trigger.py
+    # module docstring for the rationale.
+    investigation_trigger_enabled: bool = False
+    investigation_max_investigations_per_probe: int = 3
+    investigation_trigger_dedup_hours: int = 24
+
     # SSH host key verification (finding #9).
     # known_hosts_path: path to known_hosts file.  Empty = TOFU mode (log warning per connect).
     # ssh_strict_host_keys: when True (default), reject hosts not in known_hosts.
@@ -420,6 +431,16 @@ def load_settings(
         ),
         investigation_agent_timeout_seconds=_int_field(
             "ERRANDER_INVESTIGATION_AGENT_TIMEOUT", None, 60,
+        ),
+        # Probe-triggered investigations (Phase 3) — default OFF
+        investigation_trigger_enabled=_bool_field(
+            "ERRANDER_INVESTIGATION_TRIGGER_ENABLED", None, False,
+        ),
+        investigation_max_investigations_per_probe=_int_field(
+            "ERRANDER_INVESTIGATION_MAX_PER_PROBE", None, 3,
+        ),
+        investigation_trigger_dedup_hours=_int_field(
+            "ERRANDER_INVESTIGATION_TRIGGER_DEDUP_HOURS", None, 24,
         ),
         # Agent settings
         approval_timeout_seconds=_int_field(

@@ -27,7 +27,7 @@ from __future__ import annotations
 import json
 import logging
 import time
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Protocol
 
 from errander.models.analysis import AssistantResponse, ProposedWorkItem
 from errander.models.proposals import (
@@ -39,11 +39,22 @@ from errander.safety.context_redactor import ContextRedactor
 
 if TYPE_CHECKING:
     from errander.agent.investigation_tools import ToolRegistry
-    from errander.agent.operator_assistant import OperatorAssistant
     from errander.integrations.llm import LLMClient
     from errander.safety.ai_audit import AIDecisionStore
 
 logger = logging.getLogger(__name__)
+
+
+class InvestigationFallback(Protocol):
+    """Structural type for the deterministic fallback `investigate_agentic` calls.
+
+    `OperatorAssistant` satisfies this. So does a cheap no-op used by the
+    probe-triggered path (investigation_trigger.py) — it deliberately avoids
+    OperatorAssistant's full FleetContext machinery when the caller wants a
+    "do nothing further" fallback (fable-plan Phase 3, design decision D2).
+    """
+
+    async def investigate(self, question: str, **kwargs: Any) -> AssistantResponse: ...
 
 _REDACTOR = ContextRedactor()
 
@@ -87,17 +98,19 @@ class InvestigationAgent:
         *,
         tools: ToolRegistry,
         llm_client: LLMClient,
-        fallback: OperatorAssistant,
+        fallback: InvestigationFallback,
         fallback_kwargs: dict[str, Any],
         ai_decision_store: AIDecisionStore | None = None,
         batch_id: str = "ask",
     ) -> AssistantResponse:
         """Run the bounded ReAct loop; fall back deterministically on any failure.
 
-        ``fallback`` + ``fallback_kwargs`` are the deterministic
-        :meth:`OperatorAssistant.investigate` path used when tool-calling is
-        unsupported, the LLM is unreachable, or the budget is exhausted with no
-        answer. The agent never raises to the operator.
+        ``fallback`` + ``fallback_kwargs`` are the deterministic path used
+        when tool-calling is unsupported, the LLM is unreachable, or the
+        budget is exhausted with no answer. The agent never raises to the
+        operator. ``fallback`` is typically `OperatorAssistant` (the `--ask`
+        CLI path) but any :class:`InvestigationFallback` works — e.g. the
+        probe-triggered path's cheap no-op (investigation_trigger.py).
         """
         from errander.safety.ai_audit import AIDecision
 
@@ -226,7 +239,7 @@ class InvestigationAgent:
 
     @staticmethod
     async def _fallback(
-        fallback: OperatorAssistant, fallback_kwargs: dict[str, Any],
+        fallback: InvestigationFallback, fallback_kwargs: dict[str, Any],
     ) -> AssistantResponse:
         return await fallback.investigate(**fallback_kwargs)
 

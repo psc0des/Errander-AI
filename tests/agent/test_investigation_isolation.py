@@ -84,3 +84,24 @@ def test_modules_actually_importable() -> None:
     # Sanity: the scan above is meaningless if the modules don't import.
     importlib.import_module("errander.agent.investigation_agent")
     importlib.import_module("errander.agent.investigation_tools")
+
+
+def test_investigation_trigger_imports_no_layer_b() -> None:
+    """The trigger orchestrates writes to proposal_store (that's its job —
+    unlike investigation_agent.py, which must never write). It must still
+    never import actual Layer B execution paths."""
+    import errander.agent.investigation_trigger as trigger_mod
+
+    forbidden_for_trigger = (
+        "errander.execution",
+        "errander.agent.subgraphs",
+        "errander.agent.graph",
+        "errander.agent.vm_graph",
+        "errander.safety.approval_store",
+        "errander.safety.locking",
+    )
+    for name in _imported_names(Path(trigger_mod.__file__)):
+        for bad in forbidden_for_trigger:
+            assert not (name == bad or name.startswith(bad + ".")), (
+                f"investigation_trigger.py imports forbidden Layer-B module {name!r}"
+            )

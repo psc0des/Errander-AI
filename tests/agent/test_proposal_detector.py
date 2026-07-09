@@ -155,20 +155,23 @@ class TestFileProposals:
         )])
         proposals = detect_proposals(report, enabled_actions_by_vm=_ALL_ENABLED)
 
-        created, refreshed = await file_proposals(
+        created, refreshed, stored = await file_proposals(
             proposals, store=store, audit_store=audit,
         )
         assert (created, refreshed) == (1, 0)
+        assert len(stored) == 1
+        assert stored[0].vm_id == "web-01"
         event = audit.log_event.await_args_list[0].args[0]
         assert event.event_type == EventType.PROPOSAL_CREATED
         assert event.vm_id == "web-01"
         assert event.action_type == "disk_cleanup"
 
         # Same detection on the next probe → refresh, not duplicate
-        created, refreshed = await file_proposals(
+        created, refreshed, stored2 = await file_proposals(
             proposals, store=store, audit_store=audit,
         )
         assert (created, refreshed) == (0, 1)
+        assert stored2[0].proposal_id == stored[0].proposal_id  # same open row
         event = audit.log_event.await_args_list[1].args[0]
         assert event.event_type == EventType.PROPOSAL_REFRESHED
         assert await store.count_pending() == 1

@@ -1,4 +1,4 @@
-## Detect-and-Propose — genuinely agentic origination, HITL execution (2026-07-07, Phase 1 COMPLETE)
+## Detect-and-Propose — genuinely agentic origination, HITL execution (2026-07-07, Phase 3 COMPLETE)
 
 Owner decision: make the "agentic" in *supervised agentic AI* real — the agent notices
 signals, investigates (read-only), and files evidenced **proposals** into the approval
@@ -32,7 +32,14 @@ Diagrams (Mermaid, render on GitHub): pipeline in `docs/diagrams/detect-and-prop
   - [x] Layer-A isolation test (AST scan + fresh-subprocess) — no Layer B / proposal_store / approval_store import
   - [x] Tests: 35 new (agent loop 10, tools 14→incl isolation, llm chat_with_tools 3, + model coverage via agent tests); all green
   - [x] Docs: OBSERVABILITY (agentic loop now built), learning doc 61, README roadmap
-- [ ] Phase 3 — event-driven trigger: probe anomalies enqueue bounded investigations that enrich Phase 1 proposals; caps + dedup window + kill switch (default off)
+- [x] Phase 3 — event-driven trigger, COMPLETE 2026-07-07:
+  - [x] `agent/investigation_trigger.py` — `group_candidates_by_vm` (pure), VM-level dedup via `AIDecisionStore` (batch_id=`probe-trigger:{vm_id}`, success-only, window-checked), `select_investigation_targets` (dedup + cap), `NoOpFallback` (instant empty — D2 costs zero extra LLM calls), `run_triggered_investigations` orchestrator (enrich via `create_or_refresh` — same path `file_proposals` uses, never bypasses dedup; files new `proposed_work` too; per-VM try/except so one failure doesn't kill the loop)
+  - [x] `agent/investigation_agent.py` — loosened `investigate_agentic`'s `fallback` param from `OperatorAssistant` to a new `InvestigationFallback` Protocol (structural typing) so the trigger's cheap no-op doesn't need OperatorAssistant's full FleetContext machinery
+  - [x] `agent/proposal_detector.py` — `file_proposals()` now returns `(created, refreshed, stored_proposals)` so the trigger knows exactly what was filed this probe without a second query
+  - [x] `main.py` — `_maybe_run_triggered_investigations` wired into both probe call sites (immediate + scheduled), inline after detection, prom/elk kept open through the trigger call (restructured try/finally)
+  - [x] `config/settings.py` — 3 settings (`investigation_trigger_enabled` default OFF — separate kill switch from Phase 2's `investigation_agent_enabled`, `investigation_max_investigations_per_probe`=3, `investigation_trigger_dedup_hours`=24)
+  - [x] Tests: 25 new (trigger module 17, isolation +1, main.py wiring 3, adapted proposal_detector test); 443 across all Phase 1+2+3 areas green
+  - [x] Docs: fable-plan Phase 3 checkboxes + VM-level-dedup delta note, learning doc 62, README, STATUS, deploy env template, command-log
 - [ ] Phase 4 — memory loop: proposal decisions/outcomes as VM facts, facts fed into investigation context, rejected-2× suppression policy with digest surfacing
 - [ ] Phase 5 — evals + LangSmith: golden-scenario replay harness (offline fake-LLM in CI), proposal precision/recall scoring, opt-in LangSmith tracing
 

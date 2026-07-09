@@ -4,6 +4,31 @@
 2026-07-07
 
 ## Current Phase
+**Detect-and-propose Phase 3 — probe-triggered investigations (COMPLETE 2026-07-07).**
+
+Default-OFF (`ERRANDER_INVESTIGATION_TRIGGER_ENABLED`): the daily probe can now launch
+bounded Phase 2 investigations on its own for VMs it just flagged — the piece that makes
+this genuinely agentic rather than a chatbot. One investigation call per affected VM
+(`agent/investigation_trigger.py::run_triggered_investigations`), capped
+(`investigation_max_investigations_per_probe`=3) and deduped **per VM** (not per-signal-
+kind — a documented simplification; `investigation_trigger_dedup_hours`=24, counting only
+`outcome=="success"` so a prior failure never blocks a retry). A successful investigation
+*enriches* the Phase 1 detector's proposal via the same `ProposalStore.create_or_refresh`
+path `file_proposals()` uses (never a parallel write path, never bypasses dedup) — merges
+findings into evidence, raises confidence, and may file new `proposed_work` as additional
+proposals. LLM-down/failure uses `NoOpFallback` (instant, empty — zero extra LLM cost)
+so the Phase 1 template proposal stands exactly as filed (D2). Required loosening
+`investigate_agentic`'s `fallback` param from the concrete `OperatorAssistant` class to a
+new `InvestigationFallback` Protocol, and `file_proposals()` now returns the stored
+proposals list (not just counts) so the trigger knows what to act on. **New:**
+`agent/investigation_trigger.py`, `docs/learning/62-*.md`, 1 test file (17 tests) + 4 tests
+added to existing files. **Changed:** `agent/investigation_agent.py` (Protocol),
+`agent/proposal_detector.py` (3-tuple return), `main.py` (`_maybe_run_triggered_
+investigations` wired into both probe call sites), `config/settings.py` (3 settings),
+`README.md`, `deploy/.env.agent.example`. `ruff`/`mypy` clean (118 files); 443 tests
+across all Phase 1+2+3 areas green.
+
+## Previous Phase
 **Detect-and-propose Phase 2 — agentic investigation engine (COMPLETE 2026-07-07).**
 
 Opt-in `--ask --agentic` (default OFF) runs a bounded, read-only tool-calling ReAct loop

@@ -187,15 +187,20 @@ async def file_proposals(
     *,
     store: ProposalStore,
     audit_store: AuditStore,
-) -> tuple[int, int]:
+) -> tuple[int, int, list[AgentProposal]]:
     """Persist detected proposals (dedup-aware) and audit each transition.
 
-    Returns ``(created, refreshed)`` counts.
+    Returns ``(created, refreshed, stored_proposals)`` — the third element is
+    every stored row touched this call (with real, persisted proposal_ids),
+    so a caller (e.g. the Phase 3 trigger) knows exactly what to act on
+    without a second query.
     """
     created_count = 0
     refreshed_count = 0
+    stored_proposals: list[AgentProposal] = []
     for proposal in proposals:
         stored, created = await store.create_or_refresh(proposal)
+        stored_proposals.append(stored)
         if created:
             created_count += 1
         else:
@@ -215,4 +220,4 @@ async def file_proposals(
             ),
             metadata={"proposal_id": stored.proposal_id},
         ))
-    return created_count, refreshed_count
+    return created_count, refreshed_count, stored_proposals

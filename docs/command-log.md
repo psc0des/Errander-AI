@@ -3472,3 +3472,31 @@ uv run pytest tests/agent/test_investigation_* tests/integrations/test_llm.py te
 
 # CLI flag smoke
 uv run python -m errander --help | grep -A2 agentic   # --agentic renders
+
+## 2026-07-07 — detect-and-propose Phase 3 (probe-triggered investigations)
+
+# Interface discovery
+grep -n "async def get_decisions\|ORDER BY" errander/safety/ai_audit.py
+grep -n "used_pct\|class DiskDataPoint" errander/safety/disk_history.py
+
+# Iterative lint/type
+uv run ruff check errander/                 # all checks passed
+uv run mypy errander/                       # no issues in 118 source files
+
+# Real bug caught by an integration test, not a mock:
+# NoOpFallback.investigate() required `question` positionally; the trigger
+# calls fallback.investigate(**{}) — fixed by defaulting question="".
+uv run pytest tests/agent/test_investigation_trigger.py -q   # 1 failed -> fixed -> 17 passed
+
+# Full Phase 1+2+3 touched-area run
+uv run pytest tests/agent/test_investigation_trigger.py tests/agent/test_investigation_agent.py \
+  tests/agent/test_investigation_tools.py tests/agent/test_investigation_isolation.py \
+  tests/agent/test_proposal_detector.py tests/test_proposal_reconciler.py \
+  tests/test_main_probe.py tests/test_approval_reconciler.py tests/integrations/test_llm.py \
+  tests/models/test_proposals.py tests/safety/test_proposal_store.py \
+  tests/web/test_ui_proposals.py tests/config -q -p no:randomly   # 443 passed
+
+# CLI + settings smoke
+uv run python -m errander --help | grep -c usage
+uv run python -c "from errander.config.settings import Settings; s=Settings(); \
+  assert s.investigation_trigger_enabled is False"

@@ -663,10 +663,14 @@ The agent now **originates work** without a human asking: the daily probe's sign
 
 `--ask --agentic` runs a **bounded, read-only tool-calling loop** (Layer A, default OFF): the LLM chooses which read-only tools to call — audit trail, disk trends, VM facts, inventory, and Prometheus/ELK when configured — within a tool-call and wall-clock budget, then answers and may recommend LOW-risk work. Recommendations become agent proposals in the same `/ui/proposals` queue; every hop is redacted and audited (`investigation_agent_step`), and any LLM/tool failure falls back to the deterministic fixed-context path. Enable persistently with `ERRANDER_INVESTIGATION_AGENT_ENABLED=true`. See [`tasks/fable-plan.md`](tasks/fable-plan.md) §3 and [`docs/learning/61-investigation-agent-phase2.md`](docs/learning/61-investigation-agent-phase2.md).
 
+### Probe-triggered investigations (Phase 3 shipped — what makes it an agent, default OFF)
+
+The daily probe can now launch bounded investigations **on its own**, without an operator asking: when it flags a signal (disk growth, drift, failed logins), it can auto-launch the Phase 2 investigation loop for that VM, which *enriches* the Phase 1 template proposal with correlated evidence (or adjusts confidence, or proposes related LOW-risk work) — never bypassing the detector's dedup. One investigation per affected VM per probe, capped (`investigation_max_investigations_per_probe`, default 3) and deduped per VM (`investigation_trigger_dedup_hours`, default 24h — only a genuine success counts, a prior failure never blocks a retry). LLM down or a failed investigation leaves the deterministic proposal exactly as the detector filed it — zero extra cost, zero risk. Enable with `ERRANDER_INVESTIGATION_TRIGGER_ENABLED=true` (a separate kill switch from the `--ask --agentic` one above). See [`tasks/fable-plan.md`](tasks/fable-plan.md) §3 and [`docs/learning/62-investigation-trigger-phase3.md`](docs/learning/62-investigation-trigger-phase3.md).
+
 ### Near-term (planned — not yet built)
 
-- **Probe-triggered investigations (fable-plan Phase 3)** — the daily probe's anomalies auto-launch bounded investigations that *enrich* detector proposals with correlated evidence; caps + kill switch, default off. Adopts [`tasks/investigation-agent-implementation-plan.md`](tasks/investigation-agent-implementation-plan.md).
-- **LangSmith tracing (optional, bring-your-own)** — deep Layer-A observability for the LangGraph reasoning; off by default, never wired into Layer B. See [`docs/OBSERVABILITY.md`](docs/OBSERVABILITY.md).
+- **Memory loop (fable-plan Phase 4)** — proposal decisions and downstream run outcomes recorded as VM facts (extending the existing `VMFactsStore`), fed into future investigation context; a rejected-twice suppression policy surfaced in the digest.
+- **Eval harness + LangSmith (fable-plan Phase 5)** — golden-scenario replay for proposal precision/recall, opt-in LangSmith tracing for the investigation loop. LangSmith is off by default, never wired into Layer B. See [`docs/OBSERVABILITY.md`](docs/OBSERVABILITY.md).
 
 ### Conversational chat — a separate future project (intentionally not in core)
 

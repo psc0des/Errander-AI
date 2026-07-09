@@ -4034,6 +4034,8 @@ _GLOSS: list[tuple[str, str, str, str, str]] = [
      "Layer A CLI (--ask) that investigates fleet state using audit data, Prometheus, and ELK, then answers questions via LLM. Strictly read-only — never executes infrastructure changes."),
     ("Planning Note",      "CORE",    "#4f46e5", "gloss-chip-core",
      "Short LLM-generated note attached to an already-finalized deterministic plan. Informational only — never changes which actions run or their order. Shown in the Slack approval message and the web approval card."),
+    ("Agent Proposal",     "CORE",    "#4f46e5", "gloss-chip-core",
+     "A suggestion record, not an authorization. The daily probe's deterministic detector — and optionally a bounded read-only investigation loop — files proposals from flagged signals into the /ui/proposals queue, badged AGENT-ORIGINATED. A named operator approves, rejects, or snoozes; an approved actionable proposal (disk_cleanup / log_rotation only) is executed through the same deterministic sub-graph path as a normal batch — approval originates work, it never bypasses the safety gates. Reject the same VM+action twice and further proposals for that pair pause for 14 days."),
     # ── SAFETY ───────────────────────────────────────────────────────────────
     ("Approval Gate",      "SAFETY",  "#7c3aed", "gloss-chip-safety",
      "High-risk actions pause here. The agent persists a durable approval request, notifies Slack with the exact packages and versions plus a web approval link, and waits for a named operator's decision in the Web UI."),

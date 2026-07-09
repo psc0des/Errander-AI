@@ -66,6 +66,7 @@ These are the categories Layer B emits (`EventType` in `events.py`):
 - **Daily probe (read-only):** `daily_probe_started`, `daily_probe_complete`, `daily_probe_failed`
 - **service_restart:** `service_restart_requested`, `service_restart_unit_not_allowed`, `service_restart_approved`, `service_restart_rejected`, `service_restart_executed`, `service_restart_verify_ok`, `service_restart_verify_failed`
 - **docker_hygiene (per-object):** `docker_hygiene_object_removed`, `docker_hygiene_object_drift_skipped`, `docker_hygiene_object_remove_failed`
+- **Agent proposals (detect-and-propose, fable-plan Phases 1-4):** `proposal_created`, `proposal_refreshed`, `proposal_approved`, `proposal_rejected`, `proposal_snoozed`, `proposal_expired`, `proposal_execution_started`, `proposal_execution_completed`, `proposal_execution_failed`, `proposal_suppressed` (Phase 4 — logged when a repeatedly-rejected `(vm_id, action_type)` refuses a fresh auto-proposal; `detail` carries the rejection count and cooldown-until date). See [AI-ARCHITECTURE.md](AI-ARCHITECTURE.md) → "Detect-and-propose".
 - **Config:** `settings_changed`, `inventory_changed`
 - **User management (R2 RBAC):** `user_created`, `user_deleted`, `user_groups_changed`, `user_password_changed` — every account/membership change records the acting identity (`cli:<os-user>` or `migration:env`); approval rows additionally carry `decided_by` (`ui:<username>`) + `decided_by_group`
 

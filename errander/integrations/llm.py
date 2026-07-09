@@ -62,6 +62,43 @@ _SYSTEM_PROMPT = (
 )
 
 
+def _maybe_wrap_for_tracing(client: AsyncOpenAI) -> AsyncOpenAI:
+    """Wrap the OpenAI client for LangSmith tracing, iff the operator opted in.
+
+    fable-plan Phase 5 / docs/OBSERVABILITY.md §4. Detection uses LangSmith's
+    own canonical env-var check (``LANGSMITH_TRACING`` / legacy
+    ``LANGCHAIN_TRACING_V2``) — no new ERRANDER_-prefixed setting, no new
+    required dependency (``langsmith`` ships as a transitive dep of
+    ``langchain-core``/``langgraph``, already required; if it's ever absent
+    we degrade to an unwrapped, untraced client rather than fail).
+
+    Correction to an earlier doc claim: LangSmith does NOT "attach with no
+    code changes" for Errander's Layer A reasoning — that claim only holds
+    for LangGraph-orchestrated nodes, and Errander's actual Layer A calls
+    (operator_assistant, investigation_agent, the advisory planning-note/
+    report generators) are hand-rolled OpenAI SDK calls through this class,
+    never LangGraph nodes. ``wrap_openai`` is the real mechanism: it patches
+    ``chat.completions.create`` so every call this client makes is traced.
+
+    Why wrapping LLMClient specifically preserves the Layer-A-only boundary:
+    this class is never imported by any execution sub-graph or the SSH
+    executor (grep `LLMClient(` under agent/subgraphs and execution/ — zero
+    matches) — every caller is Layer A reasoning (text/recommendations
+    only), regardless of whether that reasoning happens to be invoked from
+    a CLI command or from an advisory node inside the Layer B batch graph
+    (e.g. the planning note). The tracer never sits in an execution path.
+    """
+    try:
+        from langsmith.utils import tracing_is_enabled
+        if not tracing_is_enabled():
+            return client
+        from langsmith.wrappers import wrap_openai
+        return wrap_openai(client, chat_name="errander-llm")
+    except Exception as exc:  # noqa: BLE001 — tracing is observability, never load-bearing
+        logger.debug("LangSmith tracing wrap skipped: %s", exc)
+        return client
+
+
 class LLMClient:
     """Async client for any OpenAI-compatible LLM API.
 
@@ -102,12 +139,12 @@ class LLMClient:
         # Anthropic supports explicit cache_control breakpoints on stable content blocks.
         # For OpenAI/vLLM, prefix caching is automatic when the prompt prefix is byte-stable.
         self._prefix_cache = "anthropic.com" in base_url
-        self._client = AsyncOpenAI(
+        self._client = _maybe_wrap_for_tracing(AsyncOpenAI(
             base_url=base_url,
             api_key=api_key,
             timeout=timeout_seconds,
             max_retries=0,  # we handle retries ourselves
-        )
+        ))
 
     def _build_messages(self, prompt: str) -> list[Any]:
         """Build the messages list for a completion request.

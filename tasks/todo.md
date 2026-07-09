@@ -7,12 +7,12 @@ Owner: the end-to-end Mermaid diagram living in `docs/diagrams/` "feels like hid
 - [x] "Reading the diagram" section rewritten to match (detect-and-propose, R3, R1, proposal-approval-is-origination-not-execution-authorization invariant)
 - [x] References repointed: README Architecture section leads with ARCHITECTURE.md (previously only the .drawio was linked); companion refs in `docs/diagrams/detect-and-propose.md` + `investigation-agent-dashboard-chat.md`
 - [x] Validated with mermaid-cli (SVG + PNG render clean)
-- [x] FOLLOW-UP: redraw the draw.io twin (`docs/diagrams/errander-system-architecture.drawio`) — DONE 2026-07-09: same as-built edits as the Mermaid (Investigation Agent solid+shipped, chat nodes → Daily Probe + Proposal Detector + /ui/proposals queue, approval gate covers agent proposals, agent_proposals in Audit DB, R3 two-process Controller tab, Web UI :9091/errander-web, BYO Monitoring Prometheus, one-way Slack edge from controller, LangSmith "planned (Phase 5)"); XML validated well-formed; `errander-view.html` regenerated from the new XML (embeds a full escaped copy); ARCHITECTURE.md header caveat removed
-- [ ] FOLLOW-UP (after Phase 5 commits): flip ARCHITECTURE.md's + drawio's LangSmith node from planned→shipped
+- [ ] FOLLOW-UP (optional): redraw the draw.io twin (`docs/diagrams/errander-system-architecture.drawio`) — header now flags it as an older revision
+- [ ] FOLLOW-UP (after Phase 5 commits): flip ARCHITECTURE.md's LangSmith node from planned→shipped
 
 ---
 
-## Detect-and-Propose — genuinely agentic origination, HITL execution (2026-07-09, Phase 4 COMPLETE)
+## Detect-and-Propose — genuinely agentic origination, HITL execution (2026-07-09, Phase 5 COMPLETE — fable-plan roadmap done)
 
 Owner decision: make the "agentic" in *supervised agentic AI* real — the agent notices
 signals, investigates (read-only), and files evidenced **proposals** into the approval
@@ -66,7 +66,17 @@ Diagrams (Mermaid, render on GitHub): pipeline in `docs/diagrams/detect-and-prop
   - [x] `models/events.py` — `PROPOSAL_SUPPRESSED` EventType
   - [x] Tests: 29 new; 576 across all Phase 1-4 areas green
   - [x] Docs: fable-plan Phase 4 checkboxes + scope-delta note, learning doc 63, README, STATUS, command-log, lessons (reused-object PK-collision gotcha)
-- [ ] Phase 5 — evals + LangSmith: golden-scenario replay harness (offline fake-LLM in CI), proposal precision/recall scoring, opt-in LangSmith tracing
+- [x] Phase 5 — evals + LangSmith, COMPLETE 2026-07-09:
+  - [x] `errander/evals/golden_scenarios.py` — 8 synthetic-DigestReport scenarios with known root causes; store-less (offline, safe anywhere) + store-backed (full Phase 4 suppression coverage) modes; pure precision/recall scorer
+  - [x] `errander/evals/agentic_guardrails.py` — 4 scripted-adversarial-LLM scenarios regression-testing `investigation_agent.py`'s citation-honesty + `proposed_work` validation guardrails via the REAL `InvestigationAgent` loop (not reimplemented logic)
+  - [x] `errander/integrations/llm.py` — `_maybe_wrap_for_tracing()`: lazily wraps `LLMClient`'s `AsyncOpenAI` with `langsmith.wrappers.wrap_openai` when `langsmith.utils.tracing_is_enabled()`; zero new dependency (transitive via langchain-core/langgraph), ImportError/exception-safe, standard LangSmith env vars (no new ERRANDER_ setting)
+  - [x] `main.py` — `--eval-golden-scenarios` (+ `--live-llm`) CLI mirroring `--ai-eval-replay`'s pattern; prints per-scenario pass/fail + aggregate precision/recall; exit code reflects pass/fail
+  - [x] Corrected `docs/OBSERVABILITY.md` §4's premise: LangSmith does NOT auto-attach via LangGraph for Errander's Layer A (hand-rolled OpenAI SDK calls, not LangGraph nodes) — documented the real `wrap_openai` mechanism while preserving the env-var-only activation experience
+  - [x] Tests: `tests/ai_evals/test_golden_fleet_scenarios.py` + `test_agentic_guardrails.py` (placed with existing `test_golden_plans.py`/`test_replay.py`, not a new `tests/evals/`) — real-scenario regression coverage PLUS deliberately-wrong-scenario tests proving the harness isn't vacuously green; `tests/integrations/test_llm.py` tracing-wrap coverage
+  - [x] Actual numbers reported honestly in README + fable-plan: 8/8 golden scenarios (100% precision/recall), 4/4 guardrail scenarios
+  - [x] Docs: fable-plan Phase 5 checkboxes, README "credibility layer" section, learning doc 64, STATUS, command-log
+
+**fable-plan.md roadmap (Phases 0-5) is now fully shipped.**
 
 ### Pre-existing test-infra follow-ups (filed 2026-07-07, not caused by detect-and-propose)
 

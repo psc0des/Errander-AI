@@ -576,3 +576,42 @@ class TestChatWithTools:
                 [{"role": "user", "content": "q"}], [],
             )
         assert turn is None
+
+
+# --- LangSmith tracing wrap (Phase 5) ---
+
+class TestMaybeWrapForTracing:
+    def test_disabled_by_default_client_unwrapped(self) -> None:
+        """No env vars set -> tracing_is_enabled() is False -> untouched client."""
+        with patch("langsmith.utils.tracing_is_enabled", return_value=False):
+            client = LLMClient(base_url="http://10.0.1.5:8000/v1", model="test-model")
+        # An unwrapped AsyncOpenAI's create method is the plain SDK method,
+        # not something wrap_openai has touched.
+        assert client._client.chat.completions.create.__module__.startswith("openai.")
+
+    def test_enabled_wraps_the_client(self) -> None:
+        with (
+            patch("langsmith.utils.tracing_is_enabled", return_value=True),
+            patch("langsmith.wrappers.wrap_openai") as mock_wrap,
+        ):
+            mock_wrap.side_effect = lambda c, **kw: c  # identity — just observe the call
+            LLMClient(base_url="http://10.0.1.5:8000/v1", model="test-model")
+        mock_wrap.assert_called_once()
+        _, kwargs = mock_wrap.call_args
+        assert kwargs.get("chat_name") == "errander-llm"
+
+    def test_tracing_check_failure_degrades_to_unwrapped(self) -> None:
+        """A broken/absent langsmith must never block LLMClient construction —
+        tracing is observability, never load-bearing."""
+        with patch("langsmith.utils.tracing_is_enabled", side_effect=RuntimeError("boom")):
+            client = LLMClient(base_url="http://10.0.1.5:8000/v1", model="test-model")
+        assert client._client.chat.completions.create.__module__.startswith("openai.")
+
+    def test_wrap_openai_failure_degrades_to_unwrapped(self) -> None:
+        with (
+            patch("langsmith.utils.tracing_is_enabled", return_value=True),
+            patch("langsmith.wrappers.wrap_openai", side_effect=RuntimeError("boom")),
+        ):
+            client = LLMClient(base_url="http://10.0.1.5:8000/v1", model="test-model")
+        # Falls back to the original, unwrapped client rather than raising.
+        assert client._client.chat.completions.create.__module__.startswith("openai.")

@@ -268,15 +268,46 @@ per-hop redaction; per-step `AIDecisionStore` rows; graceful fallback). Deltas:
       integration; CLI proposal-history + SUPPRESSED-status rendering. 576 tests across
       all Phase 1-4 touched areas green.
 
-### Phase 5 — Evals + LangSmith (the credibility layer)
-- [ ] `tests/evals/` (or `evals/`) — golden fleet scenarios: recorded synthetic probe
-      results + store fixtures with *known* root causes; replay through detector +
-      investigator; score proposal precision/recall + evidence-citation validity.
-      Runs offline against a recorded fake LLM by default; optional live-LLM mode.
-- [ ] LangSmith wiring per `docs/OBSERVABILITY.md` §4 (opt-in, off by default, egress
-      note honored).
-- [ ] Report eval results in `docs/OBSERVABILITY.md` + README (honest numbers, even
-      if modest — the harness existing is the point).
+### Phase 5 — Evals + LangSmith (the credibility layer) — ✅ COMPLETE 2026-07-09
+> Shipped: `errander/evals/golden_scenarios.py` (8 scenarios, synthetic `DigestReport`
+> fixtures with known root causes, replayed through `detect_proposals()` + — for the
+> suppression scenario — `file_or_suppress_one()` against a real store) and
+> `errander/evals/agentic_guardrails.py` (4 scripted-fake-LLM scenarios regression-testing
+> `investigation_agent.py`'s citation-honesty and `proposed_work` validation guardrails).
+> Both offline by default (zero I/O, zero LLM); `--eval-golden-scenarios --live-llm`
+> additionally smoke-tests the real configured endpoint (unscored — live output isn't
+> deterministic). LangSmith wired via `LLMClient`-level `wrap_openai`, not LangGraph
+> auto-instrumentation — see `docs/OBSERVABILITY.md` §4's corrected mechanism writeup.
+> Actual numbers as of shipping: **8/8 golden scenarios, 100% precision/recall; 4/4
+> guardrail scenarios.** See `docs/learning/64-eval-harness-langsmith-phase5.md`.
+
+- [x] `errander/evals/` (matches the existing `replay.py`'s home, not `tests/evals/` —
+      a deliberate consistency choice) — golden fleet scenarios: synthetic `DigestReport`
+      fixtures with *known* root causes; replayed through the detector (+ the suppression
+      scenario through the full store-backed filing path); score proposal precision/recall.
+      Runs offline by default (zero I/O); the store-backed pytest path additionally
+      exercises Phase 4 suppression against a real test-DB `ProposalStore`.
+- [x] Evidence-citation / guardrail validity — a *separate* scenario set
+      (`agentic_guardrails.py`) scripts an adversarial fake LLM against the real
+      `InvestigationAgent` loop and asserts the existing guardrails hold (uncited-tool
+      evidence stripped, non-proposable actions dropped, injected vm_ids dropped, a clean
+      answer passes through unmodified).
+- [x] LangSmith wiring per `docs/OBSERVABILITY.md` §4 (opt-in, off by default, egress
+      note honored) — **with a correction to the doc's original premise**: the "attaches
+      via env vars with no code changes" claim only holds for LangGraph-orchestrated code;
+      Errander's actual Layer A calls are hand-rolled OpenAI SDK calls through `LLMClient`,
+      so the real mechanism is `langsmith.wrappers.wrap_openai` wrapping `LLMClient`'s
+      internal client — env-var-only activation is preserved, but the underlying mechanism
+      needed correcting once actually implemented.
+- [x] Report eval results in `docs/OBSERVABILITY.md` + README (honest numbers — 8/8 and
+      4/4, offline, reproducible via `--eval-golden-scenarios`).
+- [x] Tests: `tests/ai_evals/test_golden_fleet_scenarios.py` +
+      `tests/ai_evals/test_agentic_guardrails.py` (placed alongside the existing
+      `test_golden_plans.py`/`test_replay.py`, not a new `tests/evals/` — consistency with
+      the established directory) — the real scenario registries plus, critically, tests
+      that PROVE the harness isn't vacuously green (deliberately-wrong scenarios must be
+      flagged as failing). `tests/integrations/test_llm.py` — `_maybe_wrap_for_tracing`
+      default-off / enabled / ImportError-safe / wrap-failure-safe.
 
 ---
 

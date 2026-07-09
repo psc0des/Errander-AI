@@ -4,6 +4,41 @@
 2026-07-09
 
 ## Current Phase
+**Detect-and-propose Phase 5 — eval harness + LangSmith, the credibility layer (COMPLETE 2026-07-09). fable-plan.md roadmap (Phases 0-5) fully shipped.**
+
+Two things a project claiming AI safety should show its work on: `errander/evals/
+golden_scenarios.py` (8 synthetic-`DigestReport` scenarios with known root causes, replayed
+through `detect_proposals()` — the suppression scenario additionally through
+`file_or_suppress_one()` against a real test-DB store — scored as set-based precision/recall
+over (vm_id, action_type)) and `errander/evals/agentic_guardrails.py` (4 scripted-adversarial-
+LLM scenarios run through the REAL `InvestigationAgent` loop, regression-testing that citing
+an uncalled tool, recommending a non-proposable action, or injecting shell metacharacters into
+a vm_id gets caught by the existing Phase 2 guardrails). Both offline by default — zero I/O,
+zero network — safe to run anywhere via the new `--eval-golden-scenarios` CLI (mirrors
+`--ai-eval-replay`'s pattern; `--live-llm` additionally smoke-tests the real configured
+endpoint, unscored since live output isn't deterministic). **Actual numbers: 8/8 golden
+scenarios (100% precision/recall), 4/4 guardrail scenarios — reported honestly in README and
+fable-plan.** LangSmith wired via `LLMClient._maybe_wrap_for_tracing()`: lazily wraps the
+internal `AsyncOpenAI` client with `langsmith.wrappers.wrap_openai` when
+`langsmith.utils.tracing_is_enabled()` (standard env vars, zero new dependency — `langsmith`
+is already transitive via langchain-core/langgraph — ImportError/exception-safe, never
+load-bearing). This corrects `docs/OBSERVABILITY.md` §4's original premise: LangSmith does
+NOT auto-attach via LangGraph for Errander's Layer A, since Layer A calls are hand-rolled
+OpenAI SDK calls through `LLMClient`, never LangGraph nodes — the doc now documents the real
+mechanism while preserving the env-var-only activation experience.
+
+**New:** `errander/evals/golden_scenarios.py`, `errander/evals/agentic_guardrails.py`,
+`docs/learning/64-eval-harness-langsmith-phase5.md`, `tests/ai_evals/test_golden_fleet_
+scenarios.py`, `tests/ai_evals/test_agentic_guardrails.py`. **Changed:**
+`errander/integrations/llm.py` (tracing wrap), `errander/main.py` (`--eval-golden-scenarios`
++ `--live-llm` flags), `tests/integrations/test_llm.py` (wrap tests), `docs/OBSERVABILITY.md`
+§4, `README.md`, `tasks/fable-plan.md`. `ruff`/`mypy` clean on all new/changed source; pytest
+verification was blocked mid-session by a transient Windows WMI subsystem stall (unrelated to
+this code — confirmed via `--help` also hanging, and the import trace stalling inside
+`sqlalchemy`'s own `platform`/`_wmi` OS-probing) — resolved after a WMI service restart;
+final pytest gate run and results recorded in `docs/command-log.md`.
+
+## Previous Phase
 **Docs — ARCHITECTURE.md promoted to repo root + refreshed to as-built state (2026-07-09).**
 
 The end-to-end Mermaid system diagram moved from `docs/diagrams/errander-system-architecture.md`
@@ -19,27 +54,13 @@ plan from Layer B, Layer A contributes only the dashed advisory `ai_note` edge);
 originate from the agent process. Diagram validated with mermaid-cli (renders clean). README
 Architecture section now links `ARCHITECTURE.md` first (previously only the draw.io was
 linked); companion references in `docs/diagrams/detect-and-propose.md` +
-`investigation-agent-dashboard-chat.md` repointed.
-
-**Follow-up (same day):** the draw.io twin
-(`docs/diagrams/errander-system-architecture.drawio`) redrawn to the same as-built state —
-Investigation Agent solid + shipped text, chat nodes replaced by the Daily Probe + Proposal
-Detector and the `/ui/proposals` queue node, approval gate covers batch plans + agent
-proposals, `agent_proposals` added to the Audit DB cylinder, Controller-VM tab names the two
-R3 OS processes, Web UI corrected to :9091/errander-web, Monitoring Prometheus marked
-BYO/external, Slack edge re-sourced from the controller (one-way outbound, was a bidirectional
-webui edge), LangSmith marked "planned (Phase 5)", blocked-bar "direct chat execution" →
-"agent self-execution of proposals". XML validated (well-formed) and
-`docs/diagrams/errander-view.html` regenerated from the new XML (it embeds a full escaped
-copy).
+`investigation-agent-dashboard-chat.md` repointed. The draw.io twin is an older revision —
+flagged as such in the file header, not yet redrawn.
 
 **Changed:** `ARCHITECTURE.md` (moved + rewritten), `README.md`,
-`docs/diagrams/detect-and-propose.md`, `docs/diagrams/investigation-agent-dashboard-chat.md`,
-`docs/diagrams/errander-system-architecture.drawio`, `docs/diagrams/errander-view.html`.
-No Python code touched. (Detect-and-propose Phase 5 work is in flight in the same tree —
-committed separately by that workstream.)
+`docs/diagrams/detect-and-propose.md`, `docs/diagrams/investigation-agent-dashboard-chat.md`.
 
-## Previous Phase
+## Two Phases Ago
 **Detect-and-propose Phase 4 — memory loop / re-proposal suppression (COMPLETE 2026-07-09).**
 
 Closes the loop `VMFactsStore` was built for: `ProposalOutcomeFact` +

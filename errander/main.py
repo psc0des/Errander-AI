@@ -384,6 +384,29 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Candidate model ID to use for replay eval (use with --ai-eval-replay)",
     )
 
+    # Golden fleet scenarios (fable-plan Phase 5 — detect-and-propose credibility layer)
+    parser.add_argument(
+        "--eval-golden-scenarios",
+        action="store_true",
+        dest="eval_golden_scenarios",
+        help=(
+            "Run the golden fleet scenario harness (proposal precision/recall + "
+            "agentic guardrail regression) and exit. Offline by default — zero "
+            "database writes, zero LLM calls. Use --live-llm to also run the "
+            "agentic scenarios against the configured LLM endpoint."
+        ),
+    )
+    parser.add_argument(
+        "--live-llm",
+        action="store_true",
+        dest="eval_live_llm",
+        help=(
+            "With --eval-golden-scenarios: also run the agentic guardrail "
+            "scenarios against the real configured LLM, not just the scripted "
+            "offline fake (requires ERRANDER_LLM_BASE_URL)."
+        ),
+    )
+
     # Durability measurement
     parser.add_argument(
         "--measure-durability",
@@ -2220,6 +2243,100 @@ async def run_ai_eval_replay(args: argparse.Namespace, settings: Settings) -> in
         return 1
 
 
+async def run_eval_golden_scenarios(args: argparse.Namespace, settings: Settings) -> int:
+    """Run the golden fleet scenario harness and print a report.
+
+    fable-plan Phase 5. Offline by default: pure detector scenarios (zero
+    I/O) plus scripted-LLM agentic guardrail scenarios (zero network) —
+    always safe to run in any environment, including production, since the
+    detector-only path never touches a database and the guardrail scenarios
+    use a fake LLM. --live-llm additionally smoke-tests the real configured
+    LLM endpoint (connectivity + a well-formed response), not scored as
+    pass/fail since live output isn't deterministic.
+    """
+    from errander.evals.agentic_guardrails import (
+        default_agentic_scenarios,
+        run_agentic_guardrail_scenarios,
+    )
+    from errander.evals.golden_scenarios import default_scenarios, run_golden_scenarios
+
+    print("Golden fleet scenarios — detect-and-propose credibility layer")
+    print("=" * 64)
+
+    detector_summary = await run_golden_scenarios(default_scenarios())
+    print("\nDetector precision/recall (store-less — suppression scenario skipped):")
+    for r in detector_summary.results:
+        status = "SKIP" if r.skipped else ("PASS" if r.passed else "FAIL")
+        print(f"  {status:5} {r.scenario_name}")
+        if not r.passed and not r.skipped:
+            if r.false_positives:
+                print(f"        false positives: {r.false_positives}")
+            if r.false_negatives:
+                print(f"        false negatives: {r.false_negatives}")
+            if r.review_false_negatives:
+                print(f"        missed review signals: {r.review_false_negatives}")
+    print(
+        f"\n  precision={detector_summary.precision:.2f}  "
+        f"recall={detector_summary.recall:.2f}  "
+        f"all_passed={detector_summary.all_passed}"
+    )
+
+    guardrail_results = await run_agentic_guardrail_scenarios(default_agentic_scenarios())
+    print("\nAgentic guardrail regression (scripted offline fake LLM):")
+    for gr in guardrail_results:
+        status = "PASS" if gr.passed else "FAIL"
+        print(f"  {status:5} {gr.scenario_name}")
+        for f in gr.failures:
+            print(f"        {f}")
+    guardrails_passed = all(gr.passed for gr in guardrail_results)
+
+    if args.eval_live_llm:
+        print("\nLive-LLM smoke test (not scored — output isn't deterministic):")
+        if not settings.llm_base_url:
+            print("  SKIPPED — no LLM configured (set ERRANDER_LLM_BASE_URL).")
+        else:
+            from errander.agent.investigation_agent import InvestigationAgent
+            from errander.agent.investigation_tools import build_readonly_tools
+            from errander.agent.investigation_trigger import NoOpFallback
+            from errander.integrations.llm import LLMClient
+            from errander.safety.audit import AuditStore
+            from errander.safety.disk_history import VMDiskHistoryStore
+            from errander.safety.vm_facts import VMFactsStore
+
+            _db = AsyncDatabase(settings.audit_db_url)
+            audit_store = AuditStore(_db, strict_mode=False)
+            await audit_store.__aenter__()
+            disk_store = VMDiskHistoryStore(_db)
+            await disk_store.initialize()
+            vm_facts_store = VMFactsStore(_db)
+            await vm_facts_store.initialize()
+            llm = LLMClient(
+                base_url=settings.llm_base_url, api_key=settings.llm_api_key,
+                model=settings.llm_model, temperature=settings.llm_temperature,
+            )
+            tools = build_readonly_tools(
+                audit_store=audit_store, disk_history=disk_store,
+                vm_facts=vm_facts_store, inventory_vms=[],
+            )
+            agent = InvestigationAgent(max_tool_calls=4, timeout_seconds=30)
+            try:
+                response = await agent.investigate_agentic(
+                    "Is there anything worth investigating in the fleet right now?",
+                    tools=tools, llm_client=llm,
+                    fallback=NoOpFallback(), fallback_kwargs={},
+                )
+                print(f"  summary: {response.summary[:200]!r}")
+                print(f"  risk_level: {response.risk_level}")
+            except Exception as exc:  # noqa: BLE001
+                print(f"  ERROR: {exc}")
+            finally:
+                await audit_store.__aexit__(None, None, None)
+
+    overall_pass = detector_summary.all_passed and guardrails_passed
+    print(f"\n{'GOLDEN EVAL PASSED' if overall_pass else 'GOLDEN EVAL FAILED'}")
+    return 0 if overall_pass else 1
+
+
 async def run_audit_query(args: argparse.Namespace, settings: Settings) -> int:
     """Run an audit query and print results to stdout."""
     audit_store = AuditStore(AsyncDatabase(settings.audit_db_url), strict_mode=False)
@@ -3182,6 +3299,10 @@ async def async_main(args: argparse.Namespace) -> int:
     # --- Replay eval: replay stored decisions against candidate model and exit ---
     if args.ai_eval_replay:
         return await run_ai_eval_replay(args, settings)
+
+    # --- Golden fleet scenarios: detect-and-propose credibility layer ---
+    if args.eval_golden_scenarios:
+        return await run_eval_golden_scenarios(args, settings)
 
     # --- Durability measurement: query and exit ---
     if args.measure_durability:

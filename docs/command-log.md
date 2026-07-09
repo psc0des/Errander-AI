@@ -3566,3 +3566,41 @@ uv run pytest tests/safety/test_vm_facts.py tests/safety/test_proposal_store.py 
 uv run python -m errander --help | grep -c usage
 uv run python -c "from errander.config.settings import Settings; s=Settings(); \
   assert (s.proposal_suppression_rejection_threshold, s.proposal_suppression_window_days) == (2, 14)"
+
+## 2026-07-09 — detect-and-propose Phase 5 (eval harness + LangSmith tracing)
+
+# LangSmith wiring: confirmed transitive dependency, no new install needed
+uv run python -c "import langsmith; print(langsmith.__version__)"   # 0.8.3 (via langchain-core/langgraph)
+grep -rn "LLMClient(" errander/agent/subgraphs/ errander/execution/   # zero matches -- confirms Layer A/B boundary intact
+
+# Iterative lint/type on new + touched files
+uv run ruff check errander/                 # all checks passed
+uv run mypy errander/                       # no issues in 120 source files
+uv run mypy errander/ tests/                # surfaced 6 PRE-EXISTING mypy errors in tests/integrations/test_llm.py
+                                             # (lines 111,133,149,458,504,516 -- missing dict generics, stale
+                                             # type: ignore); confirmed predates this session's edits, out of
+                                             # scope for Phase 5, flagged rather than silently fixed or ignored
+
+# Direct smoke tests during design (before pytest files existed)
+uv run python -c "..."   # golden_scenarios store-less mode: 7/7 non-skip pass + 1 skip, precision=1.00 recall=1.00
+uv run python -c "..."   # golden_scenarios store-backed mode (real test DB): 8/8 pass incl. suppression scenario
+uv run python -c "..."   # agentic_guardrails: all 4 scripted-adversarial scenarios PASS against real InvestigationAgent
+
+# A Windows WMI subsystem stall (not a code bug) blocked verification mid-session --
+# any `import errander.main` hung indefinitely because sqlalchemy's import-time OS
+# detection (platform.win32_ver()) blocks on an unresponsive WMI. Bisected with:
+uv run python -X importtime -m errander --help   # stall isolated to right after platform/_wmi
+Get-CimInstance -ClassName Win32_OperatingSystem  # confirmed WMI itself unresponsive, unrelated to any diff
+# Resolved by the user restarting/rebooting to fix Winmgmt; ruff/mypy (no runtime
+# import of errander.*) stayed green throughout, correctly proving it wasn't a logic bug.
+
+# CLI end-to-end re-verification post-WMI-fix
+uv run python -m errander --help                    # returns cleanly
+uv run python -m errander --eval-golden-scenarios    # GOLDEN EVAL PASSED: precision=1.00 recall=1.00, 4/4 guardrails
+
+# Full Phase 5 touched-area run
+uv run pytest tests/ai_evals/test_golden_fleet_scenarios.py tests/ai_evals/test_agentic_guardrails.py \
+  tests/integrations/test_llm.py -q   # 59 passed
+
+# Full regression gate (whole suite, excluding Playwright/UI)
+uv run pytest tests/ -q --ignore=tests/ui   # 2637 passed, 11 warnings (all pre-existing/benign), 490s

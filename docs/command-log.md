@@ -1,5 +1,30 @@
 # Errander-AI Command Log
 
+## Legacy demo web stack removal (2026-07-10)
+
+```bash
+# Blast-radius mapping before the cut: who references the legacy stack?
+grep -rln "web\.server\|web\.providers\|web\.data\|web\.evidence" errander/ scripts/ tests/
+# → production ui.py's ONE dependency: lazy import of GLOSS_CSS/page_glossary (glossary page);
+#   2 legacy-only test files; test_hygiene_web_approve.py pinning the legacy handler COPIES.
+
+# Extract the self-contained glossary block (server.py lines 4015-4455) verbatim:
+sed -n '4015,4455p' errander/web/server.py >> glossary_with_header.py   # + module docstring
+uv run python -c "from errander.web.glossary import page_glossary; ..."  # import smoke test
+
+git rm errander/web/{server,data,evidence,providers}.py \
+  tests/ui/{test_web_server_smoke,test_web_providers,test_approval_ui}.py
+
+# Prove the remaining test errors are the pre-existing FOLLOW-UP B cascade, not this change:
+uv run pytest tests/web tests/ui tests/observability -q   # 26 passed, 0 failed, 266 errors
+git stash -u && uv run pytest tests/web tests/ui tests/observability -q && git stash pop
+# → clean HEAD: 8 FAILED + 332 errors (worse) — change is strictly an improvement.
+
+# Found pre-existing breakage while checking scripts (filed as follow-up, not fixed here):
+uv run python -c "from scripts import capture_ui_screenshots"
+# → ImportError: ApprovalManager (deleted 2026-06-11) — script broken since §8d Step 2.
+```
+
 ## drawio visual QA + LangSmith planned→shipped flip (2026-07-10)
 
 ```bash

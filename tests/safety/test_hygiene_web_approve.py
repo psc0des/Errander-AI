@@ -3,8 +3,14 @@
 GET /ui/docker-hygiene/approve?token=<signed_token>  → render the form
 POST /ui/docker-hygiene/approve                       → process submission
 
+Targets the production handlers in errander/web/ui.py (repointed 2026-07-10
+when the legacy demo server that held the original copies was deleted).
+RBAC note: handlers are exercised directly with an admin ``User`` injected
+into the mocked request — the deny paths (reader/anonymous) are covered by
+tests/observability/test_rbac.py through the real middleware.
+
 Uses aiohttp.test_utils.make_mocked_request to exercise handlers directly
-without starting the full Operations Hub (avoids DB / inventory init).
+without starting the full web app (avoids DB / inventory init).
 
 Test methods are sync and drive a fresh event loop per test via
 ``asyncio.new_event_loop()`` rather than relying on pytest-asyncio. This
@@ -34,12 +40,25 @@ from errander.models.docker_hygiene import (
     compute_assessment_hash,
 )
 from errander.safety.hygiene_store import HygieneApprovalRow, HygieneApprovalStore
-from errander.web.server import (
-    handle_hygiene_approve_get,
-    handle_hygiene_approve_post,
+from errander.safety.user_store import PERM_DECIDE_APPROVALS, User
+from errander.web.ui import (
+    HYGIENE_STORE_KEY,
+)
+from errander.web.ui import (
+    _ui_hygiene_approve_get as handle_hygiene_approve_get,
+)
+from errander.web.ui import (
+    _ui_hygiene_approve_post as handle_hygiene_approve_post,
 )
 
 _SECRET = b"web-test-secret-32-bytes-or-longer"
+
+#: Admin user injected into mocked requests (auth middleware isn't in the loop).
+_ADMIN = User(
+    username="testadmin",
+    groups=["admin"],
+    permissions=frozenset({PERM_DECIDE_APPROVALS}),
+)
 
 _T = TypeVar("_T")
 
@@ -91,13 +110,15 @@ def _pending_row(
 def _app_with_store(store: HygieneApprovalStore) -> web.Application:
     """Build a minimal app with hygiene_store in app state — skip startup hooks."""
     app = web.Application()
-    app["hygiene_store"] = store
+    app[HYGIENE_STORE_KEY] = store
     return app
 
 
 def _mock_get_request(app: web.Application, token: str) -> Any:
-    """Mock GET request with token in query string."""
-    return make_mocked_request("GET", f"/ui/docker-hygiene/approve?token={token}", app=app)
+    """Mock GET request with token in query string, authenticated as admin."""
+    req = make_mocked_request("GET", f"/ui/docker-hygiene/approve?token={token}", app=app)
+    req["user"] = _ADMIN
+    return req
 
 
 def _mock_post_request(
@@ -105,8 +126,9 @@ def _mock_post_request(
     *,
     form_data: dict[str, str],
 ) -> Any:
-    """Mock POST request with form data."""
+    """Mock POST request with form data, authenticated as admin."""
     req = make_mocked_request("POST", "/ui/docker-hygiene/approve", app=app)
+    req["user"] = _ADMIN
 
     async def _post() -> MultiDict[str]:
         return MultiDict(form_data)
@@ -134,6 +156,7 @@ class TestHygieneApproveGet:
         monkeypatch.setenv("ERRANDER_SIGNING_SECRET", _SECRET.decode())
         app = _app_with_store(_mock_store())
         req = make_mocked_request("GET", "/ui/docker-hygiene/approve", app=app)
+        req["user"] = _ADMIN
         resp = _run(handle_hygiene_approve_get(req))
         assert resp.status == 400
         assert "Missing token" in resp.text

@@ -1,5 +1,18 @@
 # Errander-AI — Lessons Learned
 
+## 2026-07-10 — Duplicated code quietly steals its own test coverage
+
+Deleting the legacy demo server exposed this: `tests/safety/test_hygiene_web_approve.py`
+(14 functional tests for the docker_hygiene approval form) was importing the handlers from
+the *legacy* `web/server.py` copy, while the *production* `web/ui.py` copies — the ones that
+actually run — had only RBAC coverage. The tests kept passing, so nothing looked wrong; the
+production form logic was effectively untested for form semantics. **When code is duplicated,
+tests bind to one copy and the other copy's coverage silently evaporates — "the tests pass"
+stops meaning "the shipping code is tested."** Corollary: when R3 split the UI out of
+`metrics.py`, the test imports should have been swept in the same change. Rule: after any
+extract/duplicate/move refactor, grep the tests for imports of the OLD path — every hit is
+either a test that should move or a copy that should die.
+
 ## 2026-07-10 — A diagram edit isn't verified until it's rendered; well-formed XML can still be visually broken
 
 The 2026-07-09 draw.io refresh was validated with `xml.dom.minidom.parse` (well-formed: OK)

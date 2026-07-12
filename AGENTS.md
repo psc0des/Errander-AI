@@ -105,8 +105,7 @@ errander/
 │   ├── __main__.py         # Entry point: python -m errander.web (port, DB, stores)
 │   ├── ui.py               # Production web UI: login/TOTP/RBAC, routes, auth middleware
 │   ├── totp.py             # RFC 6238 TOTP helpers (generate_secret, verify_code, QR)
-│   ├── server.py           # Dev demo server (legacy, pre-split)
-│   └── data.py, evidence.py, providers.py  # Legacy/demo only
+│   └── glossary.py         # Glossary & Agent Workflow page (served at /ui/glossary)
 ├── safety/                 # Safety architecture
 │   ├── validators.py       # Pre-execution validation checks
 │   ├── rollback.py         # Rollback capabilities per action type

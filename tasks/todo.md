@@ -1,3 +1,32 @@
+## Overengineering cut — legacy demo web stack removed (2026-07-10, COMPLETE)
+
+SA raised "might be overengineered"; assessment: the architecture's safety machinery is
+load-bearing, but the ~7,250-line legacy demo web app (a second, parallel UI serving fake
+fixture data) was genuine leftover surface area. Owner approved the full cut.
+
+- [x] Extracted the one production dependency — the Glossary & Agent Workflow page — verbatim
+  into `errander/web/glossary.py` (was lazily imported from `server.py` by `ui.py`'s
+  `/ui/glossary` handler); new smoke tests `tests/web/test_glossary.py` (3)
+- [x] Deleted `errander/web/server.py` (5,705 lines), `data.py` (536), `evidence.py` (531),
+  `providers.py` (478) + their tests (`tests/ui/test_web_server_smoke.py`,
+  `tests/ui/test_web_providers.py`)
+- [x] FOLLOW-UP A resolved: `tests/ui/test_approval_ui.py` deleted (8 stale pre-R2 tests,
+  superseded by `test_rbac.py`)
+- [x] `tests/safety/test_hygiene_web_approve.py` (14 tests) repointed from the legacy
+  server's hygiene handlers to the production `ui.py` handlers — it had been pinning the
+  DEAD copy while the production copy ran with only RBAC coverage; all 14 pass against
+  production (admin `User` injected into mocked requests; deny paths stay in `test_rbac.py`)
+- [x] CLAUDE.md + AGENTS.md architecture tree updated (glossary.py in, legacy files out)
+- [x] Verification: ruff clean, `mypy errander/` clean (117 files); tests/web + tests/ui +
+  tests/observability: 0 failed with the change vs 8 failed on clean HEAD (stash-proven);
+  the ~266-error cascade is pre-existing FOLLOW-UP B runner pollution, reproduced on HEAD
+- [ ] **NEW FOLLOW-UP — `scripts/capture_ui_screenshots.py` is broken on HEAD** (pre-existing,
+  found during this cut): imports `ApprovalManager` from `safety.approval`, deleted 2026-06-11
+  (§8d Step 2). Needs repointing at `ApprovalRequestStore` before screenshots can be
+  regenerated. Unrelated to the demo-stack removal.
+
+---
+
 ## ARCHITECTURE.md — promote to root + refresh to as-built (2026-07-09, COMPLETE)
 
 Owner: the end-to-end Mermaid diagram living in `docs/diagrams/` "feels like hiding it".
@@ -85,12 +114,10 @@ Discovered while verifying Phase 1. Proven pre-existing via `git stash -u` + ful
 clean HEAD (10 failed / 171 errors there too). Neither blocks the feature; both deserve
 their own change on CI/Linux where the suite baseline is green.
 
-- [ ] **FOLLOW-UP A — stale `tests/ui/test_approval_ui.py` (8 failing tests).** They assert
-  pre-R2 approval behavior: decide POST → 302 with `decided_by="ui:ui"` and no login. R2
-  (web-only RBAC) correctly made zero-users bootstrap mode return **403** for decisions
-  (see `tests/observability/test_rbac.py::test_decide_post_forbidden`). Fix: update these
-  tests to log in an admin user (mirror `test_rbac.py`'s `_login` helper), or delete them
-  as superseded by `test_rbac.py`. Owner call on update-vs-delete.
+- [x] **FOLLOW-UP A — stale `tests/ui/test_approval_ui.py` (8 failing tests).** DONE
+  2026-07-10: deleted as superseded by `tests/observability/test_rbac.py` (asserted pre-R2
+  no-login behavior that R2 correctly made impossible). Rode along with the demo-stack
+  removal below.
 - [ ] **FOLLOW-UP B — Windows/pytest-asyncio `tests/web` "RuntimeError" cascade + lock
   cascade under full suite.** On the Windows dev box a full `uv run pytest` cascades into
   ~170 errors in the last dir (`tests/web`) — a pytest-asyncio event-loop teardown issue,

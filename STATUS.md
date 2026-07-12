@@ -4,6 +4,30 @@
 2026-07-10
 
 ## Current Phase
+**Overengineering cut — legacy demo web stack removed (2026-07-10).**
+
+Response to the SA's "might be overengineered" review comment. Assessment: the safety
+machinery is load-bearing (each layer answers a named failure mode), but the legacy demo
+web app was genuine leftover surface — a second, parallel UI (~7,250 lines: `server.py`
+5,705 + `data.py` + `evidence.py` + `providers.py`) serving fake fixture data, labeled
+"Legacy/demo only" in CLAUDE.md since R3. Deleted it; extracted its one production
+dependency (the Glossary & Agent Workflow page, served at `/ui/glossary`) verbatim into
+`errander/web/glossary.py` with new smoke tests. Also resolved FOLLOW-UP A (deleted the 8
+stale pre-R2 `test_approval_ui.py` tests, superseded by `test_rbac.py`) and repointed
+`test_hygiene_web_approve.py` (14 tests) from the legacy server's hygiene handlers to the
+production `ui.py` handlers — it had been pinning the dead copy. Net: **−7,850 lines**, one
+web UI instead of two, and the hygiene form flow now tested where it actually runs.
+Verification: ruff + `mypy errander/` clean; tests/web+ui+observability go from 8 failed on
+clean HEAD to 0 failed (stash-proven; the ~266-error cascade is pre-existing FOLLOW-UP B).
+New follow-up filed: `scripts/capture_ui_screenshots.py` was already broken on HEAD
+(imports the `ApprovalManager` deleted in June) — needs repointing at `ApprovalRequestStore`.
+
+**Changed:** `errander/web/glossary.py` (NEW), `errander/web/ui.py` (import),
+`tests/web/test_glossary.py` (NEW), `tests/safety/test_hygiene_web_approve.py` (repointed),
+CLAUDE.md/AGENTS.md (tree). **Deleted:** `errander/web/{server,data,evidence,providers}.py`,
+`tests/ui/{test_web_server_smoke,test_web_providers,test_approval_ui}.py`.
+
+## Previous Phase
 **Docs — architecture diagrams visually verified + LangSmith flipped to shipped (2026-07-10).**
 
 Follow-through on the 2026-07-09 diagram refresh: served `docs/diagrams/errander-view.html`

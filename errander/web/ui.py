@@ -2086,7 +2086,7 @@ async def _ui_inventory_delete(request: web.Request) -> web.Response:
 
 async def _ui_glossary(request: web.Request) -> web.Response:
     """GET /ui/glossary — render Glossary & Workflow page."""
-    from errander.web.server import GLOSS_CSS, page_glossary
+    from errander.web.glossary import GLOSS_CSS, page_glossary
     approval_store: ApprovalRequestStore | None = request.app.get(APPROVAL_STORE_KEY)
     pending_count = await approval_store.count_pending() if approval_store is not None else 0
     body = f"<style>{GLOSS_CSS}</style>" + page_glossary()
